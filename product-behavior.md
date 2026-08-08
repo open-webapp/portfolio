@@ -57,14 +57,17 @@ A single "Import CSV" button (visible on both Positions and Transactions tabs) o
 - **File selector**: drag-and-drop or `<input type=file accept=.csv>` zone. Parses immediately via Papa.parse (header row required, empty lines skipped, no type coercion).
 - **Continue** button: disabled until data type chosen, destination account resolved (existing selected OR new account name+number filled), and file parsed with ≥1 row.
 
-**Step 2 — Map columns (assign CSV headers to fields, add constant values)**:
-- **"Use saved profile"** dropdown: shows existing `MappingProfile`s matching the chosen data type (Positions or Transactions). Selecting one pre-fills the mapping grid below; selecting "Create new" starts with an empty grid.
-- **Mapping grid**: one row per field in `POSITIONS_REQUIRED_FIELDS`/`POSITIONS_OPTIONAL_FIELDS` (or `TRANSACTIONS_*` equivalents). Each field's dropdown shows parsed CSV headers plus a synthetic "Enter a value…" option.
-  - Selecting a CSV header maps that column to the field.
-  - Selecting "Enter a value…" reveals a text input; the constant value is applied to every row for this field.
-  - No "Account Number Column" option (v2 resolves the account upfront in Step 1, not per-row).
-- **"Save as profile"** button: inline name input → creates (`ADD_MAPPING_PROFILE`) or updates (`UPDATE_MAPPING_PROFILE`) a profile with current `fieldMap` and `constants`.
-- **Continue** button: enabled once required fields are mapped (either via CSV header or constant).
+**Step 2 — Map columns (choose or build a mapping profile)**:
+- A "Mapping Source" seg control ("Use existing" / "Create new") renders at the top **only when** at least one `MappingProfile` exists for the chosen data type; default is "Use existing". If no profiles exist for the data type, the seg is absent and the create-new grid renders directly.
+- **Use existing** branch: a kind-scoped profile `<select>` (no "create new" sentinel option) + "Back" + "Continue" (disabled until a profile is selected). Continue re-loads the profile's `fieldMap`/`constants`, resets import edits, and advances to Step 3. No mapping grid and no missing-column warning here — Step 3 validates.
+- **Create new** branch: the mapping grid + an always-visible "Profile Name" text input (placeholder "e.g., Fidelity Positions", starts blank) + "Back" + a primary **"Save Profile & Continue"** button.
+  - **Mapping grid**: one row per field in `POSITIONS_REQUIRED_FIELDS`/`POSITIONS_OPTIONAL_FIELDS` (or `TRANSACTIONS_*` equivalents). Each field's dropdown shows parsed CSV headers plus a synthetic "Enter a value…" option.
+    - Selecting a CSV header maps that column to the field.
+    - Selecting "Enter a value…" reveals a text input; the constant value is applied to every row for this field.
+    - No "Account Number Column" option (v2 resolves the account upfront in Step 1, not per-row).
+  - "Save Profile & Continue" is disabled until the name is non-blank **and** `validateProfile` passes (Positions: symbol/name/assetClass/shares + *either* avgCost or purchaseAmount + *either* price or marketValue; Transactions: all 6 required fields).
+  - On click it trims the name and looks up same-`kind`, trim+case-insensitive matches. No match → `ADD_MAPPING_PROFILE` (`createProfile`); exact match → `window.confirm("A mapping profile named '<X>' already exists. Overwrite it with this mapping?")` — accept → `UPDATE_MAPPING_PROFILE` (same id/createdAt, fresh updatedAt), cancel → stays on the grid with the name intact. Either way it sets `selectedProfileId`, resets import edits, and advances to Step 3.
+- Toggling between branches preserves `fieldMap`, `constants`, `profileName`, and `selectedProfileId`. Back from Step 3 returns to the same branch with work intact. The grid's `fieldMap` is canonical `{ csvColumn: targetField }`; each dropdown reverse-looks-up `fieldMap[col] === field`.
 
 **Step 3 — Preview & validate (edit rows, catch errors)**:
 - **Editable table**: one row per CSV row, one column per mapped field. Each cell is an `<input>`, reflecting the pre-mapped or constant value with any user edits applied locally.

@@ -8,7 +8,7 @@ import {
   TRANSACTIONS_REQUIRED_FIELDS,
   TRANSACTIONS_OPTIONAL_FIELDS,
 } from '../../lib/types'
-import { listProfilesForKind, createProfile, updateProfile, applyMapping } from '../../lib/mappingProfiles'
+import { listProfilesForKind, createProfile, updateProfile, applyMapping, validateProfile } from '../../lib/mappingProfiles'
 import { uid } from '../../lib/seed'
 
 export interface ImportDialogProps {
@@ -59,7 +59,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const [fieldMap, setFieldMap] = useState<Record<string, string>>({})
   const [constants, setConstants] = useState<Record<string, string>>({})
   const [selectedProfileId, setSelectedProfileId] = useState<string>('')
-  const [showSaveProfile, setShowSaveProfile] = useState(false)
+  const [profileMode, setProfileMode] = useState<'use-existing' | 'create-new'>('use-existing')
   const [profileName, setProfileName] = useState('')
 
   // Step 3 state - preview and validation
@@ -132,7 +132,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setFieldMap({})
     setConstants({})
     setSelectedProfileId('')
-    setShowSaveProfile(false)
+    setProfileMode('use-existing')
     setProfileName('')
     setImportEdits({})
     setImportDone(false)
@@ -246,7 +246,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       setFieldMap({})
       setConstants({})
       setSelectedProfileId('')
-      setShowSaveProfile(false)
       setProfileName('')
       setStep(2)
     } else if (step === 2) {
@@ -364,14 +363,17 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   // Step 2: Handle field mapping change
   const handleFieldMapChange = useCallback((field: string, csvColumn: string) => {
     setFieldMap((prev) => {
-      if (csvColumn === 'enter-value') {
-        // Remove from fieldMap if switching to constant
-        const { [field]: _, ...rest } = prev
-        return rest
+      if (csvColumn === 'enter-value' || csvColumn === '') {
+        // Remove the entry mapping to this field (fieldMap is { csvColumn: targetField })
+        const next: Record<string, string> = {}
+        for (const [col, target] of Object.entries(prev)) {
+          if (target !== field) next[col] = target
+        }
+        return next
       } else {
         return {
           ...prev,
-          [field]: csvColumn,
+          [csvColumn]: field,
         }
       }
     })
@@ -385,26 +387,39 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     }))
   }, [])
 
-  // Step 2: Handle save profile
-  const handleSaveProfile = useCallback(() => {
-    if (!profileName.trim()) return
+  // Step 2: Handle use-existing continue
+  const handleUseExistingContinue = useCallback(() => {
+    if (!selectedProfileId) return
+    handleProfileSelect(selectedProfileId)
+    setImportEdits({})
+    setStep(3)
+  }, [selectedProfileId, handleProfileSelect])
 
-    if (selectedProfileId && selectedProfileId !== 'create-new') {
-      // Update existing profile
-      const existingProfile = state.mappingProfiles.find((p) => p.id === selectedProfileId)
-      if (existingProfile) {
-        const updated = updateProfile(existingProfile, profileName, fieldMap, constants)
-        dispatch({ type: 'UPDATE_MAPPING_PROFILE', profileId: selectedProfileId, profile: updated })
+  // Step 2: Handle save profile and continue
+  const handleSaveProfileAndContinue = useCallback(() => {
+    const name = profileName.trim()
+    if (!name) return
+    if (!validateProfile(createProfile(name, dataType, fieldMap, constants), dataType).valid) return
+
+    const existing = state.mappingProfiles.find(
+      (p) => p.kind === dataType && p.name.trim().toLowerCase() === name.toLowerCase()
+    )
+    if (existing) {
+      if (!window.confirm(`A mapping profile named '${existing.name}' already exists. Overwrite it with this mapping?`)) {
+        return
       }
+      const updated = updateProfile(existing, name, fieldMap, constants)
+      dispatch({ type: 'UPDATE_MAPPING_PROFILE', profileId: existing.id, profile: updated })
+      setSelectedProfileId(existing.id)
     } else {
-      // Create new profile
-      const newProfile = createProfile(profileName, dataType, fieldMap, constants)
-      dispatch({ type: 'ADD_MAPPING_PROFILE', profile: newProfile })
+      const created = createProfile(name, dataType, fieldMap, constants)
+      dispatch({ type: 'ADD_MAPPING_PROFILE', profile: created })
+      setSelectedProfileId(created.id)
     }
 
-    setShowSaveProfile(false)
-    setProfileName('')
-  }, [profileName, selectedProfileId, fieldMap, constants, dataType, state.mappingProfiles, dispatch])
+    setImportEdits({})
+    setStep(3)
+  }, [profileName, dataType, fieldMap, constants, state.mappingProfiles, dispatch])
 
   // Closed state: render button only
   if (!isOpen) {
@@ -793,30 +808,127 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         {/* Step 2: Map Columns */}
         {step === 2 && (
           <div>
-            {/* Use saved profile dropdown */}
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                <strong>Use Saved Profile</strong>
-              </label>
-              <select
-                value={selectedProfileId}
-                onChange={(e) => handleProfileSelect(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid var(--color-divider)',
-                  borderRadius: '4px',
-                  background: 'var(--color-bg)',
-                }}
-              >
-                <option value="">-- Create new mapping --</option>
-                {listProfilesForKind(state.mappingProfiles, dataType).map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {(() => {
+              const kindProfiles = listProfilesForKind(state.mappingProfiles, dataType)
+              const effectiveMode = kindProfiles.length === 0 ? 'create-new' : profileMode
+              const requiredMapped = validateProfile(
+                createProfile(profileName.trim(), dataType, fieldMap, constants),
+                dataType
+              ).valid
+              const canSaveAndContinue = profileName.trim() !== '' && requiredMapped
+
+              return (
+                <>
+                  {kindProfiles.length > 0 && (
+                    <div style={{ marginBottom: 'var(--space-4)' }}>
+                      <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
+                        <strong>Mapping Source</strong>
+                      </label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => setProfileMode('use-existing')}
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            border: '1px solid var(--color-divider)',
+                            borderRadius: '4px',
+                            background:
+                              effectiveMode === 'use-existing'
+                                ? 'var(--color-accent)'
+                                : 'var(--color-bg)',
+                            color:
+                              effectiveMode === 'use-existing'
+                                ? 'var(--color-bg)'
+                                : 'var(--color-text)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Use existing
+                        </button>
+                        <button
+                          onClick={() => setProfileMode('create-new')}
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            border: '1px solid var(--color-divider)',
+                            borderRadius: '4px',
+                            background:
+                              effectiveMode === 'create-new'
+                                ? 'var(--color-accent)'
+                                : 'var(--color-bg)',
+                            color:
+                              effectiveMode === 'create-new'
+                                ? 'var(--color-bg)'
+                                : 'var(--color-text)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Create new
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {effectiveMode === 'use-existing' ? (
+                    <>
+                      <div style={{ marginBottom: 'var(--space-4)' }}>
+                        <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
+                          <strong>Select Profile</strong>
+                        </label>
+                        <select
+                          value={selectedProfileId}
+                          onChange={(e) => handleProfileSelect(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '1px solid var(--color-divider)',
+                            borderRadius: '4px',
+                            background: 'var(--color-bg)',
+                          }}
+                        >
+                          {kindProfiles.map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={handleBack}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            border: '1px solid var(--color-divider)',
+                            background: 'var(--color-surface)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Back
+                        </button>
+                        <button
+                          onClick={handleUseExistingContinue}
+                          disabled={selectedProfileId === ''}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            background: selectedProfileId !== ''
+                              ? 'var(--color-accent)'
+                              : 'var(--color-divider)',
+                            color: selectedProfileId !== ''
+                              ? 'var(--color-bg)'
+                              : 'var(--color-text-secondary)',
+                            cursor: selectedProfileId !== '' ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
 
             {/* Mapping grid */}
             <div style={{ marginBottom: 'var(--space-4)' }}>
@@ -891,7 +1003,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                     value={
                                       constants[field]
                                         ? 'enter-value'
-                                        : fieldMap[field] || ''
+                                        : Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
                                     }
                                     onChange={(e) => handleFieldMapChange(field, e.target.value)}
                                     style={{
@@ -953,7 +1065,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                     value={
                                       constants[field]
                                         ? 'enter-value'
-                                        : fieldMap[field] || ''
+                                        : Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
                                     }
                                     onChange={(e) => handleFieldMapChange(field, e.target.value)}
                                     style={{
@@ -1004,117 +1116,62 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
               </div>
             </div>
 
-            {/* Save as profile section */}
-            {!showSaveProfile ? (
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <button
-                  onClick={() => setShowSaveProfile(true)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '4px',
-                    border: '1px solid var(--color-divider)',
-                    background: 'var(--color-surface)',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                  }}
-                >
-                  Save as Profile
-                </button>
-              </div>
-            ) : (
-              <div
-                style={{
-                  marginBottom: 'var(--space-4)',
-                  padding: 'var(--space-3)',
-                  border: '1px solid var(--color-divider)',
-                  borderRadius: '4px',
-                  background: 'var(--color-bg)',
-                }}
-              >
-                <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                  <strong>Profile Name</strong>
-                </label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input
-                    type="text"
-                    value={profileName}
-                    onChange={(e) => setProfileName(e.target.value)}
-                    placeholder="e.g., Fidelity Positions"
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      border: '1px solid var(--color-divider)',
-                      borderRadius: '4px',
-                      background: 'var(--color-surface)',
-                    }}
-                  />
-                  <button
-                    onClick={handleSaveProfile}
-                    disabled={!profileName.trim()}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      background: profileName.trim()
-                        ? 'var(--color-accent)'
-                        : 'var(--color-divider)',
-                      color: profileName.trim()
-                        ? 'var(--color-bg)'
-                        : 'var(--color-text-secondary)',
-                      cursor: profileName.trim() ? 'pointer' : 'not-allowed',
-                      fontSize: '14px',
-                    }}
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowSaveProfile(false)
-                      setProfileName('')
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--color-divider)',
-                      background: 'var(--color-surface)',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
+                      <div style={{ marginBottom: 'var(--space-4)' }}>
+                        <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
+                          <strong>Profile Name</strong>
+                        </label>
+                        <input
+                          type="text"
+                          value={profileName}
+                          onChange={(e) => setProfileName(e.target.value)}
+                          placeholder="e.g., Fidelity Positions"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '1px solid var(--color-divider)',
+                            borderRadius: '4px',
+                            background: 'var(--color-bg)',
+                          }}
+                        />
+                      </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={handleBack}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--color-divider)',
-                  background: 'var(--color-surface)',
-                  cursor: 'pointer',
-                }}
-              >
-                Back
-              </button>
-              <button
-                onClick={handleContinue}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  background: 'var(--color-accent)',
-                  color: 'var(--color-bg)',
-                  cursor: 'pointer',
-                }}
-              >
-                Continue
-              </button>
-            </div>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={handleBack}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            border: '1px solid var(--color-divider)',
+                            background: 'var(--color-surface)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Back
+                        </button>
+                        <button
+                          onClick={handleSaveProfileAndContinue}
+                          disabled={!canSaveAndContinue}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            border: 'none',
+                            background: canSaveAndContinue
+                              ? 'var(--color-accent)'
+                              : 'var(--color-divider)',
+                            color: canSaveAndContinue
+                              ? 'var(--color-bg)'
+                              : 'var(--color-text-secondary)',
+                            cursor: canSaveAndContinue ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          Save Profile & Continue
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
 

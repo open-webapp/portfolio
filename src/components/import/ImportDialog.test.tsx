@@ -6,7 +6,10 @@ import type { AppState, Account } from '../../lib/types'
 import { initialState } from '../../lib/state'
 import { createProfile } from '../../lib/mappingProfiles'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 /**
  * Test data generators
@@ -88,6 +91,49 @@ function uploadFile(fileInput: HTMLInputElement, file: File) {
 
 function selectOption(selectElement: HTMLSelectElement, value: string) {
   fireEvent.change(selectElement, { target: { value } })
+}
+
+async function advanceToStep2(
+  headers: string[],
+  rows: Record<string, string>[],
+  waitForText: string | RegExp,
+  dataType: 'positions' | 'transactions' = 'positions'
+) {
+  const { parseCsvFile } = await import('../../lib/csv')
+  vi.mocked(parseCsvFile).mockResolvedValue({ headers, rows })
+
+  clickButton(/Import CSV/)
+  if (dataType === 'transactions') clickButton(/Transactions/)
+
+  const accountSelect = screen.getByDisplayValue(/-- Select an account --/) as HTMLSelectElement
+  selectOption(accountSelect, 'acc-1')
+
+  const dropZone = screen.getByText(/or drag and drop a CSV file here/).closest('div')
+  const fileInput = dropZone?.querySelector('input[type="file"]') as HTMLInputElement
+  const file = new File(['Symbol,assetClass,shares,avgCost,price\nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
+  uploadFile(fileInput, file)
+
+  await waitFor(() => {
+    expect((screen.getByRole('button', { name: /Continue/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+  clickButton(/Continue/)
+
+  await waitFor(() => {
+    expect(screen.getByText(waitForText)).toBeTruthy()
+  })
+}
+
+function mappingSelectFor(field: string): HTMLSelectElement {
+  const row = screen.getByText(field, { selector: 'td' }).closest('tr') as HTMLTableRowElement
+  return row.querySelector('select') as HTMLSelectElement
+}
+
+function mapField(field: string, csvColumn: string) {
+  selectOption(mappingSelectFor(field), csvColumn)
+}
+
+function mappingValue(field: string): string {
+  return mappingSelectFor(field).value
 }
 
 
@@ -254,14 +300,17 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
-    // Only Positions profile should appear in select
-    const profileSelect = screen.getByDisplayValue(/-- Create new mapping --/) as HTMLSelectElement
+    // Default branch is "Use existing": dropdown lists only the Positions profile
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
     const options = Array.from(profileSelect.options).map(o => o.textContent)
     expect(options).toContain('Default Positions')
     expect(options.some(o => o?.includes('Default Transactions'))).toBe(false)
+
+    // No mapping grid in the use-existing branch
+    expect(screen.queryByText(/Field Mapping/)).toBeNull()
   })
 
   /**
@@ -302,13 +351,13 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
   })
 
   /**
-   * Test 7: Step 2 - "Save as profile" dispatches ADD_MAPPING_PROFILE (new)
+   * Test 7: Step 2 - "Save Profile & Continue" dispatches ADD_MAPPING_PROFILE (new)
    */
-  it('Test 7: Step 2 "Save as profile" dispatches ADD_MAPPING_PROFILE', async () => {
+  it('Test 7: Step 2 "Save Profile & Continue" dispatches ADD_MAPPING_PROFILE', async () => {
     const { parseCsvFile } = await import('../../lib/csv')
     vi.mocked(parseCsvFile).mockResolvedValue({
-      headers: ['Symbol', 'Name', 'Class', 'Qty', 'Cost', 'Price'],
-      rows: [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Cost: '150', Price: '180' }],
+      headers: ['symbol', 'assetClass', 'shares', 'avgCost', 'price'],
+      rows: [{ symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' }],
     })
 
     render(<ImportDialog state={mockState} dispatch={mockDispatch} onClose={vi.fn()} />)
@@ -333,26 +382,19 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
       expect(screen.getByText(/Field Mapping/)).toBeTruthy()
     })
 
-    // Click Save as Profile
-    fireEvent.click(screen.getByRole('button', { name: /Save as Profile/ }))
+    // No profiles in state → create-new grid renders directly. Map required fields.
+    mapField('symbol', 'symbol')
+    mapField('assetClass', 'assetClass')
+    mapField('shares', 'shares')
+    mapField('avgCost', 'avgCost')
+    mapField('price', 'price')
 
-    // Wait for the save profile section to appear
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/e.g., Fidelity Positions/)).toBeTruthy()
-    })
-
-    // Enter name
+    // Enter a profile name
     const profileNameInput = screen.getByPlaceholderText(/e.g., Fidelity Positions/) as HTMLInputElement
     fireEvent.change(profileNameInput, { target: { value: 'My Test Profile' } })
 
-    // Wait for input value to update in the DOM
-    await waitFor(() => {
-      const input = screen.getByPlaceholderText(/e.g., Fidelity Positions/) as HTMLInputElement
-      expect(input.value).toBe('My Test Profile')
-    })
-
-    // Save
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    // Save & continue
+    fireEvent.click(screen.getByRole('button', { name: /Save Profile & Continue/ }))
 
     // Verify dispatch was called with ADD_MAPPING_PROFILE
     await waitFor(() => {
@@ -366,16 +408,19 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
         })
       )
     })
+
+    // Advances to Step 3
+    expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
   })
 
   /**
-   * Test 7b: Step 2 - "Save as profile" dispatches UPDATE_MAPPING_PROFILE (editing)
+   * Test 7b: Step 2 - "Save Profile & Continue" dispatches UPDATE_MAPPING_PROFILE when overwriting
    */
-  it('Test 7b: Step 2 "Save as profile" dispatches UPDATE_MAPPING_PROFILE when editing', async () => {
+  it('Test 7b: Step 2 "Save Profile & Continue" dispatches UPDATE_MAPPING_PROFILE when overwriting', async () => {
     const { parseCsvFile } = await import('../../lib/csv')
     vi.mocked(parseCsvFile).mockResolvedValue({
-      headers: ['Symbol', 'Name', 'Class', 'Qty', 'Cost', 'Price'],
-      rows: [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Cost: '150', Price: '180' }],
+      headers: ['symbol', 'assetClass', 'shares', 'avgCost', 'price'],
+      rows: [{ symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' }],
     })
 
     const existingProfile = createMockPositionsProfile()
@@ -402,33 +447,31 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
+    })
+
+    // Enter create-new mode
+    clickButton(/Create new/)
+    await waitFor(() => {
       expect(screen.getByText(/Field Mapping/)).toBeTruthy()
     })
 
-    // Select existing profile
-    const profileSelect = screen.getByDisplayValue(/-- Create new mapping --/) as HTMLSelectElement
-    selectOption(profileSelect, existingProfile.id)
+    // Map required fields
+    mapField('symbol', 'symbol')
+    mapField('assetClass', 'assetClass')
+    mapField('shares', 'shares')
+    mapField('avgCost', 'avgCost')
+    mapField('price', 'price')
 
-    // Save as Profile
-    fireEvent.click(screen.getByRole('button', { name: /Save as Profile/ }))
-
-    // Wait for the save profile section to appear
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/e.g., Fidelity Positions/)).toBeTruthy()
-    })
-
-    // Enter new name
+    // Enter the existing profile's name to trigger the overwrite flow
     const profileNameInput = screen.getByPlaceholderText(/e.g., Fidelity Positions/) as HTMLInputElement
-    fireEvent.change(profileNameInput, { target: { value: 'Updated Profile' } })
+    fireEvent.change(profileNameInput, { target: { value: 'Default Positions' } })
 
-    // Wait for input value to update in the DOM
-    await waitFor(() => {
-      const input = screen.getByPlaceholderText(/e.g., Fidelity Positions/) as HTMLInputElement
-      expect(input.value).toBe('Updated Profile')
-    })
+    // Overwrite prompt confirmed
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
-    // Save
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    // Save & continue
+    fireEvent.click(screen.getByRole('button', { name: /Save Profile & Continue/ }))
 
     // Verify UPDATE dispatch
     await waitFor(() => {
@@ -439,6 +482,9 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
         })
       )
     })
+
+    // Advances to Step 3
+    expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
   })
 
   /**
@@ -454,7 +500,12 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
       ],
     })
 
-    render(<ImportDialog state={mockState} dispatch={mockDispatch} onClose={vi.fn()} />)
+    const positionsProfile = createMockPositionsProfile()
+    const stateWithProfile = createMockState({
+      mappingProfiles: [positionsProfile],
+    })
+
+    render(<ImportDialog state={stateWithProfile} dispatch={mockDispatch} onClose={vi.fn()} />)
 
     clickButton(/Import CSV/)
     const select = screen.getByDisplayValue(/-- Select an account --/) as HTMLSelectElement
@@ -473,9 +524,11 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
+    selectOption(profileSelect, positionsProfile.id)
     clickButton(/Continue/)
 
     // Step 3 - should see validation issues
@@ -499,7 +552,12 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
       rows: [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Price: '180' }],
     })
 
-    render(<ImportDialog state={mockState} dispatch={mockDispatch} onClose={vi.fn()} />)
+    const positionsProfile = createMockPositionsProfile()
+    const stateWithProfile = createMockState({
+      mappingProfiles: [positionsProfile],
+    })
+
+    render(<ImportDialog state={stateWithProfile} dispatch={mockDispatch} onClose={vi.fn()} />)
 
     clickButton(/Import CSV/)
     const select = screen.getByDisplayValue(/-- Select an account --/) as HTMLSelectElement
@@ -518,9 +576,11 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
+    selectOption(profileSelect, positionsProfile.id)
     clickButton(/Continue/)
 
     await waitFor(() => {
@@ -568,11 +628,11 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
     // Select the pre-made mapping profile using userEvent for proper React event handling
-    const profileSelect = screen.getByDisplayValue(/-- Create new mapping --/) as HTMLSelectElement
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
     await userEvent.selectOptions(profileSelect, positionsProfile.id)
 
     clickButton(/Continue/)
@@ -644,11 +704,11 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
     // Select the pre-made mapping profile instead of manually setting fields
-    const profileSelect = screen.getByDisplayValue(/-- Create new mapping --/) as HTMLSelectElement
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
     selectOption(profileSelect, positionsProfile.id)
 
     clickButton(/Continue/)
@@ -717,11 +777,11 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
     // Select the pre-made mapping profile using userEvent for proper React event handling
-    const profileSelect = screen.getByDisplayValue(/-- Create new mapping --/) as HTMLSelectElement
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
     await userEvent.selectOptions(profileSelect, positionsProfile.id)
 
     clickButton(/Continue/)
@@ -791,11 +851,11 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
     // Select the pre-made mapping profile using userEvent for proper React event handling
-    const profileSelect = screen.getByDisplayValue(/-- Create new mapping --/) as HTMLSelectElement
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
     await userEvent.selectOptions(profileSelect, positionsProfile.id)
 
     clickButton(/Continue/)
@@ -865,11 +925,11 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     clickButton(/Continue/)
 
     await waitFor(() => {
-      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+      expect(screen.getByText(/Select Profile/)).toBeTruthy()
     })
 
     // Select the pre-made mapping profile using userEvent for proper React event handling
-    const profileSelect = screen.getByDisplayValue(/-- Create new mapping --/) as HTMLSelectElement
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
     await userEvent.selectOptions(profileSelect, positionsProfile.id)
 
     clickButton(/Continue/)
@@ -959,5 +1019,412 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
     // Dialog should close and callback called
     expect(onClose).toHaveBeenCalled()
     expect(screen.queryByText(/Field Mapping/)).toBeNull()
+  })
+
+  /**
+   * New: seg control shows both modes when profiles exist, defaulting to Use existing
+   */
+  it('Step 2 seg control shows both modes when profiles exist, defaulting to Use existing', async () => {
+    const positionsProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [positionsProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['Symbol', 'Name', 'Class', 'Qty', 'Cost', 'Price'],
+      [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Cost: '150', Price: '180' }],
+      /Select Profile/
+    )
+
+    expect(screen.getByRole('button', { name: /Use existing/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Create new/ })).toBeTruthy()
+
+    // Default active mode is "Use existing": dropdown shown, grid hidden
+    expect(screen.getByText(/Select Profile/)).toBeTruthy()
+    expect(screen.queryByText(/Field Mapping/)).toBeNull()
+  })
+
+  /**
+   * New: no profiles → seg control absent, create-new grid renders directly
+   */
+  it('Step 2 renders the mapping grid directly when no profiles exist', async () => {
+    render(<ImportDialog state={mockState} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['Symbol', 'Name', 'Class', 'Qty', 'Cost', 'Price'],
+      [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Cost: '150', Price: '180' }],
+      /Field Mapping/
+    )
+
+    expect(screen.queryByRole('button', { name: /Use existing/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Create new/ })).toBeNull()
+    expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+  })
+
+  /**
+   * New: use-existing branch Continue is gated until a profile is selected
+   */
+  it('Step 2 use-existing Continue is gated until a profile is selected', async () => {
+    const positionsProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [positionsProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['Symbol', 'Name', 'Class', 'Qty', 'Cost', 'Price'],
+      [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Cost: '150', Price: '180' }],
+      /Select Profile/
+    )
+
+    const continueButton = screen.getByRole('button', { name: /Continue/ }) as HTMLButtonElement
+    expect(continueButton.disabled).toBe(true)
+
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
+    await userEvent.selectOptions(profileSelect, positionsProfile.id)
+
+    expect((screen.getByRole('button', { name: /Continue/ }) as HTMLButtonElement).disabled).toBe(false)
+    clickButton(/Continue/)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
+    })
+
+    // Profile mapping applied: symbol cell shows the mapped value
+    expect(screen.getAllByDisplayValue('AAPL').length).toBeGreaterThan(0)
+  })
+
+  /**
+   * New: create-new "Save Profile & Continue" is gated on name and required mappings
+   */
+  it('Step 2 "Save Profile & Continue" is gated on profile name and required fields', async () => {
+    render(<ImportDialog state={mockState} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['symbol', 'assetClass', 'shares', 'avgCost', 'price'],
+      [{ symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' }],
+      /Field Mapping/
+    )
+
+    const saveButton = screen.getByRole('button', { name: /Save Profile & Continue/ }) as HTMLButtonElement
+    expect(saveButton.disabled).toBe(true)
+
+    // Name alone is not enough
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Fidelity Positions/), { target: { value: 'My Profile' } })
+    expect((screen.getByRole('button', { name: /Save Profile & Continue/ }) as HTMLButtonElement).disabled).toBe(true)
+
+    // Partial required mappings are not enough
+    mapField('symbol', 'symbol')
+    mapField('assetClass', 'assetClass')
+    mapField('shares', 'shares')
+    expect((screen.getByRole('button', { name: /Save Profile & Continue/ }) as HTMLButtonElement).disabled).toBe(true)
+
+    // Required fields complete (incl. one alternative pair each) → enabled
+    mapField('avgCost', 'avgCost')
+    mapField('price', 'price')
+    expect((screen.getByRole('button', { name: /Save Profile & Continue/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  /**
+   * New: create-new save dispatches ADD_MAPPING_PROFILE (transactions) and advances to Step 3
+   */
+  it('Step 2 create-new save dispatches ADD_MAPPING_PROFILE for transactions', async () => {
+    render(<ImportDialog state={mockState} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['date', 'symbol', 'type', 'shares', 'price', 'amount'],
+      [{ date: '2024-01-15', symbol: 'AAPL', type: 'Buy', shares: '100', price: '150', amount: '15000' }],
+      /Field Mapping/,
+      'transactions'
+    )
+
+    mapField('date', 'date')
+    mapField('symbol', 'symbol')
+    mapField('type', 'type')
+    mapField('shares', 'shares')
+    mapField('price', 'price')
+    mapField('amount', 'amount')
+
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Fidelity Positions/), { target: { value: 'My Tx Profile' } })
+    clickButton(/Save Profile & Continue/)
+
+    await waitFor(() => {
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'ADD_MAPPING_PROFILE',
+          profile: expect.objectContaining({
+            name: 'My Tx Profile',
+            kind: 'transactions',
+            fieldMap: expect.objectContaining({
+              date: 'date',
+              symbol: 'symbol',
+              type: 'type',
+              shares: 'shares',
+              price: 'price',
+              amount: 'amount',
+            }),
+          }),
+        })
+      )
+    })
+
+    expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
+  })
+
+  /**
+   * New: save with a colliding name dispatches UPDATE_MAPPING_PROFILE when confirm() is true
+   */
+  it('Step 2 create-new save overwrites existing profile when confirmed', async () => {
+    const existingProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [existingProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['symbol', 'assetClass', 'shares', 'avgCost', 'price'],
+      [{ symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' }],
+      /Select Profile/
+    )
+
+    clickButton(/Create new/)
+    await waitFor(() => {
+      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    })
+
+    mapField('symbol', 'symbol')
+    mapField('assetClass', 'assetClass')
+    mapField('shares', 'shares')
+    mapField('avgCost', 'avgCost')
+    mapField('price', 'price')
+
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Fidelity Positions/), { target: { value: 'Default Positions' } })
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    clickButton(/Save Profile & Continue/)
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledWith(
+        "A mapping profile named 'Default Positions' already exists. Overwrite it with this mapping?"
+      )
+    })
+
+    // UPDATE dispatched with the existing profile id and the new (different) field map
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UPDATE_MAPPING_PROFILE',
+        profileId: existingProfile.id,
+        profile: expect.objectContaining({
+          fieldMap: expect.objectContaining({
+            symbol: 'symbol',
+            assetClass: 'assetClass',
+            shares: 'shares',
+            avgCost: 'avgCost',
+            price: 'price',
+          }),
+        }),
+      })
+    )
+    expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
+  })
+
+  /**
+   * New: declining the overwrite prompt dispatches nothing and stays on Step 2
+   */
+  it('Step 2 create-new save does not dispatch when overwrite is declined', async () => {
+    const existingProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [existingProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['symbol', 'assetClass', 'shares', 'avgCost', 'price'],
+      [{ symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' }],
+      /Select Profile/
+    )
+
+    clickButton(/Create new/)
+    await waitFor(() => {
+      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    })
+
+    mapField('symbol', 'symbol')
+    mapField('assetClass', 'assetClass')
+    mapField('shares', 'shares')
+    mapField('avgCost', 'avgCost')
+    mapField('price', 'price')
+
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Fidelity Positions/), { target: { value: 'Default Positions' } })
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    clickButton(/Save Profile & Continue/)
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalled()
+    })
+
+    expect(mockDispatch).not.toHaveBeenCalled()
+
+    // Still on Step 2 with the typed name intact
+    expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    expect((screen.getByPlaceholderText(/e.g., Fidelity Positions/) as HTMLInputElement).value).toBe('Default Positions')
+  })
+
+  /**
+   * New: toggling modes preserves create-new field maps and profile name
+   */
+  it('Step 2 mode toggle preserves create-new field maps and profile name', async () => {
+    const positionsProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [positionsProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['symbol', 'assetClass', 'shares', 'avgCost', 'price'],
+      [{ symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' }],
+      /Select Profile/
+    )
+
+    clickButton(/Create new/)
+    await waitFor(() => {
+      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    })
+
+    mapField('symbol', 'symbol')
+    mapField('assetClass', 'assetClass')
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Fidelity Positions/), { target: { value: 'My Profile' } })
+
+    clickButton(/Use existing/)
+    expect(screen.getByText(/Select Profile/)).toBeTruthy()
+
+    clickButton(/Create new/)
+    expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    expect(mappingValue('symbol')).toBe('symbol')
+    expect(mappingValue('assetClass')).toBe('assetClass')
+    expect((screen.getByPlaceholderText(/e.g., Fidelity Positions/) as HTMLInputElement).value).toBe('My Profile')
+  })
+
+  /**
+   * New: Back from Step 3 preserves create-new mapping and name
+   */
+  it('Step 2 Back from Step 3 preserves create-new mapping and name', async () => {
+    const positionsProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [positionsProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['symbol', 'assetClass', 'shares', 'avgCost', 'price'],
+      [{ symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' }],
+      /Select Profile/
+    )
+
+    clickButton(/Create new/)
+    await waitFor(() => {
+      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    })
+
+    mapField('symbol', 'symbol')
+    mapField('assetClass', 'assetClass')
+    mapField('shares', 'shares')
+    mapField('avgCost', 'avgCost')
+    mapField('price', 'price')
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Fidelity Positions/), { target: { value: 'My New Profile' } })
+
+    clickButton(/Save Profile & Continue/)
+    await waitFor(() => {
+      expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
+    })
+
+    clickButton(/Back/)
+
+    expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    expect(mappingValue('symbol')).toBe('symbol')
+    expect((screen.getByPlaceholderText(/e.g., Fidelity Positions/) as HTMLInputElement).value).toBe('My New Profile')
+  })
+
+  /**
+   * New: Back from Step 3 preserves use-existing profile selection
+   */
+  it('Step 2 Back from Step 3 preserves use-existing profile selection', async () => {
+    const positionsProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [positionsProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['Symbol', 'Name', 'Class', 'Qty', 'Cost', 'Price'],
+      [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Cost: '150', Price: '180' }],
+      /Select Profile/
+    )
+
+    const profileSelect = screen.getByRole('combobox') as HTMLSelectElement
+    selectOption(profileSelect, positionsProfile.id)
+    clickButton(/Continue/)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
+    })
+
+    clickButton(/Back/)
+
+    expect(screen.getByText(/Select Profile/)).toBeTruthy()
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe(positionsProfile.id)
+  })
+
+  /**
+   * Revealing test: create-new save must work with non-self-matching CSV headers.
+   * The grid stores the mapping { targetField: csvColumn }, but profiles/applyMapping
+   * expect { csvColumn: targetField } — so gating must not depend on self-mapping.
+   */
+  it('Step 2 create-new save enables for non-self-matching CSV headers and saves canonical fieldMap', async () => {
+    const positionsProfile = createMockPositionsProfile()
+    const state = createMockState({ mappingProfiles: [positionsProfile] })
+
+    render(<ImportDialog state={state} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    await advanceToStep2(
+      ['Ticker', 'Class', 'Qty', 'Unit Cost', 'Price'],
+      [{ Ticker: 'AAPL', Class: 'Equity', Qty: '100', 'Unit Cost': '150', Price: '180' }],
+      /Select Profile/
+    )
+
+    clickButton(/Create new/)
+    await waitFor(() => {
+      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    })
+
+    mapField('symbol', 'Ticker')
+    mapField('assetClass', 'Class')
+    mapField('shares', 'Qty')
+    mapField('avgCost', 'Unit Cost')
+    mapField('price', 'Price')
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Fidelity Positions/), {
+      target: { value: 'Fidelity Positions' },
+    })
+
+    const saveButton = screen.getByRole('button', { name: /Save Profile & Continue/ }) as HTMLButtonElement
+    expect(saveButton.disabled).toBe(false)
+
+    clickButton(/Save Profile & Continue/)
+
+    await waitFor(() => {
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'ADD_MAPPING_PROFILE',
+          profile: expect.objectContaining({
+            name: 'Fidelity Positions',
+            kind: 'positions',
+            fieldMap: expect.objectContaining({
+              Ticker: 'symbol',
+              Class: 'assetClass',
+              Qty: 'shares',
+              'Unit Cost': 'avgCost',
+              Price: 'price',
+            }),
+          }),
+        })
+      )
+    })
+
+    expect(screen.getByText(/Review and edit the imported data below/)).toBeTruthy()
   })
 })

@@ -72,7 +72,7 @@ function appReducer(state: AppState, action: any): AppState {
 
 1. **User uploads CSV** → `ImportPanel` component captures file
 2. **Papa.parse** → Extract headers and rows (raw strings)
-3. **User selects/creates MappingProfile** → Maps CSV columns to field names
+3. **User selects/creates MappingProfile** → Two-branch Step 2: "Use existing" (kind-scoped dropdown, loads profile and continues; shown only when profiles exist for the kind) or "Create new" (requires a profile name + complete required mappings, then dispatches `ADD_MAPPING_PROFILE`/`UPDATE_MAPPING_PROFILE`). Maps CSV columns to field names
 4. **Validation** → Check all required fields are mapped (`validateProfile`)
 5. **Apply mapping** → Each row remapped to canonical field names
 6. **Account resolution** → If the profile has no `accountNumberColumn` mapped, prompt the user to type one in (`ManualAccountNumberPrompt`, applied to every row). For each unique account number, prompt user if it's first-seen (`AccountResolvePrompt`, backed by `accounts.ts`)
