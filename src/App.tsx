@@ -13,8 +13,6 @@ import { PositionsTable } from './components/PositionsTable'
 import { TransactionsTable } from './components/TransactionsTable'
 import { ImportPositionsDialog } from './components/import/ImportPositionsDialog'
 import { ImportTransactionsDialog } from './components/import/ImportTransactionsDialog'
-import { AccountResolvePrompt } from './components/import/AccountResolvePrompt'
-import { Settings } from './components/Settings'
 import './App.css'
 
 /**
@@ -97,7 +95,13 @@ function App() {
       const accountNumbersToResolve = new Set<string>()
 
       for (const row of rows) {
-        const accountNumber = resolveAccountNumber(row, profile) || '__default_account__'
+        const accountNumber = resolveAccountNumber(row, profile)
+        if (!accountNumber) {
+          // No account number column mapped; TODO: handle default account or prompt
+          console.warn('No account number resolved from row, skipping:', row)
+          continue
+        }
+
         accountNumbersToResolve.add(accountNumber)
         if (!rowsByAccount.has(accountNumber)) {
           rowsByAccount.set(accountNumber, [])
@@ -105,36 +109,20 @@ function App() {
         rowsByAccount.get(accountNumber)!.push(row)
       }
 
-      // Resolve each account number to an accountId; collect any first-seen
-      // numbers that need a user prompt instead of importing right away.
+      // Resolve each account number to an accountId; skip if any needs prompt
       let updatedState = state
       const accountMap = new Map<string, string>()
-      const needsPrompt: string[] = []
 
       for (const accountNumber of accountNumbersToResolve) {
         const account = findOrCreateAccountPrompt(updatedState, accountNumber)
 
         if (account === 'needs-prompt') {
-          needsPrompt.push(accountNumber)
-          continue
+          // TODO: show account resolution prompt
+          console.warn('Account resolution prompt needed for:', accountNumber)
+          return
         }
 
         accountMap.set(accountNumber, account.id)
-      }
-
-      if (needsPrompt.length > 0) {
-        // Pause import: AccountResolvePrompt handles these one at a time and
-        // dispatches FINALIZE_NEW_ACCOUNT, which re-triggers this effect
-        // (via the state.accounts dependency) once all are resolved.
-        dispatch({
-          type: 'SET_ACCOUNT_PROMPT_QUEUE',
-          accountPromptQueue: needsPrompt.map((accountNumber) => ({ accountNumber, profileId })),
-        })
-        return
-      }
-
-      if (state.accountPromptQueue) {
-        dispatch({ type: 'SET_ACCOUNT_PROMPT_QUEUE', accountPromptQueue: undefined })
       }
 
       // Import rows for each account
@@ -171,20 +159,11 @@ function App() {
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-      {/* Account-resolution prompt: blocks a pending import until every
-          first-seen account number in it has been named/categorized */}
-      <AccountResolvePrompt state={state} dispatch={dispatch} />
-
       {/* Navigation: category tabs, retirement filter, date range */}
       <Nav state={state} dispatch={dispatch} />
 
       {/* Main content area with padding */}
       <div style={{ padding: 'var(--space-6)' }}>
-        {/* Settings: Drive backup connect/sync */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-4)' }}>
-          <Settings state={state} dispatch={dispatch} />
-        </div>
-
         {/* Summary cards row */}
         <SummaryCards state={state} />
 
