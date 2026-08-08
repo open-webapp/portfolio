@@ -1,18 +1,22 @@
 import { useCallback, useState, useEffect } from 'react'
 import type { AppState } from '../lib/state'
-import { getDriveConnection, connectDrive, syncBackup, restoreBackup } from '../lib/drive'
+import {
+  getDriveConnection,
+  connectDrive,
+  disconnectDrive,
+  syncBackup,
+  restoreBackup,
+} from '../lib/drive'
 
-export interface SettingsProps {
+export interface SettingsPageProps {
   state: AppState
   dispatch: (action: any) => void
 }
 
 /**
- * Settings: Button that opens a menu with Drive sync options (Connect, Sync Now, Restore).
- * Currently a minimal implementation with placeholder UI.
+ * SettingsPage: Full-page settings view with Drive sync options.
  */
-export function Settings({ state, dispatch }: SettingsProps) {
-  const [isOpen, setIsOpen] = useState(false)
+export function SettingsPage({ state, dispatch }: SettingsPageProps) {
   const [syncing, setSyncing] = useState(false)
   const [driveReady, setDriveReady] = useState(false)
 
@@ -35,7 +39,6 @@ export function Settings({ state, dispatch }: SettingsProps) {
       alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setSyncing(false)
-      setIsOpen(false)
     }
   }, [state])
 
@@ -56,7 +59,6 @@ export function Settings({ state, dispatch }: SettingsProps) {
       alert(`Restore failed: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setSyncing(false)
-      setIsOpen(false)
     }
   }, [dispatch])
 
@@ -71,119 +73,120 @@ export function Settings({ state, dispatch }: SettingsProps) {
       alert(`Connect failed: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setSyncing(false)
-      setIsOpen(false)
+    }
+  }, [])
+
+  const handleDisconnect = useCallback(async () => {
+    setSyncing(true)
+    try {
+      await disconnectDrive()
+      setDriveReady(false)
+      alert('Disconnected from Drive')
+    } catch (error) {
+      console.error('Drive disconnect failed:', error)
+      alert(`Disconnect failed: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSyncing(false)
     }
   }, [])
 
   return (
-    <div style={{ position: 'relative' }}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          padding: '8px 16px',
-          borderRadius: '4px',
-          border: '1px solid var(--color-divider)',
-          background: 'var(--color-surface)',
-          cursor: 'pointer',
-          fontSize: '14px',
-        }}
-      >
-        Settings ⚙️
-      </button>
-
-      {isOpen && (
-        <>
-          {/* Backdrop to close menu */}
-          <div
-            onClick={() => setIsOpen(false)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 99,
-            }}
-          />
-
-          {/* Dropdown menu */}
-          <div
-            style={{
-              position: 'absolute',
-              top: '100%',
-              right: 0,
-              marginTop: '8px',
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-divider)',
-              borderRadius: '4px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-              zIndex: 100,
-              minWidth: '200px',
-            }}
-          >
-            {!driveReady && (
-              <button
-                onClick={handleConnect}
-                disabled={syncing}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: '12px 16px',
-                  textAlign: 'left',
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: syncing ? 'wait' : 'pointer',
-                  fontSize: '14px',
-                  borderBottom: '1px solid var(--color-divider)',
-                  opacity: syncing ? 0.6 : 1,
-                }}
-              >
-                {syncing ? 'Connecting...' : 'Connect Drive'}
+    <div>
+      {/* Drive section */}
+      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
+        <h2>Google Drive Sync</h2>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {!driveReady ? (
+            <button onClick={handleConnect} disabled={syncing}>
+              {syncing ? 'Connecting...' : 'Connect Drive'}
+            </button>
+          ) : (
+            <>
+              <button onClick={handleSync} disabled={syncing}>
+                {syncing ? 'Syncing...' : 'Sync Now'}
               </button>
-            )}
+              <button onClick={handleRestore} disabled={syncing}>
+                {syncing ? 'Restoring...' : 'Restore from Drive'}
+              </button>
+              <button onClick={handleDisconnect} disabled={syncing}>
+                {syncing ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            </>
+          )}
+        </div>
+      </section>
 
-            {driveReady && (
-              <>
-                <button
-                  onClick={handleSync}
-                  disabled={syncing}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: syncing ? 'wait' : 'pointer',
-                    fontSize: '14px',
-                    borderBottom: '1px solid var(--color-divider)',
-                    opacity: syncing ? 0.6 : 1,
-                  }}
-                >
-                  {syncing ? 'Syncing...' : 'Sync Now'}
-                </button>
-                <button
-                  onClick={handleRestore}
-                  disabled={syncing}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: syncing ? 'wait' : 'pointer',
-                    fontSize: '14px',
-                    opacity: syncing ? 0.6 : 1,
-                  }}
-                >
-                  {syncing ? 'Restoring...' : 'Restore from Drive'}
-                </button>
-              </>
-            )}
-          </div>
-        </>
-      )}
+      {/* Import Sessions section */}
+      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
+        <h2>Import Sessions</h2>
+        {state.importSessions.length === 0 ? (
+          <p>No imports yet.</p>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Date/Time</th>
+                <th>Kind</th>
+                <th>File Name</th>
+                <th>Accounts</th>
+                <th style={{ textAlign: 'right' }}>Row Count</th>
+                <th style={{ width: '40px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.importSessions.map((session) => {
+                const accountNames = session.accountIds
+                  .map((id) => state.accounts.find((a) => a.id === id)?.name)
+                  .filter((name) => name !== undefined)
+                  .join(', ')
+
+                const handleDelete = () => {
+                  const confirmed = window.confirm(
+                    `Delete this import? This will remove ${session.rowCount} positions/transactions.`
+                  )
+                  if (confirmed) {
+                    dispatch({ type: 'DELETE_IMPORT_SESSION', sessionId: session.id })
+                  }
+                }
+
+                return (
+                  <tr key={session.id}>
+                    <td className="text-muted">{session.importedAt}</td>
+                    <td>{session.kind}</td>
+                    <td>{session.fileName}</td>
+                    <td>{accountNames}</td>
+                    <td style={{ textAlign: 'right' }}>{session.rowCount}</td>
+                    <td style={{ textAlign: 'center', paddingRight: '8px' }}>
+                      <button
+                        onClick={handleDelete}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--color-text-secondary)',
+                          transition: 'color 0.2s',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                        title="Delete this import session"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Accounts placeholder */}
+      {/* Task 12 */}
     </div>
   )
 }
