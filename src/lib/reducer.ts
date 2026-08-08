@@ -74,12 +74,21 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'TOGGLE_SHOW_CLOSED':
       return StateActions.toggleShowClosed(state)
 
+    case 'SET_VIEW':
+      return StateActions.setView(state, action.view)
+
     // Import flow
     case 'IMPORT_POSITIONS':
-      return importPositions(state, action.accountId, action.mappedRows, action.importDate)
+      return importPositions(state, action.accountId, action.mappedRows, action.importDate, action.importSessionId)
 
     case 'IMPORT_TRANSACTIONS':
-      return importTransactions(state, action.accountId, action.mappedRows)
+      return importTransactions(state, action.accountId, action.mappedRows, action.importSessionId)
+
+    case 'ADD_IMPORT_SESSION':
+      return StateActions.addImportSession(state, action.session)
+
+    case 'DELETE_IMPORT_SESSION':
+      return StateActions.deleteImportSession(state, action.sessionId)
 
     // Mapping profile management
     case 'ADD_MAPPING_PROFILE':

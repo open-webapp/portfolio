@@ -20,7 +20,8 @@ export function importPositions(
   state: AppState,
   accountId: string,
   mappedRows: Record<string, string>[],
-  importDate: string
+  importDate: string,
+  importSessionId: string
 ): AppState {
   // Get old positions for this account
   const oldPositions = state.positions.filter((p) => p.accountId === accountId)
@@ -64,6 +65,7 @@ export function importPositions(
 
     newPositions.push({
       id: uid('pos'),
+      importSessionId,
       accountId,
       symbol: newSymbol,
       name: row.name ?? null,
@@ -110,6 +112,7 @@ export function importPositions(
 
     return {
       id: uid('closed'),
+      importSessionId,
       accountId,
       symbol,
       name: oldPosition.name,
@@ -135,6 +138,7 @@ export function importPositions(
 
   const newSnapshot: PortfolioSnapshot = {
     id: uid('snap'),
+    importSessionId,
     accountId,
     date: importDate,
     value: snapshotValue,

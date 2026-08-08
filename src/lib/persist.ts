@@ -58,11 +58,13 @@ export async function loadPersistedApp(): Promise<AppState | null> {
           transactions: loaded.transactions ?? defaults.transactions,
           snapshots: loaded.snapshots ?? defaults.snapshots,
           mappingProfiles: loaded.mappingProfiles ?? defaults.mappingProfiles,
+          importSessions: loaded.importSessions ?? defaults.importSessions,
 
           // UI state with existing values or defaults
           category: loaded.category ?? defaults.category,
           range: loaded.range ?? defaults.range,
           tab: loaded.tab ?? defaults.tab,
+          view: loaded.view ?? defaults.view,
           sortKey: loaded.sortKey ?? defaults.sortKey,
           sortDir: loaded.sortDir ?? defaults.sortDir,
           assetClassFilter: loaded.assetClassFilter ?? defaults.assetClassFilter,

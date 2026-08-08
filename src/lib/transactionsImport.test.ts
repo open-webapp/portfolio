@@ -64,7 +64,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-dedup-skip')
 
     // Should still have only 1 transaction (duplicate skipped)
     expect(newState.transactions).toHaveLength(1)
@@ -95,7 +95,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-price-diff')
 
     // Should have 2 transactions now
     expect(newState.transactions).toHaveLength(2)
@@ -131,7 +131,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-shares-diff')
 
     expect(newState.transactions).toHaveLength(2)
     expect(newState.transactions[1].shares).toBe(6)
@@ -159,7 +159,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-type-diff')
 
     expect(newState.transactions).toHaveLength(2)
     expect(newState.transactions[1].type).toBe('Sell')
@@ -187,7 +187,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-symbol-diff')
 
     expect(newState.transactions).toHaveLength(2)
     expect(newState.transactions[1].symbol).toBe('NVDA')
@@ -215,7 +215,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-date-diff')
 
     expect(newState.transactions).toHaveLength(2)
     expect(newState.transactions[1].date).toBe('2024-01-16')
@@ -247,7 +247,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId2, mappedRows)
+    const newState = importTransactions(state, accountId2, mappedRows, 'import-diff-account')
 
     // Should have 2 transactions now (one per account)
     expect(newState.transactions).toHaveLength(2)
@@ -277,7 +277,7 @@ describe('transactionsImport', () => {
     // Import empty rows
     const mappedRows: Record<string, string>[] = []
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-empty')
 
     // Should still have only 1 transaction
     expect(newState.transactions).toHaveLength(1)
@@ -346,7 +346,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-mixed-batch')
 
     // Should have 5 transactions: 2 original + 3 new
     expect(newState.transactions).toHaveLength(5)
@@ -426,7 +426,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    state = importTransactions(state, accountId, mappedRows)
+    state = importTransactions(state, accountId, mappedRows, 'import-multi-1')
     expect(state.transactions).toHaveLength(2)
 
     // Second import: 1 duplicate + 2 new
@@ -457,7 +457,7 @@ describe('transactionsImport', () => {
       }, // New
     ]
 
-    state = importTransactions(state, accountId, mappedRows)
+    state = importTransactions(state, accountId, mappedRows, 'import-multi-2')
     expect(state.transactions).toHaveLength(4) // 2 original + 2 new
 
     // Third import: all duplicates
@@ -480,7 +480,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    state = importTransactions(state, accountId, mappedRows)
+    state = importTransactions(state, accountId, mappedRows, 'import-multi-3')
     expect(state.transactions).toHaveLength(4) // No new transactions added
   })
 
@@ -503,7 +503,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-numeric')
 
     expect(newState.transactions).toHaveLength(1)
 
@@ -540,7 +540,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-unique-id')
 
     const ids = newState.transactions.map((t) => t.id)
     const uniqueIds = new Set(ids)
@@ -570,7 +570,7 @@ describe('transactionsImport', () => {
     ]
 
     const beforeImport = new Date().toISOString()
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-timestamp')
     const afterImport = new Date().toISOString()
 
     const tx = newState.transactions[0]
@@ -602,7 +602,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-no-taxes')
 
     expect(newState.transactions).toHaveLength(1)
     const tx = newState.transactions[0]
@@ -630,7 +630,7 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-with-taxes')
 
     expect(newState.transactions).toHaveLength(1)
     const tx = newState.transactions[0]
@@ -667,10 +667,151 @@ describe('transactionsImport', () => {
       },
     ]
 
-    const newState = importTransactions(state, accountId, mappedRows)
+    const newState = importTransactions(state, accountId, mappedRows, 'import-skip-blank')
 
     expect(newState.transactions).toHaveLength(1)
     expect(newState.transactions[0].symbol).toBe('MSFT')
     expect(newState.transactions.some((t) => Number.isNaN(t.shares))).toBe(false)
+  })
+
+  // Task 6: Test 1 - New transaction rows get importSessionId equal to the value passed in
+  it('Task 6.1: New transaction rows get importSessionId equal to the value passed in', () => {
+    let state = initialState()
+
+    const accountId = 'acc-task6-1'
+    const account = createTestAccount(accountId, 'ACC-TASK6-1')
+    state = { ...state, accounts: [account] }
+
+    const sessionId = 'session-abc-123'
+    const mappedRows = [
+      {
+        date: '2024-01-15',
+        symbol: 'AAPL',
+        type: 'Buy',
+        shares: '10',
+        price: '150.0',
+        amount: '1500',
+      },
+      {
+        date: '2024-01-20',
+        symbol: 'GOOGL',
+        type: 'Buy',
+        shares: '5',
+        price: '120.0',
+        amount: '600',
+      },
+    ]
+
+    const newState = importTransactions(state, accountId, mappedRows, sessionId)
+
+    expect(newState.transactions).toHaveLength(2)
+    expect(newState.transactions[0].importSessionId).toBe(sessionId)
+    expect(newState.transactions[1].importSessionId).toBe(sessionId)
+  })
+
+  // Task 6: Test 2 - Deduped (skipped) rows don't produce a phantom session-tagged row
+  it('Task 6.2: Deduped (skipped) rows do not produce a phantom session-tagged row', () => {
+    let state = initialState()
+
+    const accountId = 'acc-task6-2'
+    const account = createTestAccount(accountId, 'ACC-TASK6-2')
+    state = { ...state, accounts: [account] }
+
+    // Add an existing transaction with a specific session id
+    const existingTx = createTestTransaction(accountId, '2024-01-15', 'AAPL', 'Buy', 10, 150.0, 1500)
+    existingTx.importSessionId = 'session-old-001'
+    state = { ...state, transactions: [existingTx] }
+
+    // Try to import a row with the same natural key but different session id
+    const mappedRows = [
+      {
+        date: '2024-01-15',
+        symbol: 'AAPL',
+        type: 'Buy',
+        shares: '10',
+        price: '150.0',
+        amount: '1500',
+      },
+    ]
+
+    const newSessionId = 'session-new-002'
+    const newState = importTransactions(state, accountId, mappedRows, newSessionId)
+
+    // Should still have only 1 transaction (duplicate skipped)
+    expect(newState.transactions).toHaveLength(1)
+
+    // The existing transaction's session id should NOT be overwritten
+    expect(newState.transactions[0].importSessionId).toBe('session-old-001')
+  })
+
+  // Task 6: Test 3 - Two sequential imports with different session ids
+  it('Task 6.3: Two sequential imports with different session ids preserve session ids correctly', () => {
+    let state = initialState()
+
+    const accountId = 'acc-task6-3'
+    const account = createTestAccount(accountId, 'ACC-TASK6-3')
+    state = { ...state, accounts: [account] }
+
+    // First import with session id 1
+    const sessionId1 = 'session-import-1'
+    const mappedRows1 = [
+      {
+        date: '2024-01-15',
+        symbol: 'AAPL',
+        type: 'Buy',
+        shares: '10',
+        price: '150.0',
+        amount: '1500',
+      },
+      {
+        date: '2024-01-20',
+        symbol: 'GOOGL',
+        type: 'Buy',
+        shares: '5',
+        price: '120.0',
+        amount: '600',
+      },
+    ]
+
+    state = importTransactions(state, accountId, mappedRows1, sessionId1)
+    expect(state.transactions).toHaveLength(2)
+
+    // Verify first import's transactions have session id 1
+    const txFromImport1 = state.transactions.filter((t) => t.symbol === 'AAPL' || t.symbol === 'GOOGL')
+    expect(txFromImport1.every((t) => t.importSessionId === sessionId1)).toBe(true)
+
+    // Second import with session id 2 (includes one duplicate + one new)
+    const sessionId2 = 'session-import-2'
+    const mappedRows2 = [
+      {
+        date: '2024-01-15',
+        symbol: 'AAPL',
+        type: 'Buy',
+        shares: '10',
+        price: '150.0',
+        amount: '1500',
+      }, // Duplicate from import 1
+      {
+        date: '2024-02-10',
+        symbol: 'MSFT',
+        type: 'Buy',
+        shares: '8',
+        price: '300.0',
+        amount: '2400',
+      }, // New
+    ]
+
+    state = importTransactions(state, accountId, mappedRows2, sessionId2)
+    expect(state.transactions).toHaveLength(3)
+
+    // Verify pre-existing transactions from import 1 still have session id 1
+    const aaplTx = state.transactions.find((t) => t.symbol === 'AAPL')
+    const googlTx = state.transactions.find((t) => t.symbol === 'GOOGL')
+    expect(aaplTx?.importSessionId).toBe(sessionId1)
+    expect(googlTx?.importSessionId).toBe(sessionId1)
+
+    // Verify new transaction from import 2 has session id 2
+    const msftTx = state.transactions.find((t) => t.symbol === 'MSFT')
+    expect(msftTx?.importSessionId).toBe(sessionId2)
   })
 })

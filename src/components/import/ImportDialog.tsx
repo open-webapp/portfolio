@@ -50,6 +50,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     retirement: false,
   })
   const [file, setFile] = useState<File | null>(null)
+  const [fileName, setFileName] = useState<string>('')
   const [fileError, setFileError] = useState<string>('')
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([])
@@ -124,6 +125,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       retirement: false,
     })
     setFile(null)
+    setFileName('')
     setFileError('')
     setCsvHeaders([])
     setCsvRows([])
@@ -143,6 +145,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       if (!selectedFile) {
         setFileError('')
         setFile(null)
+        setFileName('')
         setCsvHeaders([])
         setCsvRows([])
         return
@@ -152,6 +155,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
         setFileError('Please select a CSV file')
         setFile(null)
+        setFileName('')
         setCsvHeaders([])
         setCsvRows([])
         return
@@ -162,11 +166,13 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         if (parsed.rows.length === 0) {
           setFileError('CSV file is empty')
           setFile(null)
+          setFileName('')
           setCsvHeaders([])
           setCsvRows([])
           return
         }
         setFile(selectedFile)
+        setFileName(selectedFile.name)
         setCsvHeaders(parsed.headers)
         setCsvRows(parsed.rows)
         setFileError('')
@@ -174,6 +180,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         const errorMessage = error instanceof Error ? error.message : String(error)
         setFileError(`Error parsing CSV: ${errorMessage}`)
         setFile(null)
+        setFileName('')
         setCsvHeaders([])
         setCsvRows([])
       }
@@ -297,6 +304,9 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       dispatch({ type: 'ADD_ACCOUNT', account: newAccount })
     }
 
+    // Generate a unique session ID for this import
+    const importSessionId = uid('import')
+
     // Dispatch the import action
     if (dataType === 'positions') {
       dispatch({
@@ -304,12 +314,16 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         accountId,
         mappedRows: finalRows,
         importDate: new Date().toISOString(),
+        importSessionId,
+        fileName,
       })
     } else {
       dispatch({
         type: 'IMPORT_TRANSACTIONS',
         accountId,
         mappedRows: finalRows,
+        importSessionId,
+        fileName,
       })
     }
 

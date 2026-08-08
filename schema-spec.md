@@ -2,7 +2,7 @@
 
 See also: [design.md](design.md), [product-behavior.md](product-behavior.md)
 
-All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `map` (MappingProfile).
+All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `map` (MappingProfile), `import` (ImportSession).
 
 ## Account
 
@@ -20,6 +20,7 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('pos')`. Regenerated fresh on every import — **not** stable across re-imports of the same `(accountId, symbol)` (differs from the original v1 plan) |
+| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which CSV import created this row. |
 | `accountId` | `string` | FK → `Account.id` |
 | `symbol` | `string` | |
 | `name` | `string \| null` | `null` if the mapping profile has no `name` column mapped. Never required (`name` removed from `POSITIONS_REQUIRED_FIELDS`). UI falls back to `symbol` when null. |
@@ -38,6 +39,7 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('closed')` |
+| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which import created this closed position. |
 | `accountId` | `string` | |
 | `symbol` | `string` | |
 | `name` | `string \| null` | Inherited verbatim from the `Position` that closed (preserves `null`) |
@@ -53,6 +55,7 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('tx')` |
+| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which CSV import created this row. |
 | `accountId` | `string` | |
 | `date` | `string` | ISO date, from CSV mapping |
 | `symbol` | `string` | |
@@ -72,6 +75,7 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('snap')` |
+| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which import created this snapshot. |
 | `accountId` | `string` | One snapshot per account per import |
 | `date` | `string` | ISO calendar date of the Positions import (not a timestamp) |
 | `value` | `number` | Sum of `shares * price` across that account's positions at import time |
@@ -89,6 +93,17 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | `constants?` | `Record<string, string>` | Constant values applied to every imported row, keyed by internal field name (e.g., `assetClass`, `category`) |
 | `createdAt` | `string` | ISO, set once |
 | `updatedAt` | `string` | ISO, bumped on every `updateProfile` call |
+
+## ImportSession
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `string` | `uid('import')` |
+| `importedAt` | `string` | ISO timestamp when the CSV was processed |
+| `kind` | `'positions' \| 'transactions'` | Type of data imported in this session |
+| `fileName` | `string` | Name of the uploaded CSV file |
+| `accountIds` | `string[]` | Array of `Account.id`s involved in this import (one or more if file spanned multiple accounts) |
+| `rowCount` | `number` | Number of rows successfully imported in this session |
 
 ### Required field sets
 
@@ -147,8 +162,8 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
-`category: TaxCategory | 'all'`, `range: string` (`'6m' | '1y' | 'ytd' | 'all'`, currently inert — see product-behavior.md), `tab: 'positions' | 'transactions'`, `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `assetClassFilter: string`, `retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'`, `posSearch: string`, `txTypeFilter: string`, `txSearch: string`, `showClosed: boolean`.
+`category: TaxCategory | 'all'`, `range: string` (`'6m' | '1y' | 'ytd' | 'all'`, currently inert — see product-behavior.md), `tab: 'positions' | 'transactions'`, `view: 'dashboard' | 'settings'`, `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `assetClassFilter: string`, `retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'`, `posSearch: string`, `txTypeFilter: string`, `txSearch: string`, `showClosed: boolean`.
 
 ## Persistence envelope
 
-IndexedDB (`persist.ts`): DB `portfolio_app_state_v1`, object store `app_state`, single key `'current'` holding the entire `AppState` object (all 6 collections + all UI fields) as one blob — no per-collection stores. On load, every collection field is coalesced against `initialState()` defaults (`loaded.x ?? defaults.x`), so a blob missing a newer collection/field loads with that field defaulted rather than throwing.
+IndexedDB (`persist.ts`): DB `portfolio_app_state_v1`, object store `app_state`, single key `'current'` holding the entire `AppState` object (all 7 collections + all UI fields) as one blob — no per-collection stores. On load, every collection field is coalesced against `initialState()` defaults (`loaded.x ?? defaults.x`), so a blob missing a newer collection/field loads with that field defaulted rather than throwing. `pendingImport?: { kind, profileId, rows, fileName }`.

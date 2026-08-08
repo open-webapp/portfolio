@@ -68,7 +68,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test1')
 
     // Verify MSFT is gone
     expect(result.positions.filter((p) => p.accountId === accountId)).toHaveLength(1)
@@ -125,7 +125,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test2')
 
     // Verify ClosedPosition for TSLA was created
     const closedTsla = result.closedPositions.find(
@@ -172,7 +172,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test3')
 
     // Verify symbol not added to closedPositions
     const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
@@ -208,7 +208,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test4')
 
     // Verify exactly one snapshot for this (accountId, date)
     const snapshots = result.snapshots.filter(
@@ -239,7 +239,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    let result = importPositions(state, accountId, newRows1, '2026-08-08')
+    let result = importPositions(state, accountId, newRows1, '2026-08-08', 'import-test5a')
     expect(result.snapshots).toHaveLength(1)
     const firstSnapshotValue = result.snapshots[0].value // 100 * 200 = 20000
 
@@ -255,7 +255,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    result = importPositions(result, accountId, newRows2, '2026-08-08')
+    result = importPositions(result, accountId, newRows2, '2026-08-08', 'import-test5b')
 
     // Still exactly one snapshot
     expect(result.snapshots).toHaveLength(1)
@@ -286,7 +286,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    let result = importPositions(state, accountId1, rows1, '2026-08-08')
+    let result = importPositions(state, accountId1, rows1, '2026-08-08', 'import-test6a')
 
     // Import for account 2
     const rows2 = [
@@ -300,7 +300,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    result = importPositions(result, accountId2, rows2, '2026-08-08')
+    result = importPositions(result, accountId2, rows2, '2026-08-08', 'import-test6b')
 
     // Verify two snapshots exist
     const snapshots = result.snapshots.filter((s) => s.date === '2026-08-08')
@@ -336,7 +336,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test7')
 
     // Verify no closed positions created
     const closedForAccount = result.closedPositions.filter((cp) => cp.accountId === accountId)
@@ -387,7 +387,7 @@ describe('positionsImport', () => {
     // Import without AAPL (to create ClosedPosition)
     const newRows: Record<string, string>[] = []
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test8')
 
     // Verify ClosedPosition has computed realizedGL
     const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
@@ -423,7 +423,7 @@ describe('positionsImport', () => {
     // Import without AAPL (to create ClosedPosition)
     const newRows: Record<string, string>[] = []
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test9')
 
     // Verify ClosedPosition has no realizedGL
     const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
@@ -468,7 +468,7 @@ describe('positionsImport', () => {
     ]
 
     const newRows: Record<string, string>[] = []
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test10')
 
     const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
     expect(closedAapl!.realizedGLBasis).toBe('transactions')
@@ -522,7 +522,7 @@ describe('positionsImport', () => {
     ]
 
     const newRows: Record<string, string>[] = []
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test11')
 
     const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
     // realizedGL = 25000 - (100 * 150) = 25000 - 15000 = 10000
@@ -565,7 +565,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId1, newRows, '2026-08-08')
+    const result = importPositions(state, accountId1, newRows, '2026-08-08', 'import-test12')
 
     // Verify account 2's position is unchanged
     const googl = result.positions.find((p) => p.symbol === 'GOOGL')
@@ -594,7 +594,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test13')
 
     const aapl = result.positions.find((p) => p.symbol === 'AAPL')
     expect(aapl).toBeDefined()
@@ -620,7 +620,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test14')
 
     const msft = result.positions.find((p) => p.symbol === 'MSFT')
     expect(msft).toBeDefined()
@@ -646,7 +646,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test15')
 
     const googl = result.positions.find((p) => p.symbol === 'GOOGL')
     expect(googl).toBeDefined()
@@ -672,7 +672,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test16')
 
     const tsla = result.positions.find((p) => p.symbol === 'TSLA')
     expect(tsla).toBeDefined()
@@ -697,7 +697,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test17')
 
     const aapl = result.positions.find((p) => p.symbol === 'AAPL')
     expect(aapl).toBeDefined()
@@ -723,7 +723,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test18')
 
     const msft = result.positions.find((p) => p.symbol === 'MSFT')
     expect(msft).toBeDefined()
@@ -749,7 +749,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test19')
 
     const googl = result.positions.find((p) => p.symbol === 'GOOGL')
     expect(googl).toBeDefined()
@@ -781,7 +781,7 @@ describe('positionsImport', () => {
     // Import without TSLA (to create ClosedPosition)
     const newRows: Record<string, string>[] = []
 
-    const result = importPositions(state, accountId, newRows, '2026-08-08')
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test20')
 
     // Verify ClosedPosition inherits null name
     const closedTsla = result.closedPositions.find((cp) => cp.symbol === 'TSLA')
@@ -859,7 +859,7 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, rows, '2026-01-15')
+    const result = importPositions(state, accountId, rows, '2026-01-15', 'import-test21')
 
     expect(result.positions).toHaveLength(1)
     expect(result.positions[0].symbol).toBe('AAPL')
@@ -886,11 +886,175 @@ describe('positionsImport', () => {
       },
     ]
 
-    const result = importPositions(state, accountId, rows, '2026-01-15')
+    const result = importPositions(state, accountId, rows, '2026-01-15', 'import-test22')
 
     expect(result.positions).toHaveLength(1)
     expect(result.positions[0].shares).toBe(45000)
     expect(result.positions[0].avgCost).toBe(3.79)
     expect(result.positions[0].price).toBe(12.47)
+  })
+
+  // Task 5 new tests: importSessionId stamping
+
+  // New position rows get importSessionId equal to the value passed in
+  it('Task 5.1: New position rows get importSessionId', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    const accountId = state.accounts[0].id
+
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+      {
+        symbol: 'MSFT',
+        name: 'Microsoft Corp.',
+        assetClass: 'Equity',
+        shares: '50',
+        avgCost: '300',
+        price: '400',
+      },
+    ]
+
+    const sessionId = 'session-new-positions-test'
+    const result = importPositions(state, accountId, newRows, '2026-08-08', sessionId)
+
+    // All positions should have the passed importSessionId
+    const positions = result.positions.filter((p) => p.accountId === accountId)
+    expect(positions).toHaveLength(2)
+    expect(positions.every((p) => p.importSessionId === sessionId)).toBe(true)
+    expect(positions[0].importSessionId).toBe('session-new-positions-test')
+    expect(positions[1].importSessionId).toBe('session-new-positions-test')
+  })
+
+  // New ClosedPosition rows get the current call's importSessionId, not the old position's
+  it('Task 5.2: New ClosedPosition rows get current importSessionId', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    const accountId = state.accounts[0].id
+
+    // Add old position with a different session id
+    state.positions = [
+      {
+        id: 'pos-1',
+        importSessionId: 'session-old',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        taxes: null,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Import without AAPL to create a ClosedPosition
+    const newRows: Record<string, string>[] = []
+    const sessionId = 'session-closed-test'
+    const result = importPositions(state, accountId, newRows, '2026-08-08', sessionId)
+
+    // The new ClosedPosition should have the current session id, not the old one
+    const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
+    expect(closedAapl).toBeDefined()
+    expect(closedAapl!.importSessionId).toBe('session-closed-test')
+    expect(closedAapl!.importSessionId).not.toBe('session-old')
+  })
+
+  // New PortfolioSnapshot gets the current call's importSessionId
+  it('Task 5.3: New PortfolioSnapshot gets current importSessionId', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    const accountId = state.accounts[0].id
+
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+    ]
+
+    const sessionId = 'session-snapshot-test'
+    const result = importPositions(state, accountId, newRows, '2026-08-08', sessionId)
+
+    // The snapshot should have the passed importSessionId
+    const snapshot = result.snapshots.find(
+      (s) => s.accountId === accountId && s.date === '2026-08-08'
+    )
+    expect(snapshot).toBeDefined()
+    expect(snapshot!.importSessionId).toBe('session-snapshot-test')
+  })
+
+  // Two sequential imports with different session ids
+  it('Task 5.4: Sequential imports with different session ids', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    const accountId = state.accounts[0].id
+
+    // First import with AAPL and MSFT
+    const rows1 = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+      {
+        symbol: 'MSFT',
+        name: 'Microsoft Corp.',
+        assetClass: 'Equity',
+        shares: '50',
+        avgCost: '300',
+        price: '400',
+      },
+    ]
+
+    let result = importPositions(state, accountId, rows1, '2026-08-08', 'session-first')
+    expect(result.positions).toHaveLength(2)
+    expect(result.positions.every((p) => p.importSessionId === 'session-first')).toBe(true)
+    expect(result.snapshots[0].importSessionId).toBe('session-first')
+
+    // Second import with only AAPL (MSFT becomes closed)
+    const rows2 = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '120',
+        avgCost: '160',
+        price: '210',
+      },
+    ]
+
+    result = importPositions(result, accountId, rows2, '2026-08-08', 'session-second')
+
+    // New AAPL position should have session-second id
+    const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+    expect(aapl).toBeDefined()
+    expect(aapl!.importSessionId).toBe('session-second')
+
+    // MSFT should now be a ClosedPosition with session-second id (created during second call)
+    const closedMsft = result.closedPositions.find((cp) => cp.symbol === 'MSFT')
+    expect(closedMsft).toBeDefined()
+    expect(closedMsft!.importSessionId).toBe('session-second')
+
+    // Snapshot should have session-second id (updated during second call)
+    const snapshot = result.snapshots.find(
+      (s) => s.accountId === accountId && s.date === '2026-08-08'
+    )
+    expect(snapshot).toBeDefined()
+    expect(snapshot!.importSessionId).toBe('session-second')
   })
 })

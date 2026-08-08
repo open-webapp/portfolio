@@ -6,6 +6,7 @@ import type {
   PortfolioSnapshot,
   MappingProfile,
   TaxCategory,
+  ImportSession,
 } from './types'
 
 export interface AppState {
@@ -16,11 +17,13 @@ export interface AppState {
   transactions: Transaction[]
   snapshots: PortfolioSnapshot[]
   mappingProfiles: MappingProfile[]
+  importSessions: ImportSession[]
 
   // UI state
   category: TaxCategory | 'all'
   range: string // e.g. '6m', '1y', 'ytd', 'all'
   tab: 'positions' | 'transactions'
+  view: 'dashboard' | 'settings'
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   assetClassFilter: string // 'All' or specific class
@@ -29,6 +32,12 @@ export interface AppState {
   txTypeFilter: string // 'All' or specific type like 'Buy'
   txSearch: string // search text for transactions
   showClosed: boolean // toggle closed positions table
+  pendingImport?: {
+    kind: 'positions' | 'transactions'
+    profileId: string
+    rows: Record<string, string>[]
+    fileName: string
+  }
 }
 
 /**
@@ -43,11 +52,13 @@ export function initialState(): AppState {
     transactions: [],
     snapshots: [],
     mappingProfiles: [],
+    importSessions: [],
 
     // UI state
     category: 'all',
     range: '1y',
     tab: 'positions',
+    view: 'dashboard',
     sortKey: 'symbol',
     sortDir: 'asc',
     assetClassFilter: 'All',
@@ -96,6 +107,12 @@ export function deleteAccount(state: AppState, accountId: string): AppState {
     closedPositions: state.closedPositions.filter((c) => c.accountId !== accountId),
     transactions: state.transactions.filter((t) => t.accountId !== accountId),
     snapshots: state.snapshots.filter((s) => s.accountId !== accountId),
+    importSessions: state.importSessions
+      .map((session) => ({
+        ...session,
+        accountIds: session.accountIds.filter((id) => id !== accountId),
+      }))
+      .filter((session) => session.accountIds.length > 0),
   }
 }
 
@@ -244,6 +261,42 @@ export function toggleShowClosed(state: AppState): AppState {
   return {
     ...state,
     showClosed: !state.showClosed,
+  }
+}
+
+/**
+ * Add a new import session (to be implemented in reducer cases).
+ * Prepends the session to the list (newest first), then caps at 50 sessions.
+ */
+export function addImportSession(state: AppState, session: ImportSession): AppState {
+  return {
+    ...state,
+    importSessions: [session, ...state.importSessions].slice(0, 50),
+  }
+}
+
+/**
+ * Delete an import session by ID (to be implemented in reducer cases).
+ * Removes the session entry and all data rows tagged with that sessionId.
+ */
+export function deleteImportSession(state: AppState, sessionId: string): AppState {
+  return {
+    ...state,
+    positions: state.positions.filter((p) => p.importSessionId !== sessionId),
+    closedPositions: state.closedPositions.filter((c) => c.importSessionId !== sessionId),
+    transactions: state.transactions.filter((t) => t.importSessionId !== sessionId),
+    snapshots: state.snapshots.filter((s) => s.importSessionId !== sessionId),
+    importSessions: state.importSessions.filter((s) => s.id !== sessionId),
+  }
+}
+
+/**
+ * Set the current view (to be implemented in reducer cases).
+ */
+export function setView(state: AppState, view: 'dashboard' | 'settings'): AppState {
+  return {
+    ...state,
+    view,
   }
 }
 

@@ -6,7 +6,7 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Top to bottom: `Nav` → 5 `SummaryCards` → 2-column chart grid (`PerformanceChart`, `AllocationChart`) → tab selector (Positions / Transactions) → Import button + table for the active tab.
+Top to bottom: `Nav` (with gear button navigating to Settings page) → 5 `SummaryCards` → 2-column chart grid (`PerformanceChart`, `AllocationChart`) → tab selector (Positions / Transactions) → Import button + table for the active tab.
 
 ## Nav
 
@@ -77,6 +77,18 @@ A single "Import CSV" button (visible on both Positions and Transactions tabs) o
 - **"Import complete"** screen: shows a success message and row-count summary, allowing the user to review before closing.
 - **"Back"** from any step: returns to the prior step, preserving file, mapping, and edits.
 - **"Cancel"** from any step: closes the dialog and fully resets local state (file, mapping, edits, destination account).
+
+## Settings page
+
+A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Contains three sections:
+
+**Drive backup**: Shows current sync status (connected/disconnected). A "Sync Now" button triggers `syncBackup(state)` to upload the current `AppState` to Google Drive. When connected, a "Disconnect" button calls `restoreBackup()` flow and clears the Drive link. Displays the date of the last successful backup, or "Never synced" if none exists.
+
+**Import Sessions**: A table listing all past CSV imports with columns: File name, Kind (Positions/Transactions), Date, Accounts affected (comma-separated account names), Row count. Each row has a "Copy" button (copies session metadata to clipboard, displays a confirmation toast) and a "Delete" button (prompts `window.confirm()` before removing the session and its associations from `state.importSessions`).
+
+**Accounts**: A list of all accounts with inline edit/delete affordances. Each account row shows: name (editable), account number (editable), tax category (dropdown: Taxable/Non-Taxable/Tax-Deferred), retirement toggle (checkbox). Deleting an account via the trash-icon button prompts with `window.confirm('Delete account and all associated data? This is permanent.')` — if confirmed, the account and all its positions, transactions, snapshots, and import sessions are cascade-deleted.
+
+**Back button**: Returns to the dashboard.
 
 ## Formatting conventions
 

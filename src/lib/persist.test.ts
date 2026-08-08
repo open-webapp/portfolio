@@ -109,11 +109,13 @@ describe('IndexedDB persistence', () => {
           },
         },
       ],
+      importSessions: [],
 
       // UI state
       category: 'all',
       range: '1y',
       tab: 'positions',
+      view: 'dashboard',
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
@@ -237,5 +239,67 @@ describe('IndexedDB persistence', () => {
     expect(loaded?.txTypeFilter).toBe('Sell')
     expect(loaded?.txSearch).toBe('test transaction')
     expect(loaded?.showClosed).toBe(true)
+  })
+
+  it('loads missing importSessions and view with defaults', async () => {
+    const preExistingState: Partial<AppState> = {
+      accounts: [],
+      positions: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      // Missing importSessions and view
+    }
+
+    // Manually save a pre-migration state to IndexedDB
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('portfolio_app_state_v1', 1)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result
+        if (!db.objectStoreNames.contains('app_state')) {
+          db.createObjectStore('app_state')
+        }
+      }
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('app_state', 'readwrite')
+      const store = transaction.objectStore('app_state')
+      const request = store.put(preExistingState, 'current')
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve()
+    })
+
+    // Load and verify migration tolerance
+    const loaded = await loadPersistedApp()
+
+    expect(loaded).not.toBeNull()
+    expect(loaded?.importSessions).toEqual([])
+    expect(loaded?.view).toBe('dashboard')
+  })
+
+  it('round-trip with populated importSessions and non-default view', async () => {
+    const stateWithNewFields: AppState = {
+      ...initialState(),
+      importSessions: [
+        {
+          id: 'session1',
+          fileName: 'positions_2024.csv',
+          kind: 'positions',
+          importedAt: '2024-01-15T10:30:00Z',
+          accountIds: ['acc1'],
+          rowCount: 10,
+        },
+      ],
+      view: 'settings',
+    }
+
+    await savePersistedApp(stateWithNewFields)
+    const loaded = await loadPersistedApp()
+
+    expect(loaded?.importSessions).toEqual(stateWithNewFields.importSessions)
+    expect(loaded?.view).toBe('settings')
   })
 })

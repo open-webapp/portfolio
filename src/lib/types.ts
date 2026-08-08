@@ -12,8 +12,18 @@ export interface Account {
   createdAt: string
 }
 
+export interface ImportSession {
+  id: string
+  importedAt: string
+  kind: 'positions' | 'transactions'
+  fileName: string
+  accountIds: string[]
+  rowCount: number
+}
+
 export interface Position {
   id: string
+  importSessionId: string
   accountId: string
   symbol: string
   name: string | null
@@ -28,6 +38,7 @@ export interface Position {
 
 export interface ClosedPosition {
   id: string
+  importSessionId: string
   accountId: string
   symbol: string
   name: string | null
@@ -39,6 +50,7 @@ export interface ClosedPosition {
 
 export interface Transaction {
   id: string
+  importSessionId: string
   accountId: string
   date: string
   symbol: string
@@ -52,6 +64,7 @@ export interface Transaction {
 
 export interface PortfolioSnapshot {
   id: string
+  importSessionId: string
   accountId: string
   date: string
   value: number

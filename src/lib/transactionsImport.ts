@@ -38,7 +38,8 @@ export function transactionNaturalKey(row: Record<string, string>): string {
 export function importTransactions(
   state: AppState,
   accountId: string,
-  mappedRows: Record<string, string>[]
+  mappedRows: Record<string, string>[],
+  importSessionId: string
 ): AppState {
   // Get existing transactions for this account
   const existingTransactions = state.transactions.filter((t) => t.accountId === accountId)
@@ -77,6 +78,7 @@ export function importTransactions(
     // Create new transaction with fresh UID
     const newTransaction: Transaction = {
       id: uid('tx'),
+      importSessionId,
       accountId,
       date: row.date,
       symbol: row.symbol,

@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect } from 'react'
 import type { AppState } from '../lib/state'
+import type { TaxCategory } from '../lib/types'
 import {
   getDriveConnection,
   connectDrive,
@@ -185,8 +186,158 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
         )}
       </section>
 
-      {/* Accounts placeholder */}
-      {/* Task 12 */}
+      {/* Accounts section */}
+      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
+        <h2>Accounts</h2>
+        {state.accounts.length === 0 ? (
+          <p>No accounts yet.</p>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Tax Category</th>
+                <th>Retirement</th>
+                <th style={{ width: '40px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.accounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  dispatch={dispatch}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
     </div>
+  )
+}
+
+function AccountRow({
+  account,
+  dispatch,
+}: {
+  account: AppState['accounts'][number]
+  dispatch: (action: any) => void
+}) {
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [editedName, setEditedName] = useState(account.name)
+
+  const handleNameBlur = () => {
+    if (editedName.trim() && editedName !== account.name) {
+      dispatch({
+        type: 'UPDATE_ACCOUNT',
+        accountId: account.id,
+        patch: { name: editedName.trim() },
+      })
+    }
+    setEditedName(account.name)
+    setIsEditingName(false)
+  }
+
+  const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleNameBlur()
+    } else if (e.key === 'Escape') {
+      setEditedName(account.name)
+      setIsEditingName(false)
+    }
+  }
+
+  const handleTaxCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newCategory = e.target.value as TaxCategory
+    dispatch({
+      type: 'UPDATE_ACCOUNT',
+      accountId: account.id,
+      patch: { taxCategory: newCategory },
+    })
+  }
+
+  const handleRetirementChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    dispatch({
+      type: 'UPDATE_ACCOUNT',
+      accountId: account.id,
+      patch: { retirement: e.target.checked },
+    })
+  }
+
+  const handleDelete = () => {
+    const confirmed = window.confirm(
+      'Delete this account? This removes all its positions, closed positions, transactions, and snapshots.'
+    )
+    if (confirmed) {
+      dispatch({ type: 'DELETE_ACCOUNT', accountId: account.id })
+    }
+  }
+
+  return (
+    <tr>
+      <td>
+        {isEditingName ? (
+          <input
+            className="input"
+            type="text"
+            value={editedName}
+            onChange={(e) => setEditedName(e.target.value)}
+            onBlur={handleNameBlur}
+            onKeyDown={handleNameKeyDown}
+            autoFocus
+            style={{ width: '100%' }}
+          />
+        ) : (
+          <span
+            onClick={() => setIsEditingName(true)}
+            style={{ cursor: 'pointer', textDecoration: 'underline' }}
+            title="Click to edit"
+          >
+            {account.name}
+          </span>
+        )}
+      </td>
+      <td>
+        <select
+          className="input"
+          value={account.taxCategory}
+          onChange={handleTaxCategoryChange}
+          style={{ width: '100%' }}
+        >
+          <option value="taxable">Taxable</option>
+          <option value="nonTaxable">Non-Taxable</option>
+          <option value="taxDeferred">Tax-Deferred</option>
+        </select>
+      </td>
+      <td>
+        <input
+          type="checkbox"
+          checked={account.retirement}
+          onChange={handleRetirementChange}
+        />
+      </td>
+      <td style={{ textAlign: 'center', paddingRight: '8px' }}>
+        <button
+          onClick={handleDelete}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-text-secondary)',
+            transition: 'color 0.2s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+          title="Delete this account"
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
   )
 }

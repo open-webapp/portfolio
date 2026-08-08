@@ -334,6 +334,220 @@ describe('SettingsPage', () => {
     })
   })
 
+  describe('Accounts section', () => {
+    beforeEach(() => {
+      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(null)
+    })
+
+    it('shows empty-state text when accounts is empty', () => {
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const headings = screen.getAllByRole('heading', { name: 'Accounts' })
+      expect(headings.length).toBeGreaterThan(0)
+      expect(screen.getByText('No accounts yet.')).toBeTruthy()
+    })
+
+    it('renders one row per account with current name/taxCategory/retirement values', () => {
+      const state = initialState()
+      state.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '123',
+          name: 'Main Account',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+        {
+          id: 'acc2',
+          accountNumber: '456',
+          name: 'Retirement IRA',
+          taxCategory: 'taxDeferred',
+          retirement: true,
+          createdAt: '2024-01-01',
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      // Check first account row
+      expect(screen.getByText('Main Account')).toBeTruthy()
+      // Check retirement checkbox for first account (not checked)
+      const checkboxes = screen.getAllByRole('checkbox')
+      expect(checkboxes[0].checked).toBe(false)
+
+      // Check second account row
+      expect(screen.getByText('Retirement IRA')).toBeTruthy()
+      // Check retirement checkbox for second account (checked)
+      expect(checkboxes[1].checked).toBe(true)
+    })
+
+    it('editing name and blurring dispatches UPDATE_ACCOUNT with the new name', () => {
+      const state = initialState()
+      state.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '123',
+          name: 'Old Name',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const nameCell = screen.getByText('Old Name')
+      fireEvent.click(nameCell)
+
+      const input = screen.getByDisplayValue('Old Name') as HTMLInputElement
+      expect(input).toBeTruthy()
+      expect(input.tagName).toBe('INPUT')
+
+      fireEvent.change(input, { target: { value: 'New Name' } })
+      fireEvent.blur(input)
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_ACCOUNT',
+        accountId: 'acc1',
+        patch: { name: 'New Name' },
+      })
+    })
+
+    it('pressing Enter in name input dispatches UPDATE_ACCOUNT and exits edit mode', () => {
+      const state = initialState()
+      state.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '123',
+          name: 'Old Name',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const nameCell = screen.getByText('Old Name')
+      fireEvent.click(nameCell)
+
+      const input = screen.getByDisplayValue('Old Name') as HTMLInputElement
+      fireEvent.change(input, { target: { value: 'New Name' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_ACCOUNT',
+        accountId: 'acc1',
+        patch: { name: 'New Name' },
+      })
+    })
+
+    it('changing taxCategory select dispatches UPDATE_ACCOUNT with the new category', () => {
+      const state = initialState()
+      state.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '123',
+          name: 'Test Account',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const selects = screen.getAllByRole('combobox')
+      fireEvent.change(selects[0], { target: { value: 'taxDeferred' } })
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_ACCOUNT',
+        accountId: 'acc1',
+        patch: { taxCategory: 'taxDeferred' },
+      })
+    })
+
+    it('toggling retirement checkbox dispatches UPDATE_ACCOUNT with the new boolean', () => {
+      const state = initialState()
+      state.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '123',
+          name: 'Test Account',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const checkbox = screen.getAllByRole('checkbox')[0]
+      fireEvent.click(checkbox)
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_ACCOUNT',
+        accountId: 'acc1',
+        patch: { retirement: true },
+      })
+    })
+
+    it('delete button with confirm false does not dispatch', () => {
+      vi.mocked(global.confirm).mockReturnValue(false)
+      const state = initialState()
+      state.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '123',
+          name: 'Test Account',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const deleteButton = screen.getByTitle('Delete this account')
+      fireEvent.click(deleteButton)
+
+      expect(global.confirm).toHaveBeenCalledWith(
+        'Delete this account? This removes all its positions, closed positions, transactions, and snapshots.'
+      )
+      expect(mockDispatch).not.toHaveBeenCalled()
+    })
+
+    it('delete button with confirm true dispatches DELETE_ACCOUNT with the right accountId', () => {
+      vi.mocked(global.confirm).mockReturnValue(true)
+      const state = initialState()
+      state.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '123',
+          name: 'Test Account',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const deleteButton = screen.getByTitle('Delete this account')
+      fireEvent.click(deleteButton)
+
+      expect(global.confirm).toHaveBeenCalledWith(
+        'Delete this account? This removes all its positions, closed positions, transactions, and snapshots.'
+      )
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'DELETE_ACCOUNT',
+        accountId: 'acc1',
+      })
+    })
+  })
+
   describe('Import Sessions section', () => {
     beforeEach(() => {
       vi.mocked(driveModule.getDriveConnection).mockResolvedValue(null)
@@ -344,7 +558,6 @@ describe('SettingsPage', () => {
       render(<SettingsPage state={state} dispatch={mockDispatch} />)
 
       expect(screen.getByText('No imports yet.')).toBeTruthy()
-      expect(screen.queryByRole('table')).toBeFalsy()
     })
 
     it('renders table with one row per import session', () => {
@@ -374,8 +587,8 @@ describe('SettingsPage', () => {
 
       render(<SettingsPage state={state} dispatch={mockDispatch} />)
 
-      const table = screen.getByRole('table')
-      expect(table).toBeTruthy()
+      const tables = screen.getAllByRole('table')
+      expect(tables.length).toBeGreaterThan(0)
 
       // Check first row
       expect(screen.getByText('2024-01-15T10:30:00Z')).toBeTruthy()
