@@ -2,17 +2,13 @@ import { useReducer, useEffect, useRef, useState } from 'react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { loadPersistedApp, savePersistedApp } from './lib/persist'
-import { importPositions } from './lib/positionsImport'
-import { importTransactions } from './lib/transactionsImport'
-import { resolveAccountNumber, findOrCreateAccountPrompt } from './lib/accounts'
 import { Nav } from './components/Nav'
 import { SummaryCards } from './components/SummaryCards'
 import { PerformanceChart } from './components/PerformanceChart'
 import { AllocationChart } from './components/AllocationChart'
 import { PositionsTable } from './components/PositionsTable'
 import { TransactionsTable } from './components/TransactionsTable'
-import { ImportPositionsDialog } from './components/import/ImportPositionsDialog'
-import { ImportTransactionsDialog } from './components/import/ImportTransactionsDialog'
+import { ImportDialog } from './components/import/ImportDialog'
 import './App.css'
 
 /**
@@ -76,88 +72,7 @@ function App() {
     }
   }, [state, isHydrated])
 
-  // Process pending import effect
-  useEffect(() => {
-    if (!state.pendingImport || !isHydrated) return
-
-    const processPendingImport = () => {
-      const { kind, rows, profileId } = state.pendingImport!
-      const profile = state.mappingProfiles.find((p) => p.id === profileId)
-
-      if (!profile) {
-        console.error('Profile not found:', profileId)
-        dispatch({ type: 'SET_PENDING_IMPORT', pendingImport: undefined })
-        return
-      }
-
-      // Require accountNumberColumn to be mapped
-      if (!profile.accountNumberColumn) {
-        alert(
-          `The mapping profile "${profile.name}" doesn't have an Account Number column mapped.\n\nPlease go back and either:\n1. Edit the profile to map an "Account Number" column from your CSV\n2. Or use a different profile that has this mapping`
-        )
-        dispatch({ type: 'SET_PENDING_IMPORT', pendingImport: undefined })
-        return
-      }
-
-      // Group rows by accountNumber, then resolve to accountId
-      const rowsByAccount = new Map<string, Record<string, string>[]>()
-      const accountNumbersToResolve = new Set<string>()
-
-      for (const row of rows) {
-        const accountNumber = resolveAccountNumber(row, profile)
-        if (!accountNumber) {
-          // This shouldn't happen if accountNumberColumn is properly mapped and column exists in CSV
-          console.warn('No account number resolved from row (column missing in CSV?):', row)
-          continue
-        }
-
-        accountNumbersToResolve.add(accountNumber)
-        if (!rowsByAccount.has(accountNumber)) {
-          rowsByAccount.set(accountNumber, [])
-        }
-        rowsByAccount.get(accountNumber)!.push(row)
-      }
-
-      // Resolve each account number to an accountId; skip if any needs prompt
-      let updatedState = state
-      const accountMap = new Map<string, string>()
-
-      for (const accountNumber of accountNumbersToResolve) {
-        const account = findOrCreateAccountPrompt(updatedState, accountNumber)
-
-        if (account === 'needs-prompt') {
-          // TODO: show account resolution prompt
-          console.warn('Account resolution prompt needed for:', accountNumber)
-          return
-        }
-
-        accountMap.set(accountNumber, account.id)
-      }
-
-      // Import rows for each account
-      for (const [accountNumber, accountRows] of rowsByAccount) {
-        const accountId = accountMap.get(accountNumber)
-        if (!accountId) continue
-
-        if (kind === 'positions') {
-          const today = new Date().toISOString().split('T')[0]
-          updatedState = importPositions(updatedState, accountId, accountRows, today)
-        } else if (kind === 'transactions') {
-          updatedState = importTransactions(updatedState, accountId, accountRows)
-        }
-      }
-
-      // Update state with imported data and clear pendingImport
-      dispatch({
-        type: '__SET_STATE',
-        newState: { ...updatedState, pendingImport: undefined },
-      })
-    }
-
-    processPendingImport()
-  }, [state.pendingImport, state.mappingProfiles, state.accounts, isHydrated])
-
-  // Don't render until hydrated
+// Don't render until hydrated
   if (!isHydrated) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
@@ -168,6 +83,7 @@ function App() {
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+
       {/* Navigation: category tabs, retirement filter, date range */}
       <Nav state={state} dispatch={dispatch} />
 
@@ -231,27 +147,16 @@ function App() {
             </button>
           </div>
 
+          {/* Import Dialog - unified, visible on all tabs */}
+          <div style={{ marginBottom: 'var(--space-4)', display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
+          </div>
+
           {/* Positions tab */}
-          {state.tab === 'positions' && (
-            <div>
-              {/* Import button */}
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <ImportPositionsDialog state={state} dispatch={dispatch} />
-              </div>
-              <PositionsTable state={state} dispatch={dispatch} />
-            </div>
-          )}
+          {state.tab === 'positions' && <PositionsTable state={state} dispatch={dispatch} />}
 
           {/* Transactions tab */}
-          {state.tab === 'transactions' && (
-            <div>
-              {/* Import button */}
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <ImportTransactionsDialog state={state} dispatch={dispatch} />
-              </div>
-              <TransactionsTable state={state} dispatch={dispatch} />
-            </div>
-          )}
+          {state.tab === 'transactions' && <TransactionsTable state={state} dispatch={dispatch} />}
         </div>
       </div>
     </div>

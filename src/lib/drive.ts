@@ -1,4 +1,5 @@
 import { createDriveSync } from '@open-webapp/drive-sync'
+import type { Connection } from '@open-webapp/drive-sync'
 import type { AppState } from './state'
 
 /**
@@ -15,6 +16,29 @@ export const drive = createDriveSync({
 
 const APP_STATE_FILENAME = 'portfolio-state.json'
 const APP_PROJECT_ID = 'app'
+
+/**
+ * Read the current Drive connection (no network calls, no reauth prompt).
+ * Returns null if never connected.
+ */
+export async function getDriveConnection(): Promise<Connection | null> {
+  return drive.project(APP_PROJECT_ID).getConnection()
+}
+
+/**
+ * Start the interactive Google OAuth connect flow for the Portfolio project.
+ */
+export async function connectDrive(): Promise<Connection> {
+  return drive.project(APP_PROJECT_ID).connect()
+}
+
+/**
+ * Disconnect the Portfolio project: revokes the cached token and clears the
+ * stored connection.
+ */
+export async function disconnectDrive(): Promise<void> {
+  return drive.project(APP_PROJECT_ID).disconnect()
+}
 
 /**
  * Sync app state to Google Drive as a JSON backup file.

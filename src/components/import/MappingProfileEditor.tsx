@@ -1,12 +1,19 @@
 import { useCallback, useState } from 'react'
 import type { MappingProfile } from '../../lib/types'
-import { POSITIONS_REQUIRED_FIELDS, TRANSACTIONS_REQUIRED_FIELDS } from '../../lib/types'
+import {
+  POSITIONS_REQUIRED_FIELDS,
+  POSITIONS_OPTIONAL_FIELDS,
+  TRANSACTIONS_REQUIRED_FIELDS,
+  TRANSACTIONS_OPTIONAL_FIELDS,
+} from '../../lib/types'
 import { createProfile, updateProfile, validateProfile } from '../../lib/mappingProfiles'
 
 export interface MappingProfileEditorProps {
   kind: 'positions' | 'transactions'
   csvHeaders: string[]
   existingProfile?: MappingProfile
+  constants?: Record<string, string>
+  onConstantsChange?: (field: string, value: string) => void
   onSave: (profile: MappingProfile) => void
   onCancel: () => void
 }
@@ -19,11 +26,15 @@ export function MappingProfileEditor({
   kind,
   csvHeaders,
   existingProfile,
+  constants: propsConstants,
+  onConstantsChange,
   onSave,
   onCancel,
 }: MappingProfileEditorProps) {
   const requiredFields =
     kind === 'positions' ? POSITIONS_REQUIRED_FIELDS : TRANSACTIONS_REQUIRED_FIELDS
+  const optionalFields =
+    kind === 'positions' ? POSITIONS_OPTIONAL_FIELDS : TRANSACTIONS_OPTIONAL_FIELDS
 
   const [profileName, setProfileName] = useState(
     existingProfile?.name || `${kind} Profile`
@@ -31,33 +42,76 @@ export function MappingProfileEditor({
   const [fieldMap, setFieldMap] = useState<Record<string, string>>(
     existingProfile?.fieldMap || {}
   )
-  const [accountNumberColumn, setAccountNumberColumn] = useState(
-    existingProfile?.accountNumberColumn || ''
+  const [localConstants, setLocalConstants] = useState<Record<string, string>>(
+    existingProfile?.constants || propsConstants || {}
   )
   const [errors, setErrors] = useState<string[]>([])
 
   const handleFieldMapChange = useCallback(
     (requiredField: string, csvColumn: string) => {
-      setFieldMap((prev) => ({
-        ...prev,
-        [csvColumn]: requiredField,
-      }))
+      if (csvColumn === '') {
+        // Clear mapping for this field
+        setFieldMap((prev) => {
+          const next = { ...prev }
+          delete next[csvColumn]
+          return next
+        })
+        // Also clear any constant for this field
+        setLocalConstants((prev) => {
+          const next = { ...prev }
+          delete next[requiredField]
+          return next
+        })
+      } else if (csvColumn === '__CONSTANT__') {
+        // User selected "Enter a value..." - remove from fieldMap, add placeholder to constants
+        setFieldMap((prev) => {
+          const next = { ...prev }
+          // Remove any CSV column mapping for this field
+          for (const [col, field] of Object.entries(prev)) {
+            if (field === requiredField) {
+              delete next[col]
+            }
+          }
+          return next
+        })
+        // Add placeholder to constants so input appears
+        setLocalConstants((prev) => ({
+          ...prev,
+          [requiredField]: prev[requiredField] || '',
+        }))
+      } else {
+        // Normal CSV column mapping
+        setFieldMap((prev) => ({
+          ...prev,
+          [csvColumn]: requiredField,
+        }))
+        // Clear any constant for this field when mapping to a CSV column
+        setLocalConstants((prev) => {
+          const next = { ...prev }
+          delete next[requiredField]
+          return next
+        })
+      }
     },
     []
   )
 
-  const handleAccountNumberColumnChange = useCallback(
-    (csvColumn: string) => {
-      setAccountNumberColumn(csvColumn)
+  const handleConstantChange = useCallback(
+    (field: string, value: string) => {
+      setLocalConstants((prev) => ({
+        ...prev,
+        [field]: value,
+      }))
+      onConstantsChange?.(field, value)
     },
-    []
+    [onConstantsChange]
   )
 
   const handleSave = useCallback(() => {
     // Build a new profile object to validate
     const newProfile = existingProfile
-      ? updateProfile(existingProfile, profileName, fieldMap, accountNumberColumn)
-      : createProfile(profileName, kind, fieldMap, accountNumberColumn)
+      ? updateProfile(existingProfile, profileName, fieldMap, localConstants)
+      : createProfile(profileName, kind, fieldMap, localConstants)
 
     // Validate the profile
     const validation = validateProfile(newProfile, kind)
@@ -68,7 +122,7 @@ export function MappingProfileEditor({
 
     setErrors([])
     onSave(newProfile)
-  }, [existingProfile, profileName, fieldMap, accountNumberColumn, kind, onSave])
+  }, [existingProfile, profileName, fieldMap, localConstants, kind, onSave])
 
   // Reverse fieldMap to show which CSV column is mapped to each required field
   const reverseMap: Record<string, string> = {}
@@ -105,56 +159,131 @@ export function MappingProfileEditor({
       <div style={{ marginBottom: 'var(--space-3)' }}>
         <strong>Map Required Fields:</strong>
         {(requiredFields as readonly string[]).map((requiredField) => (
-          <div
-            key={requiredField}
-            style={{
-              marginTop: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <label style={{ minWidth: '120px', fontWeight: '500' }}>
-              {requiredField}:
-            </label>
-            <select
-              className="input"
-              value={reverseMap[requiredField] || ''}
-              onChange={(e) =>
-                handleFieldMapChange(requiredField, e.target.value)
-              }
-              style={{ flex: 1, maxWidth: '200px' }}
+          <div key={requiredField}>
+            <div
+              style={{
+                marginTop: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
             >
-              <option value="">-- Select CSV column --</option>
-              {csvHeaders.map((header) => (
-                <option key={header} value={header}>
-                  {header}
-                </option>
-              ))}
-            </select>
+              <label style={{ minWidth: '120px', fontWeight: '500' }}>
+                {requiredField}:
+              </label>
+              <select
+                className="input"
+                value={
+                  localConstants[requiredField] !== undefined
+                    ? '__CONSTANT__'
+                    : reverseMap[requiredField] || ''
+                }
+                onChange={(e) =>
+                  handleFieldMapChange(requiredField, e.target.value)
+                }
+                style={{ flex: 1, maxWidth: '200px' }}
+              >
+                <option value="">-- Select CSV column --</option>
+                {csvHeaders.map((header) => (
+                  <option key={header} value={header}>
+                    {header}
+                  </option>
+                ))}
+                <option value="__CONSTANT__">Enter a value...</option>
+              </select>
+            </div>
+            {localConstants[requiredField] !== undefined && (
+              <div
+                style={{
+                  marginTop: '6px',
+                  marginLeft: '128px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <label style={{ fontSize: '0.9em', color: 'var(--color-text-secondary)' }}>
+                  Value:
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  value={localConstants[requiredField] || ''}
+                  onChange={(e) => handleConstantChange(requiredField, e.target.value)}
+                  style={{ flex: 1, maxWidth: '200px' }}
+                  placeholder="Enter constant value"
+                />
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      {/* Optional account number column */}
-      <div style={{ marginBottom: 'var(--space-3)' }}>
-        <label>
-          Account Number Column (optional):
-          <select
-            className="input"
-            value={accountNumberColumn}
-            onChange={(e) => handleAccountNumberColumnChange(e.target.value)}
-            style={{ marginLeft: 'var(--space-2)', width: '200px' }}
-          >
-            <option value="">-- None --</option>
-            {csvHeaders.map((header) => (
-              <option key={header} value={header}>
-                {header}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {/* Optional fields mapping */}
+      {optionalFields.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <strong>Map Optional Fields:</strong>
+          {(optionalFields as readonly string[]).map((optionalField) => (
+            <div key={optionalField}>
+              <div
+                style={{
+                  marginTop: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <label style={{ minWidth: '120px', fontWeight: '500' }}>
+                  {optionalField}:
+                </label>
+                <select
+                  className="input"
+                  value={
+                    localConstants[optionalField] !== undefined
+                      ? '__CONSTANT__'
+                      : reverseMap[optionalField] || ''
+                  }
+                  onChange={(e) =>
+                    handleFieldMapChange(optionalField, e.target.value)
+                  }
+                  style={{ flex: 1, maxWidth: '200px' }}
+                >
+                  <option value="">-- Select CSV column --</option>
+                  {csvHeaders.map((header) => (
+                    <option key={header} value={header}>
+                      {header}
+                    </option>
+                  ))}
+                  <option value="__CONSTANT__">Enter a value...</option>
+                </select>
+              </div>
+              {localConstants[optionalField] !== undefined && (
+                <div
+                  style={{
+                    marginTop: '6px',
+                    marginLeft: '128px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <label style={{ fontSize: '0.9em', color: 'var(--color-text-secondary)' }}>
+                    Value:
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={localConstants[optionalField] || ''}
+                    onChange={(e) => handleConstantChange(optionalField, e.target.value)}
+                    style={{ flex: 1, maxWidth: '200px' }}
+                    placeholder="Enter constant value"
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Validation errors */}
       {errors.length > 0 && (
@@ -201,7 +330,7 @@ export function MappingProfileEditor({
             cursor: 'pointer',
           }}
         >
-          Save Profile
+          Save as profile
         </button>
       </div>
     </div>

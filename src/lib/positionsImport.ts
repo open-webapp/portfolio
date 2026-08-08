@@ -1,6 +1,7 @@
 import type { Position, ClosedPosition, PortfolioSnapshot } from './types'
 import type { AppState } from './state'
 import { uid } from './seed'
+import { parseCsvNumber } from './csv'
 
 /**
  * Import positions for an account:
@@ -27,15 +28,19 @@ export function importPositions(
 
   // (a) Create new positions from mappedRows
   // mappedRows already have mapped keys: symbol, name, assetClass, shares, avgCost, price
-  const newPositions: Position[] = mappedRows.map((row) => {
+  // Rows missing a required field (blank cells in the CSV) are skipped rather than
+  // imported as a position with fabricated NaN numbers.
+  const newPositions: Position[] = []
+
+  for (const row of mappedRows) {
     const newSymbol = row.symbol
-    const shares = parseFloat(row.shares)
-    let avgCost = parseFloat(row.avgCost)
-    let price = parseFloat(row.price)
+    const shares = parseCsvNumber(row.shares)
+    let avgCost = parseCsvNumber(row.avgCost)
+    let price = parseCsvNumber(row.price)
 
     // Compute avgCost from purchaseAmount if avgCost is invalid
     if ((isNaN(avgCost) || avgCost === null || avgCost === undefined) && row.purchaseAmount) {
-      const purchaseAmount = parseFloat(row.purchaseAmount)
+      const purchaseAmount = parseCsvNumber(row.purchaseAmount)
       if (!isNaN(purchaseAmount) && purchaseAmount !== null && purchaseAmount !== undefined) {
         avgCost = purchaseAmount / shares
       }
@@ -43,28 +48,34 @@ export function importPositions(
 
     // Compute price from marketValue if price is invalid
     if ((isNaN(price) || price === null || price === undefined) && row.marketValue) {
-      const marketValue = parseFloat(row.marketValue)
+      const marketValue = parseCsvNumber(row.marketValue)
       if (!isNaN(marketValue) && marketValue !== null && marketValue !== undefined) {
         price = marketValue / shares
       }
     }
 
+    if (!newSymbol || !row.assetClass || isNaN(shares) || isNaN(avgCost) || isNaN(price)) {
+      console.warn('Skipping row with missing/invalid required field(s):', row)
+      continue
+    }
+
     // Find old position with same symbol to preserve assetClassManualOverride
     const oldPosition = oldPositions.find((p) => p.symbol === newSymbol)
 
-    return {
+    newPositions.push({
       id: uid('pos'),
       accountId,
       symbol: newSymbol,
-      name: row.name,
+      name: row.name ?? null,
       assetClass: row.assetClass,
       assetClassManualOverride: oldPosition?.assetClassManualOverride,
       shares,
       avgCost,
       price,
+      taxes: row.taxes ? parseCsvNumber(row.taxes) : null,
       lastImportedAt: importDate,
-    }
-  })
+    })
+  }
 
   // Replace positions: remove old for this account, add new
   const replacedPositions = [

@@ -3,9 +3,11 @@ import {
   visiblePositions,
   visibleTransactions,
   totalValueSeries,
+  totalValueSeriesInRange,
   summaryCards,
   allocationBars,
-  performanceLinePoints
+  performanceLinePoints,
+  totalTaxesPaid
 } from './selectors'
 import { AppState, initialState } from './state'
 import { Account, Position, Transaction, PortfolioSnapshot } from './types'
@@ -622,5 +624,225 @@ describe('selectors', () => {
 
     expect(visible[0].symbol).toBe('AAAB')
     expect(visible[1].symbol).toBe('ZZZA')
+  })
+
+  // Test: totalTaxesPaid selector computes correct sum
+  it('totalTaxesPaid: sums all taxes from transactions in category', () => {
+    const transactions: Transaction[] = [
+      {
+        id: 'tx-1',
+        accountId: 'acc-1',
+        date: '2026-08-01',
+        symbol: 'AAPL',
+        type: 'Dividend',
+        shares: 0,
+        price: 0,
+        amount: 100,
+        taxes: 15,
+        importedAt: '2026-08-01'
+      },
+      {
+        id: 'tx-2',
+        accountId: 'acc-1',
+        date: '2026-08-02',
+        symbol: 'MSFT',
+        type: 'Dividend',
+        shares: 0,
+        price: 0,
+        amount: 50,
+        taxes: 7.5,
+        importedAt: '2026-08-02'
+      },
+      {
+        id: 'tx-3',
+        accountId: 'acc-2',
+        date: '2026-08-03',
+        symbol: 'GOOG',
+        type: 'Dividend',
+        shares: 0,
+        price: 0,
+        amount: 200,
+        taxes: 30,
+        importedAt: '2026-08-03'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      transactions,
+      category: 'taxable' // Only taxable accounts
+    })
+
+    const taxes = totalTaxesPaid(state)
+
+    // Should only count taxes from acc-1 (taxable) = 15 + 7.5 = 22.5
+    expect(taxes).toBe(22.5)
+  })
+
+  // Test: totalTaxesPaid with null taxes (treated as 0)
+  it('totalTaxesPaid: treats null taxes as 0', () => {
+    const transactions: Transaction[] = [
+      {
+        id: 'tx-1',
+        accountId: 'acc-1',
+        date: '2026-08-01',
+        symbol: 'AAPL',
+        type: 'Buy',
+        shares: 10,
+        price: 150,
+        amount: 1500,
+        taxes: null,
+        importedAt: '2026-08-01'
+      },
+      {
+        id: 'tx-2',
+        accountId: 'acc-1',
+        date: '2026-08-02',
+        symbol: 'MSFT',
+        type: 'Dividend',
+        shares: 0,
+        price: 0,
+        amount: 50,
+        taxes: 10,
+        importedAt: '2026-08-02'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      transactions,
+      category: 'all'
+    })
+
+    const taxes = totalTaxesPaid(state)
+
+    // Should be 0 + 10 = 10
+    expect(taxes).toBe(10)
+  })
+
+  // Test: summaryCards includes Total Taxes Paid card
+  it('summaryCards: includes Total Taxes Paid card', () => {
+    const transactions: Transaction[] = [
+      {
+        id: 'tx-1',
+        accountId: 'acc-1',
+        date: '2026-08-01',
+        symbol: 'AAPL',
+        type: 'Dividend',
+        shares: 0,
+        price: 0,
+        amount: 100,
+        taxes: 20,
+        importedAt: '2026-08-01'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      transactions,
+      category: 'all'
+    })
+
+    const cards = summaryCards(state)
+
+    // Should have 5 cards now (added Total Taxes Paid)
+    expect(cards).toHaveLength(5)
+
+    // Find the Total Taxes Paid card
+    const taxCard = cards.find((c) => c.label === 'Total Taxes Paid')
+    expect(taxCard).toBeDefined()
+    expect(taxCard!.value).toBe('$20.00')
+    expect(taxCard!.color).toBe('var(--color-text)')
+  })
+
+  // Test: summaryCards with zero taxes
+  it('summaryCards: Total Taxes Paid shows $0.00 with no taxes', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      transactions: [],
+      category: 'all'
+    })
+
+    const cards = summaryCards(state)
+
+    const taxCard = cards.find((c) => c.label === 'Total Taxes Paid')
+    expect(taxCard).toBeDefined()
+    expect(taxCard!.value).toBe('$0.00')
+  })
+
+  // Test: totalValueSeriesInRange 'all' returns the full series unfiltered
+  it('totalValueSeriesInRange: "all" returns every snapshot regardless of age', () => {
+    const snapshots: PortfolioSnapshot[] = [
+      { id: 'snap-1', accountId: 'acc-1', date: '2015-01-01', value: 5000 },
+      { id: 'snap-2', accountId: 'acc-1', date: '2026-08-08', value: 11000 }
+    ]
+
+    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
+
+    expect(totalValueSeriesInRange(state, 'all')).toHaveLength(2)
+  })
+
+  // Test: totalValueSeriesInRange drops snapshots older than the '6m' cutoff
+  it('totalValueSeriesInRange: "6m" excludes snapshots older than 6 months', () => {
+    const now = new Date()
+    const old = new Date(now)
+    old.setMonth(old.getMonth() - 8)
+    const recent = new Date(now)
+    recent.setMonth(recent.getMonth() - 1)
+
+    const snapshots: PortfolioSnapshot[] = [
+      { id: 'snap-old', accountId: 'acc-1', date: old.toISOString().slice(0, 10), value: 5000 },
+      { id: 'snap-recent', accountId: 'acc-1', date: recent.toISOString().slice(0, 10), value: 11000 }
+    ]
+
+    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
+
+    const filtered = totalValueSeriesInRange(state, '6m')
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0].value).toBe(11000)
+  })
+
+  // Test: totalValueSeriesInRange 'ytd' only keeps snapshots from Jan 1 of this year onward
+  it('totalValueSeriesInRange: "ytd" excludes snapshots from before this calendar year', () => {
+    const now = new Date()
+    const lastYear = new Date(now.getFullYear() - 1, 5, 15)
+
+    const snapshots: PortfolioSnapshot[] = [
+      { id: 'snap-lastyear', accountId: 'acc-1', date: lastYear.toISOString().slice(0, 10), value: 5000 },
+      { id: 'snap-jan1', accountId: 'acc-1', date: `${now.getFullYear()}-01-01`, value: 9000 }
+    ]
+
+    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
+
+    const filtered = totalValueSeriesInRange(state, 'ytd')
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0].value).toBe(9000)
+  })
+
+  // Test: performanceLinePoints actually responds to the range argument (regression:
+  // this used to ignore range entirely and always plot the full history)
+  it('performanceLinePoints: a shorter range produces fewer plotted points than "all"', () => {
+    const now = new Date()
+    const old = new Date(now)
+    old.setFullYear(old.getFullYear() - 3)
+
+    const snapshots: PortfolioSnapshot[] = [
+      { id: 'snap-old', accountId: 'acc-1', date: old.toISOString().slice(0, 10), value: 5000 },
+      { id: 'snap-recent-1', accountId: 'acc-1', date: now.toISOString().slice(0, 10), value: 6000 },
+      {
+        id: 'snap-recent-2',
+        accountId: 'acc-1',
+        date: new Date(now.getTime() - 86400000).toISOString().slice(0, 10),
+        value: 6500
+      }
+    ]
+
+    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
+
+    const allPoints = performanceLinePoints(state, 'all').split(' ')
+    const sixMonthPoints = performanceLinePoints(state, '6m').split(' ')
+
+    expect(allPoints).toHaveLength(3)
+    expect(sixMonthPoints.length).toBeLessThan(allPoints.length)
   })
 })

@@ -6,6 +6,17 @@ export interface ParsedCsv {
 }
 
 /**
+ * Parse a CSV cell as a number, tolerating brokerage-style currency formatting
+ * (leading '$', thousands commas, surrounding whitespace) that plain parseFloat
+ * either rejects outright ("$3.79" -> NaN) or silently mis-parses ("1,234" -> 1).
+ */
+export function parseCsvNumber(value: string | undefined | null): number {
+  if (!value) return NaN
+  const cleaned = value.replace(/[$,\s]/g, '')
+  return parseFloat(cleaned)
+}
+
+/**
  * Parse a CSV file and return its headers and rows.
  * Uses Papa.parse with header:true and skipEmptyLines:true.
  * Returns raw string values with no type coercion or mapping logic.

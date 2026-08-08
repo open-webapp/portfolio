@@ -39,9 +39,8 @@ src/
     TransactionsTable.tsx
     AssetClassOverrideSelect.tsx
     import/
-      ImportPositionsDialog.tsx
-      ImportTransactionsDialog.tsx
-      MappingProfileEditor.tsx
+      ImportDialog.tsx          # unified positions + transactions dialog
+      MappingProfileEditor.tsx   # field mapping UI (reused by both import kinds)
       index.ts
 plans/                        # historical planning docs, superseded by this file
 portfolio-dashboard-design/   # pixel-reference prototype (.dc.html) — not shipped code
@@ -54,54 +53,43 @@ Each `src/lib/*.ts` has a colocated `*.test.ts` (vitest, one file per module).
 
 Single `useReducer(appReducer, initialState())` in `App.tsx`. No Redux/Zustand/Context split.
 
-- `src/lib/state.ts` — `AppState` interface (6 data collections + UI filter fields + transient import fields) and one pure `stateAction(state, ...): AppState` helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `setCategory`, `setRange`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setRetirementFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `setPendingImport`, `setAccountPromptQueue`).
+- `src/lib/state.ts` — `AppState` interface (6 data collections + 8 UI filter fields) and one pure `stateAction(state, ...): AppState` helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `deleteClosedPosition`, `setCategory`, `setRange`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setRetirementFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`).
 - `src/lib/reducer.ts` — `appReducer(state, action)` switches on `action.type` (string) and calls the matching `state.ts` helper, or the CRUD logic in `accounts.ts`/`positionsImport.ts`/`transactionsImport.ts`. `default: return state`. Special case `__SET_STATE` replaces the whole state (used by hydration).
 - Components never mutate state directly; they `dispatch({ type: '...', ...payload })`.
 
 ### Action types (reducer.ts)
 
-`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `FINALIZE_NEW_ACCOUNT`, `UPDATE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `SET_CATEGORY`, `SET_RANGE`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `SET_PENDING_IMPORT`, `CLEAR_IMPORT_DIALOG`, `SET_ACCOUNT_PROMPT_QUEUE`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `ADD_MAPPING_PROFILE`, `UPDATE_MAPPING_PROFILE`, `DELETE_MAPPING_PROFILE`.
+`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_RANGE`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `ADD_MAPPING_PROFILE`, `UPDATE_MAPPING_PROFILE`, `DELETE_MAPPING_PROFILE`.
 
 ## Component tree
 
 ```
 App
-  Nav                          (state, dispatch)
-  SummaryCards                 (state)
-  PerformanceChart             (state)
-  AllocationChart              (state)
+  ImportDialog                (state, dispatch)  — rendered above all tabs
+    MappingProfileEditor      (kind, csvHeaders, existingProfile?, onSave, onCancel)
+  Nav                         (state, dispatch)
+  SummaryCards                (state)
+  PerformanceChart            (state)
+  AllocationChart             (state)
   [tab === 'positions']
-    ImportPositionsDialog      (state, dispatch)
-      MappingProfileEditor     (kind, csvHeaders, existingProfile?, onSave, onCancel)
-    PositionsTable             (state, dispatch)
+    PositionsTable            (state, dispatch)
       AssetClassOverrideSelect (position, dispatch)  — per row
-      ClosedPositionsTable     (state, dispatch)     — when state.showClosed
+      ClosedPositionsTable    (state, dispatch)     — when state.showClosed
   [tab === 'transactions']
-    ImportTransactionsDialog   (state, dispatch)
-      MappingProfileEditor
-    TransactionsTable          (state, dispatch)
+    TransactionsTable         (state, dispatch)
 ```
 
 Props convention: presentational components take `{ state: AppState, dispatch }`; a few (`AssetClassOverrideSelect`) take a narrower prop (`position`) plus `dispatch`. `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
 
 ## Data flow
 
-**CSV import** (positions or transactions, same shape in both dialogs):
-1. `ImportPositionsDialog`/`ImportTransactionsDialog` local state machine: `closed → file-picker → profile-select → profile-editor? → review → closed`.
-2. `parseCsvFile(file)` (`csv.ts`) → `{ headers, rows }` (raw strings, Papa.parse).
-3. User picks an existing `MappingProfile` (filtered by `kind` via `listProfilesForKind`) or creates one via `MappingProfileEditor` → `createProfile`/`updateProfile` → `validateProfile` → dispatched via `ADD_MAPPING_PROFILE`/`UPDATE_MAPPING_PROFILE`.
-4. `applyMapping(row, profile)` renames each CSV row's headers to internal field names per `profile.fieldMap`.
-5. Dialog dispatches `SET_PENDING_IMPORT` with `{ kind, rows: mappedRows, profileId }` and closes itself.
+**CSV import** — synchronous 4-step wizard within `ImportDialog` (positions or transactions):
+1. **Pick account**: `ImportDialog` opens; user selects an `Account` (existing or creates new via inline form) or resolves new account number to account details.
+2. **Map columns**: User selects existing `MappingProfile` (filtered by `kind`: 'positions' or 'transactions') or creates one via `MappingProfileEditor` → `createProfile`/`updateProfile` → `validateProfile` → `ADD_MAPPING_PROFILE`/`UPDATE_MAPPING_PROFILE` dispatched; `parseCsvFile(file)` (`csv.ts`) yields `{ headers, rows }`.
+3. **Preview**: `applyMapping(row, profile)` renames each CSV row to internal field names; dialog displays matched columns and a preview table of transformed data.
+4. **Commit**: User clicks "Import"; dialog calls `importPositions()` (replaces positions, creates closed positions, upserts snapshot) or `importTransactions()` (deduplicates, inserts) for the selected account and mapped rows, then dispatches `IMPORT_POSITIONS` or `IMPORT_TRANSACTIONS`, closes itself, and returns to tab view.
 
-**Import processing** (`App.tsx` effect):
-6. When `pendingImport` is set, an effect automatically:
-   - Looks up the profile by `profileId` in state.
-   - Validates that profile has `accountNumberColumn` mapped; if not, alerts user and cancels import.
-   - Groups rows by `resolveAccountNumber(row, profile)` (mapped account column).
-   - For each account number, resolves to an `accountId` via `findOrCreateAccountPrompt(state, accountNumber)` (existing account or `'needs-prompt'`).
-   - If any account `needs-prompt`, **silently returns** (no account-resolution UI exists yet; import fails with a console warning).
-   - Otherwise, calls `importPositions()` (replaces positions, creates closed positions, upserts snapshot) or `importTransactions()` (deduplicates, inserts) for each account.
-   - Dispatches `__SET_STATE` to clear `pendingImport` from state and persist the new positions/transactions/snapshots.
+All steps are **synchronous**; no `pendingImport` queue or effect-based processing.
 
 **Persistence**: `App.tsx` calls `loadPersistedApp()` (`persist.ts`) once on mount via `dispatch({ type: '__SET_STATE', newState })`, gated by an `isHydrated` flag (renders "Loading dashboard..." until then). Every state change after hydration schedules `savePersistedApp(state)` 500ms later (debounced via `setTimeout` in a `useEffect`, cleared/reset on each state change).
 
@@ -125,6 +113,5 @@ Props convention: presentational components take `{ state: AppState, dispatch }`
 
 ## Known gaps vs. plan (`plans/portfolio-dashboard-v1.md`)
 
-- No account-resolution UI (`AccountResolvePrompt`) — when a CSV's account number doesn't match any existing account, the import fails silently instead of prompting for account details (name, tax category, retirement flag).
 - No Drive-sync Settings UI (Connect/Disconnect/Sync Now).
 - `performanceLinePoints` ignores the `range` argument — the Performance chart always plots the full snapshot history regardless of the Nav's date-range select.

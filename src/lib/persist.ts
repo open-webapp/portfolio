@@ -71,10 +71,6 @@ export async function loadPersistedApp(): Promise<AppState | null> {
           txTypeFilter: loaded.txTypeFilter ?? defaults.txTypeFilter,
           txSearch: loaded.txSearch ?? defaults.txSearch,
           showClosed: loaded.showClosed ?? defaults.showClosed,
-
-          // Transient state
-          pendingImport: loaded.pendingImport,
-          accountPromptQueue: loaded.accountPromptQueue,
         }
 
         resolve(migrated)

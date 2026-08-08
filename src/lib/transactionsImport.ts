@@ -1,6 +1,7 @@
 import type { Transaction } from './types'
 import type { AppState } from './state'
 import { uid } from './seed'
+import { parseCsvNumber } from './csv'
 
 /**
  * Compute a natural key for a transaction based on immutable fields.
@@ -17,8 +18,8 @@ export function transactionNaturalKey(row: Record<string, string>): string {
   const date = row.date || ''
   const symbol = row.symbol || ''
   const type = row.type || ''
-  const shares = parseFloat(row.shares || '0')
-  const price = parseFloat(row.price || '0')
+  const shares = parseCsvNumber(row.shares || '0')
+  const price = parseCsvNumber(row.price || '0')
 
   return `${date}|${symbol}|${type}|${shares}|${price}`
 }
@@ -62,9 +63,16 @@ export function importTransactions(
     }
 
     // Parse numeric fields
-    const shares = parseFloat(row.shares)
-    const price = parseFloat(row.price)
-    const amount = parseFloat(row.amount)
+    const shares = parseCsvNumber(row.shares)
+    const price = parseCsvNumber(row.price)
+    const amount = parseCsvNumber(row.amount)
+
+    // Skip rows missing a required field (blank cells in the CSV) rather than
+    // importing a transaction with fabricated NaN numbers.
+    if (!row.date || !row.symbol || !row.type || isNaN(shares) || isNaN(price) || isNaN(amount)) {
+      console.warn('Skipping row with missing/invalid required field(s):', row)
+      continue
+    }
 
     // Create new transaction with fresh UID
     const newTransaction: Transaction = {
@@ -76,6 +84,7 @@ export function importTransactions(
       shares,
       price,
       amount,
+      taxes: row.taxes ? parseCsvNumber(row.taxes) : null,
       importedAt: new Date().toISOString(),
     }
 

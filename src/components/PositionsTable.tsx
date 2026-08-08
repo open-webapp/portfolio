@@ -12,6 +12,13 @@ export interface PositionsTableProps {
 }
 
 /**
+ * Helper to display position name, falling back to symbol if name is null.
+ */
+function getDisplayName(position: Position): string {
+  return position.name ?? position.symbol
+}
+
+/**
  * PositionsTable component: displays sortable positions with filters, search, and closed-positions toggle.
  * Per .dc.html lines 133-206.
  */
@@ -66,11 +73,11 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
     label: string
     align: 'left' | 'center' | 'right'
   }> = [
-    { key: 'symbol', label: 'Security', align: 'left' },
+    { key: 'symbol', label: 'Symbol', align: 'left' },
     { key: 'assetClass', label: 'Asset Class', align: 'left' },
     { key: 'shares', label: 'Shares', align: 'right' },
-    { key: 'avgCost', label: 'Avg Cost', align: 'right' },
-    { key: 'price', label: 'Price', align: 'right' },
+    { key: 'avgCost', label: 'Cost Basis', align: 'right' },
+    { key: 'price', label: 'Current Price', align: 'right' },
   ]
 
   // Sort arrow indicator
@@ -192,7 +199,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
                 {getSortArrow(col.key)}
               </th>
             ))}
-            <th style={{ textAlign: 'right' }}>Cost Basis</th>
+            <th style={{ textAlign: 'right' }}>Amount Invested</th>
             <th style={{ textAlign: 'right' }}>Market Value</th>
             <th style={{ textAlign: 'right' }}>G/L</th>
             <th style={{ textAlign: 'right' }}>G/L %</th>
@@ -207,7 +214,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
                   <span>{p.symbol}</span>
                 </div>
                 <div style={{ fontSize: '11px' }} className="text-muted">
-                  {p.name}
+                  {getDisplayName(p)}
                 </div>
               </td>
               <td className="text-muted">{p.assetClassManualOverride || p.assetClass}</td>

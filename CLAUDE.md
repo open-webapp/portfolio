@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - *ALWAYS* update relevant docs when changes are made — independent of whether the user explicitly requests it.
 - When something is NOT working as expected, *MUST* add a test to reveal the bug and then fix and re-test.
 - Do *NOT* create any document unless asked — **except** module reference docs (see [Reference Docs](reference-docs) below).
+- After implementing a change, commit it — but only once all tests pass (`npm run test`) and all relevant reference docs are updated. If either isn't true, fix/update first; don't commit partial or doc-stale work.
 
 ## Commands
 

@@ -193,41 +193,6 @@ describe('mappingProfiles', () => {
     expect(afterDelete.some((p) => p.id === profile3.id)).toBe(true)
   })
 
-  // Additional test: applyMapping with accountNumberColumn
-  it('applyMapping handles accountNumberColumn in profile', () => {
-    const profile = createProfile(
-      'With Account',
-      'positions',
-      {
-        Symbol: 'symbol',
-        Name: 'name',
-        Class: 'assetClass',
-        Qty: 'shares',
-        Cost: 'avgCost',
-        Price: 'price',
-      },
-      'AccountNum' // accountNumberColumn in CSV
-    )
-
-    const csvRow = {
-      AccountNum: 'ACC-123',
-      Symbol: 'MSFT',
-      Name: 'Microsoft',
-      Class: 'Equity',
-      Qty: '25',
-      Cost: '300.00',
-      Price: '350.00',
-    }
-
-    const mapped = applyMapping(csvRow, profile)
-
-    // accountNumberColumn field should also be mapped if present
-    expect(mapped.symbol).toBe('MSFT')
-    expect(mapped.name).toBe('Microsoft')
-    // If AccountNum is not explicitly in fieldMap, it won't be mapped
-    // But the profile knows about it via accountNumberColumn property
-    expect(profile.accountNumberColumn).toBe('AccountNum')
-  })
 
   // Additional test: validateProfile for transactions kind
   it('validateProfile works correctly for transactions kind', () => {
@@ -365,5 +330,121 @@ describe('mappingProfiles', () => {
     expect(result.warnings).toHaveLength(2)
     expect(result.warnings).toContain("Both 'avgCost' and 'purchaseAmount' are mapped; will prefer 'avgCost' during import")
     expect(result.warnings).toContain("Both 'price' and 'marketValue' are mapped; will prefer 'price' during import")
+  })
+
+  // Task 8: Test 1 - validateProfile allows positions profile without name
+  it('Task 8.1: validateProfile allows positions profile without name', () => {
+    const profile = createProfile(
+      'Profile without name',
+      'positions',
+      {
+        Symbol: 'symbol',
+        Class: 'assetClass',
+        Qty: 'shares',
+        Cost: 'avgCost',
+        Price: 'price',
+        // name is not mapped
+      }
+    )
+
+    const result = validateProfile(profile, 'positions')
+
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+  })
+
+  // Task 8: Test 2 - validateProfile allows transactions profile without taxes
+  it('Task 8.2: validateProfile allows transactions profile without taxes', () => {
+    const profile = createProfile(
+      'Transaction Profile without taxes',
+      'transactions',
+      {
+        TransDate: 'date',
+        Ticker: 'symbol',
+        TxType: 'type',
+        Qty: 'shares',
+        Price: 'price',
+        Amount: 'amount',
+        // taxes is not mapped
+      }
+    )
+
+    const result = validateProfile(profile, 'transactions')
+
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+  })
+
+  // Test: applyMapping applies constants to every row
+  it('applyMapping applies constants to every row', () => {
+    const profile = createProfile(
+      'Profile with constants',
+      'positions',
+      {
+        Symbol: 'symbol',
+        Name: 'name',
+        Qty: 'shares',
+        Cost: 'avgCost',
+        Price: 'price',
+      }
+    )
+    profile.constants = {
+      assetClass: 'Equity',
+    }
+
+    const csvRow1 = {
+      Symbol: 'AAPL',
+      Name: 'Apple Inc.',
+      Qty: '100',
+      Cost: '150.25',
+      Price: '180.50',
+    }
+
+    const csvRow2 = {
+      Symbol: 'GOOGL',
+      Name: 'Alphabet Inc.',
+      Qty: '50',
+      Cost: '2500.00',
+      Price: '2800.00',
+    }
+
+    const mapped1 = applyMapping(csvRow1, profile)
+    const mapped2 = applyMapping(csvRow2, profile)
+
+    // Verify constants are applied to first row
+    expect(mapped1.symbol).toBe('AAPL')
+    expect(mapped1.assetClass).toBe('Equity')
+
+    // Verify constants are applied to second row
+    expect(mapped2.symbol).toBe('GOOGL')
+    expect(mapped2.assetClass).toBe('Equity')
+
+    // Verify the same constant value is in both rows
+    expect(mapped1.assetClass).toBe(mapped2.assetClass)
+  })
+
+  // Test: validateProfile treats constant-mapped required field as satisfied
+  it('validateProfile treats constant-mapped required field as satisfied', () => {
+    const profile = createProfile(
+      'Profile with constant assetClass',
+      'positions',
+      {
+        Symbol: 'symbol',
+        Name: 'name',
+        Qty: 'shares',
+        Cost: 'avgCost',
+        Price: 'price',
+        // assetClass is NOT in fieldMap, only in constants
+      }
+    )
+    profile.constants = {
+      assetClass: 'Equity',
+    }
+
+    const result = validateProfile(profile, 'positions')
+
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+    expect(result.errors).not.toContain("Required field 'assetClass' is not mapped")
   })
 })

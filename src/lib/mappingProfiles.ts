@@ -9,7 +9,7 @@ export function createProfile(
   name: string,
   kind: 'positions' | 'transactions',
   fieldMap: Record<string, string>,
-  accountNumberColumn?: string
+  constants?: Record<string, string>
 ): MappingProfile {
   const now = new Date().toISOString()
   return {
@@ -17,7 +17,7 @@ export function createProfile(
     name,
     kind,
     fieldMap,
-    accountNumberColumn,
+    constants,
     createdAt: now,
     updatedAt: now,
   }
@@ -31,13 +31,13 @@ export function updateProfile(
   profile: MappingProfile,
   name?: string,
   fieldMap?: Record<string, string>,
-  accountNumberColumn?: string
+  constants?: Record<string, string>
 ): MappingProfile {
   return {
     ...profile,
     ...(name !== undefined && { name }),
     ...(fieldMap !== undefined && { fieldMap }),
-    ...(accountNumberColumn !== undefined && { accountNumberColumn }),
+    ...(constants !== undefined && { constants }),
     updatedAt: new Date().toISOString(),
   }
 }
@@ -62,7 +62,7 @@ export function listProfilesForKind(
 
 /**
  * Apply a mapping profile to a CSV row.
- * Renames CSV headers according to fieldMap, returning a new object with mapped keys.
+ * Renames CSV headers according to fieldMap, then merges in constant fields.
  */
 export function applyMapping(
   row: Record<string, string>,
@@ -76,6 +76,11 @@ export function applyMapping(
     if (targetField) {
       mapped[targetField] = value
     }
+  }
+
+  // Merge in constant fields (apply to every row identically)
+  if (profile.constants) {
+    Object.assign(mapped, profile.constants)
   }
 
   return mapped
@@ -99,13 +104,16 @@ export function validateProfile(
   profile: MappingProfile,
   kind: 'positions' | 'transactions'
 ): ValidationResult {
-  const mappedFields = new Set(Object.values(profile.fieldMap))
+  const mappedFields = new Set([
+    ...Object.values(profile.fieldMap),
+    ...Object.keys(profile.constants || {}),
+  ])
   const errors: string[] = []
   const warnings: string[] = []
 
   if (kind === 'positions') {
     // Check always-required fields for positions
-    const alwaysRequired = ['symbol', 'name', 'assetClass', 'shares']
+    const alwaysRequired = ['symbol', 'assetClass', 'shares']
     for (const field of alwaysRequired) {
       if (!mappedFields.has(field)) {
         errors.push(`Required field '${field}' is not mapped`)

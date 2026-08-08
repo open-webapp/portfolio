@@ -37,11 +37,13 @@ export function visiblePositions(state: AppState): Position[] {
   }
 
   // Apply search filter (on symbol or name, case-insensitive)
+  // Note: name is nullable (display-only field). Null names don't exclude positions from search;
+  // only symbol matching is used if name is null. Search correctly handles both cases.
   if (state.posSearch.trim()) {
     const searchLower = state.posSearch.toLowerCase()
     results = results.filter((p) =>
       p.symbol.toLowerCase().includes(searchLower) ||
-      p.name.toLowerCase().includes(searchLower)
+      (p.name?.toLowerCase().includes(searchLower) ?? false)
     )
   }
 
@@ -113,7 +115,19 @@ export function totalValueSeries(
 }
 
 /**
- * Generate summary cards for Total Value, Day Change, Total Gain/Loss, and Cost Basis.
+ * Compute total taxes paid across all transactions in the current category.
+ * Treats null taxes values as 0 in aggregation.
+ */
+export function totalTaxesPaid(state: AppState): number {
+  const accountsInCategory = getAccountsForCategory(state)
+  const transactionsInCategory = state.transactions.filter((t) =>
+    accountsInCategory.some((a) => a.id === t.accountId)
+  )
+  return transactionsInCategory.reduce((sum, t) => sum + (t.taxes ?? 0), 0)
+}
+
+/**
+ * Generate summary cards for Total Value, Day Change, Total Gain/Loss, Cost Basis, and Total Taxes Paid.
  * All values are for positions in the currently-selected category's accounts.
  * Returns cards with formatted values, colors, and optional sub-values (percentages).
  */
@@ -153,6 +167,7 @@ export function summaryCards(
   }
 
   // Total Gain/Loss: sum of all positions' gl
+  // Note: GL calculation uses only shares, price, and avgCost. Taxes field is not included.
   const totalGL = positionsInCategory.reduce((sum, p) => {
     const marketValue = p.shares * p.price
     const costBasis = p.shares * p.avgCost
@@ -160,12 +175,16 @@ export function summaryCards(
   }, 0)
 
   // Cost Basis: sum of all positions' costBasis
+  // Note: Cost basis calculation uses only shares and avgCost. Taxes field is not included.
   const costBasis = positionsInCategory.reduce((sum, p) => {
     return sum + p.shares * p.avgCost
   }, 0)
 
   // Total GL percentage (for the sub field)
   const totalGLPct = costBasis === 0 ? 0 : (totalGL / costBasis) * 100
+
+  // Total Taxes Paid: sum of all transaction taxes in the category
+  const totalTaxes = totalTaxesPaid(state)
 
   return [
     {
@@ -185,8 +204,13 @@ export function summaryCards(
       color: totalGL >= 0 ? GAIN : LOSS
     },
     {
-      label: 'Cost Basis',
+      label: 'Amount Invested',
       value: fmtUSD(costBasis),
+      color: 'var(--color-text)'
+    },
+    {
+      label: 'Total Taxes Paid',
+      value: fmtUSD(totalTaxes),
       color: 'var(--color-text)'
     }
   ]
@@ -195,6 +219,7 @@ export function summaryCards(
 /**
  * Generate allocation bars by asset class.
  * Uses the computations.allocationByAssetClass() helper and formats values.
+ * Note: Allocation percentages are market-value based and do not include taxes.
  */
 export function allocationBars(
   state: AppState
@@ -205,6 +230,7 @@ export function allocationBars(
   )
 
   // Use the allocationByAssetClass helper (respects manual overrides)
+  // Note: taxes field is not used in allocation calculations
   const allocationData = allocationByAssetClass(
     positionsInCategory.map((p) => ({
       ...p,
@@ -220,20 +246,48 @@ export function allocationBars(
 }
 
 /**
+ * Filter a totalValueSeries by a Nav date-range value ('6m' | '1y' | 'ytd' | 'all').
+ * Cutoff is computed from the current date; series entries strictly before the
+ * cutoff are dropped. Unknown range values behave like 'all' (no filtering).
+ */
+export function totalValueSeriesInRange(
+  state: AppState,
+  range: string
+): Array<{ date: string; value: number }> {
+  const series = totalValueSeries(state)
+  if (range === 'all' || series.length === 0) {
+    return series
+  }
+
+  const now = new Date()
+  let cutoff: Date
+  switch (range) {
+    case 'ytd':
+      cutoff = new Date(now.getFullYear(), 0, 1)
+      break
+    case '6m':
+      cutoff = new Date(now)
+      cutoff.setMonth(cutoff.getMonth() - 6)
+      break
+    case '1y':
+      cutoff = new Date(now)
+      cutoff.setFullYear(cutoff.getFullYear() - 1)
+      break
+    default:
+      return series
+  }
+
+  const cutoffStr = cutoff.toISOString().slice(0, 10)
+  return series.filter((s) => s.date >= cutoffStr)
+}
+
+/**
  * Generate SVG polyline points from the performance series filtered by date range.
  * Points are normalized to fit a standard chart space (e.g., 0-500 on Y-axis, 0-100 on X).
  * Handles single-point series without divide-by-zero.
  */
-export function performanceLinePoints(state: AppState, _range: string): string {
-  const series = totalValueSeries(state)
-
-  if (series.length === 0) {
-    return ''
-  }
-
-  // Filter by date range (stub: for now, use all series data)
-  // In a real implementation, parse range like '6m', '1y', 'ytd', 'all' and filter accordingly
-  let filteredSeries = series
+export function performanceLinePoints(state: AppState, range: string): string {
+  const filteredSeries = totalValueSeriesInRange(state, range)
 
   if (filteredSeries.length === 0) {
     return ''

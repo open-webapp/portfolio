@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="styles.css"></link>
+</helmet>
+
+<div style="min-height:100vh; background:var(--color-bg); color:var(--color-text); font-family:var(--font-body);">
+
+  <!-- Nav -->
+  <div class="nav" style="border-bottom:1px solid var(--color-divider); background:var(--color-surface); padding:var(--space-3) var(--space-6);">
+    <div class="nav-brand">Ledger</div>
+    <div class="seg">
+      <sc-for list="{{ categoryTabs }}" as="a" hint-placeholder-count="4">
+        <label class="seg-opt" onClick="{{ a.onClick }}">
+          <input type="radio" name="category" checked="{{ a.active }}" readOnly="{{ true }}"></input>
+          <span>{{ a.label }}</span>
+        </label>
+      </sc-for>
+    </div>
+    <select class="input" onChange="{{ onRangeChange }}" value="{{ range }}" style="width:auto; margin-left:var(--space-4);">
+      <option value="1M">1 Month</option>
+      <option value="3M">3 Months</option>
+      <option value="1Y">1 Year</option>
+      <option value="ALL">All Time</option>
+    </select>
+  </div>
+
+  <div style="padding:var(--space-8) var(--space-6);">
+
+    <div style="margin-bottom:var(--space-6); display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:var(--space-3);">
+      <div>
+        <div class="text-muted" style="font-size:11px; letter-spacing:0.08em; text-transform:uppercase;">Portfolio</div>
+        <h1 style="margin:0;">{{ portfolioName }}</h1>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <sc-for list="{{ retirementFilters }}" as="f" hint-placeholder-count="3">
+          <span onClick="{{ f.onClick }}" class="tag {{ f.tagClass }}" style="cursor:pointer;">{{ f.label }}</span>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:var(--space-4); margin-bottom:var(--space-6);">
+      <sc-for list="{{ summaryCards }}" as="s" hint-placeholder-count="4">
+        <div class="card blueprint elev-sm">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="card-kicker">{{ s.label }}</div>
+          <div style="font-family:var(--font-heading); font-size:28px; font-weight:600; color:{{ s.color }};">{{ s.value }}</div>
+          <sc-if value="{{ s.sub }}" hint-placeholder-val="{{ false }}">
+            <div class="card-meta" style="color:{{ s.color }};">{{ s.sub }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- Chart row -->
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:var(--space-4); margin-bottom:var(--space-6);">
+      <div class="card blueprint elev-sm">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div class="card-title" style="margin-bottom:var(--space-3);">Performance</div>
+        <svg viewBox="0 0 600 170" style="width:100%; height:170px; display:block;">
+          <line x1="0" y1="42.5" x2="600" y2="42.5" stroke="var(--color-divider)" stroke-width="1"></line>
+          <line x1="0" y1="85" x2="600" y2="85" stroke="var(--color-divider)" stroke-width="1"></line>
+          <line x1="0" y1="127.5" x2="600" y2="127.5" stroke="var(--color-divider)" stroke-width="1"></line>
+          <polyline points="{{ linePoints }}" fill="none" stroke="var(--color-accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+        </svg>
+        <div style="display:flex; justify-content:space-between; font-size:11px;" class="text-muted">
+          <span>{{ chartStartLabel }}</span>
+          <span>{{ chartEndLabel }}</span>
+        </div>
+      </div>
+
+      <div class="card blueprint elev-sm">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div class="card-title" style="margin-bottom:var(--space-3);">Allocation</div>
+        <sc-for list="{{ allocationBars }}" as="a" hint-placeholder-count="4">
+          <div style="margin-bottom:var(--space-2);">
+            <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:3px;">
+              <span>{{ a.label }}</span>
+              <span class="text-muted">{{ a.pctStr }}</span>
+            </div>
+            <div style="height:8px; border:1px solid var(--color-divider); background:transparent;">
+              <div style="height:100%; width:{{ a.pct }}%; background:var(--color-accent);"></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- Watchlist -->
+    <sc-if value="{{ showWatchlist }}" hint-placeholder-val="{{ true }}">
+    <div class="card blueprint elev-sm" style="margin-bottom:var(--space-6);">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:var(--space-3);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="color:var(--color-accent);"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+        <div class="card-title">Watchlist &amp; Alerts</div>
+        <span class="tag tag-accent" style="margin-left:6px;">{{ watchlist.length }}</span>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:var(--space-3);">
+        <sc-for list="{{ watchlist }}" as="w" hint-placeholder-count="3">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:var(--space-2) 0; border-top:1px solid var(--color-divider);">
+            <div>
+              <div style="font-weight:600;">{{ w.symbol }}</div>
+              <div style="font-size:11px;" class="text-muted">{{ w.name }}</div>
+            </div>
+            <div style="text-align:right;">
+              <div>{{ w.priceStr }}</div>
+              <span class="tag {{ w.tagClass }}" style="margin-top:3px;">{{ w.alert }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- Tabs -->
+    <div class="seg" style="margin-bottom:var(--space-4);">
+      <sc-for list="{{ mainTabs }}" as="t" hint-placeholder-count="2">
+        <label class="seg-opt" onClick="{{ t.onClick }}">
+          <input type="radio" name="maintab" checked="{{ t.active }}" readOnly="{{ true }}"></input>
+          <span>{{ t.label }}</span>
+        </label>
+      </sc-for>
+    </div>
+
+    <!-- Positions -->
+    <sc-if value="{{ isPositionsTab }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); flex-wrap:wrap;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <sc-for list="{{ assetClassFilters }}" as="f" hint-placeholder-count="5">
+            <span onClick="{{ f.onClick }}" class="tag {{ f.tagClass }}" style="cursor:pointer;">{{ f.label }}</span>
+          </sc-for>
+        </div>
+        <div class="field" style="margin:0; width:220px; position:relative;">
+          <input class="input" placeholder="Search symbol or name" value="{{ posSearch }}" onChange="{{ onPosSearchChange }}" style="padding-left:30px;"></input>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="position:absolute; left:9px; top:11px; opacity:0.55;"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        </div>
+      </div>
+
+      <table class="table" style="margin-bottom:var(--space-4);">
+        <thead>
+          <tr>
+            <sc-for list="{{ positionCols }}" as="c" hint-placeholder-count="8">
+              <th onClick="{{ c.onClick }}" style="text-align:{{ c.align }}; cursor:pointer; white-space:nowrap;">{{ c.label }}{{ c.sortArrow }}</th>
+            </sc-for>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ visiblePositions }}" as="p" hint-placeholder-count="6">
+            <tr>
+              <td>
+                <div style="font-weight:600; display:flex; align-items:center; gap:5px;">
+                  <span>{{ p.symbol }}</span>
+                  <sc-if value="{{ p.retirement }}" hint-placeholder-val="{{ false }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" style="color:var(--color-accent-700); flex-shrink:0;"><title>Retirement account</title><rect x="3" y="11" width="18" height="10"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  </sc-if>
+                </div>
+                <div style="font-size:11px;" class="text-muted">{{ p.name }}</div>
+              </td>
+              <td class="text-muted">{{ p.assetClass }}</td>
+              <td style="text-align:right;">{{ p.sharesStr }}</td>
+              <td style="text-align:right;">{{ p.avgCostStr }}</td>
+              <td style="text-align:right;">{{ p.costBasisStr }}</td>
+              <td style="text-align:right;">{{ p.priceStr }}</td>
+              <td style="text-align:right; font-weight:600;">{{ p.marketValueStr }}</td>
+              <td style="text-align:right; color:{{ p.glColor }}; font-weight:600;">{{ p.glStr }}</td>
+              <td style="text-align:right; color:{{ p.glColor }};">{{ p.glPctStr }}</td>
+              <td style="text-align:center;">
+                <sc-if value="{{ p.noTx }}" hint-placeholder-val="{{ false }}">
+                  <span class="tag tag-outline" title="No transaction history available for this position">NO TX DATA</span>
+                </sc-if>
+              </td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+
+      <div onClick="{{ toggleClosed }}" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:var(--space-3); user-select:none;">
+        <span style="font-family:var(--font-heading); font-weight:600; font-size:14px;">{{ closedToggleLabel }}</span>
+        <span class="tag tag-neutral">{{ closedPositions.length }}</span>
+      </div>
+
+      <sc-if value="{{ showClosed }}" hint-placeholder-val="{{ false }}">
+        <table class="table" style="margin-bottom:var(--space-2);">
+          <thead>
+            <tr><th>Security</th><th>Closed</th><th style="text-align:right;">Realized G/L</th></tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ closedPositions }}" as="cp" hint-placeholder-count="2">
+              <tr>
+                <td><div style="font-weight:600;">{{ cp.symbol }}</div><div style="font-size:11px;" class="text-muted">{{ cp.name }}</div></td>
+                <td class="text-muted">{{ cp.closedDate }}</td>
+                <td style="text-align:right; color:{{ cp.glColor }}; font-weight:600;">{{ cp.glStr }}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </sc-if>
+    </sc-if>
+
+    <!-- Transactions -->
+    <sc-if value="{{ isTransactionsTab }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); flex-wrap:wrap;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <sc-for list="{{ txTypeFilters }}" as="f" hint-placeholder-count="4">
+            <span onClick="{{ f.onClick }}" class="tag {{ f.tagClass }}" style="cursor:pointer;">{{ f.label }}</span>
+          </sc-for>
+        </div>
+        <div class="field" style="margin:0; width:220px; position:relative;">
+          <input class="input" placeholder="Search symbol" value="{{ txSearch }}" onChange="{{ onTxSearchChange }}" style="padding-left:30px;"></input>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="position:absolute; left:9px; top:11px; opacity:0.55;"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        </div>
+      </div>
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Symbol</th><th>Type</th>
+            <th style="text-align:right;">Shares</th><th style="text-align:right;">Price</th>
+            <th style="text-align:right;">Amount</th><th style="text-align:center;">Position Link</th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ visibleTransactions }}" as="tx" hint-placeholder-count="8">
+            <tr>
+              <td class="text-muted">{{ tx.dateStr }}</td>
+              <td style="font-weight:600;">{{ tx.symbol }}</td>
+              <td><span class="tag {{ tx.tagClass }}">{{ tx.type }}</span></td>
+              <td style="text-align:right;">{{ tx.sharesStr }}</td>
+              <td style="text-align:right;">{{ tx.priceStr }}</td>
+              <td style="text-align:right; font-weight:600;">{{ tx.amountStr }}</td>
+              <td style="text-align:center;">
+                <sc-if value="{{ tx.orphaned }}" hint-placeholder-val="{{ false }}">
+                  <span class="tag tag-outline" title="No matching open position — likely fully sold or removed">UNMATCHED</span>
+                </sc-if>
+                <sc-if value="{{ tx.matched }}" hint-placeholder-val="{{ false }}">
+                  <span class="text-muted">Linked</span>
+                </sc-if>
+              </td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 1000}, &quot;showWatchlist&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Layout&quot;}}">
+function fmtUSD(n) {
+  const neg = n < 0;
+  const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (neg ? '-$' : '$') + s;
+}
+function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
+
+const GAIN = 'var(--color-accent-700)';
+const LOSS = '#8a3c2e';
+
+const CATEGORY_META = {
+  taxable: { label: 'Taxable', full: 'Taxable Accounts' },
+  nonTaxable: { label: 'Non-Taxable', full: 'Non-Taxable Accounts' },
+  taxDeferred: { label: 'Tax-Deferred', full: 'Tax-Deferred Accounts' },
+  all: { label: 'All', full: 'All Accounts' }
+};
+
+const ACCOUNTS = {
+  brokerage: {
+    label: 'Brokerage',
+    name: 'Individual Brokerage',
+    category: 'taxable',
+    retirement: false,
+    positions: [
+      { symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Equity', shares: 120, avgCost: 148.20, price: 214.50, noTx: false },
+      { symbol: 'MSFT', name: 'Microsoft Corp.', assetClass: 'Equity', shares: 60, avgCost: 310.00, price: 428.80, noTx: false },
+      { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', assetClass: 'ETF', shares: 85, avgCost: 380.40, price: 512.30, noTx: false },
+      { symbol: 'VXUS', name: 'Vanguard Total Intl Stock ETF', assetClass: 'ETF', shares: 200, avgCost: 55.10, price: 61.75, noTx: true },
+      { symbol: 'NVDA', name: 'NVIDIA Corp.', assetClass: 'Equity', shares: 40, avgCost: 92.00, price: 118.40, noTx: false },
+      { symbol: 'BND', name: 'Vanguard Total Bond ETF', assetClass: 'Fixed Income', shares: 300, avgCost: 71.50, price: 69.20, noTx: false },
+      { symbol: 'BTC', name: 'Bitcoin', assetClass: 'Crypto', shares: 0.85, avgCost: 38000, price: 61200, noTx: false },
+      { symbol: 'AMZN', name: 'Amazon.com Inc.', assetClass: 'Equity', shares: 55, avgCost: 145.00, price: 189.90, noTx: false },
+      { symbol: 'GOOGL', name: 'Alphabet Inc.', assetClass: 'Equity', shares: 45, avgCost: 128.00, price: 172.30, noTx: true },
+      { symbol: 'CASH', name: 'Cash & Equivalents', assetClass: 'Cash', shares: 1, avgCost: 18500, price: 18500, noTx: true }
+    ],
+    closedPositions: [
+      { symbol: 'META', name: 'Meta Platforms Inc.', closedDate: 'Apr 12, 2026', gl: 8420.50 },
+      { symbol: 'DIS', name: 'The Walt Disney Company', closedDate: 'Feb 3, 2026', gl: -1120.75 }
+    ],
+    orphanedSells: [
+      { symbol: 'META', mult: 1 }, { symbol: 'DIS', mult: 2 }, { symbol: 'PYPL', mult: 3 }
+    ],
+    watchlist: [
+      { symbol: 'TSLA', name: 'Tesla Inc.', price: 248.10, alert: 'Below target', tagClass: 'tag-neutral' },
+      { symbol: 'AMD', name: 'Advanced Micro Devices', price: 172.40, alert: 'Target hit', tagClass: 'tag-accent' },
+      { symbol: 'SPY', name: 'SPDR S&P 500 ETF', price: 618.90, alert: 'Watching', tagClass: 'tag-outline' }
+    ],
+    perf: [612000, 618500, 609800, 625300, 641200, 637900, 652800, 668400, 671200, 684900]
+  },
+  roth: {
+    label: 'Roth IRA',
+    name: 'Roth IRA',
+    category: 'nonTaxable',
+    retirement: true,
+    positions: [
+      { symbol: 'VTI', name: 'Vanguard Total Stock Market ETF', assetClass: 'ETF', shares: 140, avgCost: 210.00, price: 298.60, noTx: false },
+      { symbol: 'SCHD', name: 'Schwab US Dividend Equity ETF', assetClass: 'ETF', shares: 210, avgCost: 71.10, price: 84.30, noTx: false },
+      { symbol: 'BND', name: 'Vanguard Total Bond ETF', assetClass: 'Fixed Income', shares: 180, avgCost: 72.80, price: 69.20, noTx: true },
+      { symbol: 'VNQ', name: 'Vanguard Real Estate ETF', assetClass: 'ETF', shares: 70, avgCost: 88.20, price: 84.10, noTx: false },
+      { symbol: 'CASH', name: 'Cash & Equivalents', assetClass: 'Cash', shares: 1, avgCost: 3200, price: 3200, noTx: true }
+    ],
+    closedPositions: [
+      { symbol: 'IWM', name: 'iShares Russell 2000 ETF', closedDate: 'Jun 20, 2026', gl: 640.20 }
+    ],
+    orphanedSells: [ { symbol: 'IWM', mult: 1 } ],
+    watchlist: [
+      { symbol: 'QQQ', name: 'Invesco QQQ Trust', price: 512.20, alert: 'Watching', tagClass: 'tag-outline' }
+    ],
+    perf: [98000, 99200, 97800, 100100, 102400, 101900, 103800, 105200, 106100, 108400]
+  },
+  four01k: {
+    label: '401(k)',
+    name: 'Traditional 401(k)',
+    category: 'taxDeferred',
+    retirement: true,
+    positions: [
+      { symbol: 'FXAIX', name: 'Fidelity 500 Index Fund', assetClass: 'Mutual Fund', shares: 320, avgCost: 130.00, price: 189.40, noTx: true },
+      { symbol: 'FTBFX', name: 'Fidelity Total Bond Fund', assetClass: 'Fixed Income', shares: 410, avgCost: 10.80, price: 10.10, noTx: true },
+      { symbol: 'FSPSX', name: 'Fidelity Intl Index Fund', assetClass: 'Mutual Fund', shares: 260, avgCost: 38.50, price: 44.20, noTx: true }
+    ],
+    closedPositions: [],
+    orphanedSells: [],
+    watchlist: [],
+    perf: [210000, 213500, 209800, 217200, 221900, 219400, 226800, 231200, 233900, 238600]
+  },
+  hsa: {
+    label: 'HSA',
+    name: 'Health Savings Account',
+    category: 'nonTaxable',
+    retirement: false,
+    positions: [
+      { symbol: 'VTSAX', name: 'Vanguard Total Stock Mkt Index', assetClass: 'Mutual Fund', shares: 90, avgCost: 95.00, price: 128.70, noTx: true },
+      { symbol: 'CASH', name: 'Cash & Equivalents', assetClass: 'Cash', shares: 1, avgCost: 2100, price: 2100, noTx: true }
+    ],
+    closedPositions: [],
+    orphanedSells: [],
+    watchlist: [],
+    perf: [13200, 13350, 13100, 13600, 13900, 13780, 14150, 14400, 14550, 14820]
+  }
+};
+
+class Component extends DCLogic {
+  state = {
+    category: 'taxable',
+    range: '1Y',
+    tab: 'positions',
+    sortKey: 'marketValue',
+    sortDir: 'desc',
+    assetClassFilter: 'All',
+    retirementFilter: 'All',
+    posSearch: '',
+    txTypeFilter: 'All',
+    txSearch: '',
+    showClosed: false
+  };
+
+  buildTransactions(account) {
+    const symbols = account.positions.filter(p => !p.noTx).map(p => p.symbol);
+    const txs = [];
+    symbols.forEach((sym, i) => {
+      const nBuys = 1 + (i % 2);
+      for (let k = 0; k < nBuys; k++) {
+        const date = new Date(2026, (i * 2 + k) % 8, 3 + ((i + k) * 5) % 25);
+        txs.push({ date, symbol: sym, type: 'Buy', shares: 5 + (i + k) * 3, price: 50 + (i * 17 + k * 9) % 300, orphaned: false });
+      }
+      if (i % 3 === 0) {
+        const date = new Date(2026, (i + 3) % 8, 10 + (i % 15));
+        txs.push({ date, symbol: sym, type: 'Dividend', shares: 0, price: 0, amount: 20 + i * 7, orphaned: false });
+      }
+    });
+    account.orphanedSells.forEach((o, i) => {
+      const date = new Date(2026, 1 + i * 2, 5 + i * 4);
+      txs.push({ date, symbol: o.symbol, type: 'Sell', shares: 30 + i * 10, price: 120 + o.mult * 40, orphaned: true });
+    });
+    txs.sort((a, b) => b.date - a.date);
+    return txs;
+  }
+
+  getAccountsForCategory(cat, retFilter) {
+    const all = Object.values(ACCOUNTS);
+    let accounts = cat === 'all' ? all : all.filter(a => a.category === cat);
+    if (retFilter === 'Retirement') accounts = accounts.filter(a => a.retirement);
+    if (retFilter === 'Non-Retirement') accounts = accounts.filter(a => !a.retirement);
+    return accounts.length ? accounts : all.filter(() => false).concat([{ positions: [], closedPositions: [], orphanedSells: [], watchlist: [], perf: [0] }]);
+  }
+
+  combineAccounts(accounts) {
+    const perfLen = Math.max(...accounts.map(a => a.perf.length));
+    const perf = Array.from({ length: perfLen }, (_, i) =>
+      accounts.reduce((sum, a) => sum + (a.perf[i] ?? a.perf[a.perf.length - 1]), 0)
+    );
+    return {
+      positions: accounts.flatMap(a => a.positions.map(p => ({ ...p, retirement: !!a.retirement }))),
+      closedPositions: accounts.flatMap(a => a.closedPositions),
+      orphanedSells: accounts.flatMap(a => a.orphanedSells),
+      watchlist: accounts.flatMap(a => a.watchlist),
+      perf
+    };
+  }
+
+  computePositions(account) {
+    return account.positions.map(p => {
+      const marketValue = p.shares * p.price;
+      const costBasis = p.shares * p.avgCost;
+      const gl = marketValue - costBasis;
+      const glPct = costBasis === 0 ? 0 : (gl / costBasis) * 100;
+      return { ...p, marketValue, costBasis, gl, glPct };
+    });
+  }
+
+  renderVals() {
+    const catKey = CATEGORY_META[this.state.category] ? this.state.category : 'taxable';
+    const retKey = ['All', 'Retirement', 'Non-Retirement'].includes(this.state.retirementFilter) ? this.state.retirementFilter : 'All';
+    const accountsForCat = this.getAccountsForCategory(catKey, retKey);
+    const account = this.combineAccounts(accountsForCat);
+    const positions = this.computePositions(account);
+    const transactions = this.buildTransactions(account);
+    const totalValue = positions.reduce((s, p) => s + p.marketValue, 0);
+    const totalCost = positions.reduce((s, p) => s + p.costBasis, 0);
+    const totalGL = totalValue - totalCost;
+    const totalGLPct = totalCost === 0 ? 0 : (totalGL / totalCost) * 100;
+    const dayChange = totalValue * 0.0064;
+
+    const byClass = {};
+    positions.forEach(p => { byClass[p.assetClass] = (byClass[p.assetClass] || 0) + p.marketValue; });
+    const classEntries = Object.entries(byClass).sort((a, b) => b[1] - a[1]);
+    const allocationBars = classEntries.map(([cls, val]) => ({
+      label: cls, pct: (val / totalValue) * 100, pctStr: ((val / totalValue) * 100).toFixed(1) + '%'
+    }));
+
+    const perf = account.perf;
+    const min = Math.min(...perf), max = Math.max(...perf);
+    const range = max - min || 1;
+    const w = 600, h = 170, pad = 6;
+    const pts = perf.map((v, i) => {
+      const x = (i / (perf.length - 1)) * (w - pad * 2) + pad;
+      const y = h - pad - ((v - min) / range) * (h - pad * 2);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    });
+    const linePoints = pts.join(' ');
+
+    const summaryCards = [
+      { label: 'Total Value', value: fmtUSD(totalValue), color: 'var(--color-text)' },
+      { label: 'Day Change', value: (dayChange >= 0 ? '+' : '') + fmtUSD(dayChange), color: dayChange >= 0 ? GAIN : LOSS },
+      { label: 'Total Gain/Loss', value: (totalGL >= 0 ? '+' : '') + fmtUSD(totalGL), sub: fmtPct(totalGLPct), color: totalGL >= 0 ? GAIN : LOSS },
+      { label: 'Cost Basis', value: fmtUSD(totalCost), color: 'var(--color-text)' }
+    ];
+
+    const assetClasses = ['All', ...Object.keys(byClass)];
+    let visiblePositions = positions.filter(p => {
+      if (this.state.assetClassFilter !== 'All' && p.assetClass !== this.state.assetClassFilter) return false;
+      const q = this.state.posSearch.toLowerCase();
+      if (q && !p.symbol.toLowerCase().includes(q) && !p.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const sk = this.state.sortKey, sd = this.state.sortDir === 'asc' ? 1 : -1;
+    visiblePositions = [...visiblePositions].sort((a, b) => {
+      const av = a[sk], bv = b[sk];
+      if (typeof av === 'string') return av.localeCompare(bv) * sd;
+      return (av - bv) * sd;
+    });
+
+    const cols = [
+      { key: 'symbol', label: 'Security', align: 'left' },
+      { key: 'assetClass', label: 'Class', align: 'left' },
+      { key: 'shares', label: 'Shares', align: 'right' },
+      { key: 'avgCost', label: 'Avg Cost', align: 'right' },
+      { key: 'costBasis', label: 'Cost Basis', align: 'right' },
+      { key: 'price', label: 'Price', align: 'right' },
+      { key: 'marketValue', label: 'Market Value', align: 'right' },
+      { key: 'gl', label: 'Gain/Loss', align: 'right' },
+      { key: 'glPct', label: 'Return', align: 'right' },
+      { key: 'noTx', label: '', align: 'center' }
+    ];
+    const positionCols = cols.map(c => ({
+      ...c,
+      onClick: () => this.setState(s => ({ sortKey: c.key, sortDir: s.sortKey === c.key && s.sortDir === 'desc' ? 'asc' : 'desc' })),
+      sortArrow: sk === c.key ? (sd === 1 ? ' \u2191' : ' \u2193') : ''
+    }));
+
+    const assetClassFilters = assetClasses.map(cls => ({
+      label: cls,
+      onClick: () => this.setState({ assetClassFilter: cls }),
+      tagClass: this.state.assetClassFilter === cls ? 'tag-accent' : 'tag-outline'
+    }));
+
+    const retirementFilters = ['All', 'Retirement', 'Non-Retirement'].map(r => ({
+      label: r,
+      onClick: () => this.setState({ retirementFilter: r }),
+      tagClass: retKey === r ? 'tag-accent' : 'tag-outline'
+    }));
+
+    const visiblePositionsOut = visiblePositions.map(p => ({
+      symbol: p.symbol, name: p.name, assetClass: p.assetClass,
+      sharesStr: p.shares.toLocaleString('en-US', { maximumFractionDigits: 2 }),
+      avgCostStr: fmtUSD(p.avgCost), priceStr: fmtUSD(p.price),
+      costBasisStr: fmtUSD(p.costBasis),
+      marketValueStr: fmtUSD(p.marketValue),
+      glStr: (p.gl >= 0 ? '+' : '') + fmtUSD(p.gl),
+      glPctStr: fmtPct(p.glPct),
+      glColor: p.gl >= 0 ? GAIN : LOSS,
+      noTx: p.noTx,
+      retirement: p.retirement
+    }));
+
+    const closedPositions = account.closedPositions.map(cp => ({
+      ...cp,
+      glStr: (cp.gl >= 0 ? '+' : '') + fmtUSD(cp.gl),
+      glColor: cp.gl >= 0 ? GAIN : LOSS
+    }));
+
+    const txTypes = ['All', 'Buy', 'Sell', 'Dividend'];
+    const txTagClass = { Buy: 'tag-accent', Sell: 'tag-outline', Dividend: 'tag-neutral' };
+    let visibleTx = transactions.filter(tx => {
+      if (this.state.txTypeFilter !== 'All' && tx.type !== this.state.txTypeFilter) return false;
+      const q = this.state.txSearch.toLowerCase();
+      if (q && !tx.symbol.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const heldSymbols = new Set(account.positions.map(p => p.symbol));
+    const visibleTransactions = visibleTx.map(tx => ({
+      dateStr: tx.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      symbol: tx.symbol, type: tx.type, tagClass: txTagClass[tx.type],
+      sharesStr: tx.shares ? tx.shares.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '\u2014',
+      priceStr: tx.price ? fmtUSD(tx.price) : '\u2014',
+      amountStr: fmtUSD(tx.amount != null ? tx.amount : tx.shares * tx.price),
+      orphaned: tx.orphaned,
+      matched: !tx.orphaned && heldSymbols.has(tx.symbol)
+    }));
+
+    const txTypeFilters = txTypes.map(t => ({
+      label: t, onClick: () => this.setState({ txTypeFilter: t }),
+      tagClass: this.state.txTypeFilter === t ? 'tag-accent' : 'tag-outline'
+    }));
+
+    const watchlist = account.watchlist.map(w => ({ ...w, priceStr: fmtUSD(w.price) }));
+
+    const categoryTabs = Object.keys(CATEGORY_META).map(id => ({
+      label: CATEGORY_META[id].label, active: catKey === id,
+      onClick: () => this.setState({ category: id, assetClassFilter: 'All', txTypeFilter: 'All', posSearch: '', txSearch: '', showClosed: false })
+    }));
+
+    const mainTabs = [
+      { key: 'positions', label: 'Positions', active: this.state.tab === 'positions', onClick: () => this.setState({ tab: 'positions' }) },
+      { key: 'transactions', label: 'Transactions', active: this.state.tab === 'transactions', onClick: () => this.setState({ tab: 'transactions' }) }
+    ];
+
+    return {
+      portfolioName: CATEGORY_META[catKey].full,
+      showWatchlist: this.props.showWatchlist ?? true,
+      range: this.state.range,
+      onRangeChange: (e) => this.setState({ range: e.target.value }),
+      categoryTabs,
+      summaryCards,
+      linePoints,
+      chartStartLabel: this.state.range === 'ALL' ? 'Inception' : '10 periods ago',
+      chartEndLabel: 'Today',
+      allocationBars,
+      watchlist,
+      mainTabs,
+      isPositionsTab: this.state.tab === 'positions',
+      isTransactionsTab: this.state.tab === 'transactions',
+      assetClassFilters,
+      retirementFilters,
+      posSearch: this.state.posSearch,
+      onPosSearchChange: (e) => this.setState({ posSearch: e.target.value }),
+      positionCols,
+      visiblePositions: visiblePositionsOut,
+      closedPositions,
+      showClosed: this.state.showClosed,
+      closedToggleLabel: (this.state.showClosed ? '\u2212 Hide' : '+ Show') + ' Closed Positions',
+      toggleClosed: () => this.setState(s => ({ showClosed: !s.showClosed })),
+      txTypeFilters,
+      txSearch: this.state.txSearch,
+      onTxSearchChange: (e) => this.setState({ txSearch: e.target.value }),
+      visibleTransactions
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -1,6 +1,5 @@
 import type { AppState } from './state'
 import * as StateActions from './state'
-import { finalizeNewAccount } from './accounts'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
 
@@ -29,15 +28,6 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'DELETE_ACCOUNT':
       return StateActions.deleteAccount(state, action.accountId)
 
-    case 'FINALIZE_NEW_ACCOUNT':
-      return finalizeNewAccount(
-        state,
-        action.accountNumber,
-        action.name,
-        action.taxCategory,
-        action.retirement
-      )
-
     // Position management
     case 'UPDATE_POSITION':
       return StateActions.updatePosition(state, action.positionId, action.patch)
@@ -46,6 +36,9 @@ export function appReducer(state: AppState, action: Action): AppState {
       return StateActions.updatePosition(state, action.positionId, {
         assetClassManualOverride: action.override || undefined,
       })
+
+    case 'DELETE_CLOSED_POSITION':
+      return StateActions.deleteClosedPosition(state, action.id)
 
     // Filters
     case 'SET_CATEGORY':
@@ -82,15 +75,6 @@ export function appReducer(state: AppState, action: Action): AppState {
       return StateActions.toggleShowClosed(state)
 
     // Import flow
-    case 'SET_PENDING_IMPORT':
-      return StateActions.setPendingImport(state, action.pendingImport)
-
-    case 'CLEAR_IMPORT_DIALOG':
-      return StateActions.setPendingImport(state, undefined)
-
-    case 'SET_ACCOUNT_PROMPT_QUEUE':
-      return StateActions.setAccountPromptQueue(state, action.accountPromptQueue)
-
     case 'IMPORT_POSITIONS':
       return importPositions(state, action.accountId, action.mappedRows, action.importDate)
 

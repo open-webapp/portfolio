@@ -16,12 +16,13 @@ export interface Position {
   id: string
   accountId: string
   symbol: string
-  name: string
+  name: string | null
   assetClass: string
   assetClassManualOverride?: string
   shares: number
   avgCost: number
   price: number
+  taxes: number | null
   lastImportedAt: string
 }
 
@@ -29,7 +30,7 @@ export interface ClosedPosition {
   id: string
   accountId: string
   symbol: string
-  name: string
+  name: string | null
   closedDate: string
   assetClass: string
   realizedGL: number | null
@@ -45,6 +46,7 @@ export interface Transaction {
   shares: number
   price: number
   amount: number
+  taxes: number | null
   importedAt: string
 }
 
@@ -60,23 +62,24 @@ export interface MappingProfile {
   name: string
   kind: 'positions' | 'transactions'
   fieldMap: Record<string, string>
-  accountNumberColumn?: string
+  constants?: Record<string, string>
   createdAt: string
   updatedAt: string
 }
 
 export const POSITIONS_REQUIRED_FIELDS = [
   'symbol',
-  'name',
   'assetClass',
   'shares',
   'avgCost',
-  'purchaseAmount',  // NEW: alternative to avgCost
+  'purchaseAmount',  // alternative to avgCost
   'price',
-  'marketValue',     // NEW: alternative to price
+  'marketValue',     // alternative to price
 ] as const
 
 export const AVGCOST_FIELDS = ['avgCost', 'purchaseAmount'] as const
 export const PRICE_FIELDS = ['price', 'marketValue'] as const
+export const POSITIONS_OPTIONAL_FIELDS = ['name', 'taxes'] as const
 
 export const TRANSACTIONS_REQUIRED_FIELDS = ['date', 'symbol', 'type', 'shares', 'price', 'amount'] as const
+export const TRANSACTIONS_OPTIONAL_FIELDS = ['taxes'] as const

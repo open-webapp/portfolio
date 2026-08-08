@@ -29,14 +29,6 @@ export interface AppState {
   txTypeFilter: string // 'All' or specific type like 'Buy'
   txSearch: string // search text for transactions
   showClosed: boolean // toggle closed positions table
-
-  // Transient import flow state (shaped in later tasks)
-  pendingImport?: {
-    kind: 'positions' | 'transactions'
-    rows: Record<string, string>[]
-    profileId: string
-  }
-  accountPromptQueue?: { accountNumber: string; profileId: string }[]
 }
 
 /**
@@ -120,6 +112,16 @@ export function updatePosition(
     positions: state.positions.map((p) =>
       p.id === positionId ? { ...p, ...patch } : p
     ),
+  }
+}
+
+/**
+ * Delete a closed position by ID (to be implemented in reducer cases).
+ */
+export function deleteClosedPosition(state: AppState, id: string): AppState {
+  return {
+    ...state,
+    closedPositions: state.closedPositions.filter((cp) => cp.id !== id),
   }
 }
 
@@ -245,34 +247,3 @@ export function toggleShowClosed(state: AppState): AppState {
   }
 }
 
-/**
- * Set pending import state (to be implemented in reducer cases).
- */
-export function setPendingImport(
-  state: AppState,
-  pendingImport:
-    | {
-        kind: 'positions' | 'transactions'
-        rows: Record<string, string>[]
-        profileId: string
-      }
-    | undefined
-): AppState {
-  return {
-    ...state,
-    pendingImport,
-  }
-}
-
-/**
- * Set account prompt queue (to be implemented in reducer cases).
- */
-export function setAccountPromptQueue(
-  state: AppState,
-  accountPromptQueue: { accountNumber: string; profileId: string }[] | undefined
-): AppState {
-  return {
-    ...state,
-    accountPromptQueue,
-  }
-}

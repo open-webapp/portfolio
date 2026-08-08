@@ -580,4 +580,97 @@ describe('transactionsImport', () => {
     expect(new Date(tx.importedAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeImport).getTime())
     expect(new Date(tx.importedAt).getTime()).toBeLessThanOrEqual(new Date(afterImport).getTime())
   })
+
+  // Task 8: Test 1 - Import transaction with no taxes column mapped
+  it('Task 8.1: Import transaction with no taxes column mapped', () => {
+    let state = initialState()
+
+    const accountId = 'acc-task8-1'
+    const account = createTestAccount(accountId, 'ACC-TASK8-1')
+    state = { ...state, accounts: [account] }
+
+    // Import row without taxes (undefined)
+    const mappedRows = [
+      {
+        date: '2024-01-15',
+        symbol: 'AAPL',
+        type: 'Buy',
+        shares: '10',
+        price: '150.5',
+        amount: '1505',
+        // taxes is not provided
+      },
+    ]
+
+    const newState = importTransactions(state, accountId, mappedRows)
+
+    expect(newState.transactions).toHaveLength(1)
+    const tx = newState.transactions[0]
+    expect(tx.taxes).toBeNull()
+  })
+
+  // Task 8: Test 2 - Import transaction with taxes column mapped
+  it('Task 8.2: Import transaction with taxes column mapped', () => {
+    let state = initialState()
+
+    const accountId = 'acc-task8-2'
+    const account = createTestAccount(accountId, 'ACC-TASK8-2')
+    state = { ...state, accounts: [account] }
+
+    // Import row with taxes mapped
+    const mappedRows = [
+      {
+        date: '2024-01-15',
+        symbol: 'MSFT',
+        type: 'Sell',
+        shares: '5',
+        price: '300.0',
+        amount: '1500',
+        taxes: '25.10',
+      },
+    ]
+
+    const newState = importTransactions(state, accountId, mappedRows)
+
+    expect(newState.transactions).toHaveLength(1)
+    const tx = newState.transactions[0]
+    expect(tx.taxes).toBe(25.10)
+  })
+
+  // Regression: a CSV row with blank cells for required fields (e.g. missing
+  // shares/price/amount) used to still be imported, producing a Transaction
+  // with NaN numeric fields instead of being skipped.
+  it('skips rows with missing required fields instead of importing NaN transactions', () => {
+    let state = initialState()
+
+    const accountId = 'acc-blank-row'
+    const account = createTestAccount(accountId, 'ACC-BLANK')
+    state = { ...state, accounts: [account] }
+
+    const mappedRows = [
+      {
+        date: '2024-01-15',
+        symbol: 'MSFT',
+        type: 'Sell',
+        shares: '5',
+        price: '300.0',
+        amount: '1500',
+      },
+      {
+        // Blank row: shares/price/amount cells were empty in the CSV
+        date: '2024-01-16',
+        symbol: 'AAPL',
+        type: 'Buy',
+        shares: '',
+        price: '',
+        amount: '',
+      },
+    ]
+
+    const newState = importTransactions(state, accountId, mappedRows)
+
+    expect(newState.transactions).toHaveLength(1)
+    expect(newState.transactions[0].symbol).toBe('MSFT')
+    expect(newState.transactions.some((t) => Number.isNaN(t.shares))).toBe(false)
+  })
 })

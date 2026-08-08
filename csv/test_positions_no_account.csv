@@ -1,0 +1,4 @@
+symbol,name,assetClass,shares,avgCost,price
+AAPL,Apple Inc.,Equity,100,150.00,180.50
+MSFT,Microsoft Corp.,Equity,50,300.00,420.75
+VTSAX,Vanguard Total Stock,Equity,200,50.00,65.75

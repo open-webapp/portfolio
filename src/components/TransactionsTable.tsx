@@ -77,6 +77,7 @@ export function TransactionsTable({ state, dispatch }: TransactionsTableProps) {
       sharesStr: tx.shares ? tx.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—',
       priceStr: tx.price ? fmtUSD(tx.price) : '—',
       amountStr: fmtUSD(tx.amount != null ? tx.amount : tx.shares * tx.price),
+      taxesStr: tx.taxes != null ? fmtUSD(tx.taxes) : '—',
       tagClass: txTagClass[tx.type] || 'tag-neutral',
       unmatched: isUnmatched,
     }
@@ -155,8 +156,9 @@ export function TransactionsTable({ state, dispatch }: TransactionsTableProps) {
             <th>Symbol</th>
             <th>Type</th>
             <th style={{ textAlign: 'right' }}>Shares</th>
-            <th style={{ textAlign: 'right' }}>Price</th>
-            <th style={{ textAlign: 'right' }}>Amount</th>
+            <th style={{ textAlign: 'right' }}>Cost Basis</th>
+            <th style={{ textAlign: 'right' }}>Amount Invested</th>
+            <th style={{ textAlign: 'right' }}>Taxes</th>
             <th style={{ textAlign: 'center' }}>Position Link</th>
           </tr>
         </thead>
@@ -171,6 +173,7 @@ export function TransactionsTable({ state, dispatch }: TransactionsTableProps) {
               <td style={{ textAlign: 'right' }}>{tx.sharesStr}</td>
               <td style={{ textAlign: 'right' }}>{tx.priceStr}</td>
               <td style={{ textAlign: 'right', fontWeight: '600' }}>{tx.amountStr}</td>
+              <td style={{ textAlign: 'right' }}>{tx.taxesStr}</td>
               <td style={{ textAlign: 'center' }}>
                 {tx.unmatched && (
                   <span

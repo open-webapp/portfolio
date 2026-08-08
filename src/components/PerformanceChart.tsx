@@ -1,5 +1,5 @@
 import type { AppState } from '../lib/state'
-import { performanceLinePoints, totalValueSeries } from '../lib/selectors'
+import { performanceLinePoints, totalValueSeriesInRange } from '../lib/selectors'
 
 export interface PerformanceChartProps {
   state: AppState
@@ -12,7 +12,7 @@ export interface PerformanceChartProps {
  */
 export function PerformanceChart({ state }: PerformanceChartProps) {
   const linePoints = performanceLinePoints(state, state.range)
-  const series = totalValueSeries(state)
+  const series = totalValueSeriesInRange(state, state.range)
 
   // Format date labels
   let startLabel = 'N/A'

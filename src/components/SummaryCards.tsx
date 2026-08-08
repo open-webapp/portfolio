@@ -17,7 +17,7 @@ export function SummaryCards({ state }: SummaryCardsProps) {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
+        gridTemplateColumns: 'repeat(5, 1fr)',
         gap: 'var(--space-4)',
         marginBottom: 'var(--space-6)'
       }}
