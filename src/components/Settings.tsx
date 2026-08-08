@@ -195,6 +195,7 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
           <table className="table">
             <thead>
               <tr>
+                <th>Account Number</th>
                 <th>Name</th>
                 <th>Tax Category</th>
                 <th>Retirement</th>
@@ -226,6 +227,8 @@ function AccountRow({
 }) {
   const [isEditingName, setIsEditingName] = useState(false)
   const [editedName, setEditedName] = useState(account.name)
+  const [isEditingAccountNumber, setIsEditingAccountNumber] = useState(false)
+  const [editedAccountNumber, setEditedAccountNumber] = useState(account.accountNumber)
 
   const handleNameBlur = () => {
     if (editedName.trim() && editedName !== account.name) {
@@ -245,6 +248,27 @@ function AccountRow({
     } else if (e.key === 'Escape') {
       setEditedName(account.name)
       setIsEditingName(false)
+    }
+  }
+
+  const handleAccountNumberBlur = () => {
+    if (editedAccountNumber.trim() && editedAccountNumber !== account.accountNumber) {
+      dispatch({
+        type: 'UPDATE_ACCOUNT',
+        accountId: account.id,
+        patch: { accountNumber: editedAccountNumber.trim() },
+      })
+    }
+    setEditedAccountNumber(account.accountNumber)
+    setIsEditingAccountNumber(false)
+  }
+
+  const handleAccountNumberKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleAccountNumberBlur()
+    } else if (e.key === 'Escape') {
+      setEditedAccountNumber(account.accountNumber)
+      setIsEditingAccountNumber(false)
     }
   }
 
@@ -276,6 +300,28 @@ function AccountRow({
 
   return (
     <tr>
+      <td>
+        {isEditingAccountNumber ? (
+          <input
+            className="input"
+            type="text"
+            value={editedAccountNumber}
+            onChange={(e) => setEditedAccountNumber(e.target.value)}
+            onBlur={handleAccountNumberBlur}
+            onKeyDown={handleAccountNumberKeyDown}
+            autoFocus
+            style={{ width: '100%' }}
+          />
+        ) : (
+          <span
+            onClick={() => setIsEditingAccountNumber(true)}
+            style={{ cursor: 'pointer', textDecoration: 'underline' }}
+            title="Click to edit"
+          >
+            {account.accountNumber}
+          </span>
+        )}
+      </td>
       <td>
         {isEditingName ? (
           <input
