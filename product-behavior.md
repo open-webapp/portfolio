@@ -80,13 +80,15 @@ A single "Import CSV" button (visible on both Positions and Transactions tabs) o
 
 ## Settings page
 
-A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Contains three sections:
+A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Contains four sections:
 
 **Drive backup**: Shows current sync status (connected/disconnected). A "Sync Now" button triggers `syncBackup(state)` to upload the current `AppState` to Google Drive. When connected, a "Disconnect" button calls `restoreBackup()` flow and clears the Drive link. Displays the date of the last successful backup, or "Never synced" if none exists.
 
 **Import Sessions**: A table listing all past CSV imports with columns: File name, Kind (Positions/Transactions), Date, Accounts affected (comma-separated account names), Row count. Each row has a "Copy" button (copies session metadata to clipboard, displays a confirmation toast) and a "Delete" button (prompts `window.confirm()` before removing the session and its associations from `state.importSessions`).
 
 **Accounts**: A list of all accounts with inline edit/delete affordances. Each account row shows: name (editable), account number (editable), tax category (dropdown: Taxable/Non-Taxable/Tax-Deferred), retirement toggle (checkbox). Deleting an account via the trash-icon button prompts with `window.confirm('Delete account and all associated data? This is permanent.')` — if confirmed, the account and all its positions, transactions, snapshots, and import sessions are cascade-deleted.
+
+**Saved Mappings**: A list of all saved mapping profiles (created during the CSV import wizard), ordered by most recently updated first. Each row shows: Name, Kind (Positions/Transactions), Updated date (ISO string). Each row has an Edit button (pencil icon, opens `MappingProfileEditor` modal to update name/mapping) and a Delete button (trash icon, prompts with `window.confirm('Delete this saved profile? It will no longer be available for import.')` before removing). Empty state: "No saved profiles yet." when no profiles exist. No create-new-profile button in Settings (profiles are created only during the import wizard).
 
 **Back button**: Returns to the dashboard.
 

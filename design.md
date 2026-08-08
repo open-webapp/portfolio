@@ -38,6 +38,7 @@ src/
     ClosedPositionsTable.tsx
     TransactionsTable.tsx
     AssetClassOverrideSelect.tsx
+    Settings.tsx                  # 4 sections: Drive backup / Import Sessions / Accounts / Saved Mappings
     import/
       ImportDialog.tsx          # unified positions + transactions dialog
       MappingProfileEditor.tsx   # field mapping UI (reused by both import kinds)
@@ -109,7 +110,7 @@ App
     [tab === 'transactions']
       TransactionsTable       (state, dispatch)
   [view === 'settings']
-    SettingsPage              (state, dispatch)  — Drive backup / Import Sessions table / Accounts list
+    SettingsPage              (state, dispatch)  — 4 sections: Drive backup / Import Sessions / Accounts / Saved Mappings (modal `MappingProfileEditor` on edit)
 ```
 
 Props convention: presentational components take `{ state: AppState, dispatch }`; a few (`AssetClassOverrideSelect`) take a narrower prop (`position`) plus `dispatch`. `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
