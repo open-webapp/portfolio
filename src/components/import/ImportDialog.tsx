@@ -454,7 +454,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
           border: '1px solid var(--color-divider)',
           borderRadius: '8px',
           padding: 'var(--space-6)',
-          maxWidth: '600px',
+          maxWidth: 'min(1200px, 95vw)',
           maxHeight: '80vh',
           overflowY: 'auto',
           zIndex: 1000,
