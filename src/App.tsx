@@ -90,6 +90,15 @@ function App() {
         return
       }
 
+      // Require accountNumberColumn to be mapped
+      if (!profile.accountNumberColumn) {
+        alert(
+          `The mapping profile "${profile.name}" doesn't have an Account Number column mapped.\n\nPlease go back and either:\n1. Edit the profile to map an "Account Number" column from your CSV\n2. Or use a different profile that has this mapping`
+        )
+        dispatch({ type: 'SET_PENDING_IMPORT', pendingImport: undefined })
+        return
+      }
+
       // Group rows by accountNumber, then resolve to accountId
       const rowsByAccount = new Map<string, Record<string, string>[]>()
       const accountNumbersToResolve = new Set<string>()
@@ -97,8 +106,8 @@ function App() {
       for (const row of rows) {
         const accountNumber = resolveAccountNumber(row, profile)
         if (!accountNumber) {
-          // No account number column mapped; TODO: handle default account or prompt
-          console.warn('No account number resolved from row, skipping:', row)
+          // This shouldn't happen if accountNumberColumn is properly mapped and column exists in CSV
+          console.warn('No account number resolved from row (column missing in CSV?):', row)
           continue
         }
 

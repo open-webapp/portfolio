@@ -96,6 +96,7 @@ Props convention: presentational components take `{ state: AppState, dispatch }`
 **Import processing** (`App.tsx` effect):
 6. When `pendingImport` is set, an effect automatically:
    - Looks up the profile by `profileId` in state.
+   - Validates that profile has `accountNumberColumn` mapped; if not, alerts user and cancels import.
    - Groups rows by `resolveAccountNumber(row, profile)` (mapped account column).
    - For each account number, resolves to an `accountId` via `findOrCreateAccountPrompt(state, accountNumber)` (existing account or `'needs-prompt'`).
    - If any account `needs-prompt`, **silently returns** (no account-resolution UI exists yet; import fails with a console warning).
