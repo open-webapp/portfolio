@@ -132,30 +132,6 @@ function App() {
 
           {/* Main content area with padding */}
           <div style={{ padding: 'var(--space-6)' }}>
-            {/* Settings button row - right-aligned above summary cards */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-4)' }}>
-              <button
-                onClick={() => dispatch({ type: 'SET_VIEW', view: 'settings' })}
-                title="Settings"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '20px',
-                  padding: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--color-text-secondary)',
-                  transition: 'color 0.2s',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
-                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-              >
-                ⚙️
-              </button>
-            </div>
-
             {/* Summary cards row */}
             <SummaryCards state={state} />
 

@@ -106,8 +106,8 @@ export function Nav({ state, dispatch }: NavProps) {
         ))}
       </select>
 
-      {/* Retirement filter tags */}
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
+      {/* Retirement filter tags and Settings */}
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
         {retirementFilters.map((filter) => (
           <span
             key={filter.value}
@@ -124,6 +124,29 @@ export function Nav({ state, dispatch }: NavProps) {
             {filter.label}
           </span>
         ))}
+
+        {/* Settings button */}
+        <button
+          onClick={() => dispatch({ type: 'SET_VIEW', view: 'settings' })}
+          title="Settings"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '20px',
+            padding: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-text-secondary)',
+            transition: 'color 0.2s',
+            marginLeft: 'var(--space-4)',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+        >
+          ⚙️
+        </button>
       </div>
     </div>
   )
