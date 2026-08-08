@@ -38,10 +38,12 @@ src/
     ClosedPositionsTable.tsx
     TransactionsTable.tsx
     AssetClassOverrideSelect.tsx
+    Settings.tsx                # Drive-sync Connect/Disconnect/Sync Now/Restore
     import/
       ImportPositionsDialog.tsx
       ImportTransactionsDialog.tsx
       MappingProfileEditor.tsx
+      AccountResolvePrompt.tsx   # first-seen-account name/category/retirement prompt
       index.ts
 plans/                        # historical planning docs, superseded by this file
 portfolio-dashboard-design/   # pixel-reference prototype (.dc.html) — not shipped code
@@ -66,7 +68,9 @@ Single `useReducer(appReducer, initialState())` in `App.tsx`. No Redux/Zustand/C
 
 ```
 App
+  AccountResolvePrompt        (state, dispatch)      — renders null unless state.accountPromptQueue is non-empty
   Nav                          (state, dispatch)
+  Settings                     (state, dispatch)      — Drive backup Connect/Disconnect/Sync Now/Restore
   SummaryCards                 (state)
   PerformanceChart             (state)
   AllocationChart              (state)
@@ -93,26 +97,29 @@ Props convention: presentational components take `{ state: AppState, dispatch }`
 4. `applyMapping(row, profile)` renames each CSV row's headers to internal field names per `profile.fieldMap`.
 5. Dialog dispatches `SET_PENDING_IMPORT` with `{ kind, rows: mappedRows, profileId }` and closes itself.
 
-**Import processing** (`App.tsx` effect):
+**Import processing** (`App.tsx` effect, keyed on `[state.pendingImport, state.mappingProfiles, state.accounts, isHydrated]`):
 6. When `pendingImport` is set, an effect automatically:
    - Looks up the profile by `profileId` in state.
-   - Groups rows by `resolveAccountNumber(row, profile)` (mapped account column).
-   - For each account number, resolves to an `accountId` via `findOrCreateAccountPrompt(state, accountNumber)` (existing account or `'needs-prompt'`).
-   - If any account `needs-prompt`, **silently returns** (no account-resolution UI exists yet; import fails with a console warning).
-   - Otherwise, calls `importPositions()` (replaces positions, creates closed positions, upserts snapshot) or `importTransactions()` (deduplicates, inserts) for each account.
+   - Groups rows by `resolveAccountNumber(row, profile)` (mapped account column); rows with no resolvable account number use `'__default_account__'` marker, triggering account resolution prompt.
+   - For each distinct account number, resolves to an `accountId` via `findOrCreateAccountPrompt(state, accountNumber)` (existing account or `'needs-prompt'`).
+   - If any account numbers come back `'needs-prompt'`, dispatches `SET_ACCOUNT_PROMPT_QUEUE` with `{accountNumber, profileId}` for each and returns *without* importing yet — `AccountResolvePrompt` then renders and blocks on the first queued entry.
+   - Submitting `AccountResolvePrompt` dispatches `FINALIZE_NEW_ACCOUNT` (creating the account) then dequeues that entry via `SET_ACCOUNT_PROMPT_QUEUE`; the effect's `state.accounts` dependency re-triggers it, and previously-unresolvable account numbers now resolve. "Cancel Import" clears both the queue and `pendingImport`.
+   - Once every account number resolves, calls `importPositions()` (replaces positions, creates closed positions, upserts snapshot) or `importTransactions()` (deduplicates, inserts) for each account.
    - Dispatches `__SET_STATE` to clear `pendingImport` from state and persist the new positions/transactions/snapshots.
 
 **Persistence**: `App.tsx` calls `loadPersistedApp()` (`persist.ts`) once on mount via `dispatch({ type: '__SET_STATE', newState })`, gated by an `isHydrated` flag (renders "Loading dashboard..." until then). Every state change after hydration schedules `savePersistedApp(state)` 500ms later (debounced via `setTimeout` in a `useEffect`, cleared/reset on each state change).
 
-**Drive sync**: `drive.ts` exports a `drive` singleton (`createDriveSync({ appId: 'portfolio', folderPath: ['OpenWebApp','Portfolio'] })`) plus `syncBackup(state)`/`restoreBackup()`, both operating on `drive.project('app')`. No UI currently calls these — no Settings/Connect/Sync affordance exists in `App.tsx` or elsewhere in `src/components`.
+**Drive sync**: `drive.ts` exports a `drive` singleton (`createDriveSync({ appId: 'portfolio', folderPath: ['OpenWebApp','Portfolio'] })`) plus `syncBackup(state)`/`restoreBackup()`/`connectDrive()`/`disconnectDrive()`/`getDriveConnection()`, all operating on `drive.project('app')`. `src/components/Settings.tsx` is a modal (opened via a "Settings" button, top-right of the main content area) wiring all five: shows the connected email (or "Not connected"), Connect/Disconnect, "Sync Now" (`syncBackup(state)`), and "Restore from Drive" (`restoreBackup()` → dispatches `__SET_STATE` on success). No conflict resolution — last-write-wins, by design (v1 simplification).
 
 **Selectors** (`selectors.ts`) are the only place that reads+filters+sorts raw `AppState` collections for display; components call them instead of re-deriving:
 - `visiblePositions(state)` — category → retirement filter → asset-class filter → search (symbol/name, case-insensitive) → `sortBy(state.sortKey, state.sortDir)`.
 - `visibleTransactions(state)` — category filter → type filter → search (symbol/date) → always sorted by `date desc` (not user-sortable).
 - `totalValueSeries(state, accountIds?)` — groups `PortfolioSnapshot[]` by `date`, sums `value`; defaults to accounts in the selected category if `accountIds` omitted.
-- `summaryCards(state)` — Total Value / Day Change / Total Gain-Loss / Cost Basis, computed live from `positions` and `totalValueSeries` (no stored placeholder).
+- `totalValueSeriesInRange(state, range)` — `totalValueSeries(state)` filtered to a cutoff date derived from `range` (`'6m'`/`'1y'`/`'ytd'` compute a cutoff from `new Date()`; `'all'` or an unrecognized value returns the series unfiltered).
+- `summaryCards(state)` — Total Value / Day Change / Total Gain-Loss / Cost Basis / Total Taxes Paid, computed live from `positions`/`transactions`/`totalValueSeries` (no stored placeholder).
 - `allocationBars(state)` — wraps `computations.allocationByAssetClass`, respecting `assetClassManualOverride`.
-- `performanceLinePoints(state, range)` — builds an SVG `points` string from `totalValueSeries`; `range` param is accepted but **not yet used to filter** the series (see product-behavior.md).
+- `totalTaxesPaid(state)` — sums `transaction.taxes` (null treated as 0) across the selected category's accounts.
+- `performanceLinePoints(state, range)` — builds an SVG `points` string from `totalValueSeriesInRange(state, range)`, so the Nav's date-range select now actually changes what's plotted.
 
 ## Design patterns
 
@@ -124,6 +131,4 @@ Props convention: presentational components take `{ state: AppState, dispatch }`
 
 ## Known gaps vs. plan (`plans/portfolio-dashboard-v1.md`)
 
-- No account-resolution UI (`AccountResolvePrompt`) — when a CSV's account number doesn't match any existing account, the import fails silently instead of prompting for account details (name, tax category, retirement flag).
-- No Drive-sync Settings UI (Connect/Disconnect/Sync Now).
-- `performanceLinePoints` ignores the `range` argument — the Performance chart always plots the full snapshot history regardless of the Nav's date-range select.
+None outstanding as of this revision — account resolution, Drive-sync Settings, and date-range filtering (previously listed here) are now wired up; see "Import processing" and the `totalValueSeriesInRange` selector above.
