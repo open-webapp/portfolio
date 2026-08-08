@@ -1,0 +1,278 @@
+import type {
+  Account,
+  Position,
+  ClosedPosition,
+  Transaction,
+  PortfolioSnapshot,
+  MappingProfile,
+  TaxCategory,
+} from './types'
+
+export interface AppState {
+  // Data collections
+  accounts: Account[]
+  positions: Position[]
+  closedPositions: ClosedPosition[]
+  transactions: Transaction[]
+  snapshots: PortfolioSnapshot[]
+  mappingProfiles: MappingProfile[]
+
+  // UI state
+  category: TaxCategory | 'all'
+  range: string // e.g. '6m', '1y', 'ytd', 'all'
+  tab: 'positions' | 'transactions'
+  sortKey: keyof Position
+  sortDir: 'asc' | 'desc'
+  assetClassFilter: string // 'All' or specific class
+  retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'
+  posSearch: string // search text for positions
+  txTypeFilter: string // 'All' or specific type like 'Buy'
+  txSearch: string // search text for transactions
+  showClosed: boolean // toggle closed positions table
+
+  // Transient import flow state (shaped in later tasks)
+  pendingImport?: {
+    kind: 'positions' | 'transactions'
+    rows: Record<string, string>[]
+    profileId: string
+  }
+  accountPromptQueue?: { accountNumber: string; profileId: string }[]
+}
+
+/**
+ * Create a fresh AppState with empty collections and sensible UI defaults.
+ */
+export function initialState(): AppState {
+  return {
+    // Data collections
+    accounts: [],
+    positions: [],
+    closedPositions: [],
+    transactions: [],
+    snapshots: [],
+    mappingProfiles: [],
+
+    // UI state
+    category: 'all',
+    range: '1y',
+    tab: 'positions',
+    sortKey: 'symbol',
+    sortDir: 'asc',
+    assetClassFilter: 'All',
+    retirementFilter: 'All',
+    posSearch: '',
+    txTypeFilter: 'All',
+    txSearch: '',
+    showClosed: false,
+  }
+}
+
+/**
+ * Update a single account (to be implemented in reducer cases).
+ */
+export function updateAccount(
+  state: AppState,
+  accountId: string,
+  patch: Partial<Account>
+): AppState {
+  return {
+    ...state,
+    accounts: state.accounts.map((a) =>
+      a.id === accountId ? { ...a, ...patch } : a
+    ),
+  }
+}
+
+/**
+ * Add a new account (to be implemented in reducer cases).
+ */
+export function addAccount(state: AppState, account: Account): AppState {
+  return {
+    ...state,
+    accounts: [...state.accounts, account],
+  }
+}
+
+/**
+ * Delete an account by ID (to be implemented in reducer cases).
+ */
+export function deleteAccount(state: AppState, accountId: string): AppState {
+  return {
+    ...state,
+    accounts: state.accounts.filter((a) => a.id !== accountId),
+    positions: state.positions.filter((p) => p.accountId !== accountId),
+    closedPositions: state.closedPositions.filter((c) => c.accountId !== accountId),
+    transactions: state.transactions.filter((t) => t.accountId !== accountId),
+    snapshots: state.snapshots.filter((s) => s.accountId !== accountId),
+  }
+}
+
+/**
+ * Update a single position (to be implemented in reducer cases).
+ */
+export function updatePosition(
+  state: AppState,
+  positionId: string,
+  patch: Partial<Position>
+): AppState {
+  return {
+    ...state,
+    positions: state.positions.map((p) =>
+      p.id === positionId ? { ...p, ...patch } : p
+    ),
+  }
+}
+
+/**
+ * Set the category filter (to be implemented in reducer cases).
+ */
+export function setCategory(
+  state: AppState,
+  category: TaxCategory | 'all'
+): AppState {
+  return {
+    ...state,
+    category,
+  }
+}
+
+/**
+ * Set the date range filter (to be implemented in reducer cases).
+ */
+export function setRange(state: AppState, range: string): AppState {
+  return {
+    ...state,
+    range,
+  }
+}
+
+/**
+ * Set the active tab (to be implemented in reducer cases).
+ */
+export function setTab(state: AppState, tab: 'positions' | 'transactions'): AppState {
+  return {
+    ...state,
+    tab,
+  }
+}
+
+/**
+ * Set the sort key and direction (to be implemented in reducer cases).
+ */
+export function setSort(
+  state: AppState,
+  sortKey: keyof Position,
+  sortDir: 'asc' | 'desc'
+): AppState {
+  return {
+    ...state,
+    sortKey,
+    sortDir,
+  }
+}
+
+/**
+ * Toggle sort direction for the current key (to be implemented in reducer cases).
+ */
+export function toggleSort(state: AppState, newKey: keyof Position): AppState {
+  return {
+    ...state,
+    sortKey: newKey,
+    sortDir: state.sortKey === newKey ? (state.sortDir === 'asc' ? 'desc' : 'asc') : 'asc',
+  }
+}
+
+/**
+ * Set the asset class filter (to be implemented in reducer cases).
+ */
+export function setAssetClassFilter(state: AppState, filter: string): AppState {
+  return {
+    ...state,
+    assetClassFilter: filter,
+  }
+}
+
+/**
+ * Set the retirement filter (to be implemented in reducer cases).
+ */
+export function setRetirementFilter(
+  state: AppState,
+  filter: 'All' | 'Retirement' | 'Non-Retirement'
+): AppState {
+  return {
+    ...state,
+    retirementFilter: filter,
+  }
+}
+
+/**
+ * Set the positions search text (to be implemented in reducer cases).
+ */
+export function setPositionsSearch(state: AppState, search: string): AppState {
+  return {
+    ...state,
+    posSearch: search,
+  }
+}
+
+/**
+ * Set the transactions search text (to be implemented in reducer cases).
+ */
+export function setTransactionsSearch(state: AppState, search: string): AppState {
+  return {
+    ...state,
+    txSearch: search,
+  }
+}
+
+/**
+ * Set the transaction type filter (to be implemented in reducer cases).
+ */
+export function setTransactionTypeFilter(state: AppState, filter: string): AppState {
+  return {
+    ...state,
+    txTypeFilter: filter,
+  }
+}
+
+/**
+ * Toggle the closed positions visibility (to be implemented in reducer cases).
+ */
+export function toggleShowClosed(state: AppState): AppState {
+  return {
+    ...state,
+    showClosed: !state.showClosed,
+  }
+}
+
+/**
+ * Set pending import state (to be implemented in reducer cases).
+ */
+export function setPendingImport(
+  state: AppState,
+  pendingImport:
+    | {
+        kind: 'positions' | 'transactions'
+        rows: Record<string, string>[]
+        profileId: string
+      }
+    | undefined
+): AppState {
+  return {
+    ...state,
+    pendingImport,
+  }
+}
+
+/**
+ * Set account prompt queue (to be implemented in reducer cases).
+ */
+export function setAccountPromptQueue(
+  state: AppState,
+  accountPromptQueue: { accountNumber: string; profileId: string }[] | undefined
+): AppState {
+  return {
+    ...state,
+    accountPromptQueue,
+  }
+}

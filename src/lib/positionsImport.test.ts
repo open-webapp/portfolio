@@ -1,0 +1,663 @@
+import { describe, it, expect } from 'vitest'
+import { importPositions } from './positionsImport'
+import { initialState } from './state'
+import { finalizeNewAccount } from './accounts'
+import type { Position, ClosedPosition, Transaction } from './types'
+
+describe('positionsImport', () => {
+  // Test 1: Re-importing REPLACES account's positions; old position not in new CSV is gone
+  it('Test 1: Re-importing replaces all positions for an account', () => {
+    // Setup: Create an account and initial positions
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // Add initial positions
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId,
+        symbol: 'MSFT',
+        name: 'Microsoft Corp.',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Import new positions (only AAPL, not MSFT)
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '150', // Changed quantity
+        avgCost: '160',
+        price: '210',
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    // Verify MSFT is gone
+    expect(result.positions.filter((p) => p.accountId === accountId)).toHaveLength(1)
+    expect(result.positions.find((p) => p.symbol === 'MSFT')).toBeUndefined()
+
+    // Verify AAPL was updated
+    const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+    expect(aapl).toBeDefined()
+    expect(aapl!.shares).toBe(150)
+    expect(aapl!.price).toBe(210)
+    expect(aapl!.lastImportedAt).toBe('2026-08-08')
+  })
+
+  // Test 2: Symbol present in old snapshot but absent from new import → ClosedPosition created
+  it('Test 2: Missing symbol in new import creates ClosedPosition', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId,
+        symbol: 'TSLA',
+        name: 'Tesla Inc.',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 250,
+        price: 300,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Import without TSLA
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    // Verify ClosedPosition for TSLA was created
+    const closedTsla = result.closedPositions.find(
+      (cp) => cp.symbol === 'TSLA' && cp.accountId === accountId
+    )
+    expect(closedTsla).toBeDefined()
+    expect(closedTsla!.name).toBe('Tesla Inc.')
+    expect(closedTsla!.closedDate).toBe('2026-08-08')
+    expect(closedTsla!.assetClass).toBe('Equity')
+    expect(closedTsla!.realizedGL).toBeNull()
+    expect(closedTsla!.realizedGLBasis).toBe('unknown')
+  })
+
+  // Test 3: Symbol in both old and new → NOT added to closedPositions, assetClassManualOverride survives
+  it('Test 3: Symbol in both old and new preserves assetClassManualOverride', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        assetClassManualOverride: 'Tech Stock',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Re-import same symbol
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '120',
+        avgCost: '155',
+        price: '205',
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    // Verify symbol not added to closedPositions
+    const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
+    expect(closedAapl).toBeUndefined()
+
+    // Verify assetClassManualOverride preserved
+    const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+    expect(aapl!.assetClassManualOverride).toBe('Tech Stock')
+  })
+
+  // Test 4: Importing for account A on date D upserts exactly one PortfolioSnapshot keyed (A, D)
+  it('Test 4: Importing upserts exactly one PortfolioSnapshot for (accountId, date)', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+      {
+        symbol: 'MSFT',
+        name: 'Microsoft Corp.',
+        assetClass: 'Equity',
+        shares: '50',
+        avgCost: '300',
+        price: '400',
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    // Verify exactly one snapshot for this (accountId, date)
+    const snapshots = result.snapshots.filter(
+      (s) => s.accountId === accountId && s.date === '2026-08-08'
+    )
+    expect(snapshots).toHaveLength(1)
+
+    // Verify snapshot value is sum of marketValue
+    const expectedValue = 100 * 200 + 50 * 400 // 20000 + 20000 = 40000
+    expect(snapshots[0].value).toBe(expectedValue)
+  })
+
+  // Test 5: Re-importing for account A on SAME date D replaces (not duplicates) snapshot
+  it('Test 5: Re-importing same account on same date replaces snapshot', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // First import
+    const newRows1 = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+    ]
+
+    let result = importPositions(state, accountId, newRows1, '2026-08-08')
+    expect(result.snapshots).toHaveLength(1)
+    const firstSnapshotValue = result.snapshots[0].value // 100 * 200 = 20000
+
+    // Second import for same account and date with different quantities
+    const newRows2 = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '200',
+        avgCost: '150',
+        price: '200',
+      },
+    ]
+
+    result = importPositions(result, accountId, newRows2, '2026-08-08')
+
+    // Still exactly one snapshot
+    expect(result.snapshots).toHaveLength(1)
+    // Value should be updated
+    const expectedNewValue = 200 * 200 // 40000
+    expect(result.snapshots[0].value).toBe(expectedNewValue)
+    expect(result.snapshots[0].value).not.toBe(firstSnapshotValue)
+  })
+
+  // Test 6: Single CSV spanning multiple accounts → two snapshots, one per account, each valued from that account's rows
+  it('Test 6: Multiple accounts in one import creates snapshot per account', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    state = finalizeNewAccount(state, 'ACC-002', 'Account 2', 'taxDeferred', true)
+
+    const accountId1 = state.accounts.find((a) => a.accountNumber === 'ACC-001')!.id
+    const accountId2 = state.accounts.find((a) => a.accountNumber === 'ACC-002')!.id
+
+    // Import for account 1
+    const rows1 = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+    ]
+
+    let result = importPositions(state, accountId1, rows1, '2026-08-08')
+
+    // Import for account 2
+    const rows2 = [
+      {
+        symbol: 'MSFT',
+        name: 'Microsoft Corp.',
+        assetClass: 'Equity',
+        shares: '50',
+        avgCost: '300',
+        price: '400',
+      },
+    ]
+
+    result = importPositions(result, accountId2, rows2, '2026-08-08')
+
+    // Verify two snapshots exist
+    const snapshots = result.snapshots.filter((s) => s.date === '2026-08-08')
+    expect(snapshots).toHaveLength(2)
+
+    // Verify each snapshot is valued from correct account's rows
+    const snap1 = snapshots.find((s) => s.accountId === accountId1)
+    const snap2 = snapshots.find((s) => s.accountId === accountId2)
+
+    expect(snap1).toBeDefined()
+    expect(snap1!.value).toBe(100 * 200) // 20000
+
+    expect(snap2).toBeDefined()
+    expect(snap2!.value).toBe(50 * 400) // 20000
+  })
+
+  // Test 7: Importing for account with zero prior positions → zero closed positions, still upserts snapshot
+  it('Test 7: Importing to account with no prior positions creates snapshot', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // No prior positions
+
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    // Verify no closed positions created
+    const closedForAccount = result.closedPositions.filter((cp) => cp.accountId === accountId)
+    expect(closedForAccount).toHaveLength(0)
+
+    // Verify snapshot still created
+    const snapshots = result.snapshots.filter((s) => s.accountId === accountId)
+    expect(snapshots).toHaveLength(1)
+    expect(snapshots[0].value).toBe(100 * 200)
+  })
+
+  // Test 8: Realized G/L: matching Sell transaction(s) → realizedGL computed, realizedGLBasis='transactions'
+  it('Test 8: Realized G/L computed from Sell transactions', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // Add position and sell transaction
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Add a sell transaction: 100 shares at $250 = $25,000 proceeds
+    state.transactions = [
+      {
+        id: 'tx-1',
+        accountId,
+        date: '2026-06-01',
+        symbol: 'AAPL',
+        type: 'Sell',
+        shares: 100,
+        price: 250,
+        amount: 25000,
+        importedAt: '2026-06-01',
+      },
+    ]
+
+    // Import without AAPL (to create ClosedPosition)
+    const newRows: Record<string, string>[] = []
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    // Verify ClosedPosition has computed realizedGL
+    const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
+    expect(closedAapl).toBeDefined()
+    expect(closedAapl!.realizedGLBasis).toBe('transactions')
+    // realizedGL = proceeds - costBasis = 25000 - (100 * 150) = 25000 - 15000 = 10000
+    expect(closedAapl!.realizedGL).toBe(10000)
+  })
+
+  // Test 9: Realized G/L: no matching Sell → realizedGL=null, realizedGLBasis='unknown'
+  it('Test 9: Realized G/L set to null when no Sell transactions', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // Add position (no sell transactions)
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    state.transactions = []
+
+    // Import without AAPL (to create ClosedPosition)
+    const newRows: Record<string, string>[] = []
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    // Verify ClosedPosition has no realizedGL
+    const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
+    expect(closedAapl).toBeDefined()
+    expect(closedAapl!.realizedGL).toBeNull()
+    expect(closedAapl!.realizedGLBasis).toBe('unknown')
+  })
+
+  // Additional test: Case-insensitive transaction type matching
+  it('Correctly matches Sell transactions regardless of case', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Add sell transaction with lowercase type
+    state.transactions = [
+      {
+        id: 'tx-1',
+        accountId,
+        date: '2026-06-01',
+        symbol: 'AAPL',
+        type: 'sell', // lowercase
+        shares: 100,
+        price: 250,
+        amount: 25000,
+        importedAt: '2026-06-01',
+      },
+    ]
+
+    const newRows: Record<string, string>[] = []
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
+    expect(closedAapl!.realizedGLBasis).toBe('transactions')
+    expect(closedAapl!.realizedGL).toBe(10000)
+  })
+
+  // Additional test: Multiple Sell transactions for same symbol sum correctly
+  it('Realized G/L sums multiple Sell transactions for same symbol', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Two sell transactions: total proceeds = 15000 + 10000 = 25000
+    state.transactions = [
+      {
+        id: 'tx-1',
+        accountId,
+        date: '2026-06-01',
+        symbol: 'AAPL',
+        type: 'Sell',
+        shares: 60,
+        price: 250,
+        amount: 15000,
+        importedAt: '2026-06-01',
+      },
+      {
+        id: 'tx-2',
+        accountId,
+        date: '2026-07-01',
+        symbol: 'AAPL',
+        type: 'Sell',
+        shares: 40,
+        price: 250,
+        amount: 10000,
+        importedAt: '2026-07-01',
+      },
+    ]
+
+    const newRows: Record<string, string>[] = []
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    const closedAapl = result.closedPositions.find((cp) => cp.symbol === 'AAPL')
+    // realizedGL = 25000 - (100 * 150) = 25000 - 15000 = 10000
+    expect(closedAapl!.realizedGL).toBe(10000)
+  })
+
+  // Additional test: Does not affect other accounts
+  it('Importing positions for one account does not affect other accounts', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    state = finalizeNewAccount(state, 'ACC-002', 'Account 2', 'taxDeferred', true)
+
+    const accountId1 = state.accounts.find((a) => a.accountNumber === 'ACC-001')!.id
+    const accountId2 = state.accounts.find((a) => a.accountNumber === 'ACC-002')!.id
+
+    // Add position to account 2
+    state.positions = [
+      {
+        id: 'pos-2',
+        accountId: accountId2,
+        symbol: 'GOOGL',
+        name: 'Alphabet Inc.',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 100,
+        price: 150,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Import positions for account 1
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+      },
+    ]
+
+    const result = importPositions(state, accountId1, newRows, '2026-08-08')
+
+    // Verify account 2's position is unchanged
+    const googl = result.positions.find((p) => p.symbol === 'GOOGL')
+    expect(googl).toBeDefined()
+    expect(googl!.accountId).toBe(accountId2)
+    expect(googl!.lastImportedAt).toBe('2026-01-01')
+  })
+
+  // Test: Computed fields from alternatives
+  // Test 1: avgCost computed from purchaseAmount when avgCost is missing
+  it('Test: avgCost computed from purchaseAmount when avgCost missing', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // Import row with purchaseAmount but no avgCost
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: '10',
+        avgCost: '', // missing/empty
+        price: '120',
+        purchaseAmount: '1000', // 1000 / 10 = 100
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+    expect(aapl).toBeDefined()
+    expect(aapl!.avgCost).toBe(100) // computed: purchaseAmount / shares
+  })
+
+  // Test 2: price computed from marketValue when price is missing
+  it('Test: price computed from marketValue when price missing', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // Import row with marketValue but no price
+    const newRows = [
+      {
+        symbol: 'MSFT',
+        name: 'Microsoft Corp.',
+        assetClass: 'Equity',
+        shares: '10',
+        avgCost: '100',
+        price: '', // missing/empty
+        marketValue: '1200', // 1200 / 10 = 120
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    const msft = result.positions.find((p) => p.symbol === 'MSFT')
+    expect(msft).toBeDefined()
+    expect(msft!.price).toBe(120) // computed: marketValue / shares
+  })
+
+  // Test 3: avgCost prefers direct value over purchaseAmount
+  it('Test: avgCost prefers direct value over purchaseAmount', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // Import row with both avgCost and purchaseAmount
+    const newRows = [
+      {
+        symbol: 'GOOGL',
+        name: 'Alphabet Inc.',
+        assetClass: 'Equity',
+        shares: '10',
+        avgCost: '100', // direct value (preferred)
+        price: '150',
+        purchaseAmount: '1200', // would be 120 if used, but avgCost takes precedence
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    const googl = result.positions.find((p) => p.symbol === 'GOOGL')
+    expect(googl).toBeDefined()
+    expect(googl!.avgCost).toBe(100) // direct value wins
+  })
+
+  // Test 4: price prefers direct value over marketValue
+  it('Test: price prefers direct value over marketValue', () => {
+    let state = initialState()
+    state = finalizeNewAccount(state, 'ACC-001', 'Account 1', 'taxable', false)
+    const accountId = state.accounts[0].id
+
+    // Import row with both price and marketValue
+    const newRows = [
+      {
+        symbol: 'TSLA',
+        name: 'Tesla Inc.',
+        assetClass: 'Equity',
+        shares: '10',
+        avgCost: '150',
+        price: '120', // direct value (preferred)
+        marketValue: '1500', // would be 150 if used, but price takes precedence
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08')
+
+    const tsla = result.positions.find((p) => p.symbol === 'TSLA')
+    expect(tsla).toBeDefined()
+    expect(tsla!.price).toBe(120) // direct value wins
+  })
+})
