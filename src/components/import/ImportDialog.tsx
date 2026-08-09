@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { AppState } from '../../lib/state'
 import { parseCsvFile } from '../../lib/csv'
 import type { TaxCategory, Account } from '../../lib/types'
+import { InstitutionSelect } from '../InstitutionSelect'
 import {
   POSITIONS_REQUIRED_FIELDS,
   POSITIONS_OPTIONAL_FIELDS,
@@ -23,6 +24,7 @@ interface NewAccountFields {
   number: string
   category: TaxCategory
   retirement: boolean
+  institution: string
 }
 
 const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
@@ -78,6 +80,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     number: '',
     category: 'taxable',
     retirement: false,
+    institution: '',
   })
   const [file, setFile] = useState<File | null>(null)
   const [fileName, setFileName] = useState<string>('')
@@ -109,6 +112,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       number: '',
       category: 'taxable',
       retirement: false,
+      institution: '',
     })
     setFile(null)
     setFileName('')
@@ -201,7 +205,9 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     const accountResolved =
       accountMode === 'existing'
         ? selectedAccountId !== ''
-        : newAccountFields.name.trim() !== '' && newAccountFields.number.trim() !== ''
+        : newAccountFields.name.trim() !== '' &&
+          newAccountFields.number.trim() !== '' &&
+          newAccountFields.institution.trim() !== ''
     // In manual mode there is no CSV file requirement.
     const fileSelected = entryMode === 'manual' || (file !== null && csvRows.length > 0)
     return accountResolved && fileSelected
@@ -321,6 +327,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         id: uid('acc'),
         accountNumber: newAccountFields.number,
         name: newAccountFields.name,
+        institution: newAccountFields.institution,
         taxCategory: newAccountFields.category,
         retirement: newAccountFields.retirement,
         createdAt: new Date().toISOString(),
@@ -613,7 +620,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1fr',
+                    gridTemplateColumns: '2fr 1fr 1fr 1fr',
                     gap: 'var(--space-3)',
                     marginBottom: 'var(--space-3)',
                   }}
@@ -646,6 +653,19 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                         })
                       }
                       placeholder="e.g. 8842-1190"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Institution</label>
+                    <InstitutionSelect
+                      value={newAccountFields.institution}
+                      accounts={state.accounts}
+                      onChange={(v) =>
+                        setNewAccountFields({
+                          ...newAccountFields,
+                          institution: v,
+                        })
+                      }
                     />
                   </div>
                   <div className="field">

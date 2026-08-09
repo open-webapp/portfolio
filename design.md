@@ -39,6 +39,7 @@ src/
     ClosedPositionsTable.tsx
     TransactionsTable.tsx
     AssetClassOverrideSelect.tsx
+    InstitutionSelect.tsx                       # { value: string, accounts: Account[], onChange: (value: string) => void } — seeded list ∪ in-use values with free-type "Add X" affordance
     Settings.tsx                  # 2 tabs via .seg (local activeTab): General (Accounts + Google Drive Sync) / Import Sessions
     import/
       ImportDialog.tsx          # 2-step positions/transactions import wizard (Setup → Review)

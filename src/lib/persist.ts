@@ -52,7 +52,10 @@ export async function loadPersistedApp(): Promise<AppState | null> {
         const defaults = initialState()
         const migrated: AppState = {
           // Data collections
-          accounts: loaded.accounts ?? defaults.accounts,
+          accounts: (loaded.accounts ?? defaults.accounts).map((a) => ({
+            ...a,
+            institution: a.institution ?? '',
+          })),
           positions: loaded.positions ?? defaults.positions,
           closedPositions: loaded.closedPositions ?? defaults.closedPositions,
           transactions: loaded.transactions ?? defaults.transactions,

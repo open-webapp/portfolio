@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect } from 'react'
 import type { AppState } from '../lib/state'
 import type { TaxCategory } from '../lib/types'
+import { InstitutionSelect } from './InstitutionSelect'
 import {
   getDriveConnection,
   getBackupFileId,
@@ -143,6 +144,7 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
                   <tr>
                     <th>Account Number</th>
                     <th>Name</th>
+                    <th>Institution</th>
                     <th>Tax Category</th>
                     <th>Retirement</th>
                     <th style={{ width: '40px' }}></th>
@@ -153,6 +155,7 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
                     <AccountRow
                       key={account.id}
                       account={account}
+                      accounts={state.accounts}
                       dispatch={dispatch}
                     />
                   ))}
@@ -276,9 +279,11 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
 
 function AccountRow({
   account,
+  accounts,
   dispatch,
 }: {
   account: AppState['accounts'][number]
+  accounts: AppState['accounts']
   dispatch: (action: any) => void
 }) {
   const [isEditingName, setIsEditingName] = useState(false)
@@ -334,6 +339,14 @@ function AccountRow({
       type: 'UPDATE_ACCOUNT',
       accountId: account.id,
       patch: { taxCategory: newCategory },
+    })
+  }
+
+  const handleInstitutionChange = (value: string) => {
+    dispatch({
+      type: 'UPDATE_ACCOUNT',
+      accountId: account.id,
+      patch: { institution: value },
     })
   }
 
@@ -399,6 +412,13 @@ function AccountRow({
             {account.name}
           </span>
         )}
+      </td>
+      <td>
+        <InstitutionSelect
+          value={account.institution}
+          accounts={accounts}
+          onChange={handleInstitutionChange}
+        />
       </td>
       <td>
         <select

@@ -23,6 +23,7 @@ function createAccount(overrides?: Partial<Account>): Account {
     id: 'acc-1',
     accountNumber: '123456',
     name: 'Test Brokerage',
+    institution: 'Fidelity',
     taxCategory: 'taxable',
     retirement: false,
     createdAt: '2024-01-01T00:00:00Z',
@@ -132,7 +133,7 @@ async function advanceToStep2Manual(dispatch: (action: any) => void = vi.fn()) {
 
 async function advanceToStep2NewAccount(
   dispatch: (action: any) => void,
-  fields: { name: string; number: string; category?: TaxCategory; retirement?: boolean },
+  fields: { name: string; number: string; institution?: string; category?: TaxCategory; retirement?: boolean },
   dataType: 'positions' | 'transactions'
 ) {
   const headers = dataType === 'positions' ? POS_HEADERS : TX_HEADERS
@@ -146,6 +147,19 @@ async function advanceToStep2NewAccount(
   fireEvent.click(screen.getByRole('radio', { name: 'New account' }))
   fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), { target: { value: fields.name } })
   fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: fields.number } })
+  
+  // Select institution
+  const institutionInput = screen.getAllByPlaceholderText('— Select —')[0] as HTMLInputElement
+  const institutionValue = fields.institution !== undefined ? fields.institution : 'Fidelity'
+  fireEvent.change(institutionInput, { target: { value: institutionValue } })
+  fireEvent.focus(institutionInput)
+  // Wait for the option to appear and click it
+  await waitFor(() => {
+    const option = screen.getByText(institutionValue)
+    expect(option.tagName).toBe('BUTTON')
+    fireEvent.click(option)
+  })
+  
   if (fields.category) {
     fireEvent.change(screen.getByRole('combobox'), { target: { value: fields.category } })
   }
@@ -194,7 +208,7 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(container.querySelectorAll('.tag-accent')).toHaveLength(1)
   })
 
-  it('3. Step 1: Transactions + New account reveals fields; Continue gated on name, number, and a loaded CSV', async () => {
+  it('3. Step 1: Transactions + New account reveals fields; Continue gated on name, number, institution, and a loaded CSV', async () => {
     await mockCsv(['Date', 'Symbol'], [{ Date: '2024-01-15', Symbol: 'AAPL' }])
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
@@ -204,6 +218,7 @@ describe('ImportDialog (2-step wizard)', () => {
 
     expect(screen.getByText('New account name')).toBeTruthy()
     expect(screen.getByText('Account number')).toBeTruthy()
+    expect(screen.getByText('Institution')).toBeTruthy()
     expect(screen.getByText('Category')).toBeTruthy()
     expect(screen.getByText('Retirement Account')).toBeTruthy()
 
@@ -217,6 +232,18 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(continueBtn.disabled).toBe(true)
 
     uploadCsvFile()
+    expect(continueBtn.disabled).toBe(true) // Still disabled without institution
+
+    // Fill in institution via the InstitutionSelect (simulate user typing and clicking)
+    const institutionInputs = screen.getAllByPlaceholderText('— Select —')
+    fireEvent.change(institutionInputs[0], { target: { value: 'Fidelity' } })
+    fireEvent.focus(institutionInputs[0])
+    // Wait for menu to appear and click Fidelity option
+    await waitFor(() => {
+      const fidelityOption = screen.getByText('Fidelity')
+      expect(fidelityOption.tagName).toBe('BUTTON')
+      fireEvent.click(fidelityOption)
+    })
     await continueEnabled()
   })
 
@@ -561,6 +588,16 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'New account' }))
     fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), { target: { value: 'My Acct' } })
     fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: '9999' } })
+    
+    // Fill in institution
+    const institutionInput = screen.getAllByPlaceholderText('— Select —')[0] as HTMLInputElement
+    fireEvent.change(institutionInput, { target: { value: 'Fidelity' } })
+    fireEvent.focus(institutionInput)
+    await waitFor(() => {
+      const option = screen.getByText('Fidelity')
+      fireEvent.click(option)
+    })
+    
     uploadCsvFile()
     await continueEnabled()
 
@@ -937,6 +974,16 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'New account' }))
     fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), { target: { value: 'Fresh Account' } })
     fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: '777' } })
+    
+    // Fill in institution
+    const institutionInput = screen.getAllByPlaceholderText('— Select —')[0] as HTMLInputElement
+    fireEvent.change(institutionInput, { target: { value: 'Fidelity' } })
+    fireEvent.focus(institutionInput)
+    await waitFor(() => {
+      const option = screen.getByText('Fidelity')
+      fireEvent.click(option)
+    })
+    
     uploadCsvFile()
     await continueEnabled()
     clickContinue()

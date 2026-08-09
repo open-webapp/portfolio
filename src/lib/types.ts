@@ -7,6 +7,7 @@ export interface Account {
   id: string
   accountNumber: string
   name: string
+  institution: string
   taxCategory: TaxCategory
   retirement: boolean
   createdAt: string

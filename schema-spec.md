@@ -11,6 +11,7 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | `id` | `string` | `uid('acc')` |
 | `accountNumber` | `string` | User-typed in the import dialog's new-account form; not derived from CSV |
 | `name` | `string` | User-assigned, editable |
+| `institution` | `string` | User-selected via seeded list or free-typed; empty string means unfilled; required only for accounts created via the import dialog's new-account form |
 | `taxCategory` | `TaxCategory` | `'taxable' \| 'nonTaxable' \| 'taxDeferred'` |
 | `retirement` | `boolean` | |
 | `createdAt` | `string` | ISO date, set once at creation |
