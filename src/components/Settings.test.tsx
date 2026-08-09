@@ -1320,14 +1320,13 @@ describe('SettingsPage', () => {
         />
       )
 
-      clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
         expect(
-          screen.getByText('This backup was saved with a different password. Enter that password to restore:')
+          screen.getByText('This backup was saved with a different encryption password. Enter that password to restore:')
         ).toBeTruthy()
       })
 
@@ -1367,13 +1366,12 @@ describe('SettingsPage', () => {
         />
       )
 
-      clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different password/)).toBeTruthy()
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
       })
 
       const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
@@ -1412,13 +1410,12 @@ describe('SettingsPage', () => {
         />
       )
 
-      clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different password/)).toBeTruthy()
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
       })
 
       const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
@@ -1426,12 +1423,12 @@ describe('SettingsPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
 
       await waitFor(() => {
-        expect(screen.getByText('Incorrect password')).toBeTruthy()
+        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
       // Prompt stays open and can be retried
       expect(
-        screen.getByText('This backup was saved with a different password. Enter that password to restore:')
+        screen.getByText('This backup was saved with a different encryption password. Enter that password to restore:')
       ).toBeTruthy()
       expect(screen.getByRole('button', { name: 'Restore with this password' })).toBeTruthy()
       expect(mockDispatch).not.toHaveBeenCalled()
