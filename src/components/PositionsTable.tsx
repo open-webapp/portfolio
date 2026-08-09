@@ -1,21 +1,15 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { AppState } from '../lib/state'
 import type { Position, Account } from '../lib/types'
 import { visiblePositions } from '../lib/selectors'
 import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
+import { sortBy } from '../lib/sort'
 import { ClosedPositionsTable } from './ClosedPositionsTable'
-import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
+import { PositionGroupOverlay } from './PositionGroupOverlay'
 
 export interface PositionsTableProps {
   state: AppState
   dispatch: (action: any) => void
-}
-
-/**
- * Helper to display position name, falling back to symbol if name is null.
- */
-function getDisplayName(position: Position): string {
-  return position.name ?? position.symbol
 }
 
 /**
@@ -131,7 +125,12 @@ function buildAggregateRows(positions: Position[], accounts: Account[]): Aggrega
  * Per .dc.html lines 133-206.
  */
 export function PositionsTable({ state, dispatch }: PositionsTableProps) {
-  const positions = useMemo(() => visiblePositions(state), [state])
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
+
+  const positions = visiblePositions(state);
+  const aggregateRows = buildAggregateRows(positions, state.accounts);
+  const selectedGroup = aggregateRows.find(r => r.key === selectedGroupKey) ?? null;
+  const sortedRows = sortBy(aggregateRows, AGGREGATE_SORT_FIELD[state.sortKey] ?? state.sortKey as keyof AggregateRow, state.sortDir);
 
   // Get unique asset classes for filter tags
   const assetClassOptions = useMemo(() => {
@@ -194,21 +193,6 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
     return state.sortDir === 'asc' ? ' ↑' : ' ↓'
   }
 
-  // Compute derived fields for display
-  const computedPositions = positions.map((p) => {
-    const computed = computePosition(p)
-    return {
-      ...computed,
-      glColor: computed.gl >= 0 ? 'var(--color-accent-700)' : '#8a3c2e',
-      glStr: (computed.gl >= 0 ? '+' : '') + fmtUSD(computed.gl),
-      glPctStr: fmtPct(computed.glPct),
-      sharesStr: computed.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      avgCostStr: fmtUSD(computed.avgCost),
-      costBasisStr: fmtUSD(computed.costBasis),
-      priceStr: fmtUSD(computed.price),
-      marketValueStr: fmtUSD(computed.marketValue),
-    }
-  })
 
   return (
     <div style={{ marginBottom: 'var(--space-6)' }}>
@@ -311,33 +295,40 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
             <th style={{ textAlign: 'right' }}>Market Value</th>
             <th style={{ textAlign: 'right' }}>G/L</th>
             <th style={{ textAlign: 'right' }}>G/L %</th>
-            <th style={{ textAlign: 'center' }}>Override</th>
+            <th style={{ textAlign: 'right' }}>Accounts</th>
           </tr>
         </thead>
         <tbody>
-          {computedPositions.map((p) => (
-            <tr key={p.id}>
-              <td>
-                <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <span>{p.symbol}</span>
-                </div>
-                <div style={{ fontSize: '11px' }} className="text-muted">
-                  {getDisplayName(p)}
-                </div>
-              </td>
-              <td className="text-muted">{p.assetClassManualOverride || p.assetClass}</td>
-              <td style={{ textAlign: 'right' }}>{p.sharesStr}</td>
-              <td style={{ textAlign: 'right' }}>{p.avgCostStr}</td>
-              <td style={{ textAlign: 'right' }}>{p.priceStr}</td>
-              <td style={{ textAlign: 'right' }}>{p.costBasisStr}</td>
-              <td style={{ textAlign: 'right', fontWeight: '600' }}>{p.marketValueStr}</td>
-              <td style={{ textAlign: 'right', color: p.glColor, fontWeight: '600' }}>{p.glStr}</td>
-              <td style={{ textAlign: 'right', color: p.glColor }}>{p.glPctStr}</td>
-              <td style={{ textAlign: 'center' }}>
-                <AssetClassOverrideSelect position={p} dispatch={dispatch} />
-              </td>
-            </tr>
-          ))}
+          {sortedRows.map((row) => {
+            const glColor = row.gl >= 0 ? 'var(--color-accent-700)' : '#8a3c2e'
+            const glStr = (row.gl >= 0 ? '+' : '') + fmtUSD(row.gl)
+            const glPctStr = fmtPct(row.glPct)
+            const sharesStr = row.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+            return (
+              <tr key={row.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedGroupKey(row.key)}>
+                <td>
+                  <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span>{row.symbol}</span>
+                  </div>
+                  <div style={{ fontSize: '11px' }} className="text-muted">
+                    {row.displayName}
+                  </div>
+                </td>
+                <td className="text-muted">{row.effectiveAssetClass}</td>
+                <td style={{ textAlign: 'right' }}>{sharesStr}</td>
+                <td style={{ textAlign: 'right' }}>{fmtUSD(row.avgCost)}</td>
+                <td style={{ textAlign: 'right' }}>{fmtUSD(row.price)}</td>
+                <td style={{ textAlign: 'right' }}>{fmtUSD(row.costBasis)}</td>
+                <td style={{ textAlign: 'right', fontWeight: '600' }}>{fmtUSD(row.marketValue)}</td>
+                <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
+                <td style={{ textAlign: 'right', color: glColor }}>{glPctStr}</td>
+                <td style={{ textAlign: 'right' }}>
+                  <span className="tag tag-neutral">{row.accountCount}</span>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
 
@@ -368,6 +359,16 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
       {/* Closed positions table */}
       {state.showClosed && (
         <ClosedPositionsTable state={state} dispatch={dispatch} />
+      )}
+
+      {/* Position group overlay */}
+      {selectedGroup && (
+        <PositionGroupOverlay
+          group={selectedGroup}
+          accounts={state.accounts}
+          dispatch={dispatch}
+          onClose={() => setSelectedGroupKey(null)}
+        />
       )}
     </div>
   )

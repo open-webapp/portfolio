@@ -105,17 +105,17 @@ App
     tabs row                  (inline in App)    — flex space-between: Positions/Transactions .seg + Import CSV trigger
       ImportDialog            (state, dispatch)  — renders the trigger button; open state is component-local (isOpen)
     [tab === 'positions']
-      PositionsTable          (state, dispatch)
-        AssetClassOverrideSelect (position, dispatch)  — per row
+      PositionsTable          (state, dispatch)  — groups visiblePositions() into aggregate rows (symbol+effectiveAssetClass+taxCategory+retirement); selectedGroupKey is component-local useState
         ClosedPositionsTable    (state, dispatch)       — when state.showClosed
-      PositionGroupOverlay    (group, accounts, dispatch, onClose)  — conditional modal when position group is clicked; displays underlying positions in a table
+      PositionGroupOverlay    (group, accounts, dispatch, onClose)  — when a row is clicked; lists underlying positions sorted by account name
+        AssetClassOverrideSelect (position, dispatch)  — per underlying position, inside the overlay
     [tab === 'transactions']
       TransactionsTable       (state, dispatch)
   [view === 'settings']
     SettingsPage              (state, dispatch)  — 2 tabs via `.seg` (activeTab is local `useState`, not in AppState): General (Accounts then Google Drive Sync) / Import Sessions
 ```
 
-Props convention: presentational components take `{ state: AppState, dispatch }`; a few (`AssetClassOverrideSelect`) take a narrower prop (`position`) plus `dispatch`. `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
+Props convention: presentational components take `{ state: AppState, dispatch }`; a few take narrower props (`AssetClassOverrideSelect`: `position` + `dispatch`; `PositionGroupOverlay`: `group`, `accounts`, `dispatch`, `onClose`). `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
 
 ## Data flow
 
@@ -132,7 +132,7 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 **Drive sync**: `drive.ts` exports a `drive` singleton (`createDriveSync({ appId: 'portfolio', folderPath: ['OpenWebApp','Portfolio'] })`) plus `syncBackup(state)` (resolves with the written file id)/`restoreBackup()`/`getBackupFileId()` (resolves the existing backup file id or null)/`getDriveAuthStatus()` (non-interactive auth snapshot `{ connected, email, expiresAt, needsReauth, tokenValid }`), all operating on `drive.project('app')`. **Token validation & reauth**: `syncBackup`/`restoreBackup` first call internal `ensureFreshConnection()` — a cached token is reused as-is while valid (connection exists, scopes complete, `expiresAt` > now + 5-min buffer), otherwise the interactive `connectDrive()` flow runs. A module-level in-flight guard guarantees at most one Google auth window even under concurrent sync/restore calls. `getBackupFileId()` is a passive probe (called on page load) and never prompts: an expired/missing token resolves `null` (catching `NeedsReauthError`) instead of opening auth. The `SettingsPage` component provides UI affordances to sync/disconnect and renders a "View backup in Google Drive" link (built as `https://drive.google.com/file/d/{fileId}/view`) when connected and a backup file exists (`backupFileId` component-local state, set on mount/connect/sync, cleared on disconnect). Requires `VITE_GOOGLE_CLIENT_ID` in `.env` (repo root, tracked in git) or OAuth connect fails (`token.ts` sends `client_id: undefined`); pinned by a test in `drive.test.ts`.
 
 **Selectors** (`selectors.ts`) are the only place that reads+filters+sorts raw `AppState` collections for display; components call them instead of re-deriving:
-- `visiblePositions(state)` — category → retirement filter → asset-class filter → search (symbol/name, case-insensitive) → `sortBy(state.sortKey, state.sortDir)`.
+- `visiblePositions(state)` — category → retirement filter → asset-class filter → search (symbol/name, case-insensitive) → `sortBy(state.sortKey, state.sortDir)`. (`PositionsTable` then groups its output client-side into aggregate rows by symbol+effectiveAssetClass+taxCategory+retirement and sorts those aggregate rows by `state.sortKey`/`sortDir`; grouping/sorting-of-aggregates is component-level, not in selectors.)
 - `visibleTransactions(state)` — category filter → type filter → search (symbol/date) → always sorted by `date desc` (not user-sortable).
 - `totalValueSeries(state, accountIds?)` — groups `PortfolioSnapshot[]` by `date`, sums `value`; defaults to accounts in the selected category if `accountIds` omitted.
 - `totalValueSeriesInRange(state, range)` — drops series points before a cutoff derived from `range` (`6m`/`1y`/`ytd`/`all`).
