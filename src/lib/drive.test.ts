@@ -105,6 +105,40 @@ describe('drive.ts Drive-sync wiring', () => {
   })
 
   /**
+   * Test 2b: syncBackup() resolves with the Drive file id of the written file.
+   */
+  it('syncBackup() resolves with the written file id', async () => {
+    mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+    mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
+
+    const { syncBackup } = await import('./drive')
+
+    const fileId = await syncBackup(initialState())
+    expect(fileId).toBe('file-id-123')
+  })
+
+  /**
+   * Test 2c: getBackupFileId() returns the id of an existing backup, or null.
+   */
+  it('getBackupFileId() returns backup file id when present', async () => {
+    mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+    mockList.mockResolvedValue([{ id: 'file-id-789' }])
+
+    const { getBackupFileId } = await import('./drive')
+    const fileId = await getBackupFileId()
+    expect(fileId).toBe('file-id-789')
+  })
+
+  it('getBackupFileId() returns null when no backup exists', async () => {
+    mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+    mockList.mockResolvedValue([])
+
+    const { getBackupFileId } = await import('./drive')
+    const fileId = await getBackupFileId()
+    expect(fileId).toBeNull()
+  })
+
+  /**
    * Test 3: restoreBackup() reads state blob from Drive.
    */
   it('restoreBackup() reads state blob from Drive', async () => {

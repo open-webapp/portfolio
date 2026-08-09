@@ -47,7 +47,7 @@ export async function disconnectDrive(): Promise<void> {
  * @param state The current app state to backup
  * @throws Throws if Drive connection fails or write fails
  */
-export async function syncBackup(state: AppState): Promise<void> {
+export async function syncBackup(state: AppState): Promise<string> {
   try {
     const project = drive.project(APP_PROJECT_ID)
 
@@ -58,14 +58,40 @@ export async function syncBackup(state: AppState): Promise<void> {
     const jsonContent = JSON.stringify(state, null, 2)
 
     // Write the file (will update if exists, create if not)
-    await project.files.write({
+    const file = await project.files.write({
       folderId,
       name: APP_STATE_FILENAME,
       content: jsonContent,
       mimeType: 'application/json',
     })
+
+    // Return the Drive file id so the UI can link to it
+    return file.id
   } catch (error) {
     console.error('Failed to sync backup to Drive:', error)
+    throw error
+  }
+}
+
+/**
+ * Returns the Drive file id of the current backup, or null if no backup has
+ * been synced yet. Used to show the "View in Google Drive" link when a
+ * backup already exists.
+ */
+export async function getBackupFileId(): Promise<string | null> {
+  try {
+    const project = drive.project(APP_PROJECT_ID)
+
+    const folderId = await project.ensureFolderPath()
+
+    const files = await project.files.list({
+      folderId,
+      nameEquals: APP_STATE_FILENAME,
+    })
+
+    return files.length > 0 ? files[0].id : null
+  } catch (error) {
+    console.error('Failed to look up backup file on Drive:', error)
     throw error
   }
 }

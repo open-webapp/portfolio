@@ -3,6 +3,7 @@ import type { AppState } from '../lib/state'
 import type { TaxCategory } from '../lib/types'
 import {
   getDriveConnection,
+  getBackupFileId,
   connectDrive,
   disconnectDrive,
   syncBackup,
@@ -20,6 +21,7 @@ export interface SettingsPageProps {
 export function SettingsPage({ state, dispatch }: SettingsPageProps) {
   const [syncing, setSyncing] = useState(false)
   const [driveReady, setDriveReady] = useState(false)
+  const [backupFileId, setBackupFileId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'general' | 'importSessions'>('general')
 
   // Check Drive connection status on mount
@@ -27,6 +29,10 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
     const checkDrive = async () => {
       const connection = await getDriveConnection()
       setDriveReady(connection !== null)
+      if (connection) {
+        const fileId = await getBackupFileId()
+        setBackupFileId(fileId)
+      }
     }
     checkDrive()
   }, [])
@@ -34,7 +40,8 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
   const handleSync = useCallback(async () => {
     setSyncing(true)
     try {
-      await syncBackup(state)
+      const fileId = await syncBackup(state)
+      setBackupFileId(fileId)
       alert('Synced to Drive')
     } catch (error) {
       console.error('Sync failed:', error)
@@ -69,6 +76,8 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
     try {
       await connectDrive()
       setDriveReady(true)
+      const fileId = await getBackupFileId()
+      setBackupFileId(fileId)
       alert('Connected to Drive')
     } catch (error) {
       console.error('Drive connect failed:', error)
@@ -83,6 +92,7 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
     try {
       await disconnectDrive()
       setDriveReady(false)
+      setBackupFileId(null)
       alert('Disconnected from Drive')
     } catch (error) {
       console.error('Drive disconnect failed:', error)
@@ -169,6 +179,17 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
                 </>
               )}
             </div>
+            {driveReady && backupFileId && (
+              <p style={{ marginTop: '12px', marginBottom: 0 }}>
+                <a
+                  href={`https://drive.google.com/file/d/${backupFileId}/view`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View backup in Google Drive
+                </a>
+              </p>
+            )}
           </section>
         </>
       )}

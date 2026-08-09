@@ -7,6 +7,7 @@ import * as driveModule from '../lib/drive'
 // Mock the drive module
 vi.mock('../lib/drive', () => ({
   getDriveConnection: vi.fn(),
+  getBackupFileId: vi.fn(),
   connectDrive: vi.fn(),
   disconnectDrive: vi.fn(),
   syncBackup: vi.fn(),
@@ -116,6 +117,7 @@ describe('SettingsPage', () => {
   describe('Connected state', () => {
     beforeEach(() => {
       vi.mocked(driveModule.getDriveConnection).mockResolvedValue({ accessToken: 'token' } as any)
+      vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
     })
 
     it('renders connected state with Sync Now, Restore from Drive, and Disconnect buttons', async () => {
@@ -144,6 +146,41 @@ describe('SettingsPage', () => {
       expect(screen.getByRole('button', { name: 'Disconnect' }).className).toContain(
         'btn btn-secondary'
       )
+    })
+
+    it('does not show Drive link when connected but no backup file exists', async () => {
+      vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      await screen.findByRole('button', { name: 'Sync Now' })
+
+      expect(screen.queryByRole('link', { name: 'View backup in Google Drive' })).toBeFalsy()
+    })
+
+    it('shows Drive link to existing backup file when connected and synced', async () => {
+      vi.mocked(driveModule.getBackupFileId).mockResolvedValue('file-id-123')
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const link = await screen.findByRole('link', { name: 'View backup in Google Drive' })
+      expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-123/view')
+      expect(link.getAttribute('target')).toBe('_blank')
+    })
+
+    it('shows Drive link to the newly synced file after clicking Sync Now', async () => {
+      vi.mocked(driveModule.syncBackup).mockResolvedValue('file-id-456')
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
+      fireEvent.click(syncButton)
+
+      await waitFor(() => {
+        const link = screen.queryByRole('link', { name: 'View backup in Google Drive' })
+        expect(link).toBeTruthy()
+        expect(link?.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-456/view')
+      })
     })
 
     it('clicking Sync Now calls syncBackup with state', async () => {
