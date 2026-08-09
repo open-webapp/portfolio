@@ -104,6 +104,7 @@ describe('IndexedDB persistence', () => {
         },
       ],
       importSessions: [],
+      csvMappings: [],
 
       // UI state
       category: 'all',
@@ -355,6 +356,49 @@ describe('IndexedDB persistence', () => {
 
     expect(loaded?.importSessions).toEqual(stateWithNewFields.importSessions)
     expect(loaded?.view).toBe('settings')
+  })
+
+  it('loads missing csvMappings with default empty array', async () => {
+    const preExistingState: Partial<AppState> = {
+      accounts: [],
+      positions: [],
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      importSessions: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      view: 'dashboard',
+      // Missing csvMappings
+    }
+
+    // Manually save a pre-migration state to IndexedDB
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('portfolio_app_state_v1', 1)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result
+        if (!db.objectStoreNames.contains('app_state')) {
+          db.createObjectStore('app_state')
+        }
+      }
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('app_state', 'readwrite')
+      const store = transaction.objectStore('app_state')
+      const request = store.put(preExistingState, 'current')
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve()
+    })
+
+    // Load and verify migration tolerance
+    const loaded = await loadPersistedApp()
+
+    expect(loaded).not.toBeNull()
+    expect(loaded?.csvMappings).toEqual([])
   })
 
   it('rejects when opening the database fails, instead of silently succeeding', async () => {

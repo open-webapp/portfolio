@@ -58,6 +58,7 @@ export async function loadPersistedApp(): Promise<AppState | null> {
           transactions: loaded.transactions ?? defaults.transactions,
           snapshots: loaded.snapshots ?? defaults.snapshots,
           importSessions: loaded.importSessions ?? defaults.importSessions,
+          csvMappings: loaded.csvMappings ?? defaults.csvMappings,
 
           // UI state with existing values or defaults
           category: loaded.category ?? defaults.category,
