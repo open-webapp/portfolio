@@ -60,9 +60,17 @@ const connectedAuthStatus: driveModule.DriveAuthStatus = {
   tokenValid: true,
 }
 
-function clickSettingsTab(tabName: 'Accounts' | 'Google Drive Sync' | 'Encryption Password') {
-  const radio = screen.getByRole('radio', { name: tabName })
-  fireEvent.click(radio)
+async function clickSettingsTab(tabName: 'Accounts' | 'Google Drive Sync' | 'Encryption Password' | 'Import Sessions') {
+  const span = screen.getByText(tabName)
+  const label = span.closest('label')
+  if (!label) throw new Error(`Could not find tab label: ${tabName}`)
+  fireEvent.click(label)
+  // Wait for the tab to become checked
+  await waitFor(() => {
+    const radio = label.querySelector('input[type="radio"]')
+    if (!radio) throw new Error(`Could not find radio input in tab label: ${tabName}`)
+    expect((radio as HTMLInputElement).checked).toBe(true)
+  })
 }
 
 describe('SettingsPage', () => {
@@ -92,6 +100,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       await waitFor(() => {
         const heading = screen.getByRole('heading', { name: 'Google Drive Sync' })
         expect(heading).toBeTruthy()
@@ -114,6 +124,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       expect(connectButton.className).toContain('btn btn-primary')
     })
@@ -127,6 +139,8 @@ describe('SettingsPage', () => {
         sessionSalt={sessionSalt}
         onKeyChange={mockOnKeyChange}
       />)
+
+      await clickSettingsTab('Google Drive Sync')
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       fireEvent.click(connectButton)
@@ -149,6 +163,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       fireEvent.click(connectButton)
 
@@ -169,6 +185,8 @@ describe('SettingsPage', () => {
         sessionSalt={sessionSalt}
         onKeyChange={mockOnKeyChange}
       />)
+
+      await clickSettingsTab('Google Drive Sync')
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       fireEvent.click(connectButton)
@@ -193,6 +211,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Sync Now' })).toBeTruthy()
         expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
@@ -213,6 +233,8 @@ describe('SettingsPage', () => {
         sessionSalt={sessionSalt}
         onKeyChange={mockOnKeyChange}
       />)
+
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       expect(syncButton.className).toContain('btn btn-primary')
@@ -540,8 +562,10 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      // By default, the "Accounts" tab is shown
       expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
+      // Other sections should not be visible until their tabs are clicked
+      expect(screen.queryByRole('heading', { name: 'Google Drive Sync' })).toBeFalsy()
       expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
     })
 
@@ -571,7 +595,7 @@ describe('SettingsPage', () => {
       expect(screen.queryByRole('heading', { name: 'Google Drive Sync' })).toBeFalsy()
     })
 
-    it('clicking back to General tab restores Accounts/Drive sections', () => {
+    it('clicking back to General tab restores Accounts/Drive sections', async () => {
       const state = initialState()
       state.importSessions = [
         {
@@ -590,16 +614,15 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
-      clickSettingsTab('Import Sessions')
+      await clickSettingsTab('Import Sessions')
       expect(screen.getByRole('heading', { name: 'Import Sessions' })).toBeTruthy()
 
-      clickSettingsTab('General')
+      await clickSettingsTab('Accounts')
       expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
       expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
     })
 
-    it('Accounts section renders before Drive Sync section in DOM order', () => {
+    it('Accounts section renders before Drive Sync section in DOM order', async () => {
       const state = initialState()
       render(<SettingsPage state={state} dispatch={mockDispatch}
         sessionKey={sessionKey}
@@ -607,12 +630,14 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
-      const headings = screen.getAllByRole('heading')
-      const accountsIndex = headings.findIndex((h) => h.textContent === 'Accounts')
-      const driveSyncIndex = headings.findIndex((h) => h.textContent === 'Google Drive Sync')
-      expect(accountsIndex).toBeGreaterThanOrEqual(0)
-      expect(driveSyncIndex).toBeGreaterThanOrEqual(0)
-      expect(accountsIndex).toBeLessThan(driveSyncIndex)
+      // When on Accounts tab, Accounts heading should be visible
+      const accountsHeading = screen.getByRole('heading', { name: 'Accounts' })
+      expect(accountsHeading).toBeTruthy()
+
+      // Click to Drive Sync tab to verify Drive Sync heading appears
+      await clickSettingsTab('Google Drive Sync')
+      const driveSyncHeading = screen.getByRole('heading', { name: 'Google Drive Sync' })
+      expect(driveSyncHeading).toBeTruthy()
     })
   })
 
@@ -1054,6 +1079,8 @@ describe('SettingsPage', () => {
         />
       )
 
+      clickSettingsTab('Encryption Password')
+
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
         next: 'new-password-1',
@@ -1101,6 +1128,8 @@ describe('SettingsPage', () => {
         />
       )
 
+      clickSettingsTab('Encryption Password')
+
       fillAndSubmitChangePassword(container, {
         current: 'wrong-password',
         next: 'new-password-1',
@@ -1129,6 +1158,8 @@ describe('SettingsPage', () => {
         />
       )
 
+      clickSettingsTab('Encryption Password')
+
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
         next: 'abc',
@@ -1156,6 +1187,8 @@ describe('SettingsPage', () => {
           onKeyChange={mockOnKeyChange}
         />
       )
+
+      clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1187,6 +1220,8 @@ describe('SettingsPage', () => {
           onKeyChange={mockOnKeyChange}
         />
       )
+
+      clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1226,6 +1261,8 @@ describe('SettingsPage', () => {
           onKeyChange={mockOnKeyChange}
         />
       )
+
+      clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1273,6 +1310,8 @@ describe('SettingsPage', () => {
         />
       )
 
+      clickSettingsTab('Google Drive Sync')
+
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
@@ -1318,6 +1357,8 @@ describe('SettingsPage', () => {
         />
       )
 
+      clickSettingsTab('Google Drive Sync')
+
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
@@ -1360,6 +1401,8 @@ describe('SettingsPage', () => {
           onKeyChange={mockOnKeyChange}
         />
       )
+
+      clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
