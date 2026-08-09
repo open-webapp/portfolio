@@ -351,6 +351,51 @@ nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
   })
 
   /**
+   * Test 6b: Step 2 - selecting "Enter a value…" for a field reveals a constant-value input
+   * that the user can type into.
+   */
+  it('Test 6b: selecting "Enter a value…" reveals a typeable constant-value input', async () => {
+    const { parseCsvFile } = await import('../../lib/csv')
+    vi.mocked(parseCsvFile).mockResolvedValue({
+      headers: ['Symbol', 'Name', 'Class', 'Qty', 'Cost', 'Price'],
+      rows: [{ Symbol: 'AAPL', Name: 'Apple', Class: 'Equity', Qty: '100', Cost: '150', Price: '180' }],
+    })
+
+    render(<ImportDialog state={mockState} dispatch={mockDispatch} onClose={vi.fn()} />)
+
+    clickButton(/Import CSV/)
+    const select = screen.getByDisplayValue(/-- Select an account --/) as HTMLSelectElement
+    selectOption(select, 'acc-1')
+
+    const dropZone = screen.getByText(/or drag and drop a CSV file here/).closest('div')
+    const fileInput = dropZone?.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(['Symbol,assetClass,shares,avgCost,price\nAAPL,Equity,100,150,180'], 'test.csv', { type: 'text/csv' })
+    uploadFile(fileInput, file)
+
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: /Continue/ }) as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    clickButton(/Continue/)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Field Mapping/)).toBeTruthy()
+    })
+
+    // Select "Enter a value…" for the 'symbol' field
+    selectOption(mappingSelectFor('symbol'), 'enter-value')
+
+    // A constant-value text input must appear
+    const constantInputs = screen.getAllByPlaceholderText(/Constant value/)
+    expect(constantInputs.length).toBeGreaterThan(0)
+
+    // And the user must be able to type a value into it
+    const constantInput = constantInputs[0] as HTMLInputElement
+    fireEvent.change(constantInput, { target: { value: 'EQUITY' } })
+    expect(constantInput.value).toBe('EQUITY')
+  })
+
+  /**
    * Test 7: Step 2 - "Save Profile & Continue" dispatches ADD_MAPPING_PROFILE (new)
    */
   it('Test 7: Step 2 "Save Profile & Continue" dispatches ADD_MAPPING_PROFILE', async () => {

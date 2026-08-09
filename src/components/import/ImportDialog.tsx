@@ -377,6 +377,17 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         }
       }
     })
+    // "Enter a value…" seeds an (empty) constant so the value input appears;
+    // any other choice clears the constant for this field.
+    setConstants((prev) => {
+      const next = { ...prev }
+      if (csvColumn === 'enter-value') {
+        next[field] = prev[field] ?? ''
+      } else {
+        delete next[field]
+      }
+      return next
+    })
   }, [])
 
   // Step 2: Handle constant value change
@@ -1001,7 +1012,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                                   <select
                                     value={
-                                      constants[field]
+                                      constants[field] !== undefined
                                         ? 'enter-value'
                                         : Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
                                     }
@@ -1024,10 +1035,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                     <option value="enter-value">Enter a value…</option>
                                   </select>
                                 </div>
-                                {constants[field] && (
+                                {constants[field] !== undefined && (
                                   <input
                                     type="text"
-                                    value={constants[field]}
+                                    value={constants[field] ?? ''}
                                     onChange={(e) =>
                                       handleConstantChange(field, e.target.value)
                                     }
@@ -1063,7 +1074,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                                   <select
                                     value={
-                                      constants[field]
+                                      constants[field] !== undefined
                                         ? 'enter-value'
                                         : Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
                                     }
@@ -1086,10 +1097,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                     <option value="enter-value">Enter a value…</option>
                                   </select>
                                 </div>
-                                {constants[field] && (
+                                {constants[field] !== undefined && (
                                   <input
                                     type="text"
-                                    value={constants[field]}
+                                    value={constants[field] ?? ''}
                                     onChange={(e) =>
                                       handleConstantChange(field, e.target.value)
                                     }
