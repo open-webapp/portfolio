@@ -38,7 +38,7 @@ src/
     ClosedPositionsTable.tsx
     TransactionsTable.tsx
     AssetClassOverrideSelect.tsx
-    Settings.tsx                  # 3 sections: Drive backup / Import Sessions / Accounts
+    Settings.tsx                  # 2 tabs via .seg (local activeTab): General (Accounts + Google Drive Sync) / Import Sessions
     import/
       ImportDialog.tsx          # 2-step positions/transactions import wizard (Setup → Review)
       index.ts
@@ -96,7 +96,7 @@ App
   [view === 'dashboard']
     Nav                       (state, dispatch)  — nav-brand 'Ledger' + category seg tabs + range select + settings gear
     portfolio header row      (inline in App)    — kicker 'Portfolio' + <h1>Ledger</h1> + retirement .tag pills
-    SummaryCards              (state)            — cards in rows of 4 (.card.blueprint.elev-sm); 5th card 'Total Taxes Paid' on its own row
+    SummaryCards              (state)            — all cards in one row of 5 equal columns (.card.blueprint.elev-sm), sized to fit
     charts row                (inline in App)    — grid 2fr 1fr (Performance wider than Allocation)
       PerformanceChart        (state)
       AllocationChart         (state)
@@ -109,7 +109,7 @@ App
     [tab === 'transactions']
       TransactionsTable       (state, dispatch)
   [view === 'settings']
-    SettingsPage              (state, dispatch)  — 3 sections: Drive backup / Import Sessions / Accounts
+    SettingsPage              (state, dispatch)  — 2 tabs via `.seg` (activeTab is local `useState`, not in AppState): General (Accounts then Google Drive Sync) / Import Sessions
 ```
 
 Props convention: presentational components take `{ state: AppState, dispatch }`; a few (`AssetClassOverrideSelect`) take a narrower prop (`position`) plus `dispatch`. `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.

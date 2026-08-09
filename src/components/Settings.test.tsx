@@ -19,6 +19,11 @@ global.confirm = vi.fn()
 
 const mockDispatch = vi.fn()
 
+function clickSettingsTab(tabName: 'General' | 'Import Sessions') {
+  const radio = screen.getByRole('radio', { name: tabName })
+  fireEvent.click(radio)
+}
+
 describe('SettingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -49,6 +54,14 @@ describe('SettingsPage', () => {
       expect(screen.queryByRole('button', { name: /Sync Now/ })).toBeFalsy()
       expect(screen.queryByRole('button', { name: /Restore from Drive/ })).toBeFalsy()
       expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeFalsy()
+    })
+
+    it('Connect Drive button has btn btn-primary classes', async () => {
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const connectButton = await screen.findByRole('button', { name: 'Connect Drive' })
+      expect(connectButton.className).toContain('btn btn-primary')
     })
 
     it('clicking Connect button calls connectDrive and shows alert', async () => {
@@ -117,6 +130,20 @@ describe('SettingsPage', () => {
 
       // Should not show Connect button
       expect(screen.queryByRole('button', { name: 'Connect Drive' })).toBeFalsy()
+    })
+
+    it('connected buttons use correct btn classes', async () => {
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
+      expect(syncButton.className).toContain('btn btn-primary')
+      expect(screen.getByRole('button', { name: 'Restore from Drive' }).className).toContain(
+        'btn btn-secondary'
+      )
+      expect(screen.getByRole('button', { name: 'Disconnect' }).className).toContain(
+        'btn btn-secondary'
+      )
     })
 
     it('clicking Sync Now calls syncBackup with state', async () => {
@@ -331,6 +358,79 @@ describe('SettingsPage', () => {
       await waitFor(() => {
         expect(global.alert).toHaveBeenCalledWith('Disconnect failed: Disconnect error')
       })
+    })
+  })
+
+  describe('Tab navigation', () => {
+    beforeEach(() => {
+      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(null)
+    })
+
+    it('renders General tab by default', () => {
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
+      expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
+    })
+
+    it('clicking Import Sessions tab shows import sessions table and hides Accounts/Drive sections', () => {
+      const state = initialState()
+      state.importSessions = [
+        {
+          id: 'sess1',
+          importedAt: '2024-01-15T10:30:00Z',
+          kind: 'positions',
+          fileName: 'portfolio.csv',
+          accountIds: ['acc1'],
+          rowCount: 42,
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      clickSettingsTab('Import Sessions')
+
+      expect(screen.getByRole('heading', { name: 'Import Sessions' })).toBeTruthy()
+      expect(screen.queryByRole('heading', { name: 'Accounts' })).toBeFalsy()
+      expect(screen.queryByRole('heading', { name: 'Google Drive Sync' })).toBeFalsy()
+    })
+
+    it('clicking back to General tab restores Accounts/Drive sections', () => {
+      const state = initialState()
+      state.importSessions = [
+        {
+          id: 'sess1',
+          importedAt: '2024-01-15T10:30:00Z',
+          kind: 'positions',
+          fileName: 'portfolio.csv',
+          accountIds: ['acc1'],
+          rowCount: 42,
+        },
+      ]
+
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      clickSettingsTab('Import Sessions')
+      expect(screen.getByRole('heading', { name: 'Import Sessions' })).toBeTruthy()
+
+      clickSettingsTab('General')
+      expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
+      expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
+    })
+
+    it('Accounts section renders before Drive Sync section in DOM order', () => {
+      const state = initialState()
+      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      const headings = screen.getAllByRole('heading')
+      const accountsIndex = headings.findIndex((h) => h.textContent === 'Accounts')
+      const driveSyncIndex = headings.findIndex((h) => h.textContent === 'Google Drive Sync')
+      expect(accountsIndex).toBeGreaterThanOrEqual(0)
+      expect(driveSyncIndex).toBeGreaterThanOrEqual(0)
+      expect(accountsIndex).toBeLessThan(driveSyncIndex)
     })
   })
 
@@ -557,6 +657,8 @@ describe('SettingsPage', () => {
       const state = initialState()
       render(<SettingsPage state={state} dispatch={mockDispatch} />)
 
+      clickSettingsTab('Import Sessions')
+
       expect(screen.getByText('No imports yet.')).toBeTruthy()
     })
 
@@ -586,6 +688,8 @@ describe('SettingsPage', () => {
       ]
 
       render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      clickSettingsTab('Import Sessions')
 
       const tables = screen.getAllByRole('table')
       expect(tables.length).toBeGreaterThan(0)
@@ -622,6 +726,8 @@ describe('SettingsPage', () => {
 
       render(<SettingsPage state={state} dispatch={mockDispatch} />)
 
+      clickSettingsTab('Import Sessions')
+
       expect(screen.getByText('Main Account, Retirement Account')).toBeTruthy()
     })
 
@@ -640,6 +746,8 @@ describe('SettingsPage', () => {
       ]
 
       render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      clickSettingsTab('Import Sessions')
 
       const deleteButton = screen.getByTitle('Delete this import session')
       fireEvent.click(deleteButton)
@@ -663,6 +771,8 @@ describe('SettingsPage', () => {
       ]
 
       render(<SettingsPage state={state} dispatch={mockDispatch} />)
+
+      clickSettingsTab('Import Sessions')
 
       const deleteButton = screen.getByTitle('Delete this import session')
       fireEvent.click(deleteButton)

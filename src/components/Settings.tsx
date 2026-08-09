@@ -20,6 +20,7 @@ export interface SettingsPageProps {
 export function SettingsPage({ state, dispatch }: SettingsPageProps) {
   const [syncing, setSyncing] = useState(false)
   const [driveReady, setDriveReady] = useState(false)
+  const [activeTab, setActiveTab] = useState<'general' | 'importSessions'>('general')
 
   // Check Drive connection status on mount
   useEffect(() => {
@@ -93,127 +94,157 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
 
   return (
     <div>
-      {/* Drive section */}
-      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <h2>Google Drive Sync</h2>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {!driveReady ? (
-            <button onClick={handleConnect} disabled={syncing}>
-              {syncing ? 'Connecting...' : 'Connect Drive'}
-            </button>
-          ) : (
-            <>
-              <button onClick={handleSync} disabled={syncing}>
-                {syncing ? 'Syncing...' : 'Sync Now'}
-              </button>
-              <button onClick={handleRestore} disabled={syncing}>
-                {syncing ? 'Restoring...' : 'Restore from Drive'}
-              </button>
-              <button onClick={handleDisconnect} disabled={syncing}>
-                {syncing ? 'Disconnecting...' : 'Disconnect'}
-              </button>
-            </>
-          )}
-        </div>
-      </section>
+      {/* Settings tabs */}
+      <div className="seg" style={{ marginBottom: '24px' }}>
+        {[
+          { value: 'general', label: 'General' },
+          { value: 'importSessions', label: 'Import Sessions' },
+        ].map((tab) => (
+          <label
+            key={tab.value}
+            className="seg-opt"
+            onClick={() => setActiveTab(tab.value as 'general' | 'importSessions')}
+          >
+            <input
+              type="radio"
+              name="settings-tab"
+              checked={activeTab === tab.value}
+              readOnly
+            />
+            <span>{tab.label}</span>
+          </label>
+        ))}
+      </div>
 
-      {/* Import Sessions section */}
-      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <h2>Import Sessions</h2>
-        {state.importSessions.length === 0 ? (
-          <p>No imports yet.</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Date/Time</th>
-                <th>Kind</th>
-                <th>File Name</th>
-                <th>Accounts</th>
-                <th style={{ textAlign: 'right' }}>Row Count</th>
-                <th style={{ width: '40px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.importSessions.map((session) => {
-                const accountNames = session.accountIds
-                  .map((id) => state.accounts.find((a) => a.id === id)?.name)
-                  .filter((name) => name !== undefined)
-                  .join(', ')
-
-                const handleDelete = () => {
-                  const confirmed = window.confirm(
-                    `Delete this import? This will remove ${session.rowCount} positions/transactions.`
-                  )
-                  if (confirmed) {
-                    dispatch({ type: 'DELETE_IMPORT_SESSION', sessionId: session.id })
-                  }
-                }
-
-                return (
-                  <tr key={session.id}>
-                    <td className="text-muted">{session.importedAt}</td>
-                    <td>{session.kind}</td>
-                    <td>{session.fileName}</td>
-                    <td>{accountNames}</td>
-                    <td style={{ textAlign: 'right' }}>{session.rowCount}</td>
-                    <td style={{ textAlign: 'center', paddingRight: '8px' }}>
-                      <button
-                        onClick={handleDelete}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'var(--color-text-secondary)',
-                          transition: 'color 0.2s',
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                        title="Delete this import session"
-                      >
-                        ✕
-                      </button>
-                    </td>
+      {activeTab === 'general' && (
+        <>
+          {/* Accounts section */}
+          <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
+            <h2>Accounts</h2>
+            {state.accounts.length === 0 ? (
+              <p>No accounts yet.</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Account Number</th>
+                    <th>Name</th>
+                    <th>Tax Category</th>
+                    <th>Retirement</th>
+                    <th style={{ width: '40px' }}></th>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {state.accounts.map((account) => (
+                    <AccountRow
+                      key={account.id}
+                      account={account}
+                      dispatch={dispatch}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
 
-      {/* Accounts section */}
-      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <h2>Accounts</h2>
-        {state.accounts.length === 0 ? (
-          <p>No accounts yet.</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Account Number</th>
-                <th>Name</th>
-                <th>Tax Category</th>
-                <th>Retirement</th>
-                <th style={{ width: '40px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.accounts.map((account) => (
-                <AccountRow
-                  key={account.id}
-                  account={account}
-                  dispatch={dispatch}
-                />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+          {/* Drive section */}
+          <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
+            <h2>Google Drive Sync</h2>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {!driveReady ? (
+                <button className="btn btn-primary" onClick={handleConnect} disabled={syncing}>
+                  {syncing ? 'Connecting...' : 'Connect Drive'}
+                </button>
+              ) : (
+                <>
+                  <button className="btn btn-primary" onClick={handleSync} disabled={syncing}>
+                    {syncing ? 'Syncing...' : 'Sync Now'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
+                    {syncing ? 'Restoring...' : 'Restore from Drive'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleDisconnect} disabled={syncing}>
+                    {syncing ? 'Disconnecting...' : 'Disconnect'}
+                  </button>
+                </>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'importSessions' && (
+        <>
+          {/* Import Sessions section */}
+          <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
+            <h2>Import Sessions</h2>
+            {state.importSessions.length === 0 ? (
+              <p>No imports yet.</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Date/Time</th>
+                    <th>Kind</th>
+                    <th>File Name</th>
+                    <th>Accounts</th>
+                    <th style={{ textAlign: 'right' }}>Row Count</th>
+                    <th style={{ width: '40px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.importSessions.map((session) => {
+                    const accountNames = session.accountIds
+                      .map((id) => state.accounts.find((a) => a.id === id)?.name)
+                      .filter((name) => name !== undefined)
+                      .join(', ')
+
+                    const handleDelete = () => {
+                      const confirmed = window.confirm(
+                        `Delete this import? This will remove ${session.rowCount} positions/transactions.`
+                      )
+                      if (confirmed) {
+                        dispatch({ type: 'DELETE_IMPORT_SESSION', sessionId: session.id })
+                      }
+                    }
+
+                    return (
+                      <tr key={session.id}>
+                        <td className="text-muted">{session.importedAt}</td>
+                        <td>{session.kind}</td>
+                        <td>{session.fileName}</td>
+                        <td>{accountNames}</td>
+                        <td style={{ textAlign: 'right' }}>{session.rowCount}</td>
+                        <td style={{ textAlign: 'center', paddingRight: '8px' }}>
+                          <button
+                            onClick={handleDelete}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--color-text-secondary)',
+                              transition: 'color 0.2s',
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                            title="Delete this import session"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </section>
+        </>
+      )}
     </div>
   )
 }

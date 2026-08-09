@@ -6,7 +6,7 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Top to bottom: `Nav` → portfolio header row (kicker + title + retirement tags) → 4-column `SummaryCards` grid → 2-column chart grid (`2fr 1fr` — Performance wider than Allocation) → tabs row (Positions/Transactions `.seg` selector + right-aligned "Import CSV" button) → active tab's table.
+Top to bottom: `Nav` → portfolio header row (kicker + title + retirement tags) → 5-column `SummaryCards` grid (all 5 cards in one row) → 2-column chart grid (`2fr 1fr` — Performance wider than Allocation) → tabs row (Positions/Transactions `.seg` selector + right-aligned "Import CSV" button) → active tab's table.
 
 ## Nav
 
@@ -21,7 +21,7 @@ In the dashboard content area, below `Nav`: kicker "Portfolio" + `<h1>Ledger</h1
 
 ## Summary cards
 
-Rendered as `.card.blueprint.elev-sm` cards with corner marks, in rows of 4 equal columns (grid gap `var(--space-4)`, rows separated by `var(--space-4)`). The four main cards (items 1-4) render in one row of 4; **Total Taxes Paid** (item 5) renders on its own separate row below:
+Rendered as `.card.blueprint.elev-sm` cards with corner marks, in a single row of 5 equal columns (grid gap `var(--space-4)`), shrinking each card to fit. Cards are, in order:
 
 1. **Total Value** — sum of `shares * price` across positions in the selected category. Always neutral-colored.
 2. **Day Change** — `lastSnapshotSeriesValue - previousSnapshotSeriesValue` across *all* accounts (not filtered by category), as a signed USD delta. Renders `N/A` when fewer than 2 distinct snapshot dates exist across the whole portfolio. Green (`--color-accent-700`) when ≥ 0, red (`#8a3c2e`) when negative.
@@ -59,10 +59,10 @@ A single **Import CSV** button (`.btn.btn-secondary.blueprint` + 4 corner marks 
 
 Dialog chrome: `.dialog.blueprint` + four corner marks; width `min(96vw, 1400px)`, `max-width: 96vw`, `max-height: 88vh`, `overflow: auto`. Header row (space-between): title "Import from CSV" + ✕ close button (`aria-label="Close"`). Step indicator `[Setup, Review]` as numbered tags: active = `tag-accent`, completed = `tag-neutral`, future = `tag-outline` + muted label. Footer `.dialog-actions`: Cancel (`.btn.btn-secondary`) / Continue (`.btn.btn-primary`) / primary import button.
 
-**Step 1 — Setup**:
-- **What are you importing?** (`.seg` radios): Transactions / Positions / Holdings — default Positions.
-- **Destination account** (`.seg` radios): Existing account / New account.
-  - Existing: `<select class="input">` with a blank `-- Select an account --` option; each option reads `{name} • #{number} — {category}` (or `{name} — {category}` when the account has no number).
+**Step 1 — Setup** (content constrained to `max-width: 720px` so inputs don't stretch across the full dialog):
+- **What are you importing?** (`.seg` radios, 2 equal columns full-width): Transactions / Positions / Holdings — default Positions.
+- **Destination account** (`.seg` radios, 2 equal columns full-width): Existing account / New account.
+  - Existing: `<select class="input">` with a blank `-- Select an account --` option; each option reads `{name} • #{number} — {category} — {Retirement|Non-Retirement}` (or `{name} — {category} — {Retirement|Non-Retirement}` when the account has no number).
   - New: a `2fr/1fr/1fr` grid of "New account name", "Account number", "Category" select (Taxable / Non-Taxable / Tax-Deferred) + a "Retirement Account" checkbox.
 - **CSV file**: dashed dropzone (upload SVG, "No file selected" / "Drag and drop, or click to browse"; once a file parses, shows `{name} ({rows} rows)`). Non-`.csv` files and empty CSVs show an inline error.
 - **Continue** is disabled until the destination account is resolved (existing selected OR new name+number filled) and a file parsed with ≥1 row. Cancel/✕ closes the dialog and fully resets local state.
@@ -77,13 +77,13 @@ Dialog chrome: `.dialog.blueprint` + four corner marks; width `min(96vw, 1400px)
 
 ## Settings page
 
-A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Contains three sections:
+A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Two-tab structure via `.seg` radios: **General** (default) and **Import Sessions**. Tab state is a component-local `useState` in `SettingsPage`; `App.tsx`'s view ternary fully unmounts/remounts the page on each visit, so the tab resets to General every time.
 
-**Drive backup**: Shows current sync status (connected/disconnected). A "Sync Now" button triggers `syncBackup(state)` to upload the current `AppState` to Google Drive. When connected, a "Disconnect" button calls `restoreBackup()` flow and clears the Drive link. Displays the date of the last successful backup, or "Never synced" if none exists.
+**General tab** — Accounts section first, then Google Drive Sync:
+- **Accounts**: list of all accounts; each row: account number (click-to-edit; `Enter`/blur commits, `Esc` cancels), name (same pattern), tax category dropdown (Taxable/Non-Taxable/Tax-Deferred), retirement checkbox, ✕ delete button. Delete opens a native browser dialog (`Delete this account? This removes all its positions, closed positions, transactions, and snapshots.`) — accepting cascade-deletes the account and its associated data. Empty list → "No accounts yet."
+- **Google Drive Sync**: connection state shown by the button set. Not connected → **Connect Drive** (`.btn.btn-primary`). Connected → **Sync Now** (`.btn.btn-primary`, calls `syncBackup(state)`), **Restore from Drive** (`.btn.btn-secondary`, native confirm then `restoreBackup()` + dispatches `__SET_STATE` on success), **Disconnect** (`.btn.btn-secondary`, calls `disconnectDrive()` and flips back to not-connected). Buttons show an "-ing" label while busy.
 
-**Import Sessions**: A table listing all past CSV imports with columns: Date/Time, Kind (Positions/Transactions), File Name, Accounts affected (comma-separated account names), Row Count. Each row has a Delete button (✕) that opens a native browser dialog (`Delete this import? This will remove ${rowCount} positions/transactions.`) — accepting removes the session and all rows tagged with its `importSessionId`.
-
-**Accounts**: A list of all accounts with inline edit/delete affordances. Each account row shows: account number (editable), name (editable), tax category (dropdown: Taxable/Non-Taxable/Tax-Deferred), retirement toggle (checkbox). Deleting an account via the trash-icon button opens a native browser dialog (`Delete this account? This removes all its positions, closed positions, transactions, and snapshots.`) — accepting cascade-deletes the account and its associated data.
+**Import Sessions tab** (unchanged behavior): a table listing all past CSV imports with columns: Date/Time, Kind (Positions/Transactions), File Name, Accounts (comma-separated names), Row Count, ✕ delete. Each row's delete button opens a native browser dialog (`Delete this import? This will remove ${rowCount} positions/transactions.`) — accepting removes the session and all rows tagged with its `importSessionId`. Empty list → "No imports yet."
 
 **Back button**: Returns to the dashboard.
 
