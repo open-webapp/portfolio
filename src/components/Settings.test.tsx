@@ -60,7 +60,7 @@ const connectedAuthStatus: driveModule.DriveAuthStatus = {
   tokenValid: true,
 }
 
-function clickSettingsTab(tabName: 'General' | 'Import Sessions') {
+function clickSettingsTab(tabName: 'Accounts' | 'Google Drive Sync' | 'Encryption Password') {
   const radio = screen.getByRole('radio', { name: tabName })
   fireEvent.click(radio)
 }
@@ -629,8 +629,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
-      const headings = screen.getAllByRole('heading', { name: 'Accounts' })
-      expect(headings.length).toBeGreaterThan(0)
+      expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
       expect(screen.getByText('No accounts yet.')).toBeTruthy()
     })
 
@@ -862,6 +861,8 @@ describe('SettingsPage', () => {
     })
   })
 
+  // Import Sessions tests commented out - tab removed from UI
+  /*
   describe('Import Sessions section', () => {
     beforeEach(() => {
       vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
@@ -1018,8 +1019,9 @@ describe('SettingsPage', () => {
       })
     })
   })
+  */
 
-  describe('Change Password', () => {
+  describe('Change Encryption Password', () => {
     beforeEach(() => {
       vi.mocked(driveModule.getDriveConnection).mockResolvedValue(null)
       vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)

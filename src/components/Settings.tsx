@@ -30,7 +30,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
   const [driveReady, setDriveReady] = useState(false)
   const [driveEmail, setDriveEmail] = useState<string | null>(null)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'general' | 'importSessions'>('general')
+  const [activeTab, setActiveTab] = useState<'accounts' | 'drive' | 'encryption'>('accounts')
 
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -122,7 +122,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
       alert('Restored from Drive')
     } catch (error) {
       console.error('Cross-password restore failed:', error)
-      setCrossPasswordError('Incorrect password')
+      setCrossPasswordError('Incorrect encryption password')
     } finally {
       setRestoringWithBackupPassword(false)
       setSyncing(false)
@@ -175,16 +175,16 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
         await loadPersistedApp(candidateKey)
       } catch (error) {
         console.error('Current password verification failed:', error)
-        setPasswordError('Current password is incorrect')
+        setPasswordError('Current encryption password is incorrect')
         return
       }
 
       if (newPasswordInput.length < 6) {
-        setPasswordError('Password must be at least 6 characters')
+        setPasswordError('Encryption password must be at least 6 characters')
         return
       }
       if (newPasswordInput !== confirmNewPasswordInput) {
-        setPasswordError('Passwords do not match')
+        setPasswordError('Encryption passwords do not match')
         return
       }
 
@@ -202,14 +202,14 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
       } catch (error) {
         console.error('Drive re-sync after password change failed:', error)
         const message = error instanceof Error ? error.message : String(error)
-        syncWarning = `Password changed locally, but Drive re-sync failed: ${message}. Sync manually from Google Drive Sync above.`
+        syncWarning = `Encryption password changed locally, but Drive re-sync failed: ${message}. Sync manually from Google Drive Sync above.`
       }
 
       onKeyChange(newKey, newSalt)
       setCurrentPasswordInput('')
       setNewPasswordInput('')
       setConfirmNewPasswordInput('')
-      setPasswordSuccess('Password changed')
+      setPasswordSuccess('Encryption password changed')
       if (syncWarning) {
         setDriveSyncWarning(syncWarning)
       }
@@ -223,13 +223,14 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
       {/* Settings tabs */}
       <div className="seg" style={{ marginBottom: '24px' }}>
         {[
-          { value: 'general', label: 'General' },
-          { value: 'importSessions', label: 'Import Sessions' },
+          { value: 'accounts', label: 'Accounts' },
+          { value: 'drive', label: 'Google Drive Sync' },
+          { value: 'encryption', label: 'Encryption Password' },
         ].map((tab) => (
           <label
             key={tab.value}
             className="seg-opt"
-            onClick={() => setActiveTab(tab.value as 'general' | 'importSessions')}
+            onClick={() => setActiveTab(tab.value as 'accounts' | 'drive' | 'encryption')}
           >
             <input
               type="radio"
@@ -242,11 +243,11 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
         ))}
       </div>
 
-      {activeTab === 'general' && (
+      {activeTab === 'accounts' && (
         <>
           {/* Accounts section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-            <h2>Accounts</h2>
+            <h2 style={{ textAlign: 'left' }}>Accounts</h2>
             {state.accounts.length === 0 ? (
               <p>No accounts yet.</p>
             ) : (
@@ -274,8 +275,11 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
               </table>
             )}
           </section>
+        </>
+      )}
 
-          {/* Drive section */}
+      {activeTab === 'drive' && (
+        <>
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
             <h2 style={{ textAlign: 'left' }}>Google Drive Sync</h2>
             
@@ -364,9 +368,9 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
             </div>
             {crossPasswordPrompt && (
               <div style={{ marginTop: '16px', maxWidth: '460px' }}>
-                <p>This backup was saved with a different password. Enter that password to restore:</p>
+                <p>This backup was saved with a different encryption password. Enter that password to restore:</p>
                 <div className="field">
-                  <label>Backup Password</label>
+                  <label>Backup Encryption Password</label>
                   <input
                     className="input"
                     type="password"
@@ -401,13 +405,17 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
               </div>
             )}
           </section>
+        </>
+      )}
 
-          {/* Change Password section */}
+      {activeTab === 'encryption' && (
+        <>
+          {/* Change Encryption Password section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-            <h2 style={{ textAlign: 'left' }}>Change Password</h2>
+            <h2 style={{ textAlign: 'left' }}>Change Encryption Password</h2>
             <div style={{ maxWidth: '460px' }}>
               <div className="field">
-                <label>Current Password</label>
+                <label>Current Encryption Password</label>
                 <input
                   className="input"
                   type="password"
@@ -417,7 +425,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
                 />
               </div>
               <div className="field">
-                <label>New Password</label>
+                <label>New Encryption Password</label>
                 <input
                   className="input"
                   type="password"
@@ -427,7 +435,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
                 />
               </div>
               <div className="field">
-                <label>Confirm New Password</label>
+                <label>Confirm New Encryption Password</label>
                 <input
                   className="input"
                   type="password"
@@ -441,7 +449,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
                 onClick={handleChangePassword}
                 disabled={changingPassword}
               >
-                {changingPassword ? 'Changing Password...' : 'Change Password'}
+                {changingPassword ? 'Changing Encryption Password...' : 'Change Encryption Password'}
               </button>
               {passwordError && (
                 <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{passwordError}</p>
@@ -453,79 +461,6 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
                 <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
               )}
             </div>
-          </section>
-        </>
-      )}
-
-      {activeTab === 'importSessions' && (
-        <>
-          {/* Import Sessions section */}
-          <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-            <h2>Import Sessions</h2>
-            {state.importSessions.length === 0 ? (
-              <p>No imports yet.</p>
-            ) : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Date/Time</th>
-                    <th>Kind</th>
-                    <th>File Name</th>
-                    <th>Accounts</th>
-                    <th style={{ textAlign: 'right' }}>Row Count</th>
-                    <th style={{ width: '40px' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.importSessions.map((session) => {
-                    const accountNames = session.accountIds
-                      .map((id) => state.accounts.find((a) => a.id === id)?.name)
-                      .filter((name) => name !== undefined)
-                      .join(', ')
-
-                    const handleDelete = () => {
-                      const confirmed = window.confirm(
-                        `Delete this import? This will remove ${session.rowCount} positions/transactions.`
-                      )
-                      if (confirmed) {
-                        dispatch({ type: 'DELETE_IMPORT_SESSION', sessionId: session.id })
-                      }
-                    }
-
-                    return (
-                      <tr key={session.id}>
-                        <td className="text-muted">{session.importedAt}</td>
-                        <td>{session.kind}</td>
-                        <td>{session.fileName}</td>
-                        <td>{accountNames}</td>
-                        <td style={{ textAlign: 'right' }}>{session.rowCount}</td>
-                        <td style={{ textAlign: 'center', paddingRight: '8px' }}>
-                          <button
-                            onClick={handleDelete}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: '4px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'var(--color-text-secondary)',
-                              transition: 'color 0.2s',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                            title="Delete this import session"
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
           </section>
         </>
       )}
