@@ -208,9 +208,26 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const handleContinue = useCallback(() => {
     if (step === 1) {
       if (!isStep1Complete()) return
+
+      // Prefill fieldMap from saved mapping if importing to existing account
+      if (accountMode === 'existing' && selectedAccountId) {
+        const saved = state.csvMappings.find(
+          (m) => m.accountId === selectedAccountId && m.kind === dataType
+        )
+        if (saved) {
+          // Filter saved fieldMap to only columns present in current CSV
+          const prefill = Object.fromEntries(
+            Object.entries(saved.fieldMap).filter(([csvCol]) => csvHeaders.includes(csvCol))
+          )
+          setFieldMap(prefill)
+        }
+        // If no saved mapping, leave fieldMap as-is (preserves manual mappings from back-and-continue flow)
+      }
+      // For new account mode, also leave fieldMap as-is (user's manual mappings already set)
+
       setStep(2)
     }
-  }, [step, isStep1Complete])
+  }, [step, isStep1Complete, accountMode, selectedAccountId, dataType, csvHeaders, state.csvMappings])
 
   const handleBack = useCallback(() => {
     setStep(1)
@@ -328,6 +345,9 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         fileName,
       })
     }
+
+    // Save the mapping for future use
+    dispatch({ type: 'UPSERT_CSV_MAPPING', accountId, kind: dataType, fieldMap })
 
     // Show completion state
     setImportDone(true)

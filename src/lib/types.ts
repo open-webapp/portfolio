@@ -21,6 +21,14 @@ export interface ImportSession {
   rowCount: number
 }
 
+export interface SavedCsvMapping {
+  id: string              // uid('mapping')
+  accountId: string
+  kind: 'positions' | 'transactions'
+  fieldMap: Record<string, string>  // csvColumn -> targetField, same shape as ImportDialog's fieldMap state
+  updatedAt: string       // ISO
+}
+
 export interface Position {
   id: string
   importSessionId: string

@@ -57,13 +57,14 @@ Single `useReducer(appReducer, initialState())` in `App.tsx`. No Redux/Zustand/C
 
 ```ts
 interface AppState {
-  // Data collections (6)
+  // Data collections (7)
   accounts: Account[]
   positions: Position[]
   closedPositions: ClosedPosition[]
   transactions: Transaction[]
   snapshots: PortfolioSnapshot[]
   importSessions: ImportSession[]
+  csvMappings: SavedCsvMapping[]
 
   // UI state
   category: TaxCategory | 'all'
@@ -81,13 +82,13 @@ interface AppState {
 }
 ```
 
-- `src/lib/state.ts` — `AppState` interface (6 data collections + 12 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `deleteClosedPosition`, `setCategory`, `setRange`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setRetirementFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `addImportSession`, `deleteImportSession`).
+- `src/lib/state.ts` — `AppState` interface (7 data collections + 12 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `deleteClosedPosition`, `setCategory`, `setRange`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setRetirementFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `addImportSession`, `deleteImportSession`, `upsertCsvMapping`).
 - `src/lib/reducer.ts` — `appReducer(state, action)` switches on `action.type` (string) and calls the matching `state.ts` helper, or the import logic in `positionsImport.ts`/`transactionsImport.ts`. `default: return state`. Special case `__SET_STATE` replaces the whole state (used by hydration).
 - Components never mutate state directly; they `dispatch({ type: '...', ...payload })`.
 
 ### Action types (reducer.ts)
 
-`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_RANGE`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `ADD_IMPORT_SESSION`, `DELETE_IMPORT_SESSION`, `SET_VIEW`.
+`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_RANGE`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `ADD_IMPORT_SESSION`, `DELETE_IMPORT_SESSION`, `UPSERT_CSV_MAPPING`, `SET_VIEW`.
 
 ## Component tree
 
@@ -118,8 +119,8 @@ Props convention: presentational components take `{ state: AppState, dispatch }`
 
 **CSV import** — synchronous 2-step wizard inside `ImportDialog` (positions or transactions). Dialog-open state is component-local (`isOpen`), not in `AppState`.
 1. **Setup** (`step === 1`): pick data type (`.seg`: Transactions / Positions — default Positions), destination account (existing `<select>` or new-account form: name, number, category, retirement checkbox), and a `.csv` file — `parseCsvFile` (`csv.ts`) yields `{ headers, rows }` immediately. Continue (enabled once the account is resolved and ≥1 row parsed) advances to Review.
-2. **Review** (`step === 2`): `headers` drive one mapping `<select>` per field — `{ csvColumn: targetField }`, values are internal field names — in required-then-optional order; **exception: Asset Class (positions only) is a free-text `<input>` that broadcasts its value to all rows not yet touched in their own assetClass cell; once a row's cell is edited, that row becomes "touched" and no longer receives broadcasts**; `applyFieldMap(row, fieldMap)` renames each CSV row to internal field names; `<input>` cells overlay user edits (`importEdits[rowIdx]`); `validatePreviewRow(dataType, row)` flags required-missing cells (honoring avgCost/purchaseAmount and price/marketValue alternatives; fully-empty rows return valid and are skipped at commit via `isBlankRow`, so trailing blank CSV lines never block import); `isReviewValid(dataType, fieldMap)` gates the primary button. Each row has a leading trash-icon button (`handleDeleteRow(rowIdx)`) that removes it from `csvRows` and re-keys `importEdits` (indices shift down); the primary button also disables when `previewRows.length === 0`. `applyFieldMap`/`validatePreviewRow`/`isBlankRow`/`isReviewValid` come from `importPreview.ts`.
-3. **Commit**: primary button dispatches `ADD_ACCOUNT` first when new-account mode (capturing the new account id), then `IMPORT_POSITIONS` (replaces positions, creates closed positions, upserts snapshot) or `IMPORT_TRANSACTIONS` (dedups, inserts) with `accountId`, the valid user-edited rows (blank rows excluded), and a fresh `uid('import')` `importSessionId` tagging every created row. "Import complete" renders in the same step-2 slot; "Done" closes and resets local state.
+2. **Review** (`step === 2`): `headers` drive one mapping `<select>` per field — `{ csvColumn: targetField }`, values are internal field names — in required-then-optional order; **exception: Asset Class (positions only) is a free-text `<input>` that broadcasts its value to all rows not yet touched in their own assetClass cell; once a row's cell is edited, that row becomes "touched" and no longer receives broadcasts**. On entering Step 2 with an existing account, `fieldMap` is pre-populated from any saved `csvMappings` entry for that `accountId`+`kind`, filtered to headers present in the current file. `applyFieldMap(row, fieldMap)` renames each CSV row to internal field names; `<input>` cells overlay user edits (`importEdits[rowIdx]`); `validatePreviewRow(dataType, row)` flags required-missing cells (honoring avgCost/purchaseAmount and price/marketValue alternatives; fully-empty rows return valid and are skipped at commit via `isBlankRow`, so trailing blank CSV lines never block import); `isReviewValid(dataType, fieldMap)` gates the primary button. Each row has a leading trash-icon button (`handleDeleteRow(rowIdx)`) that removes it from `csvRows` and re-keys `importEdits` (indices shift down); the primary button also disables when `previewRows.length === 0`. `applyFieldMap`/`validatePreviewRow`/`isBlankRow`/`isReviewValid` come from `importPreview.ts`.
+3. **Commit**: primary button dispatches `ADD_ACCOUNT` first when new-account mode (capturing the new account id), then `IMPORT_POSITIONS` (replaces positions, creates closed positions, upserts snapshot, upserts mapping) or `IMPORT_TRANSACTIONS` (dedups, inserts, upserts mapping) with `accountId`, the valid user-edited rows (blank rows excluded), and a fresh `uid('import')` `importSessionId` tagging every created row. "Import complete" renders in the same step-2 slot; "Done" closes and resets local state.
 4. **Session logging**: `processPendingImport(state, kind, fileName, importSessionId, affectedAccountIds)` (App.tsx, exported pure helper, covered by App.test.tsx) counts rows tagged with `importSessionId`, builds an `ImportSession`, and prepends it via `addImportSession` (capped at 50, newest-first).
 
 All steps are **synchronous**; no async queue beyond the debounce-save to IndexedDB.
@@ -141,7 +142,7 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 
 - **Import session tagging**: Every `Position`, `ClosedPosition`, `Transaction`, and `PortfolioSnapshot` carries an `importSessionId` field linking it back to the `ImportSession` that created it. This enables session-based deletion and audit trails.
 - **Session cascade delete**: `DELETE_IMPORT_SESSION` removes the session record AND all rows tagged with its `importSessionId` (positions, closed positions, transactions, snapshots). The Settings delete dialog states the row count that will be removed.
-- **Account cascade delete**: Deleting an `Account` cascade-deletes all its `Position`s, `ClosedPosition`s, `Transaction`s, `PortfolioSnapshot`s, and `ImportSession`s (those with the account in `importSession.accountIds`).
+- **Account cascade delete**: Deleting an `Account` cascade-deletes all its `Position`s, `ClosedPosition`s, `Transaction`s, `PortfolioSnapshot`s, `SavedCsvMapping`s, and `ImportSession`s (those with the account in `importSession.accountIds`).
 
 ## Design patterns
 

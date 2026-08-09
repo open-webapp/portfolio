@@ -90,6 +90,9 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'DELETE_IMPORT_SESSION':
       return StateActions.deleteImportSession(state, action.sessionId)
 
+    case 'UPSERT_CSV_MAPPING':
+      return StateActions.upsertCsvMapping(state, action.accountId, action.kind, action.fieldMap)
+
     default:
       return state
   }

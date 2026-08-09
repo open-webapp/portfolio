@@ -4,9 +4,10 @@ import {
   addImportSession,
   deleteImportSession,
   deleteAccount,
+  upsertCsvMapping,
   setView,
 } from './state'
-import type { AppState, ImportSession, Position, ClosedPosition, Transaction, PortfolioSnapshot } from './types'
+import type { AppState, ImportSession, Position, ClosedPosition, Transaction, PortfolioSnapshot, SavedCsvMapping } from './types'
 
 describe('state helpers', () => {
   describe('addImportSession', () => {
@@ -529,6 +530,133 @@ describe('state helpers', () => {
       expect(updated.importSessions).toHaveLength(1)
       expect(updated.importSessions[0].id).toBe('session1')
       expect(updated.importSessions[0].accountIds).toEqual(['acc2'])
+    })
+
+    it('cascade-deletes csvMappings entries for the deleted account', () => {
+      const state: AppState = {
+        ...initialState(),
+        accounts: [
+          {
+            id: 'acc1',
+            accountNumber: '123456',
+            name: 'Account 1',
+            taxCategory: 'taxable',
+            retirement: false,
+            createdAt: '2024-01-01T10:00:00Z',
+          },
+          {
+            id: 'acc2',
+            accountNumber: '234567',
+            name: 'Account 2',
+            taxCategory: 'taxDeferred',
+            retirement: true,
+            createdAt: '2024-01-01T10:00:00Z',
+          },
+        ],
+        csvMappings: [
+          {
+            id: 'mapping1',
+            accountId: 'acc1',
+            kind: 'positions',
+            fieldMap: { 'Symbol': 'symbol', 'Shares': 'shares' },
+            updatedAt: '2024-01-01T10:00:00Z',
+          },
+          {
+            id: 'mapping2',
+            accountId: 'acc2',
+            kind: 'positions',
+            fieldMap: { 'Ticker': 'symbol', 'Qty': 'shares' },
+            updatedAt: '2024-01-01T10:00:00Z',
+          },
+        ],
+      }
+
+      const updated = deleteAccount(state, 'acc1')
+
+      // acc1 should be removed
+      expect(updated.accounts).toHaveLength(1)
+      expect(updated.accounts[0].id).toBe('acc2')
+
+      // csvMappings for acc1 should be removed, acc2 mapping should remain
+      expect(updated.csvMappings).toHaveLength(1)
+      expect(updated.csvMappings[0].id).toBe('mapping2')
+      expect(updated.csvMappings[0].accountId).toBe('acc2')
+    })
+  })
+
+  describe('upsertCsvMapping', () => {
+    it('pushes a new entry when no existing mapping for accountId+kind, with generated id and updatedAt set', () => {
+      const state = initialState()
+      const fieldMap = { 'Symbol': 'symbol', 'Shares': 'shares' }
+
+      const updated = upsertCsvMapping(state, 'acc1', 'positions', fieldMap)
+
+      expect(updated.csvMappings).toHaveLength(1)
+      expect(updated.csvMappings[0].accountId).toBe('acc1')
+      expect(updated.csvMappings[0].kind).toBe('positions')
+      expect(updated.csvMappings[0].fieldMap).toEqual(fieldMap)
+      expect(updated.csvMappings[0].id).toBeDefined()
+      expect(updated.csvMappings[0].id).toMatch(/^mapping-/)
+      expect(updated.csvMappings[0].updatedAt).toBeDefined()
+      // updatedAt should be close to now (within a few seconds)
+      const now = new Date()
+      const mappingTime = new Date(updated.csvMappings[0].updatedAt)
+      expect(now.getTime() - mappingTime.getTime()).toBeLessThan(5000)
+    })
+
+    it('replaces existing entry for same accountId+kind, preserving the id', () => {
+      const state: AppState = {
+        ...initialState(),
+        csvMappings: [
+          {
+            id: 'mapping1',
+            accountId: 'acc1',
+            kind: 'positions',
+            fieldMap: { 'Symbol': 'symbol', 'Shares': 'shares' },
+            updatedAt: '2024-01-01T10:00:00Z',
+          },
+        ],
+      }
+
+      const newFieldMap = { 'Ticker': 'symbol', 'Qty': 'shares', 'Price': 'price' }
+      const updated = upsertCsvMapping(state, 'acc1', 'positions', newFieldMap)
+
+      expect(updated.csvMappings).toHaveLength(1)
+      // Same id as before
+      expect(updated.csvMappings[0].id).toBe('mapping1')
+      expect(updated.csvMappings[0].accountId).toBe('acc1')
+      expect(updated.csvMappings[0].kind).toBe('positions')
+      // Updated fieldMap
+      expect(updated.csvMappings[0].fieldMap).toEqual(newFieldMap)
+      // updatedAt should be refreshed to now
+      const now = new Date()
+      const mappingTime = new Date(updated.csvMappings[0].updatedAt)
+      expect(now.getTime() - mappingTime.getTime()).toBeLessThan(5000)
+    })
+
+    it('allows different kinds for the same accountId to coexist', () => {
+      let state = initialState()
+      const posFieldMap = { 'Symbol': 'symbol', 'Shares': 'shares' }
+      const txFieldMap = { 'Date': 'date', 'Type': 'type', 'Amount': 'amount' }
+
+      state = upsertCsvMapping(state, 'acc1', 'positions', posFieldMap)
+      expect(state.csvMappings).toHaveLength(1)
+      expect(state.csvMappings[0].kind).toBe('positions')
+
+      state = upsertCsvMapping(state, 'acc1', 'transactions', txFieldMap)
+      expect(state.csvMappings).toHaveLength(2)
+
+      // Verify both mappings exist
+      const posMappings = state.csvMappings.filter((m) => m.kind === 'positions')
+      const txMappings = state.csvMappings.filter((m) => m.kind === 'transactions')
+
+      expect(posMappings).toHaveLength(1)
+      expect(posMappings[0].accountId).toBe('acc1')
+      expect(posMappings[0].fieldMap).toEqual(posFieldMap)
+
+      expect(txMappings).toHaveLength(1)
+      expect(txMappings[0].accountId).toBe('acc1')
+      expect(txMappings[0].fieldMap).toEqual(txFieldMap)
     })
   })
 

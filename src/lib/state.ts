@@ -6,7 +6,9 @@ import type {
   PortfolioSnapshot,
   TaxCategory,
   ImportSession,
+  SavedCsvMapping,
 } from './types'
+import { uid } from './seed'
 
 export interface AppState {
   // Data collections
@@ -16,6 +18,7 @@ export interface AppState {
   transactions: Transaction[]
   snapshots: PortfolioSnapshot[]
   importSessions: ImportSession[]
+  csvMappings: SavedCsvMapping[]
 
   // UI state
   category: TaxCategory | 'all'
@@ -50,6 +53,7 @@ export function initialState(): AppState {
     transactions: [],
     snapshots: [],
     importSessions: [],
+    csvMappings: [],
 
     // UI state
     category: 'all',
@@ -110,6 +114,7 @@ export function deleteAccount(state: AppState, accountId: string): AppState {
         accountIds: session.accountIds.filter((id) => id !== accountId),
       }))
       .filter((session) => session.accountIds.length > 0),
+    csvMappings: state.csvMappings.filter((m) => m.accountId !== accountId),
   }
 }
 
@@ -284,6 +289,34 @@ export function deleteImportSession(state: AppState, sessionId: string): AppStat
     transactions: state.transactions.filter((t) => t.importSessionId !== sessionId),
     snapshots: state.snapshots.filter((s) => s.importSessionId !== sessionId),
     importSessions: state.importSessions.filter((s) => s.id !== sessionId),
+  }
+}
+
+/**
+ * Upsert a saved CSV mapping for an account and import kind (to be implemented in reducer cases).
+ * If a mapping already exists for (accountId, kind), update it; otherwise insert a new one.
+ */
+export function upsertCsvMapping(
+  state: AppState,
+  accountId: string,
+  kind: 'positions' | 'transactions',
+  fieldMap: Record<string, string>
+): AppState {
+  const existing = state.csvMappings.find(
+    (m) => m.accountId === accountId && m.kind === kind
+  )
+  const entry: SavedCsvMapping = {
+    id: existing?.id ?? uid('mapping'),
+    accountId,
+    kind,
+    fieldMap,
+    updatedAt: new Date().toISOString(),
+  }
+  return {
+    ...state,
+    csvMappings: existing
+      ? state.csvMappings.map((m) => (m === existing ? entry : m))
+      : [...state.csvMappings, entry],
   }
 }
 

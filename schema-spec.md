@@ -2,7 +2,7 @@
 
 See also: [design.md](design.md), [product-behavior.md](product-behavior.md)
 
-All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `import` (ImportSession).
+All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `import` (ImportSession), `mapping` (SavedCsvMapping).
 
 ## Account
 
@@ -93,6 +93,18 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | `accountIds` | `string[]` | Array of `Account.id`s involved in this import (one or more if file spanned multiple accounts) |
 | `rowCount` | `number` | Number of rows successfully imported in this session |
 
+## SavedCsvMapping
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `string` | `uid('mapping')` |
+| `accountId` | `string` | FK → `Account.id` |
+| `kind` | `'positions' \| 'transactions'` | Type of data this mapping applies to |
+| `fieldMap` | `Record<string, string>` | Mapping of CSV column names to target field names (`{ csvColumn: targetField }`) |
+| `updatedAt` | `string` | ISO timestamp of the last successful import that used/updated this mapping |
+
+**Natural key**: `(accountId, kind)` — upserted on successful CSV import. Stores the effective `fieldMap` from the most recent successful import for each (account, data type) pair.
+
 ### Required field sets
 
 Defined in `src/lib/types.ts`:
@@ -147,6 +159,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 - `IMPORT_TRANSACTIONS`: Merge transactions for an account (calls `importTransactions` helper)
 - `ADD_IMPORT_SESSION`: Add an `ImportSession` (newest-first, capped at 50)
 - `DELETE_IMPORT_SESSION`: Remove an `ImportSession` and all rows tagged with its id
+- `UPSERT_CSV_MAPPING`: Upsert a `SavedCsvMapping` for (accountId, kind)
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
@@ -154,4 +167,4 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 ## Persistence envelope
 
-IndexedDB (`persist.ts`): DB `portfolio_app_state_v1`, object store `app_state`, single key `'current'` holding the entire `AppState` object (all 6 collections + all UI fields) as one blob — no per-collection stores. On load, `loadPersistedApp` rebuilds the object field-by-field from a fixed whitelist, coalescing missing collections/fields against `initialState()` defaults (`loaded.x ?? defaults.x`) — so a blob missing a newer collection/field loads with that field defaulted rather than throwing, and stale keys not on the whitelist (left over from removed features) are silently dropped. `savePersistedApp` rethrows IndexedDB open/write failures (rejections propagate to the caller — no silent success).
+IndexedDB (`persist.ts`): DB `portfolio_app_state_v1`, object store `app_state`, single key `'current'` holding the entire `AppState` object (all 7 collections + all UI fields) as one blob — no per-collection stores. On load, `loadPersistedApp` rebuilds the object field-by-field from a fixed whitelist, coalescing missing collections/fields against `initialState()` defaults (`loaded.x ?? defaults.x`) — so a blob missing a newer collection/field loads with that field defaulted rather than throwing, and stale keys not on the whitelist (left over from removed features) are silently dropped. `savePersistedApp` rethrows IndexedDB open/write failures (rejections propagate to the caller — no silent success).

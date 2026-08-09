@@ -466,7 +466,7 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
-    expect(calls.map((a) => a.type)).toEqual(['ADD_ACCOUNT', 'IMPORT_POSITIONS'])
+    expect(calls.map((a) => a.type)).toEqual(['ADD_ACCOUNT', 'IMPORT_POSITIONS', 'UPSERT_CSV_MAPPING'])
 
     expect(calls[0].account.name).toBe('Roth IRA')
     expect(calls[0].account.accountNumber).toBe('8842')
@@ -489,7 +489,7 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
-    expect(calls.map((a) => a.type)).toEqual(['ADD_ACCOUNT', 'IMPORT_TRANSACTIONS'])
+    expect(calls.map((a) => a.type)).toEqual(['ADD_ACCOUNT', 'IMPORT_TRANSACTIONS', 'UPSERT_CSV_MAPPING'])
     expect(calls[0].account.retirement).toBe(false)
     expect(calls[1].accountId).toBe(calls[0].account.id)
     expect(calls[1].mappedRows).toEqual([
@@ -504,7 +504,7 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
-    expect(calls.map((a) => a.type)).toEqual(['IMPORT_TRANSACTIONS'])
+    expect(calls.map((a) => a.type)).toEqual(['IMPORT_TRANSACTIONS', 'UPSERT_CSV_MAPPING'])
     expect(calls[0].accountId).toBe('acc-1')
     expect(calls[0].mappedRows).toEqual([
       { date: '2024-01-15', symbol: 'AAPL', type: 'Buy', shares: '10', price: '150', amount: '1500' },
@@ -750,5 +750,194 @@ describe('ImportDialog (2-step wizard)', () => {
     const calls = dispatch.mock.calls.map((c) => c[0])
     expect(calls[0].type).toBe('IMPORT_TRANSACTIONS')
     expect(calls[0].mappedRows[0]).not.toHaveProperty('assetClass')
+  })
+
+  // Mapping persistence tests
+
+  it('26. new-account-save: Import via new account records UPSERT_CSV_MAPPING with the newly-created account id (not empty/undefined)', async () => {
+    await advanceToStep2NewAccount(dispatch, { name: 'New Brokerage', number: '999', category: 'taxable', retirement: false }, 'positions')
+    mapPositions()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    const upsertCall = calls.find((c) => c.type === 'UPSERT_CSV_MAPPING')
+    expect(upsertCall).toBeTruthy()
+
+    // Verify the accountId is not empty and matches the newly-created account id from ADD_ACCOUNT
+    const addAccountCall = calls.find((c) => c.type === 'ADD_ACCOUNT')
+    expect(upsertCall.accountId).toBe(addAccountCall.account.id)
+    expect(upsertCall.accountId).toBeTruthy()
+    expect(upsertCall.accountId).not.toBe('')
+    expect(upsertCall.kind).toBe('positions')
+    // Asset Class is handled via header input, not CSV column mapping, so not in fieldMap
+    expect(upsertCall.fieldMap).toEqual({
+      Symbol: 'symbol',
+      Shares: 'shares',
+      'Cost Basis': 'avgCost',
+      Price: 'price',
+    })
+  })
+
+  it('27. existing-account prefill: saved mapping is loaded and field selects are pre-selected for matching CSV columns', async () => {
+    const savedMapping = {
+      id: 'map-1',
+      accountId: 'acc-1',
+      kind: 'transactions' as const,
+      fieldMap: {
+        Date: 'date',
+        Symbol: 'symbol',
+        Type: 'type',
+        Shares: 'shares',
+        Price: 'price',
+        Amount: 'amount',
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    const stateWithMapping = createState({ csvMappings: [savedMapping] })
+
+    await mockCsv(TX_HEADERS, TX_ROWS)
+    render(<ImportDialog state={stateWithMapping} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    // Verify the selects are pre-selected from saved mapping
+    expect(selectForField('Date').value).toBe('Date')
+    expect(selectForField('Symbol').value).toBe('Symbol')
+    expect(selectForField('Type').value).toBe('Type')
+    expect(selectForField('Shares').value).toBe('Shares')
+    expect(selectForField('Price').value).toBe('Price')
+    expect(selectForField('Amount').value).toBe('Amount')
+  })
+
+  it('28. header-mismatch partial-apply: saved mapping with non-existent CSV column stays unmapped; other columns still prefill', async () => {
+    const savedMapping = {
+      id: 'map-1',
+      accountId: 'acc-1',
+      kind: 'transactions' as const,
+      fieldMap: {
+        Date: 'date',
+        Symbol: 'symbol',
+        Type: 'type',
+        'Old Column Name': 'amount', // This column doesn't exist in the current CSV
+        Shares: 'shares',
+        Price: 'price',
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    const stateWithMapping = createState({ csvMappings: [savedMapping] })
+
+    // CSV has different headers - 'Old Column Name' is not present, but 'Amount' is there instead
+    await mockCsv(TX_HEADERS, TX_ROWS)
+    render(<ImportDialog state={stateWithMapping} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    // Verify that existing columns are prefilled
+    expect(selectForField('Date').value).toBe('Date')
+    expect(selectForField('Symbol').value).toBe('Symbol')
+    expect(selectForField('Type').value).toBe('Type')
+    expect(selectForField('Shares').value).toBe('Shares')
+    expect(selectForField('Price').value).toBe('Price')
+
+    // Amount should not be mapped (because 'Old Column Name' doesn't exist in the CSV, and Amount is a new column not in the saved mapping)
+    expect(selectForField('Amount').value).toBe('')
+  })
+
+  it('29. upsert-on-reimport: second import with different mapping replaces the first; state has exactly one entry per account+kind', async () => {
+    // First import with mapping A (only some fields mapped)
+    const mappingA = {
+      id: 'map-1',
+      accountId: 'acc-1',
+      kind: 'transactions' as const,
+      fieldMap: {
+        Date: 'date',
+        Symbol: 'symbol',
+        // Type and others not mapped in mapping A
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    const stateAfterFirstImport = createState({ csvMappings: [mappingA] })
+
+    dispatch = vi.fn()
+    await mockCsv(TX_HEADERS, TX_ROWS)
+    render(<ImportDialog state={stateAfterFirstImport} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    // Import with different mapping (mapping B - all fields mapped)
+    mapTransactions()
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    const upsertCall = calls.find((c) => c.type === 'UPSERT_CSV_MAPPING')
+    expect(upsertCall).toBeTruthy()
+    expect(upsertCall.accountId).toBe('acc-1')
+    expect(upsertCall.kind).toBe('transactions')
+    // Mapping B should have all fields mapped (unlike mapping A which had only Date and Symbol)
+    expect(upsertCall.fieldMap).toEqual({
+      Date: 'date',
+      Symbol: 'symbol',
+      Type: 'type',
+      Shares: 'shares',
+      Price: 'price',
+      Amount: 'amount',
+    })
+  })
+
+  it('30. new-account mode never reads saved mappings: field selects open empty even with saved mappings present', async () => {
+    const savedMapping = {
+      id: 'map-1',
+      accountId: 'acc-1',
+      kind: 'transactions' as const,
+      fieldMap: {
+        Date: 'date',
+        Symbol: 'symbol',
+        Type: 'type',
+        Shares: 'shares',
+        Price: 'price',
+        Amount: 'amount',
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    const stateWithMapping = createState({ csvMappings: [savedMapping] })
+
+    dispatch = vi.fn()
+    const headers = TX_HEADERS
+    const rows = TX_ROWS
+    await mockCsv(headers, rows)
+    render(<ImportDialog state={stateWithMapping} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'New account' }))
+    fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), { target: { value: 'Fresh Account' } })
+    fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: '777' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    // Verify all field selects are unmapped (not prefilled from the saved mapping, even though one exists for acc-1)
+    expect(selectForField('Date').value).toBe('')
+    expect(selectForField('Symbol').value).toBe('')
+    expect(selectForField('Type').value).toBe('')
+    expect(selectForField('Shares').value).toBe('')
+    expect(selectForField('Price').value).toBe('')
+    expect(selectForField('Amount').value).toBe('')
   })
 })
