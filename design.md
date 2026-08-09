@@ -102,7 +102,7 @@ App
     charts row                (inline in App)    — grid 2fr 1fr (Performance wider than Allocation)
       PerformanceChart        (state)
       AllocationChart         (state)
-    tabs row                  (inline in App)    — flex space-between: Positions/Transactions .seg + Import CSV trigger
+    tabs row                  (inline in App)    — flex space-between: Positions/Transactions .seg + Import trigger
       ImportDialog            (state, dispatch)  — renders the trigger button; open state is component-local (isOpen)
     [tab === 'positions']
       PositionsTable          (state, dispatch)  — groups visiblePositions() into aggregate rows (symbol+effectiveAssetClass+taxCategory+retirement); selectedGroupKey is component-local useState
@@ -120,9 +120,16 @@ Props convention: presentational components take `{ state: AppState, dispatch }`
 ## Data flow
 
 **CSV import** — synchronous 2-step wizard inside `ImportDialog` (positions or transactions). Dialog-open state is component-local (`isOpen`), not in `AppState`.
-1. **Setup** (`step === 1`): pick data type (`.seg`: Transactions / Positions — default Positions), destination account (existing `<select>` or new-account form: name, number, category, retirement checkbox), and a `.csv` file — `parseCsvFile` (`csv.ts`) yields `{ headers, rows }` immediately. Continue (enabled once the account is resolved and ≥1 row parsed) advances to Review.
-2. **Review** (`step === 2`): `headers` drive one mapping `<select>` per field — `{ csvColumn: targetField }`, values are internal field names — in required-then-optional order; **exception: Asset Class (positions only) is a free-text `<input>` that broadcasts its value to all rows not yet touched in their own assetClass cell; once a row's cell is edited, that row becomes "touched" and no longer receives broadcasts**. On entering Step 2 with an existing account, `fieldMap` is pre-populated from any saved `csvMappings` entry for that `accountId`+`kind`, filtered to headers present in the current file. `applyFieldMap(row, fieldMap)` renames each CSV row to internal field names; `<input>` cells overlay user edits (`importEdits[rowIdx]`); `validatePreviewRow(dataType, row)` flags required-missing cells (honoring avgCost/purchaseAmount and price/marketValue alternatives; fully-empty rows return valid and are skipped at commit via `isBlankRow`, so trailing blank CSV lines never block import); `isReviewValid(dataType, fieldMap)` gates the primary button. Each row has a leading trash-icon button (`handleDeleteRow(rowIdx)`) that removes it from `csvRows` and re-keys `importEdits` (indices shift down); the primary button also disables when `previewRows.length === 0`. `applyFieldMap`/`validatePreviewRow`/`isBlankRow`/`isReviewValid` come from `importPreview.ts`.
-3. **Commit**: primary button dispatches `ADD_ACCOUNT` first when new-account mode (capturing the new account id), then `IMPORT_POSITIONS` (replaces positions, creates closed positions, upserts snapshot, upserts mapping) or `IMPORT_TRANSACTIONS` (dedups, inserts, upserts mapping) with `accountId`, the valid user-edited rows (blank rows excluded), and a fresh `uid('import')` `importSessionId` tagging every created row. "Import complete" renders in the same step-2 slot; "Done" closes and resets local state.
+1. **Setup** (`step === 1`): pick data type (`.seg`: Transactions / Positions — default Positions), destination account (existing `<select>` or new-account form: name, number, category, retirement checkbox), and entry mode for positions (`upload`/`manual`, default `upload`). Upload mode uses `.csv` file parsing (`parseCsvFile` from `csv.ts` -> `{ headers, rows }`). Continue requires account resolution; upload mode additionally requires ≥1 parsed row, manual mode does not.
+2. **Review** (`step === 2`):
+   - Upload mode: `headers` drive one mapping `<select>` per non-asset-class field (`{ csvColumn: targetField }`, required then optional).
+   - Manual positions mode: entering Step 2 seeds exactly 10 blank rows and renders no mapping selects for non-asset-class fields.
+   - Positions `Asset Class` header is always a free-text `<input>` that broadcasts to rows not yet touched in their own `assetClass` cell.
+   - Existing-account mapping prefill applies only in upload mode (`csvMappings` filtered to headers present in current file).
+   - `applyFieldMap(row, fieldMap)` + `importEdits[rowIdx]` produce editable rows; `validatePreviewRow` handles required-field validation (with avgCost/purchaseAmount and price/marketValue alternatives). Fully-empty rows are valid and excluded at commit via `isBlankRow`.
+   - Primary button gating: upload mode includes `isReviewValid(dataType, fieldMap)`; manual mode bypasses `isReviewValid` and additionally requires at least one valid non-blank row.
+   - Row delete (`handleDeleteRow`) removes row + re-keys row-indexed edits/touched state.
+3. **Commit**: primary button dispatches `ADD_ACCOUNT` first when new-account mode (capturing the new account id), then `IMPORT_POSITIONS` or `IMPORT_TRANSACTIONS` with `accountId`, valid non-blank edited rows, and fresh `uid('import')` `importSessionId` tagging every created row. `UPSERT_CSV_MAPPING` runs only in upload mode. "Import complete" renders in the same step-2 slot; "Done" closes and resets local state.
 4. **Session logging**: `processPendingImport(state, kind, fileName, importSessionId, affectedAccountIds)` (App.tsx, exported pure helper, covered by App.test.tsx) counts rows tagged with `importSessionId`, builds an `ImportSession`, and prepends it via `addImportSession` (capped at 50, newest-first).
 
 All steps are **synchronous**; no async queue beyond the debounce-save to IndexedDB.
