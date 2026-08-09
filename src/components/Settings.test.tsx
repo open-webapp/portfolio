@@ -3,15 +3,38 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 import { SettingsPage } from './Settings'
 import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
+import * as persistModule from '../lib/persist'
+import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
 
 // Mock the drive module
-vi.mock('../lib/drive', () => ({
-  getDriveConnection: vi.fn(),
-  getBackupFileId: vi.fn(),
-  connectDrive: vi.fn(),
-  disconnectDrive: vi.fn(),
-  syncBackup: vi.fn(),
-  restoreBackup: vi.fn(),
+vi.mock('../lib/drive', () => {
+  class DriveDecryptError extends Error {
+    salt: Uint8Array
+    envelope: unknown
+    constructor(message: string, salt: Uint8Array, envelope: unknown) {
+      super(message)
+      this.name = 'DriveDecryptError'
+      this.salt = salt
+      this.envelope = envelope
+    }
+  }
+  return {
+    getDriveConnection: vi.fn(),
+    getBackupFileId: vi.fn(),
+    connectDrive: vi.fn(),
+    disconnectDrive: vi.fn(),
+    syncBackup: vi.fn(),
+    restoreBackup: vi.fn(),
+    getDriveAuthStatus: vi.fn(),
+    DriveDecryptError,
+  }
+})
+
+// Mock the persist module (used by the Change Password flow to verify the
+// current password and to save the re-encrypted blob under the new key)
+vi.mock('../lib/persist', () => ({
+  loadPersistedApp: vi.fn(),
+  savePersistedApp: vi.fn(),
 }))
 
 // Mock window.alert and window.confirm
@@ -19,6 +42,23 @@ global.alert = vi.fn()
 global.confirm = vi.fn()
 
 const mockDispatch = vi.fn()
+const mockOnKeyChange = vi.fn()
+
+const notConnectedAuthStatus: driveModule.DriveAuthStatus = {
+  connected: false,
+  email: null,
+  expiresAt: null,
+  needsReauth: false,
+  tokenValid: false,
+}
+
+const connectedAuthStatus: driveModule.DriveAuthStatus = {
+  connected: true,
+  email: 'test@example.com',
+  expiresAt: Date.now() + 60 * 60 * 1000,
+  needsReauth: false,
+  tokenValid: true,
+}
 
 function clickSettingsTab(tabName: 'General' | 'Import Sessions') {
   const radio = screen.getByRole('radio', { name: tabName })
@@ -26,8 +66,13 @@ function clickSettingsTab(tabName: 'General' | 'Import Sessions') {
 }
 
 describe('SettingsPage', () => {
-  beforeEach(() => {
+  let sessionSalt: Uint8Array
+  let sessionKey: CryptoKey
+
+  beforeEach(async () => {
     vi.clearAllMocks()
+    sessionSalt = generateSalt()
+    sessionKey = await deriveKey('test-password', sessionSalt)
   })
 
   afterEach(() => {
@@ -41,7 +86,11 @@ describe('SettingsPage', () => {
 
     it('renders "Not connected" state initially with Connect button', async () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       await waitFor(() => {
         const heading = screen.getByRole('heading', { name: 'Google Drive Sync' })
@@ -59,7 +108,11 @@ describe('SettingsPage', () => {
 
     it('Connect Drive button has btn btn-primary classes', async () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Drive' })
       expect(connectButton.className).toContain('btn btn-primary')
@@ -69,7 +122,11 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.connectDrive).mockResolvedValue({} as any)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Drive' })
       fireEvent.click(connectButton)
@@ -86,7 +143,11 @@ describe('SettingsPage', () => {
       )
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Drive' })
       fireEvent.click(connectButton)
@@ -103,7 +164,11 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.connectDrive).mockRejectedValue(error)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Drive' })
       fireEvent.click(connectButton)
@@ -122,7 +187,11 @@ describe('SettingsPage', () => {
 
     it('renders connected state with Sync Now, Restore from Drive, and Disconnect buttons', async () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Sync Now' })).toBeTruthy()
@@ -136,7 +205,11 @@ describe('SettingsPage', () => {
 
     it('connected buttons use correct btn classes', async () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       expect(syncButton.className).toContain('btn btn-primary')
@@ -151,7 +224,11 @@ describe('SettingsPage', () => {
     it('does not show Drive link when connected but no backup file exists', async () => {
       vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       await screen.findByRole('button', { name: 'Sync Now' })
 
@@ -161,7 +238,11 @@ describe('SettingsPage', () => {
     it('shows Drive link to existing backup file when connected and synced', async () => {
       vi.mocked(driveModule.getBackupFileId).mockResolvedValue('file-id-123')
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const link = await screen.findByRole('link', { name: 'View backup in Google Drive' })
       expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-123/view')
@@ -171,7 +252,11 @@ describe('SettingsPage', () => {
     it('shows Drive link to the newly synced file after clicking Sync Now', async () => {
       vi.mocked(driveModule.syncBackup).mockResolvedValue('file-id-456')
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -187,13 +272,17 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.syncBackup).mockResolvedValue()
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
 
       await waitFor(() => {
-        expect(driveModule.syncBackup).toHaveBeenCalledWith(state)
+        expect(driveModule.syncBackup).toHaveBeenCalledWith(state, sessionKey, sessionSalt)
         expect(global.alert).toHaveBeenCalledWith('Synced to Drive')
       })
     })
@@ -204,7 +293,11 @@ describe('SettingsPage', () => {
       )
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -221,7 +314,11 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.syncBackup).mockRejectedValue(error)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -248,7 +345,11 @@ describe('SettingsPage', () => {
       vi.mocked(global.confirm).mockReturnValue(true)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -270,7 +371,11 @@ describe('SettingsPage', () => {
       vi.mocked(global.confirm).mockReturnValue(false)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -287,7 +392,11 @@ describe('SettingsPage', () => {
       vi.mocked(global.confirm).mockReturnValue(true)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -305,7 +414,11 @@ describe('SettingsPage', () => {
       vi.mocked(global.confirm).mockReturnValue(true)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -323,7 +436,11 @@ describe('SettingsPage', () => {
       vi.mocked(global.confirm).mockReturnValue(true)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -343,7 +460,11 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.disconnectDrive).mockResolvedValue()
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const disconnectButton = await screen.findByRole('button', { name: 'Disconnect' })
       fireEvent.click(disconnectButton)
@@ -370,7 +491,11 @@ describe('SettingsPage', () => {
       )
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const disconnectButton = await screen.findByRole('button', { name: 'Disconnect' })
       fireEvent.click(disconnectButton)
@@ -387,7 +512,11 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.disconnectDrive).mockRejectedValue(error)
       const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const disconnectButton = await screen.findByRole('button', { name: 'Disconnect' })
       fireEvent.click(disconnectButton)
@@ -405,7 +534,11 @@ describe('SettingsPage', () => {
 
     it('renders General tab by default', () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
       expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
@@ -425,7 +558,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       clickSettingsTab('Import Sessions')
 
@@ -447,7 +584,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       clickSettingsTab('Import Sessions')
       expect(screen.getByRole('heading', { name: 'Import Sessions' })).toBeTruthy()
@@ -460,7 +601,11 @@ describe('SettingsPage', () => {
 
     it('Accounts section renders before Drive Sync section in DOM order', () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const headings = screen.getAllByRole('heading')
       const accountsIndex = headings.findIndex((h) => h.textContent === 'Accounts')
@@ -478,7 +623,11 @@ describe('SettingsPage', () => {
 
     it('shows empty-state text when accounts is empty', () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const headings = screen.getAllByRole('heading', { name: 'Accounts' })
       expect(headings.length).toBeGreaterThan(0)
@@ -506,7 +655,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       // Check first account row
       expect(screen.getByText('Main Account')).toBeTruthy()
@@ -533,7 +686,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const nameCell = screen.getByText('Old Name')
       fireEvent.click(nameCell)
@@ -565,7 +722,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const nameCell = screen.getByText('Old Name')
       fireEvent.click(nameCell)
@@ -594,7 +755,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const selects = screen.getAllByRole('combobox')
       fireEvent.change(selects[0], { target: { value: 'taxDeferred' } })
@@ -619,7 +784,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const checkbox = screen.getAllByRole('checkbox')[0]
       fireEvent.click(checkbox)
@@ -645,7 +814,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const deleteButton = screen.getByTitle('Delete this account')
       fireEvent.click(deleteButton)
@@ -670,7 +843,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       const deleteButton = screen.getByTitle('Delete this account')
       fireEvent.click(deleteButton)
@@ -692,7 +869,11 @@ describe('SettingsPage', () => {
 
     it('shows empty-state text when importSessions is empty', () => {
       const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       clickSettingsTab('Import Sessions')
 
@@ -724,7 +905,11 @@ describe('SettingsPage', () => {
         { id: 'acc2', accountNumber: '456', name: 'IRA', taxCategory: 'taxDeferred', retirement: true, createdAt: '2024-01-01' },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       clickSettingsTab('Import Sessions')
 
@@ -761,7 +946,11 @@ describe('SettingsPage', () => {
         { id: 'acc2', accountNumber: '456', name: 'Retirement Account', taxCategory: 'taxDeferred', retirement: true, createdAt: '2024-01-01' },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       clickSettingsTab('Import Sessions')
 
@@ -782,7 +971,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       clickSettingsTab('Import Sessions')
 
@@ -807,7 +1000,11 @@ describe('SettingsPage', () => {
         },
       ]
 
-      render(<SettingsPage state={state} dispatch={mockDispatch} />)
+      render(<SettingsPage state={state} dispatch={mockDispatch}
+        sessionKey={sessionKey}
+        sessionSalt={sessionSalt}
+        onKeyChange={mockOnKeyChange}
+      />)
 
       clickSettingsTab('Import Sessions')
 
@@ -819,6 +1016,370 @@ describe('SettingsPage', () => {
         type: 'DELETE_IMPORT_SESSION',
         sessionId: 'sess1',
       })
+    })
+  })
+
+  describe('Change Password', () => {
+    beforeEach(() => {
+      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(null)
+      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
+    })
+
+    function fillAndSubmitChangePassword(
+      container: HTMLElement,
+      fields: { current: string; next: string; confirm: string }
+    ) {
+      const inputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      const [currentInput, newInput, confirmInput] = inputs.slice(-3)
+      fireEvent.change(currentInput, { target: { value: fields.current } })
+      fireEvent.change(newInput, { target: { value: fields.next } })
+      fireEvent.change(confirmInput, { target: { value: fields.confirm } })
+      fireEvent.click(screen.getByRole('button', { name: 'Change Password' }))
+    }
+
+    it('happy path: saves locally, calls onKeyChange, shows success, clears fields, no Drive sync when not connected', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
+      vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      fillAndSubmitChangePassword(container, {
+        current: 'test-password',
+        next: 'new-password-1',
+        confirm: 'new-password-1',
+      })
+
+      await waitFor(() => {
+        expect(persistModule.savePersistedApp).toHaveBeenCalled()
+      })
+
+      const saveArgs = vi.mocked(persistModule.savePersistedApp).mock.calls[0]
+      expect(saveArgs[0]).toBe(state)
+      expect(saveArgs[2]).not.toEqual(sessionSalt)
+
+      expect(driveModule.syncBackup).not.toHaveBeenCalled()
+
+      await waitFor(() => {
+        expect(mockOnKeyChange).toHaveBeenCalled()
+      })
+      const keyChangeArgs = mockOnKeyChange.mock.calls[0]
+      expect(keyChangeArgs[1]).toEqual(saveArgs[2])
+
+      await waitFor(() => {
+        expect(screen.getByText('Password changed')).toBeTruthy()
+      })
+
+      const inputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      const [currentInput, newInput, confirmInput] = inputs.slice(-3)
+      expect(currentInput.value).toBe('')
+      expect(newInput.value).toBe('')
+      expect(confirmInput.value).toBe('')
+    })
+
+    it('shows "Current password is incorrect" and does not save when current password verification fails', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockRejectedValue(new Error('decrypt failed'))
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      fillAndSubmitChangePassword(container, {
+        current: 'wrong-password',
+        next: 'new-password-1',
+        confirm: 'new-password-1',
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Current password is incorrect')).toBeTruthy()
+      })
+
+      expect(persistModule.savePersistedApp).not.toHaveBeenCalled()
+      expect(mockOnKeyChange).not.toHaveBeenCalled()
+    })
+
+    it('shows "Password must be at least 6 characters" and does not save when the new password is too short', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      fillAndSubmitChangePassword(container, {
+        current: 'test-password',
+        next: 'abc',
+        confirm: 'abc',
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Password must be at least 6 characters')).toBeTruthy()
+      })
+
+      expect(persistModule.savePersistedApp).not.toHaveBeenCalled()
+      expect(mockOnKeyChange).not.toHaveBeenCalled()
+    })
+
+    it('shows "Passwords do not match" and does not save when new/confirm differ', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      fillAndSubmitChangePassword(container, {
+        current: 'test-password',
+        next: 'new-password-1',
+        confirm: 'different-password',
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Passwords do not match')).toBeTruthy()
+      })
+
+      expect(persistModule.savePersistedApp).not.toHaveBeenCalled()
+      expect(mockOnKeyChange).not.toHaveBeenCalled()
+    })
+
+    it('also syncs to Drive with the new key/salt when Drive is connected', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
+      vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
+      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
+      vi.mocked(driveModule.syncBackup).mockResolvedValue('file-id')
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      fillAndSubmitChangePassword(container, {
+        current: 'test-password',
+        next: 'new-password-1',
+        confirm: 'new-password-1',
+      })
+
+      await waitFor(() => {
+        expect(driveModule.syncBackup).toHaveBeenCalled()
+      })
+
+      const saveArgs = vi.mocked(persistModule.savePersistedApp).mock.calls[0]
+      const syncArgs = vi.mocked(driveModule.syncBackup).mock.calls[0]
+      expect(syncArgs[0]).toBe(state)
+      expect(syncArgs[1]).toBe(saveArgs[1])
+      expect(syncArgs[2]).toEqual(saveArgs[2])
+
+      await waitFor(() => {
+        expect(screen.getByText('Password changed')).toBeTruthy()
+      })
+      expect(screen.queryByText(/Drive re-sync failed/)).toBeFalsy()
+    })
+
+    it('keeps the local password change and shows a warning when Drive re-sync fails', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
+      vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
+      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
+      vi.mocked(driveModule.syncBackup).mockRejectedValue(new Error('network down'))
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      fillAndSubmitChangePassword(container, {
+        current: 'test-password',
+        next: 'new-password-1',
+        confirm: 'new-password-1',
+      })
+
+      await waitFor(() => {
+        expect(persistModule.savePersistedApp).toHaveBeenCalled()
+      })
+      await waitFor(() => {
+        expect(mockOnKeyChange).toHaveBeenCalled()
+      })
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Password changed locally, but Drive re-sync failed: network down/)
+        ).toBeTruthy()
+      })
+    })
+  })
+
+  describe('Cross-password Drive restore', () => {
+    beforeEach(() => {
+      vi.mocked(driveModule.getDriveConnection).mockResolvedValue({ accessToken: 'token' } as any)
+      vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
+      vi.mocked(global.confirm).mockReturnValue(true)
+    })
+
+    it('shows the inline cross-password prompt when restoreBackup rejects with DriveDecryptError', async () => {
+      const backupSalt = generateSalt()
+      const backupState = initialState()
+      const envelope = await encryptState(backupState, sessionKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+      const state = initialState()
+
+      render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('This backup was saved with a different password. Enter that password to restore:')
+        ).toBeTruthy()
+      })
+
+      // Only the initial "Restore will replace..." confirm ran to trigger the
+      // restore; the decrypt-mismatch path itself does not prompt again.
+      expect(global.confirm).toHaveBeenCalledTimes(1)
+    })
+
+    it('retries decryption locally against the carried envelope (no second restoreBackup call) on the correct backup password', async () => {
+      const backupPassword = 'correct-backup-password'
+      const backupSalt = generateSalt()
+      const backupKey = await deriveKey(backupPassword, backupSalt)
+      const restoredState = initialState()
+      restoredState.accounts = [
+        {
+          id: 'acc1',
+          accountNumber: '999',
+          name: 'Backup Account',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+      const envelope = await encryptState(restoredState, backupKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different password/)).toBeTruthy()
+      })
+
+      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      fireEvent.change(passwordInputs[0], { target: { value: backupPassword } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      await waitFor(() => {
+        expect(mockDispatch).toHaveBeenCalledWith({ type: '__SET_STATE', newState: restoredState })
+      })
+
+      expect(driveModule.restoreBackup).toHaveBeenCalledTimes(1)
+
+      await waitFor(() => {
+        expect(mockOnKeyChange).toHaveBeenCalled()
+      })
+      const keyChangeArgs = mockOnKeyChange.mock.calls[0]
+      expect(keyChangeArgs[1]).toEqual(backupSalt)
+    })
+
+    it('shows an inline error and keeps the prompt open (retryable) on a wrong backup password', async () => {
+      const backupSalt = generateSalt()
+      const restoredState = initialState()
+      const envelope = await encryptState(restoredState, sessionKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+      const state = initialState()
+
+      const { container } = render(
+        <SettingsPage
+          state={state}
+          dispatch={mockDispatch}
+          sessionKey={sessionKey}
+          sessionSalt={sessionSalt}
+          onKeyChange={mockOnKeyChange}
+        />
+      )
+
+      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different password/)).toBeTruthy()
+      })
+
+      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      fireEvent.change(passwordInputs[0], { target: { value: 'totally-wrong-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect password')).toBeTruthy()
+      })
+
+      // Prompt stays open and can be retried
+      expect(
+        screen.getByText('This backup was saved with a different password. Enter that password to restore:')
+      ).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Restore with this password' })).toBeTruthy()
+      expect(mockDispatch).not.toHaveBeenCalled()
     })
   })
 })

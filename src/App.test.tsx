@@ -5,38 +5,60 @@ import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { importPositions } from './lib/positionsImport'
 import { importTransactions } from './lib/transactionsImport'
-import { loadPersistedApp } from './lib/persist'
+import { peekEnvelopeShape, savePersistedApp } from './lib/persist'
 import { drive } from './lib/drive'
 import App, { processPendingImport } from './App'
+
+// Stable session key/salt used by the mocked PasswordGate's onUnlock callback.
+// Declared via vi.hoisted so it's initialized before the hoisted vi.mock factories run.
+const { mockSessionKey, mockSessionSalt } = vi.hoisted(() => ({
+  mockSessionKey: {} as CryptoKey,
+  mockSessionSalt: new Uint8Array([1, 2, 3]),
+}))
 
 vi.mock('./lib/drive', () => ({
   drive: { activate: vi.fn(() => vi.fn()) },
 }))
 
+vi.mock('./lib/persist', () => ({
+  peekEnvelopeShape: vi.fn(),
+  savePersistedApp: vi.fn().mockResolvedValue(undefined),
+}))
+
+// PasswordGate is a full-replacement screen with its own real-crypto/form flow that's
+// exercised in PasswordGate.test.tsx; here we stub it so App.tsx's own gating logic
+// (show gate vs dashboard, wire onUnlock into hydration state) can be tested in isolation.
+vi.mock('./components/PasswordGate', () => ({
+  PasswordGate: ({
+    onUnlock,
+  }: {
+    onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: unknown) => void
+  }) => (
+    <button onClick={() => onUnlock(mockSessionKey, mockSessionSalt, undefined)}>MockUnlock</button>
+  ),
+}))
+
 afterEach(cleanup)
 
-async function clearDatabase() {
-  try {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('portfolio_app_state_v1', 1)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-      request.onupgradeneeded = (event) => {
-        const target = (event.target as IDBOpenDBRequest).result
-        if (!target.objectStoreNames.contains('app_state')) {
-          target.createObjectStore('app_state')
-        }
-      }
-    })
-    const transaction = db.transaction('app_state', 'readwrite')
-    transaction.objectStore('app_state').clear()
-    await new Promise<void>((resolve) => {
-      transaction.oncomplete = () => resolve()
-    })
-    db.close()
-  } catch {
-    // Ignore
-  }
+/**
+ * Renders <App/>, waits for the (mocked) password gate to appear, and clicks through
+ * it — mirroring what a real unlock via PasswordGate's onUnlock would do — leaving the
+ * dashboard rendered.
+ */
+async function renderUnlockedApp() {
+  const utils = render(<App />)
+
+  await waitFor(() => {
+    expect(screen.getByText('MockUnlock')).toBeTruthy()
+  })
+  fireEvent.click(screen.getByText('MockUnlock'))
+
+  await waitFor(() => {
+    expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
+    expect(screen.getByText('Positions')).toBeTruthy()
+  })
+
+  return utils
 }
 
 describe('import session creation via processPendingImport', () => {
@@ -397,17 +419,13 @@ describe('pending import processing', () => {
 })
 
 describe('view switching (dashboard vs settings)', () => {
-  beforeEach(async () => {
-    await clearDatabase()
+  beforeEach(() => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    vi.mocked(savePersistedApp).mockClear()
   })
 
   it('should render dashboard view by default with Nav and SummaryCards', async () => {
-    render(<App />)
-
-    // Wait for hydration
-    await waitFor(() => {
-      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
-    })
+    await renderUnlockedApp()
 
     // Dashboard elements should be visible
     expect(screen.getByText('Positions')).toBeTruthy()
@@ -415,12 +433,7 @@ describe('view switching (dashboard vs settings)', () => {
   })
 
   it('should switch to settings page when gear button is clicked', async () => {
-    render(<App />)
-
-    // Wait for hydration
-    await waitFor(() => {
-      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
-    })
+    await renderUnlockedApp()
 
     // Dashboard should initially be visible
     expect(screen.getByText('Positions')).toBeTruthy()
@@ -440,12 +453,7 @@ describe('view switching (dashboard vs settings)', () => {
   })
 
   it('should return to dashboard when Back button is clicked from settings', async () => {
-    render(<App />)
-
-    // Wait for hydration
-    await waitFor(() => {
-      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
-    })
+    await renderUnlockedApp()
 
     // Click the settings gear button
     const gearButton = screen.getByTitle('Settings')
@@ -471,18 +479,69 @@ describe('view switching (dashboard vs settings)', () => {
   })
 })
 
-describe('persistence on unmount within the debounce window', () => {
-  beforeEach(async () => {
-    await clearDatabase()
+describe('password gate', () => {
+  beforeEach(() => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    vi.mocked(savePersistedApp).mockClear()
   })
 
-  it('persists a state change when the app unmounts before the 500ms debounced save fires', async () => {
-    const { unmount } = render(<App />)
+  it('renders PasswordGate instead of the Nav/dashboard tree before unlock', async () => {
+    render(<App />)
 
-    // Wait for hydration
     await waitFor(() => {
-      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
+      expect(screen.getByText('MockUnlock')).toBeTruthy()
     })
+
+    // The dashboard tree must not be rendered underneath/alongside the gate.
+    expect(screen.queryByText('Positions')).toBeFalsy()
+    expect(screen.queryByText('Transactions')).toBeFalsy()
+  })
+
+  it('renders the dashboard after unlock and saves via savePersistedApp with the session key on subsequent state changes', async () => {
+    await renderUnlockedApp()
+
+    vi.mocked(savePersistedApp).mockClear()
+
+    // Trigger a state-changing action (mirrors the debounce-save pattern used elsewhere
+    // in this file: dispatch a change, then wait for the 500ms-debounced save to fire).
+    fireEvent.click(screen.getByText('Show Closed Positions'))
+
+    await waitFor(() => {
+      expect(savePersistedApp).toHaveBeenCalled()
+    })
+
+    const [savedState, savedKey, savedSalt] = vi.mocked(savePersistedApp).mock.calls[0]
+    expect(savedState.showClosed).toBe(true)
+    expect(savedKey).toBe(mockSessionKey)
+    expect(savedSalt).toBe(mockSessionSalt)
+  })
+
+  it('never calls savePersistedApp while the gate is still showing, before onUnlock fires', async () => {
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('MockUnlock')).toBeTruthy()
+    })
+
+    // Give the (nonexistent) debounce window time to elapse; there is no user-reachable
+    // path to a state-changing dispatch before unlock, but this guards the invariant
+    // defensively per the plan.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+
+    expect(savePersistedApp).not.toHaveBeenCalled()
+  })
+})
+
+describe('persistence on unmount within the debounce window', () => {
+  beforeEach(() => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    vi.mocked(savePersistedApp).mockClear()
+  })
+
+  it('persists a state change via savePersistedApp when the app unmounts before the 500ms debounced save fires', async () => {
+    const { unmount } = await renderUnlockedApp()
+
+    vi.mocked(savePersistedApp).mockClear()
 
     // Change state (TOGGLE_SHOW_CLOSED) — schedules a debounced save
     fireEvent.click(screen.getByText('Show Closed Positions'))
@@ -491,14 +550,21 @@ describe('persistence on unmount within the debounce window', () => {
     unmount()
 
     // The pending save must be flushed on unmount, not cancelled
-    await waitFor(async () => {
-      const persisted = await loadPersistedApp()
-      expect(persisted?.showClosed).toBe(true)
+    await waitFor(() => {
+      expect(savePersistedApp).toHaveBeenCalled()
     })
+    const lastCall = vi.mocked(savePersistedApp).mock.calls.at(-1)!
+    expect(lastCall[0].showClosed).toBe(true)
+    expect(lastCall[1]).toBe(mockSessionKey)
+    expect(lastCall[2]).toBe(mockSessionSalt)
   })
 })
 
 describe('Drive-sync activation', () => {
+  beforeEach(() => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+  })
+
   it('calls drive.activate() on mount and disposes it on unmount, so the cached Drive token is silently warmed up instead of going stale between settings-opens/syncs', async () => {
     const activateMock = vi.mocked(drive.activate)
     const disposeSpy = vi.fn()

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NeedsReauthError } from '@open-webapp/drive-sync'
 import { initialState } from './state'
 import type { AppState } from './state'
+import { deriveKey, encryptState, generateSalt } from './crypto'
+import type { EncryptedEnvelope } from './crypto'
 
 // Create mock functions that can be reset between tests
 let mockFilesRead: ReturnType<typeof vi.fn>
@@ -86,11 +88,10 @@ describe('drive.ts Drive-sync wiring', () => {
     expect(html).toContain('https://accounts.google.com/gsi/client')
   })
 
-
   /**
-   * Test 2: syncBackup() writes state as JSON blob without error.
+   * Test 2: syncBackup() writes an encrypted envelope blob without error.
    */
-  it('syncBackup() writes state blob without error', async () => {
+  it('syncBackup() writes an encrypted envelope blob without error', async () => {
     mockEnsureFolderPath.mockResolvedValue('folder-id-123')
     mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
 
@@ -103,6 +104,7 @@ describe('drive.ts Drive-sync wiring', () => {
           id: 'acc-1',
           accountNumber: '12345',
           name: 'Test Account',
+          institution: 'Test Bank',
           taxCategory: 'taxable',
           retirement: false,
           createdAt: '2024-01-01',
@@ -110,7 +112,10 @@ describe('drive.ts Drive-sync wiring', () => {
       ],
     }
 
-    await expect(syncBackup(testState)).resolves.not.toThrow()
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+
+    await expect(syncBackup(testState, key, salt)).resolves.not.toThrow()
 
     // Verify files.write was called with correct parameters
     expect(mockFilesWrite).toHaveBeenCalled()
@@ -118,8 +123,18 @@ describe('drive.ts Drive-sync wiring', () => {
     expect(writeCall.name).toBe('portfolio-state.json')
     expect(writeCall.mimeType).toBe('application/json')
     expect(writeCall.folderId).toBe('folder-id-123')
-    // Verify content is JSON
-    expect(writeCall.content).toContain('"accounts"')
+
+    // Content must be a well-formed EncryptedEnvelope, not raw AppState JSON.
+    const envelope = JSON.parse(writeCall.content) as EncryptedEnvelope
+    expect(envelope.version).toBe(1)
+    expect(typeof envelope.salt).toBe('string')
+    expect(typeof envelope.iv).toBe('string')
+    expect(typeof envelope.ciphertext).toBe('string')
+
+    // The plaintext account name must NOT appear anywhere in the written
+    // content — proves the payload is actually encrypted, not plaintext.
+    expect(writeCall.content).not.toContain('Test Account')
+    expect(writeCall.content).not.toContain('"accounts"')
   })
 
   /**
@@ -131,7 +146,10 @@ describe('drive.ts Drive-sync wiring', () => {
 
     const { syncBackup } = await import('./drive')
 
-    const fileId = await syncBackup(initialState())
+    const salt = generateSalt()
+    const key = await deriveKey('a-password', salt)
+
+    const fileId = await syncBackup(initialState(), key, salt)
     expect(fileId).toBe('file-id-123')
   })
 
@@ -157,9 +175,9 @@ describe('drive.ts Drive-sync wiring', () => {
   })
 
   /**
-   * Test 3: restoreBackup() reads state blob from Drive.
+   * Test 3: restoreBackup() reads and decrypts an envelope from Drive.
    */
-  it('restoreBackup() reads state blob from Drive', async () => {
+  it('restoreBackup() reads and decrypts an envelope blob from Drive', async () => {
     const testState: AppState = {
       ...initialState(),
       positions: [
@@ -177,12 +195,16 @@ describe('drive.ts Drive-sync wiring', () => {
       ],
     }
 
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+    const envelope = await encryptState(testState, key, salt)
+
     mockEnsureFolderPath.mockResolvedValue('folder-id-123')
     mockList.mockResolvedValue([{ id: 'file-id-456' }])
-    mockFilesRead.mockResolvedValue(JSON.stringify(testState))
+    mockFilesRead.mockResolvedValue(JSON.stringify(envelope))
 
     const { restoreBackup } = await import('./drive')
-    const restored = await restoreBackup()
+    const restored = await restoreBackup(key)
 
     expect(restored).not.toBeNull()
     expect(restored?.positions).toHaveLength(1)
@@ -192,9 +214,10 @@ describe('drive.ts Drive-sync wiring', () => {
   })
 
   /**
-   * Test 4: Round-trip: syncBackup → restoreBackup returns the same state exactly.
+   * Test 4: Round-trip: syncBackup → restoreBackup with the correct key
+   * returns the same state exactly.
    */
-  it('round-trip: syncBackup → restoreBackup preserves state exactly', async () => {
+  it('round-trip: syncBackup → restoreBackup with the correct key preserves state exactly', async () => {
     const originalState: AppState = {
       ...initialState(),
       accounts: [
@@ -202,6 +225,7 @@ describe('drive.ts Drive-sync wiring', () => {
           id: 'acc-1',
           accountNumber: '11111',
           name: 'Brokerage Account',
+          institution: 'Brokerage Co',
           taxCategory: 'taxable',
           retirement: false,
           createdAt: '2024-01-01',
@@ -210,6 +234,7 @@ describe('drive.ts Drive-sync wiring', () => {
           id: 'acc-2',
           accountNumber: '22222',
           name: 'IRA',
+          institution: 'IRA Co',
           taxCategory: 'taxDeferred',
           retirement: true,
           createdAt: '2024-01-15',
@@ -265,17 +290,87 @@ describe('drive.ts Drive-sync wiring', () => {
       showClosed: false,
     }
 
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+
+    // Capture whatever syncBackup writes and feed it back out of files.read,
+    // exactly as the real Drive round-trip would.
     mockEnsureFolderPath.mockResolvedValue('folder-id-123')
-    mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
+    mockFilesWrite.mockImplementation(async (args: { content: string }) => {
+      mockFilesRead.mockResolvedValue(args.content)
+      return { id: 'file-id-123' }
+    })
     mockList.mockResolvedValue([{ id: 'file-id-123' }])
-    mockFilesRead.mockResolvedValue(JSON.stringify(originalState))
 
     const { syncBackup, restoreBackup } = await import('./drive')
 
-    await syncBackup(originalState)
-    const restoredState = await restoreBackup()
+    await syncBackup(originalState, key, salt)
+    const restoredState = await restoreBackup(key)
 
     expect(restoredState).toEqual(originalState)
+  })
+
+  /**
+   * Test 4b: restoreBackup() with a key derived from a different password
+   * throws DriveDecryptError, carrying the salt and parsed envelope.
+   */
+  it('restoreBackup() with the wrong key throws DriveDecryptError carrying salt and envelope', async () => {
+    const testState = initialState()
+    const salt = generateSalt()
+    const correctKey = await deriveKey('correct-password', salt)
+    const wrongKey = await deriveKey('wrong-password', salt)
+    const envelope = await encryptState(testState, correctKey, salt)
+
+    mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+    mockList.mockResolvedValue([{ id: 'file-id-456' }])
+    mockFilesRead.mockResolvedValue(JSON.stringify(envelope))
+
+    const { restoreBackup, DriveDecryptError } = await import('./drive')
+
+    let caught: unknown
+    try {
+      await restoreBackup(wrongKey)
+      expect.fail('expected restoreBackup to throw')
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(DriveDecryptError)
+    const decryptError = caught as InstanceType<typeof DriveDecryptError>
+    expect(decryptError.envelope).toEqual(envelope)
+
+    // decryptError.salt must decode (base64) to the same bytes as the salt
+    // used at encrypt time.
+    const expectedSaltB64 = btoa(String.fromCharCode(...salt))
+    const actualSaltB64 = btoa(String.fromCharCode(...decryptError.salt))
+    expect(actualSaltB64).toBe(expectedSaltB64)
+  })
+
+  /**
+   * Test 4c: restoreBackup() on a non-decrypt failure (e.g. network error
+   * reading the file) propagates the original error unchanged.
+   */
+  it('restoreBackup() propagates a non-decrypt failure unchanged (not wrapped as DriveDecryptError)', async () => {
+    const salt = generateSalt()
+    const key = await deriveKey('some-password', salt)
+
+    mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+    mockList.mockResolvedValue([{ id: 'file-id-456' }])
+    const networkError = new Error('network request failed')
+    mockFilesRead.mockRejectedValue(networkError)
+
+    const { restoreBackup, DriveDecryptError } = await import('./drive')
+
+    let caught: unknown
+    try {
+      await restoreBackup(key)
+      expect.fail('expected restoreBackup to throw')
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBe(networkError)
+    expect(caught instanceof DriveDecryptError).toBe(false)
   })
 
   /**
@@ -286,7 +381,9 @@ describe('drive.ts Drive-sync wiring', () => {
     mockList.mockResolvedValue([]) // Empty list - no files found
 
     const { restoreBackup } = await import('./drive')
-    const restored = await restoreBackup()
+    const salt = generateSalt()
+    const key = await deriveKey('some-password', salt)
+    const restored = await restoreBackup(key)
 
     expect(restored).toBeNull()
   })
@@ -354,7 +451,9 @@ describe('drive.ts Drive-sync wiring', () => {
       mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
 
       const { syncBackup } = await import('./drive')
-      await syncBackup(initialState())
+      const salt = generateSalt()
+      const key = await deriveKey('some-password', salt)
+      await syncBackup(initialState(), key, salt)
 
       expect(mockConnect).not.toHaveBeenCalled()
     })
@@ -365,7 +464,9 @@ describe('drive.ts Drive-sync wiring', () => {
       mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
 
       const { syncBackup } = await import('./drive')
-      await syncBackup(initialState())
+      const salt = generateSalt()
+      const key = await deriveKey('some-password', salt)
+      await syncBackup(initialState(), key, salt)
 
       expect(mockConnect).toHaveBeenCalledTimes(1)
     })
@@ -376,7 +477,9 @@ describe('drive.ts Drive-sync wiring', () => {
       mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
 
       const { syncBackup } = await import('./drive')
-      await syncBackup(initialState())
+      const salt = generateSalt()
+      const key = await deriveKey('some-password', salt)
+      await syncBackup(initialState(), key, salt)
 
       expect(mockConnect).toHaveBeenCalledTimes(1)
     })
@@ -389,7 +492,12 @@ describe('drive.ts Drive-sync wiring', () => {
       mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
 
       const { syncBackup } = await import('./drive')
-      await Promise.all([syncBackup(initialState()), syncBackup(initialState())])
+      const salt = generateSalt()
+      const key = await deriveKey('some-password', salt)
+      await Promise.all([
+        syncBackup(initialState(), key, salt),
+        syncBackup(initialState(), key, salt),
+      ])
 
       expect(mockConnect).toHaveBeenCalledTimes(1)
     })
@@ -400,7 +508,9 @@ describe('drive.ts Drive-sync wiring', () => {
       mockList.mockResolvedValue([]) // no backup file -> returns null
 
       const { restoreBackup } = await import('./drive')
-      const restored = await restoreBackup()
+      const salt = generateSalt()
+      const key = await deriveKey('some-password', salt)
+      const restored = await restoreBackup(key)
 
       expect(restored).toBeNull()
       expect(mockConnect).toHaveBeenCalledTimes(1)

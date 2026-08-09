@@ -1,6 +1,8 @@
 import { createDriveSync, NeedsReauthError } from '@open-webapp/drive-sync'
 import type { Connection } from '@open-webapp/drive-sync'
 import type { AppState } from './state'
+import { decryptState, encryptState } from './crypto'
+import type { EncryptedEnvelope } from './crypto'
 
 /**
  * Single app-wide drive-sync facade. `folderPath` here is load-bearing and
@@ -23,6 +25,39 @@ const APP_PROJECT_ID = 'app'
  * and the library's proactive warm-up agree on "stale".
  */
 const TOKEN_REAUTH_BUFFER_MS = 5 * 60 * 1000
+
+/**
+ * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
+ * equivalent helper is private; kept in sync with its behavior rather than
+ * exported from there.
+ */
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
+/**
+ * Thrown by `restoreBackup` when the Drive backup was read successfully but
+ * failed to decrypt due to an auth-tag mismatch (wrong password/key). Carries
+ * the decoded salt and the raw envelope so a caller can retry decryption
+ * locally (e.g. after prompting for a different password) without a second
+ * Drive network round-trip.
+ */
+export class DriveDecryptError extends Error {
+  salt: Uint8Array
+  envelope: EncryptedEnvelope
+
+  constructor(message: string, salt: Uint8Array, envelope: EncryptedEnvelope) {
+    super(message)
+    this.name = 'DriveDecryptError'
+    this.salt = salt
+    this.envelope = envelope
+  }
+}
 
 /**
  * Read the current Drive connection (no network calls, no reauth prompt).
@@ -116,9 +151,12 @@ export async function disconnectDrive(): Promise<void> {
  * missing; a still-valid stored token is reused without prompting.
  *
  * @param state The current app state to backup
+ * @param key AES-GCM key to encrypt the backup under
+ * @param salt PBKDF2 salt used to derive `key`, stored alongside the ciphertext
+ *   so restore can re-derive the same key from a password
  * @throws Throws if Drive connection fails or write fails
  */
-export async function syncBackup(state: AppState): Promise<string> {
+export async function syncBackup(state: AppState, key: CryptoKey, salt: Uint8Array): Promise<string> {
   try {
     await ensureFreshConnection()
     const project = drive.project(APP_PROJECT_ID)
@@ -126,8 +164,9 @@ export async function syncBackup(state: AppState): Promise<string> {
     // Ensure app folder structure (OpenWebApp/Portfolio) exists
     const folderId = await project.ensureFolderPath()
 
-    // Serialize state as JSON
-    const jsonContent = JSON.stringify(state, null, 2)
+    // Encrypt state into a versioned envelope and serialize as JSON
+    const envelope = await encryptState(state, key, salt)
+    const jsonContent = JSON.stringify(envelope)
 
     // Write the file (will update if exists, create if not)
     const file = await project.files.write({
@@ -185,10 +224,14 @@ export async function getBackupFileId(): Promise<string | null> {
  * Opens a Google auth window only when the cached token has expired or is
  * missing; a still-valid stored token is reused without prompting.
  *
+ * @param key AES-GCM key to decrypt the backup with
  * @returns The restored app state, or null if no backup found
- * @throws Throws if Drive connection fails or read fails
+ * @throws {DriveDecryptError} If the backup decrypts with an auth-tag mismatch
+ *   (wrong password/key)
+ * @throws Throws if Drive connection fails, read fails, the backup JSON is
+ *   malformed, or decryption fails for a reason other than a wrong key
  */
-export async function restoreBackup(): Promise<AppState | null> {
+export async function restoreBackup(key: CryptoKey): Promise<AppState | null> {
   try {
     await ensureFreshConnection()
     const project = drive.project(APP_PROJECT_ID)
@@ -215,9 +258,18 @@ export async function restoreBackup(): Promise<AppState | null> {
       return null
     }
 
-    // Parse and return the state
-    const state = JSON.parse(content) as AppState
-    return state
+    // Parse the envelope and decrypt it back into the app state
+    const envelope = JSON.parse(content) as EncryptedEnvelope
+    const salt = base64ToBytes(envelope.salt)
+
+    try {
+      return await decryptState(envelope, key)
+    } catch (decryptError) {
+      if (decryptError instanceof Error && decryptError.name === 'OperationError') {
+        throw new DriveDecryptError('backup encrypted with a different password', salt, envelope)
+      }
+      throw decryptError
+    }
   } catch (error) {
     console.error('Failed to restore backup from Drive:', error)
     throw error
