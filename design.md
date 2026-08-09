@@ -35,6 +35,7 @@ src/
     PerformanceChart.tsx        # SVG polyline
     AllocationChart.tsx         # bar list
     PositionsTable.tsx
+    PositionGroupOverlay.tsx    # dialog for viewing positions in an aggregated group
     ClosedPositionsTable.tsx
     TransactionsTable.tsx
     AssetClassOverrideSelect.tsx
@@ -107,6 +108,7 @@ App
       PositionsTable          (state, dispatch)
         AssetClassOverrideSelect (position, dispatch)  — per row
         ClosedPositionsTable    (state, dispatch)       — when state.showClosed
+      PositionGroupOverlay    (group, accounts, dispatch, onClose)  — conditional modal when position group is clicked; displays underlying positions in a table
     [tab === 'transactions']
       TransactionsTable       (state, dispatch)
   [view === 'settings']
