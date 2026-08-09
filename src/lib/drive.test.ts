@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { NeedsReauthError } from '@open-webapp/drive-sync'
 import { initialState } from './state'
 import type { AppState } from './state'
 
@@ -7,20 +8,29 @@ let mockFilesRead: ReturnType<typeof vi.fn>
 let mockFilesWrite: ReturnType<typeof vi.fn>
 let mockEnsureFolderPath: ReturnType<typeof vi.fn>
 let mockList: ReturnType<typeof vi.fn>
+let mockGetConnection: ReturnType<typeof vi.fn>
+let mockConnect: ReturnType<typeof vi.fn>
 
-// Mock the drive-sync package itself
-vi.mock('@open-webapp/drive-sync', () => ({
-  createDriveSync: () => ({
-    project: () => ({
-      ensureFolderPath: () => mockEnsureFolderPath(),
-      files: {
-        list: (...args: unknown[]) => mockList(...args),
-        read: (...args: unknown[]) => mockFilesRead(...args),
-        write: (...args: unknown[]) => mockFilesWrite(...args),
-      },
+// Mock the drive-sync package itself (spreading the real module so real error
+// classes like NeedsReauthError stay instanceof-compatible).
+vi.mock('@open-webapp/drive-sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@open-webapp/drive-sync')>()
+  return {
+    ...actual,
+    createDriveSync: () => ({
+      project: () => ({
+        getConnection: () => mockGetConnection(),
+        connect: () => mockConnect(),
+        ensureFolderPath: () => mockEnsureFolderPath(),
+        files: {
+          list: (...args: unknown[]) => mockList(...args),
+          read: (...args: unknown[]) => mockFilesRead(...args),
+          write: (...args: unknown[]) => mockFilesWrite(...args),
+        },
+      }),
     }),
-  }),
-}))
+  }
+})
 
 describe('drive.ts Drive-sync wiring', () => {
   beforeEach(() => {
@@ -29,6 +39,14 @@ describe('drive.ts Drive-sync wiring', () => {
     mockFilesRead = vi.fn()
     mockFilesWrite = vi.fn()
     mockList = vi.fn()
+    // Default to a healthy, non-expired connection so sync/restore do not
+    // trigger the interactive connect flow unless a test opts in.
+    mockGetConnection = vi.fn().mockResolvedValue({
+      email: 'test@example.com',
+      needsReauth: false,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    })
+    mockConnect = vi.fn()
     vi.resetModules()
   })
 
@@ -271,5 +289,130 @@ describe('drive.ts Drive-sync wiring', () => {
     const restored = await restoreBackup()
 
     expect(restored).toBeNull()
+  })
+
+  describe('Drive auth / token validation', () => {
+    const futureConn = {
+      email: 'user@example.com',
+      needsReauth: false,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    }
+    const expiredConn = {
+      email: 'user@example.com',
+      needsReauth: false,
+      expiresAt: Date.now() - 1000,
+    }
+
+    it('getDriveAuthStatus() reports disconnected when no connection exists', async () => {
+      mockGetConnection.mockResolvedValue(null)
+
+      const { getDriveAuthStatus } = await import('./drive')
+      const status = await getDriveAuthStatus()
+
+      expect(status.connected).toBe(false)
+      expect(status.email).toBeNull()
+      expect(status.expiresAt).toBeNull()
+      expect(status.tokenValid).toBe(false)
+    })
+
+    it('getDriveAuthStatus() reports a valid token when expiry is in the future', async () => {
+      mockGetConnection.mockResolvedValue(futureConn)
+
+      const { getDriveAuthStatus } = await import('./drive')
+      const status = await getDriveAuthStatus()
+
+      expect(status.connected).toBe(true)
+      expect(status.email).toBe('user@example.com')
+      expect(status.tokenValid).toBe(true)
+    })
+
+    it('getDriveAuthStatus() reports an invalid token when it has expired', async () => {
+      mockGetConnection.mockResolvedValue(expiredConn)
+
+      const { getDriveAuthStatus } = await import('./drive')
+      const status = await getDriveAuthStatus()
+
+      expect(status.connected).toBe(true)
+      expect(status.tokenValid).toBe(false)
+    })
+
+    it('getDriveAuthStatus() reports an invalid token when scopes are incomplete', async () => {
+      mockGetConnection.mockResolvedValue({
+        email: 'user@example.com',
+        needsReauth: true,
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      })
+
+      const { getDriveAuthStatus } = await import('./drive')
+      const status = await getDriveAuthStatus()
+
+      expect(status.tokenValid).toBe(false)
+    })
+
+    it('syncBackup() reuses a valid cached token without opening Google auth', async () => {
+      mockGetConnection.mockResolvedValue(futureConn)
+      mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
+
+      const { syncBackup } = await import('./drive')
+      await syncBackup(initialState())
+
+      expect(mockConnect).not.toHaveBeenCalled()
+    })
+
+    it('syncBackup() triggers Google auth exactly once when the token has expired', async () => {
+      mockGetConnection.mockResolvedValue(expiredConn)
+      mockConnect.mockResolvedValue(futureConn)
+      mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
+
+      const { syncBackup } = await import('./drive')
+      await syncBackup(initialState())
+
+      expect(mockConnect).toHaveBeenCalledTimes(1)
+    })
+
+    it('syncBackup() triggers Google auth once when never connected', async () => {
+      mockGetConnection.mockResolvedValue(null)
+      mockConnect.mockResolvedValue(futureConn)
+      mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
+
+      const { syncBackup } = await import('./drive')
+      await syncBackup(initialState())
+
+      expect(mockConnect).toHaveBeenCalledTimes(1)
+    })
+
+    it('concurrent syncs open at most one Google auth window', async () => {
+      mockGetConnection.mockResolvedValue(expiredConn)
+      mockConnect.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(futureConn), 10))
+      )
+      mockFilesWrite.mockResolvedValue({ id: 'file-id-123' })
+
+      const { syncBackup } = await import('./drive')
+      await Promise.all([syncBackup(initialState()), syncBackup(initialState())])
+
+      expect(mockConnect).toHaveBeenCalledTimes(1)
+    })
+
+    it('restoreBackup() triggers Google auth exactly once when the token has expired', async () => {
+      mockGetConnection.mockResolvedValue(expiredConn)
+      mockConnect.mockResolvedValue(futureConn)
+      mockList.mockResolvedValue([]) // no backup file -> returns null
+
+      const { restoreBackup } = await import('./drive')
+      const restored = await restoreBackup()
+
+      expect(restored).toBeNull()
+      expect(mockConnect).toHaveBeenCalledTimes(1)
+    })
+
+    it('getBackupFileId() returns null instead of throwing when the token is expired', async () => {
+      mockEnsureFolderPath.mockRejectedValue(new NeedsReauthError('Silent token acquisition failed'))
+
+      const { getBackupFileId } = await import('./drive')
+      const fileId = await getBackupFileId()
+
+      expect(fileId).toBeNull()
+    })
   })
 })

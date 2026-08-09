@@ -24,14 +24,18 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'general' | 'importSessions'>('general')
 
-  // Check Drive connection status on mount
+  // Check Drive connection status on mount (never opens a Google auth window)
   useEffect(() => {
     const checkDrive = async () => {
-      const connection = await getDriveConnection()
-      setDriveReady(connection !== null)
-      if (connection) {
-        const fileId = await getBackupFileId()
-        setBackupFileId(fileId)
+      try {
+        const connection = await getDriveConnection()
+        setDriveReady(connection !== null)
+        if (connection) {
+          const fileId = await getBackupFileId()
+          setBackupFileId(fileId)
+        }
+      } catch (error) {
+        console.error('Failed to check Drive connection:', error)
       }
     }
     checkDrive()
