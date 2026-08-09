@@ -47,6 +47,16 @@ describe('drive.ts Drive-sync wiring', () => {
   })
 
   /**
+   * Test: VITE_GOOGLE_CLIENT_ID must be set (read from .env) or Google OAuth
+   * connect fails — token.ts sends `client_id: undefined` to GIS.
+   */
+  it('drive clientId is configured via VITE_GOOGLE_CLIENT_ID in .env', () => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+    expect(clientId).toBeTruthy()
+    expect(clientId).toMatch(/\.apps\.googleusercontent\.com$/)
+  })
+
+  /**
    * Test 2: syncBackup() writes state as JSON blob without error.
    */
   it('syncBackup() writes state blob without error', async () => {
