@@ -27,7 +27,7 @@ interface NewAccountFields {
   institution: string
 }
 
-export const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
+const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
   taxable: 'Taxable',
   nonTaxable: 'Non-Taxable',
   taxDeferred: 'Tax-Deferred',
