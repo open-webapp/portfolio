@@ -207,8 +207,8 @@ describe('isReviewValid (positions)', () => {
     expect(isReviewValid('positions', withoutKey(positionsFieldMap, 'Symbol'))).toBe(false)
   })
 
-  it('is false when assetClass is not a mapped target', () => {
-    expect(isReviewValid('positions', withoutKey(positionsFieldMap, 'Class'))).toBe(false)
+  it('is true when assetClass is not a mapped target (assetClass is no longer required in fieldMap)', () => {
+    expect(isReviewValid('positions', withoutKey(positionsFieldMap, 'Class'))).toBe(true)
   })
 
   it('is false when shares is not a mapped target', () => {

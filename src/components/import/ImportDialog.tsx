@@ -89,6 +89,8 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const [importEdits, setImportEdits] = useState<Record<string, Record<string, string>>>({})
   const [importDone, setImportDone] = useState(false)
   const [importedRowCount, setImportedRowCount] = useState(0)
+  const [assetClassHeaderValue, setAssetClassHeaderValue] = useState<string>('')
+  const [touchedAssetClassRows, setTouchedAssetClassRows] = useState<Set<number>>(new Set())
 
   const handleOpenDialog = useCallback(() => {
     setIsOpen(true)
@@ -115,6 +117,8 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setImportEdits({})
     setImportDone(false)
     setImportedRowCount(0)
+    setAssetClassHeaderValue('')
+    setTouchedAssetClassRows(new Set())
     onClose()
   }, [onClose])
 
@@ -225,6 +229,27 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     })
   }, [])
 
+  // Step 2: Handle asset class header value change (broadcasts to all non-touched rows)
+  const handleAssetClassHeaderChange = useCallback((value: string) => {
+    setAssetClassHeaderValue(value)
+    setImportEdits((prev) => {
+      const next: Record<string, Record<string, string>> = {}
+      for (let idx = 0; idx < csvRows.length; idx++) {
+        next[idx] = { ...prev[idx] }
+      }
+      // For rows not in touchedAssetClassRows, set assetClass to the header value
+      for (let idx = 0; idx < csvRows.length; idx++) {
+        if (!touchedAssetClassRows.has(idx)) {
+          next[idx] = {
+            ...next[idx],
+            assetClass: value,
+          }
+        }
+      }
+      return next
+    })
+  }, [csvRows.length, touchedAssetClassRows])
+
   // Step 2: Drop a row from the preview (removes it from csvRows and re-keys importEdits)
   const handleDeleteRow = useCallback((rowIdx: number) => {
     setCsvRows((prev) => prev.filter((_, idx) => idx !== rowIdx))
@@ -234,6 +259,17 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         const idx = Number(key)
         if (idx === rowIdx) continue
         next[idx > rowIdx ? String(idx - 1) : key] = value
+      }
+      return next
+    })
+    setTouchedAssetClassRows((prev) => {
+      const next = new Set(prev)
+      next.delete(rowIdx)
+      for (const idx of next) {
+        if (idx > rowIdx) {
+          next.delete(idx)
+          next.add(idx - 1)
+        }
       }
       return next
     })
@@ -735,25 +771,41 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                               {FIELD_LABELS[field] ?? field}
                               {(requiredFields as readonly string[]).includes(field) && <span>*</span>}
                             </div>
-                            <select
-                              className="input"
-                              style={{
-                                marginTop: '6px',
-                                fontWeight: 400,
-                                textTransform: 'none',
-                                letterSpacing: 'normal',
-                              }}
-                              value={mappedColumnFor(field)}
-                              onChange={(e) => handleFieldMapChange(field, e.target.value)}
-                            >
-                              <option value="">— Not mapped —</option>
-                              {csvHeaders.map((header) => (
-                                <option key={header} value={header}>
-                                  {header}
-                                </option>
-                              ))}
-                            </select>
-                            {FIELD_HINTS[field] && (
+                            {field === 'assetClass' && dataType === 'positions' ? (
+                              <input
+                                type="text"
+                                className="input"
+                                style={{
+                                  marginTop: '6px',
+                                  fontWeight: 400,
+                                  textTransform: 'none',
+                                  letterSpacing: 'normal',
+                                }}
+                                value={assetClassHeaderValue}
+                                onChange={(e) => handleAssetClassHeaderChange(e.target.value)}
+                                placeholder="e.g. Equity"
+                              />
+                            ) : (
+                              <select
+                                className="input"
+                                style={{
+                                  marginTop: '6px',
+                                  fontWeight: 400,
+                                  textTransform: 'none',
+                                  letterSpacing: 'normal',
+                                }}
+                                value={mappedColumnFor(field)}
+                                onChange={(e) => handleFieldMapChange(field, e.target.value)}
+                              >
+                                <option value="">— Not mapped —</option>
+                                {csvHeaders.map((header) => (
+                                  <option key={header} value={header}>
+                                    {header}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {field !== 'assetClass' && FIELD_HINTS[field] && (
                               <div
                                 className="text-muted"
                                 style={{
@@ -846,6 +898,9 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                           [field]: e.target.value,
                                         },
                                       }))
+                                      if (field === 'assetClass') {
+                                        setTouchedAssetClassRows((prev) => new Set(prev).add(rowIdx))
+                                      }
                                     }}
                                   />
                                 </td>
@@ -876,7 +931,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                 disabled={
                   importDone
                     ? false
-                    : !isReviewValid(dataType, fieldMap) || hasImportErrors || previewRows.length === 0
+                    : !isReviewValid(dataType, fieldMap) ||
+                      hasImportErrors ||
+                      previewRows.length === 0 ||
+                      (dataType === 'positions' && !assetClassHeaderValue.trim())
                 }
               >
                 {importDone ? 'Done' : 'Import'}

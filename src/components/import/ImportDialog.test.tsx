@@ -74,9 +74,19 @@ function mapField(fieldLabel: string, column: string) {
   fireEvent.change(selectForField(fieldLabel), { target: { value: column } })
 }
 
+function setAssetClassHeaderValue(value: string) {
+  const ths = Array.from(document.querySelectorAll('table thead th'))
+  const th = ths.find((el) => {
+    const div = el.querySelector('div')
+    return div && div.textContent?.trim().startsWith('Asset Class')
+  })
+  const input = th!.querySelector('input') as HTMLInputElement
+  fireEvent.change(input, { target: { value } })
+}
+
 function mapPositions() {
   mapField('Symbol', 'Symbol')
-  mapField('Asset Class', 'Asset Class')
+  setAssetClassHeaderValue('Equity')
   mapField('Shares', 'Shares')
   mapField('Cost Basis', 'Cost Basis')
   mapField('Price', 'Price')
@@ -282,7 +292,7 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(document.querySelectorAll('table')).toHaveLength(1)
     const ths = document.querySelectorAll('table thead th')
     expect(ths).toHaveLength(10)
-    expect(document.querySelectorAll('table thead th select')).toHaveLength(9)
+    expect(document.querySelectorAll('table thead th select')).toHaveLength(8)
     expect(ths[0].querySelector('div')).toBeNull()
 
     const labelTexts = Array.from(ths).map((th) => th.querySelector('div')?.textContent?.trim())
@@ -300,8 +310,11 @@ describe('ImportDialog (2-step wizard)', () => {
 
     const expectedOptions = ['— Not mapped —', ...POS_HEADERS]
     for (const th of Array.from(ths).slice(1)) {
-      const options = Array.from(th.querySelectorAll('option')).map((o) => o.textContent)
-      expect(options).toEqual(expectedOptions)
+      const select = th.querySelector('select')
+      if (select) {
+        const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+        expect(options).toEqual(expectedOptions)
+      }
     }
   })
 
@@ -318,7 +331,7 @@ describe('ImportDialog (2-step wizard)', () => {
   it('10. Step 2: a row missing a required field shows a cell error + tag; editing the cell clears both', async () => {
     await advanceToStep2()
     mapField('Symbol', 'Symbol')
-    mapField('Asset Class', 'Asset Class')
+    setAssetClassHeaderValue('Equity')
     mapField('Shares', 'Shares')
     mapField('Price', 'Price')
 
@@ -338,7 +351,7 @@ describe('ImportDialog (2-step wizard)', () => {
   it('11. Step 2: positions alternative-pair validation — neither avgCost nor purchaseAmount errors; mapping either clears it', async () => {
     await advanceToStep2()
     mapField('Symbol', 'Symbol')
-    mapField('Asset Class', 'Asset Class')
+    setAssetClassHeaderValue('Equity')
     mapField('Shares', 'Shares')
     mapField('Price', 'Price')
 
@@ -557,10 +570,185 @@ describe('ImportDialog (2-step wizard)', () => {
     await advanceToStep2()
 
     const selects = Array.from(document.querySelectorAll('select'))
-    expect(selects).toHaveLength(9)
+    expect(selects).toHaveLength(8)
 
     const expectedOptions = ['— Not mapped —', ...POS_HEADERS]
     const allOptions = Array.from(document.querySelectorAll('table option')).map((o) => o.textContent)
     expect(allOptions).toEqual(Array.from({ length: selects.length }, () => expectedOptions).flat())
+  })
+
+  // New tests for assetClass header input behavior
+
+  it('20. Step 2 (positions): typing in assetClass header broadcasts the value to all non-touched rows', async () => {
+    await advanceToStep2()
+    mapField('Symbol', 'Symbol')
+    mapField('Shares', 'Shares')
+    mapField('Cost Basis', 'Cost Basis')
+    mapField('Price', 'Price')
+
+    // Type "Equity" in the header input
+    setAssetClassHeaderValue('Equity')
+
+    const inputs = document.querySelectorAll('tbody tr input')
+    const assetClassCell = inputs[1] // assetClass is the 2nd input (after symbol)
+    expect(assetClassCell.getAttribute('value')).toBe('Equity')
+
+    // Type "Bond" in the header input
+    setAssetClassHeaderValue('Bond')
+    expect((document.querySelector('tbody tr input[value="Bond"]') as HTMLInputElement)?.value).toBe('Bond')
+  })
+
+  it('21. Step 2 (positions): editing a row assetClass marks it sticky; header changes do not affect it', async () => {
+    await mockCsv(POS_HEADERS, [
+      { Symbol: 'AAPL', 'Asset Class': 'Equity', Shares: '100', 'Cost Basis': '150', Price: '180' },
+      { Symbol: 'MSFT', 'Asset Class': 'Equity', Shares: '50', 'Cost Basis': '200', Price: '210' },
+    ])
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    mapField('Symbol', 'Symbol')
+    mapField('Shares', 'Shares')
+    mapField('Cost Basis', 'Cost Basis')
+    mapField('Price', 'Price')
+
+    // Set header to "Equity"
+    setAssetClassHeaderValue('Equity')
+
+    // Edit row 2 (MSFT) assetClass to "Crypto"
+    const inputs = document.querySelectorAll('tbody tr:nth-child(2) input')
+    const row2AssetClassInput = inputs[1] as HTMLInputElement
+    fireEvent.change(row2AssetClassInput, { target: { value: 'Crypto' } })
+    expect(row2AssetClassInput.value).toBe('Crypto')
+
+    // Change header to "Bond"
+    setAssetClassHeaderValue('Bond')
+
+    // Row 1 should now be "Bond" (not touched)
+    const row1Inputs = document.querySelectorAll('tbody tr:nth-child(1) input')
+    const row1AssetClassInput = row1Inputs[1] as HTMLInputElement
+    expect(row1AssetClassInput.value).toBe('Bond')
+
+    // Row 2 should still be "Crypto" (touched, sticky)
+    const row2Inputs = document.querySelectorAll('tbody tr:nth-child(2) input')
+    const row2AssetClassAfterChange = row2Inputs[1] as HTMLInputElement
+    expect(row2AssetClassAfterChange.value).toBe('Crypto')
+  })
+
+  it('22. Step 2 (positions): Import button disabled when assetClass header is empty', async () => {
+    await advanceToStep2()
+    mapField('Symbol', 'Symbol')
+    mapField('Shares', 'Shares')
+    mapField('Cost Basis', 'Cost Basis')
+    mapField('Price', 'Price')
+
+    // Header is empty initially
+    const importBtn = screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement
+    expect(importBtn.disabled).toBe(true)
+
+    // Set header to "Equity"
+    setAssetClassHeaderValue('Equity')
+    expect(importBtn.disabled).toBe(false)
+
+    // Clear the header
+    setAssetClassHeaderValue('')
+    expect(importBtn.disabled).toBe(true)
+  })
+
+  it('23. Step 2: deleting a touched row removes it from touchedAssetClassRows and re-keys other touched indices', async () => {
+    await mockCsv(POS_HEADERS, [
+      { Symbol: 'AAPL', 'Asset Class': 'Equity', Shares: '100', 'Cost Basis': '150', Price: '180' },
+      { Symbol: 'MSFT', 'Asset Class': 'Equity', Shares: '50', 'Cost Basis': '200', Price: '210' },
+      { Symbol: 'GOOG', 'Asset Class': 'Equity', Shares: '10', 'Cost Basis': '100', Price: '120' },
+    ])
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    mapField('Symbol', 'Symbol')
+    mapField('Shares', 'Shares')
+    mapField('Cost Basis', 'Cost Basis')
+    mapField('Price', 'Price')
+
+    setAssetClassHeaderValue('Equity')
+
+    // Edit row 1 and row 3 assetClass to make them sticky
+    let inputs = document.querySelectorAll('tbody tr:nth-child(2) input')
+    fireEvent.change(inputs[1], { target: { value: 'Crypto' } })
+
+    inputs = document.querySelectorAll('tbody tr:nth-child(3) input')
+    fireEvent.change(inputs[1], { target: { value: 'Bond' } })
+
+    // Delete row 2 (MSFT)
+    fireEvent.click(screen.getAllByTitle('Delete this row')[1])
+
+    // Now 2 rows remain; change header to "Stock"
+    setAssetClassHeaderValue('Stock')
+
+    // Row 1 (AAPL) should be "Stock"
+    inputs = document.querySelectorAll('tbody tr:nth-child(1) input')
+    expect((inputs[1] as HTMLInputElement).value).toBe('Stock')
+
+    // Row 2 (formerly row 3, GOOG) should stay "Bond" (was sticky at old index 2, now at index 1)
+    inputs = document.querySelectorAll('tbody tr:nth-child(2) input')
+    expect((inputs[1] as HTMLInputElement).value).toBe('Bond')
+  })
+
+  it('24. Step 2: dialog close and reopen resets assetClass header to empty string and clears touched rows', async () => {
+    await advanceToStep2()
+    mapField('Symbol', 'Symbol')
+    mapField('Shares', 'Shares')
+    mapField('Cost Basis', 'Cost Basis')
+    mapField('Price', 'Price')
+
+    setAssetClassHeaderValue('Equity')
+
+    // Edit a row to mark it sticky
+    let inputs = document.querySelectorAll('tbody tr input')
+    fireEvent.change(inputs[1], { target: { value: 'Crypto' } })
+
+    // Close the dialog
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(document.querySelector('.dialog-backdrop')).toBeNull()
+
+    // Reopen the dialog
+    fireEvent.click(screen.getByRole('button', { name: 'Import CSV' }))
+    await waitFor(() => expect(screen.getByText('Setup')).toBeTruthy())
+
+    // Header should be reset
+    expect(screen.queryByDisplayValue('Equity')).toBeNull()
+  })
+
+  it('25. Step 2 (transactions): no assetClass header input; transactions render normally without it', async () => {
+    await advanceToStep2(dispatch, 'transactions')
+
+    // Verify no assetClass header in transactions
+    const ths = document.querySelectorAll('table thead th')
+    const assetClassTh = Array.from(ths).find((th) => {
+      const div = th.querySelector('div')
+      return div && div.textContent?.includes('Asset Class')
+    })
+    expect(assetClassTh).toBeFalsy()
+
+    // Map all transaction fields
+    mapTransactions()
+
+    // Import should be enabled (no assetClass requirement)
+    const importBtn = screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement
+    expect(importBtn.disabled).toBe(false)
+
+    // Import and verify no assetClass in the dispatch payload
+    fireEvent.click(importBtn)
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    expect(calls[0].type).toBe('IMPORT_TRANSACTIONS')
+    expect(calls[0].mappedRows[0]).not.toHaveProperty('assetClass')
   })
 })

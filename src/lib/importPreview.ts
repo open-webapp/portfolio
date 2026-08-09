@@ -62,7 +62,7 @@ export function isReviewValid(
   const mappedFields = new Set(Object.values(fieldMap))
 
   if (dataType === 'positions') {
-    const alwaysRequired = ['symbol', 'assetClass', 'shares']
+    const alwaysRequired = ['symbol', 'shares']
     for (const field of alwaysRequired) {
       if (!mappedFields.has(field)) return false
     }
