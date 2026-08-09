@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { Account } from '../lib/types'
+import type { Account, Position, TaxCategory } from '../lib/types'
 import type { AggregateRow } from './PositionsTable'
 import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
 import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
+import { TAX_CATEGORY_LABELS } from './import/ImportDialog'
+import { uid } from '../lib/seed'
 
 function parseNonNegative(raw: string): number | null {
   if (raw.trim() === '') return null
@@ -92,6 +94,361 @@ function EditableCell({
     >
       {formatDisplay()}
     </span>
+  )
+}
+
+function EditableTextCell({
+  value,
+  positionId,
+  dispatch,
+}: {
+  value: string
+  positionId: string
+  dispatch: (action: any) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  const commit = () => {
+    const trimmed = draft.trim()
+    if (trimmed === '') {
+      setIsEditing(false)
+      return
+    }
+
+    if (trimmed !== value) {
+      dispatch({
+        type: 'UPDATE_POSITION',
+        positionId,
+        patch: { symbol: trimmed },
+      })
+    }
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      commit()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        type="text"
+        className="input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        autoFocus
+        style={{ width: '100%' }}
+      />
+    )
+  }
+
+  return (
+    <span
+      onClick={() => {
+        setDraft(value)
+        setIsEditing(true)
+      }}
+    >
+      {value}
+    </span>
+  )
+}
+
+function AccountDropdown({
+  position,
+  accounts,
+  dispatch,
+}: {
+  position: Position
+  accounts: Account[]
+  dispatch: (action: any) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [isCreatingNew, setIsCreatingNew] = useState(false)
+  const [newAccountForm, setNewAccountForm] = useState({
+    name: '',
+    number: '',
+    institution: '',
+    category: 'taxable' as TaxCategory,
+    retirement: false,
+  })
+
+  const currentAccount = accounts.find((a) => a.id === position.accountId)
+  const accountDisplay = currentAccount
+    ? `${currentAccount.name}${currentAccount.accountNumber ? ` • #${currentAccount.accountNumber}` : ''}`
+    : 'Unknown Account'
+
+  const handleSelectAccount = (account: Account) => {
+    dispatch({
+      type: 'UPDATE_POSITION',
+      positionId: position.id,
+      patch: { accountId: account.id },
+    })
+    setIsOpen(false)
+  }
+
+  const handleCreateAccount = () => {
+    if (newAccountForm.name.trim() === '') return
+
+    const newAccount: Account = {
+      id: uid('acc'),
+      accountNumber: newAccountForm.number,
+      name: newAccountForm.name.trim(),
+      institution: newAccountForm.institution,
+      taxCategory: newAccountForm.category,
+      retirement: newAccountForm.retirement,
+      createdAt: new Date().toISOString(),
+    }
+
+    dispatch({ type: 'ADD_ACCOUNT', account: newAccount })
+    dispatch({
+      type: 'UPDATE_POSITION',
+      positionId: position.id,
+      patch: { accountId: newAccount.id },
+    })
+
+    setIsCreatingNew(false)
+    setIsOpen(false)
+    setNewAccountForm({
+      name: '',
+      number: '',
+      institution: '',
+      category: 'taxable',
+      retirement: false,
+    })
+  }
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          border: '1px solid var(--color-border)',
+          borderRadius: '4px',
+          padding: '6px 10px',
+          background: 'var(--color-bg)',
+          color: 'var(--color-text)',
+          cursor: 'pointer',
+          fontSize: '0.9em',
+        }}
+      >
+        {accountDisplay}
+      </button>
+
+      {isOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            minWidth: '300px',
+            maxWidth: '400px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            borderRadius: '4px',
+            marginTop: '4px',
+            zIndex: 1002,
+            boxShadow: 'var(--shadow-md)',
+          }}
+        >
+          {!isCreatingNew ? (
+            <>
+              <div
+                style={{
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                }}
+              >
+                {accounts.map((account) => (
+                  <div
+                    key={account.id}
+                    onClick={() => handleSelectAccount(account)}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'var(--color-hover-bg, rgba(0,0,0,0.05))'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid var(--color-border)',
+                    }}
+                  >
+                    <div style={{ fontWeight: '500' }}>{account.name}</div>
+                    {account.accountNumber && (
+                      <div style={{ fontSize: '0.85em', opacity: 0.7 }}>#{account.accountNumber}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div
+                onClick={() => setIsCreatingNew(true)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--color-hover-bg, rgba(0,0,0,0.05))'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                }}
+                style={{
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  borderTop: '1px solid var(--color-border)',
+                  fontStyle: 'italic',
+                  color: 'var(--color-accent-700)',
+                }}
+              >
+                + Create new account
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: '12px' }}>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>
+                  Account name
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g., Fidelity IRA"
+                  value={newAccountForm.name}
+                  onChange={(e) =>
+                    setNewAccountForm({ ...newAccountForm, name: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateAccount()
+                  }}
+                  autoFocus
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>
+                  Institution (optional)
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g., Fidelity"
+                  value={newAccountForm.institution}
+                  onChange={(e) =>
+                    setNewAccountForm({ ...newAccountForm, institution: e.target.value })
+                  }
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>
+                  Account number (optional)
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g., 12345678"
+                  value={newAccountForm.number}
+                  onChange={(e) =>
+                    setNewAccountForm({ ...newAccountForm, number: e.target.value })
+                  }
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>
+                  Tax category
+                </label>
+                <select
+                  className="input"
+                  value={newAccountForm.category}
+                  onChange={(e) =>
+                    setNewAccountForm({
+                      ...newAccountForm,
+                      category: e.target.value as TaxCategory,
+                    })
+                  }
+                  style={{ width: '100%' }}
+                >
+                  {Object.entries(TAX_CATEGORY_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  id="retirement-checkbox"
+                  checked={newAccountForm.retirement}
+                  onChange={(e) =>
+                    setNewAccountForm({
+                      ...newAccountForm,
+                      retirement: e.target.checked,
+                    })
+                  }
+                />
+                <label htmlFor="retirement-checkbox" style={{ marginLeft: '6px', fontSize: '0.9em' }}>
+                  Retirement Account
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={handleCreateAccount}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    background: 'var(--color-accent-700)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9em',
+                  }}
+                >
+                  Create
+                </button>
+                <button
+                  onClick={() => {
+                    setIsCreatingNew(false)
+                    setNewAccountForm({
+                      name: '',
+                      number: '',
+                      institution: '',
+                      category: 'taxable',
+                      retirement: false,
+                    })
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    background: 'transparent',
+                    color: 'var(--color-text)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9em',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -214,6 +571,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
             <thead>
               <tr>
                 <th style={{ textAlign: 'left' }}>Account</th>
+                <th style={{ textAlign: 'left' }}>Symbol</th>
                 <th style={{ textAlign: 'right' }}>Shares</th>
                 <th style={{ textAlign: 'right' }}>Cost Basis</th>
                 <th style={{ textAlign: 'right' }}>Current Price</th>
@@ -229,7 +587,18 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
               {computedPositions.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    <div style={{ fontWeight: '600' }}>{p.accountName}</div>
+                    <AccountDropdown
+                      position={p}
+                      accounts={accounts}
+                      dispatch={dispatch}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'left' }}>
+                    <EditableTextCell
+                      value={p.symbol}
+                      positionId={p.id}
+                      dispatch={dispatch}
+                    />
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <EditableCell

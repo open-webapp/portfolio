@@ -24,6 +24,7 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Brokerage A',
+        institution: 'Test Institution',
         taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
@@ -32,6 +33,7 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Brokerage B',
+        institution: 'Test Institution',
         taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
@@ -437,6 +439,7 @@ describe('PositionsTable', () => {
         id: 'acc-z',
         accountNumber: 'Z001',
         name: 'Zebra Account',
+        institution: 'Test',
         taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
@@ -445,6 +448,7 @@ describe('PositionsTable', () => {
         id: 'acc-a',
         accountNumber: 'A001',
         name: 'Apple Account',
+        institution: 'Test',
         taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
@@ -514,8 +518,12 @@ describe('PositionsTable', () => {
 
     // The overlay should show the underlying positions
     // Positions should be sorted by account name: "Apple Account" before "Zebra Account"
-    expect(screen.getByText('Apple Account')).toBeDefined()
-    expect(screen.getByText('Zebra Account')).toBeDefined()
+    // Account names are now in buttons, so check for them with a flexible matcher
+    const buttons = screen.getAllByRole('button')
+    const appleAccountButton = buttons.find(b => b.textContent?.includes('Apple Account'))
+    const zebraAccountButton = buttons.find(b => b.textContent?.includes('Zebra Account'))
+    expect(appleAccountButton).toBeDefined()
+    expect(zebraAccountButton).toBeDefined()
   })
 
   /**

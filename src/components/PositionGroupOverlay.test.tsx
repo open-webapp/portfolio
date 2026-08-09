@@ -32,6 +32,7 @@ describe('PositionGroupOverlay', () => {
     id: 'acc-1',
     accountNumber: '001',
     name: 'Brokerage A',
+    institution: 'Test Institution',
     taxCategory: 'taxable',
     retirement: false,
     createdAt: '2024-01-01',
@@ -398,12 +399,12 @@ describe('PositionGroupOverlay', () => {
   })
 
   /**
-   * Test 9: Account cell and Override/AssetClassOverrideSelect cell unchanged
+   * Test 3: Symbol cell is click-to-edit with text input
    */
-  it('preserves Account cell and does not make it editable', () => {
-    const position = createTestPosition()
+  it('renders text input pre-filled when clicking symbol cell', () => {
+    const position = createTestPosition({ symbol: 'TSLA' })
     const group = createTestGroup([position])
-    const account = createTestAccount({ name: 'Brokerage A' })
+    const account = createTestAccount()
 
     render(
       <PositionGroupOverlay
@@ -414,14 +415,260 @@ describe('PositionGroupOverlay', () => {
       />
     )
 
-    const accountCell = screen.getByText('Brokerage A')
-    fireEvent.click(accountCell)
+    const symbolCell = screen.getByText('TSLA')
+    fireEvent.click(symbolCell)
 
-    // Verify no input was created (account name should not be editable in overlay)
-    const inputs = screen.queryAllByRole('spinbutton')
-    expect(inputs).toHaveLength(0)
+    const input = screen.getByDisplayValue('TSLA') as HTMLInputElement
+    expect(input).toBeTruthy()
+    expect(input.type).toBe('text')
   })
 
+  it('dispatches UPDATE_POSITION with new symbol on Enter', () => {
+    const position = createTestPosition({ symbol: 'AAPL' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const symbolCell = screen.getByText('AAPL')
+    fireEvent.click(symbolCell)
+
+    const input = screen.getByDisplayValue('AAPL') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'MSFT' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'UPDATE_POSITION',
+      positionId: position.id,
+      patch: { symbol: 'MSFT' },
+    })
+  })
+
+  it('reverts symbol on Escape without dispatching', () => {
+    const position = createTestPosition({ symbol: 'AAPL' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    mockDispatch.mockClear()
+
+    const symbolCell = screen.getByText('AAPL')
+    fireEvent.click(symbolCell)
+
+    const input = screen.getByDisplayValue('AAPL') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'MSFT' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(mockDispatch).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Test 8, 11: Account dropdown allows selecting existing accounts
+   */
+  it('Account dropdown opens on click and lists all accounts', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account1 = createTestAccount({ id: 'acc-1', name: 'Brokerage A' })
+    const account2 = createTestAccount({ id: 'acc-2', name: 'Brokerage B', accountNumber: '002' })
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account1, account2]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    // Find the account dropdown button by looking for the text that includes the account name
+    // The button text will include the account name
+    const buttons = screen.getAllByRole('button')
+    const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
+    expect(accountButton).toBeDefined()
+
+    fireEvent.click(accountButton!)
+
+    // Both accounts should be visible in the dropdown
+    expect(screen.getByText('Brokerage B')).toBeDefined()
+    // "Create new account" option should be visible
+    expect(screen.getByText('+ Create new account')).toBeDefined()
+  })
+
+  it('Account dropdown selection dispatches UPDATE_POSITION', () => {
+    const position = createTestPosition({ accountId: 'acc-1' })
+    const group = createTestGroup([position])
+    const account1 = createTestAccount({ id: 'acc-1', name: 'Brokerage A' })
+    const account2 = createTestAccount({ id: 'acc-2', name: 'Brokerage B' })
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account1, account2]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    mockDispatch.mockClear()
+
+    // Open the dropdown
+    const buttons = screen.getAllByRole('button')
+    const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
+    fireEvent.click(accountButton!)
+
+    // Click on the second account
+    const account2Option = screen.getByText('Brokerage B')
+    fireEvent.click(account2Option)
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'UPDATE_POSITION',
+      positionId: position.id,
+      patch: { accountId: 'acc-2' },
+    })
+  })
+
+  /**
+   * Test 12: Account dropdown new-account creation
+   */
+  it('Account dropdown "+ Create new account" reveals mini-form', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    // Open the dropdown
+    const buttons = screen.getAllByRole('button')
+    const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
+    fireEvent.click(accountButton!)
+
+    // Click "+ Create new account"
+    const createNewOption = screen.getByText('+ Create new account')
+    fireEvent.click(createNewOption)
+
+    // Mini-form fields should be visible
+    expect(screen.getByPlaceholderText('e.g., Fidelity IRA')).toBeDefined() // Account name
+    expect(screen.getByPlaceholderText('e.g., Fidelity')).toBeDefined() // Institution
+    expect(screen.getByPlaceholderText('e.g., 12345678')).toBeDefined() // Account number
+    expect(screen.getByLabelText('Retirement Account')).toBeDefined()
+  })
+
+  it('Account dropdown mini-form creates new account and reassigns position', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    mockDispatch.mockClear()
+
+    // Open the dropdown
+    const buttons = screen.getAllByRole('button')
+    const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
+    fireEvent.click(accountButton!)
+
+    // Click "+ Create new account"
+    const createNewOption = screen.getByText('+ Create new account')
+    fireEvent.click(createNewOption)
+
+    // Fill in the form
+    const nameInput = screen.getByPlaceholderText('e.g., Fidelity IRA') as HTMLInputElement
+    const institutionInput = screen.getByPlaceholderText('e.g., Fidelity') as HTMLInputElement
+    const numberInput = screen.getByPlaceholderText('e.g., 12345678') as HTMLInputElement
+    const retirementCheckbox = screen.getByLabelText('Retirement Account') as HTMLInputElement
+
+    fireEvent.change(nameInput, { target: { value: 'My New IRA' } })
+    fireEvent.change(institutionInput, { target: { value: 'Fidelity' } })
+    fireEvent.change(numberInput, { target: { value: 'NEW123' } })
+    fireEvent.click(retirementCheckbox)
+
+    // Click Create button
+    const createButton = screen.getByText('Create')
+    fireEvent.click(createButton)
+
+    // Should have called ADD_ACCOUNT first, then UPDATE_POSITION
+    const calls = mockDispatch.mock.calls
+    expect(calls.length).toBeGreaterThanOrEqual(2)
+
+    // First call should be ADD_ACCOUNT
+    const addAccountCall = calls.find(c => c[0].type === 'ADD_ACCOUNT')
+    expect(addAccountCall).toBeDefined()
+    expect(addAccountCall[0].account.name).toBe('My New IRA')
+    expect(addAccountCall[0].account.institution).toBe('Fidelity')
+    expect(addAccountCall[0].account.accountNumber).toBe('NEW123')
+    expect(addAccountCall[0].account.retirement).toBe(true)
+
+    // Second call should be UPDATE_POSITION with the new account ID
+    const updatePositionCall = calls.find(c => c[0].type === 'UPDATE_POSITION')
+    expect(updatePositionCall).toBeDefined()
+    expect(updatePositionCall[0].patch.accountId).toBe(addAccountCall[0].account.id)
+  })
+
+  it('Account dropdown mini-form with empty name does not dispatch', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    mockDispatch.mockClear()
+
+    // Open the dropdown
+    const buttons = screen.getAllByRole('button')
+    const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
+    fireEvent.click(accountButton!)
+
+    // Click "+ Create new account"
+    const createNewOption = screen.getByText('+ Create new account')
+    fireEvent.click(createNewOption)
+
+    // Click Create with empty name
+    const createButton = screen.getByText('Create')
+    fireEvent.click(createButton)
+
+    // Should not have dispatched anything
+    expect(mockDispatch).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Test 9: Override/AssetClassOverrideSelect cell unchanged
+   */
   it('preserves Override select element', () => {
     const position = createTestPosition()
     const group = createTestGroup([position])
