@@ -41,7 +41,6 @@ describe('PasswordGate', () => {
     vi.clearAllMocks()
     vi.mocked(cryptoModule.generateSalt).mockReturnValue(fakeSalt)
     vi.mocked(cryptoModule.deriveKey).mockResolvedValue(fakeKey)
-    global.confirm = vi.fn()
   })
 
   afterEach(() => {
@@ -161,63 +160,75 @@ describe('PasswordGate', () => {
   })
 
   describe('Reset app', () => {
-    it('on the set-password screen: confirm(true) calls clearPersistedApp then onReset', async () => {
-      vi.mocked(global.confirm).mockReturnValue(true)
+    it('on the set-password screen: opens confirm dialog, requires typing RESET, then calls clearPersistedApp then onReset', async () => {
       vi.mocked(persistModule.clearPersistedApp).mockResolvedValue(undefined)
 
       render(<PasswordGate shape="absent" onUnlock={onUnlock} onReset={onReset} />)
 
-      fireEvent.click(screen.getByRole('button', { name: /reset app/i }))
+      fireEvent.click(screen.getByText('Reset App'))
+      expect(screen.getByText('Reset app and erase all data?')).toBeTruthy()
+
+      const eraseButton = screen.getByRole('button', { name: /erase everything/i }) as HTMLButtonElement
+      expect(eraseButton.disabled).toBe(true)
+
+      fireEvent.change(screen.getByPlaceholderText('RESET'), { target: { value: 'RESET' } })
+      expect(eraseButton.disabled).toBe(false)
+
+      fireEvent.click(eraseButton)
 
       await waitFor(() => {
-        expect(global.confirm).toHaveBeenCalled()
         expect(persistModule.clearPersistedApp).toHaveBeenCalled()
         expect(onReset).toHaveBeenCalled()
       })
     })
 
-    it('on the enter-password screen: confirm(true) calls clearPersistedApp then onReset', async () => {
-      vi.mocked(global.confirm).mockReturnValue(true)
+    it('on the enter-password screen: opens confirm dialog, requires typing RESET, then calls clearPersistedApp then onReset', async () => {
       vi.mocked(persistModule.clearPersistedApp).mockResolvedValue(undefined)
 
       render(<PasswordGate shape="encrypted" onUnlock={onUnlock} onReset={onReset} />)
 
-      fireEvent.click(screen.getByRole('button', { name: /reset app/i }))
+      fireEvent.click(screen.getByText('Reset App'))
+      fireEvent.change(screen.getByPlaceholderText('RESET'), { target: { value: 'RESET' } })
+      fireEvent.click(screen.getByRole('button', { name: /erase everything/i }))
 
       await waitFor(() => {
-        expect(global.confirm).toHaveBeenCalled()
         expect(persistModule.clearPersistedApp).toHaveBeenCalled()
         expect(onReset).toHaveBeenCalled()
       })
     })
 
-    it('confirm(false) calls neither clearPersistedApp nor onReset', async () => {
-      vi.mocked(global.confirm).mockReturnValue(false)
-
+    it('typing something other than RESET keeps the erase button disabled and does not reset', async () => {
       render(<PasswordGate shape="absent" onUnlock={onUnlock} onReset={onReset} />)
 
-      fireEvent.click(screen.getByRole('button', { name: /reset app/i }))
+      fireEvent.click(screen.getByText('Reset App'))
+      fireEvent.change(screen.getByPlaceholderText('RESET'), { target: { value: 'reset please' } })
 
-      await waitFor(() => {
-        expect(global.confirm).toHaveBeenCalled()
-      })
+      const eraseButton = screen.getByRole('button', { name: /erase everything/i }) as HTMLButtonElement
+      expect(eraseButton.disabled).toBe(true)
       expect(persistModule.clearPersistedApp).not.toHaveBeenCalled()
       expect(onReset).not.toHaveBeenCalled()
     })
 
-    it('Reset app button is present and wired identically on both set-password and enter-password screens', () => {
+    it('Cancel closes the confirm dialog without resetting', async () => {
+      render(<PasswordGate shape="absent" onUnlock={onUnlock} onReset={onReset} />)
+
+      fireEvent.click(screen.getByText('Reset App'))
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+      expect(screen.queryByText('Reset app and erase all data?')).toBeFalsy()
+      expect(persistModule.clearPersistedApp).not.toHaveBeenCalled()
+      expect(onReset).not.toHaveBeenCalled()
+    })
+
+    it('Reset App trigger is present identically on both set-password and enter-password screens', () => {
       const { unmount } = render(
         <PasswordGate shape="absent" onUnlock={onUnlock} onReset={onReset} />
       )
-      const setScreenButton = screen.getByRole('button', { name: /reset app/i })
-      expect(setScreenButton.tagName).toBe('BUTTON')
-      expect(setScreenButton.className).toContain('btn-secondary')
+      expect(screen.getByText('Reset App')).toBeTruthy()
       unmount()
 
       render(<PasswordGate shape="encrypted" onUnlock={onUnlock} onReset={onReset} />)
-      const encryptedScreenButton = screen.getByRole('button', { name: /reset app/i })
-      expect(encryptedScreenButton.tagName).toBe('BUTTON')
-      expect(encryptedScreenButton.className).toContain('btn-secondary')
+      expect(screen.getByText('Reset App')).toBeTruthy()
     })
   })
 })
