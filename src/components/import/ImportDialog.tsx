@@ -540,254 +540,265 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
 
         {/* Step 1: Setup */}
         {step === 1 && (
-          <div style={{ maxWidth: '720px' }}>
-            <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-              <label>What are you importing?</label>
-              <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
-                <label className="seg-opt">
-                  <input
-                    type="radio"
-                    name="importDataType"
-                    checked={dataType === 'transactions'}
-                    onChange={() => {
-                      setDataType('transactions')
-                      setEntryMode('upload')
-                    }}
-                  />
-                  <span>Transactions</span>
-                </label>
-                <label className="seg-opt">
-                  <input
-                    type="radio"
-                    name="importDataType"
-                    checked={dataType === 'positions'}
-                    onChange={() => setDataType('positions')}
-                  />
-                  <span>Positions / Holdings</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-              <label>Destination account</label>
-              <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
-                <label className="seg-opt">
-                  <input
-                    type="radio"
-                    name="importAccountMode"
-                    checked={accountMode === 'existing'}
-                    onChange={() => setAccountMode('existing')}
-                  />
-                  <span>Existing account</span>
-                </label>
-                <label className="seg-opt">
-                  <input
-                    type="radio"
-                    name="importAccountMode"
-                    checked={accountMode === 'new'}
-                    onChange={() => setAccountMode('new')}
-                  />
-                  <span>New account</span>
-                </label>
-              </div>
-            </div>
-
-            {accountMode === 'existing' && (
-              <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-                <label>Account</label>
-                <select
-                  className="input"
-                  value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                >
-                  <option value="">-- Select an account --</option>
-                  {state.accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                      {account.accountNumber ? ` • #${account.accountNumber}` : ''}
-                      {' — '}
-                      {TAX_CATEGORY_LABELS[account.taxCategory]}
-                      {' — '}
-                      {account.retirement ? 'Retirement' : 'Non-Retirement'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {accountMode === 'new' && (
-              <>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1fr 1fr',
-                    gap: 'var(--space-3)',
-                    marginBottom: 'var(--space-3)',
-                  }}
-                >
-                  <div className="field">
-                    <label>New account name</label>
-                    <input
-                      type="text"
-                      className="input"
-                      value={newAccountFields.name}
-                      onChange={(e) =>
-                        setNewAccountFields({
-                          ...newAccountFields,
-                          name: e.target.value,
-                        })
-                      }
-                      placeholder="e.g. Fidelity Rollover IRA"
-                    />
+          <>
+            <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-5)' }}>
+              {/* LEFT COLUMN: Destination account */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                  <label>Destination account</label>
+                  <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
+                    <label className="seg-opt">
+                      <input
+                        type="radio"
+                        name="importAccountMode"
+                        checked={accountMode === 'existing'}
+                        onChange={() => setAccountMode('existing')}
+                      />
+                      <span>Existing account</span>
+                    </label>
+                    <label className="seg-opt">
+                      <input
+                        type="radio"
+                        name="importAccountMode"
+                        checked={accountMode === 'new'}
+                        onChange={() => setAccountMode('new')}
+                      />
+                      <span>New account</span>
+                    </label>
                   </div>
-                  <div className="field">
-                    <label>Account number</label>
-                    <input
-                      type="text"
-                      className="input"
-                      value={newAccountFields.number}
-                      onChange={(e) =>
-                        setNewAccountFields({
-                          ...newAccountFields,
-                          number: e.target.value,
-                        })
-                      }
-                      placeholder="e.g. 8842-1190"
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Institution</label>
-                    <InstitutionSelect
-                      value={newAccountFields.institution}
-                      accounts={state.accounts}
-                      onChange={(v) =>
-                        setNewAccountFields({
-                          ...newAccountFields,
-                          institution: v,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Category</label>
+                </div>
+
+                {accountMode === 'existing' && (
+                  <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                    <label>Account</label>
                     <select
                       className="input"
-                      value={newAccountFields.category}
-                      onChange={(e) =>
-                        setNewAccountFields({
-                          ...newAccountFields,
-                          category: e.target.value as TaxCategory,
-                        })
-                      }
+                      value={selectedAccountId}
+                      onChange={(e) => setSelectedAccountId(e.target.value)}
                     >
-                      <option value="taxable">Taxable</option>
-                      <option value="nonTaxable">Non-Taxable</option>
-                      <option value="taxDeferred">Tax-Deferred</option>
+                      <option value="">-- Select an account --</option>
+                      {state.accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                          {account.accountNumber ? ` • #${account.accountNumber}` : ''}
+                          {' — '}
+                          {TAX_CATEGORY_LABELS[account.taxCategory]}
+                          {' — '}
+                          {account.retirement ? 'Retirement' : 'Non-Retirement'}
+                        </option>
+                      ))}
                     </select>
                   </div>
-                </div>
-                <div style={{ marginBottom: 'var(--space-3)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="checkbox"
-                      checked={newAccountFields.retirement}
-                      onChange={(e) =>
-                        setNewAccountFields({
-                          ...newAccountFields,
-                          retirement: e.target.checked,
-                        })
-                      }
-                    />
-                    <strong>Retirement Account</strong>
-                  </label>
-                </div>
-              </>
-            )}
+                )}
 
-            {dataType === 'positions' && (
-              <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-                <label>How would you like to add positions?</label>
-                <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
-                  <label className="seg-opt">
-                    <input
-                      type="radio"
-                      name="importEntryMode"
-                      checked={entryMode === 'upload'}
-                      onChange={() => setEntryMode('upload')}
-                    />
-                    <span>Upload CSV file</span>
-                  </label>
-                  <label className="seg-opt">
-                    <input
-                      type="radio"
-                      name="importEntryMode"
-                      checked={entryMode === 'manual'}
-                      onChange={() => setEntryMode('manual')}
-                    />
-                    <span>Enter manually</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {entryMode === 'upload' && (
-              <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-                <label>CSV file</label>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDrop={handleFileDrop}
-                  onDragOver={handleFileDragOver}
-                  style={{
-                    border: '1px dashed var(--color-divider)',
-                    padding: 'var(--space-6)',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileInputChange}
-                    style={{ display: 'none' }}
-                  />
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    width="22"
-                    height="22"
-                    style={{ color: 'var(--color-accent)', marginBottom: '8px' }}
-                  >
-                    <path d="M12 3v12"></path>
-                    <path d="m7 8 5-5 5 5"></path>
-                    <path d="M5 21h14"></path>
-                  </svg>
-                  <div>{file ? file.name : 'No file selected'}</div>
-                  <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
-                    Drag and drop, or click to browse
-                  </div>
-                  {file && (
-                    <div style={{ margin: 'var(--space-2) 0 0 0', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                      Selected: <strong>{file.name}</strong> ({csvRows.length} rows)
+                {accountMode === 'new' && (
+                  <>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '2fr 1fr 1fr 1fr',
+                        gap: 'var(--space-3)',
+                        marginBottom: 'var(--space-3)',
+                      }}
+                    >
+                      <div className="field">
+                        <label>New account name</label>
+                        <input
+                          type="text"
+                          className="input"
+                          value={newAccountFields.name}
+                          onChange={(e) =>
+                            setNewAccountFields({
+                              ...newAccountFields,
+                              name: e.target.value,
+                            })
+                          }
+                          placeholder="e.g. Fidelity Rollover IRA"
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Account number</label>
+                        <input
+                          type="text"
+                          className="input"
+                          value={newAccountFields.number}
+                          onChange={(e) =>
+                            setNewAccountFields({
+                              ...newAccountFields,
+                              number: e.target.value,
+                            })
+                          }
+                          placeholder="e.g. 8842-1190"
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Institution</label>
+                        <InstitutionSelect
+                          value={newAccountFields.institution}
+                          accounts={state.accounts}
+                          onChange={(v) =>
+                            setNewAccountFields({
+                              ...newAccountFields,
+                              institution: v,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Category</label>
+                        <select
+                          className="input"
+                          value={newAccountFields.category}
+                          onChange={(e) =>
+                            setNewAccountFields({
+                              ...newAccountFields,
+                              category: e.target.value as TaxCategory,
+                            })
+                          }
+                        >
+                          <option value="taxable">Taxable</option>
+                          <option value="nonTaxable">Non-Taxable</option>
+                          <option value="taxDeferred">Tax-Deferred</option>
+                        </select>
+                      </div>
                     </div>
-                  )}
-                </div>
-                {fileError && (
-                  <div style={{ color: '#8a3c2e', fontSize: '12px', marginTop: '6px' }}>{fileError}</div>
+                    <div style={{ marginBottom: 'var(--space-3)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={newAccountFields.retirement}
+                          onChange={(e) =>
+                            setNewAccountFields({
+                              ...newAccountFields,
+                              retirement: e.target.checked,
+                            })
+                          }
+                        />
+                        <strong>Retirement Account</strong>
+                      </label>
+                    </div>
+                  </>
                 )}
               </div>
-            )}
+
+              {/* DIVIDER */}
+              <div style={{ alignSelf: 'stretch', borderLeft: '1px solid var(--color-divider)' }} data-testid="import-step1-divider" />
+
+              {/* RIGHT COLUMN: Data source */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                  <label>What are you importing?</label>
+                  <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
+                    <label className="seg-opt">
+                      <input
+                        type="radio"
+                        name="importDataType"
+                        checked={dataType === 'transactions'}
+                        onChange={() => {
+                          setDataType('transactions')
+                          setEntryMode('upload')
+                        }}
+                      />
+                      <span>Transactions</span>
+                    </label>
+                    <label className="seg-opt">
+                      <input
+                        type="radio"
+                        name="importDataType"
+                        checked={dataType === 'positions'}
+                        onChange={() => setDataType('positions')}
+                      />
+                      <span>Positions / Holdings</span>
+                    </label>
+                  </div>
+                </div>
+
+                {dataType === 'positions' && (
+                  <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                    <label>How would you like to add positions?</label>
+                    <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
+                      <label className="seg-opt">
+                        <input
+                          type="radio"
+                          name="importEntryMode"
+                          checked={entryMode === 'upload'}
+                          onChange={() => setEntryMode('upload')}
+                        />
+                        <span>Upload CSV file</span>
+                      </label>
+                      <label className="seg-opt">
+                        <input
+                          type="radio"
+                          name="importEntryMode"
+                          checked={entryMode === 'manual'}
+                          onChange={() => setEntryMode('manual')}
+                        />
+                        <span>Enter manually</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {entryMode === 'upload' && (
+                  <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                    <label>CSV file</label>
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      onDrop={handleFileDrop}
+                      onDragOver={handleFileDragOver}
+                      style={{
+                        border: '1px dashed var(--color-divider)',
+                        padding: 'var(--space-6)',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".csv"
+                        onChange={handleFileInputChange}
+                        style={{ display: 'none' }}
+                      />
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        width="22"
+                        height="22"
+                        style={{ color: 'var(--color-accent)', marginBottom: '8px' }}
+                      >
+                        <path d="M12 3v12"></path>
+                        <path d="m7 8 5-5 5 5"></path>
+                        <path d="M5 21h14"></path>
+                      </svg>
+                      <div>{file ? file.name : 'No file selected'}</div>
+                      <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
+                        Drag and drop, or click to browse
+                      </div>
+                      {file && (
+                        <div style={{ margin: 'var(--space-2) 0 0 0', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                          Selected: <strong>{file.name}</strong> ({csvRows.length} rows)
+                        </div>
+                      )}
+                    </div>
+                    {fileError && (
+                      <div style={{ color: '#8a3c2e', fontSize: '12px', marginTop: '6px' }}>{fileError}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="dialog-actions">
               <button className="btn btn-primary" onClick={handleContinue} disabled={!isStep1Complete()}>
                 Continue
               </button>
             </div>
-          </div>
+          </>
         )}
 
         {/* Step 2: Review */}
