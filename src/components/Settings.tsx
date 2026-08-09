@@ -277,7 +277,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
 
           {/* Drive section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-            <h2>Google Drive Sync</h2>
+            <h2 style={{ textAlign: 'left' }}>Google Drive Sync</h2>
             
             <div style={{ maxWidth: '460px' }}>
               {/* Google Account subsection */}
@@ -404,7 +404,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
 
           {/* Change Password section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-            <h2>Change Password</h2>
+            <h2 style={{ textAlign: 'left' }}>Change Password</h2>
             <div style={{ maxWidth: '460px' }}>
               <div className="field">
                 <label>Current Password</label>
