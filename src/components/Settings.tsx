@@ -279,89 +279,91 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
             <h2>Google Drive Sync</h2>
             
-            {/* Google Account subsection */}
-            <div style={{ marginBottom: '16px' }}>
-              <h3 style={{ 
-                fontSize: '11px', 
-                fontWeight: 600, 
-                letterSpacing: '0.06em', 
-                color: 'color-mix(in srgb, var(--color-text) 60%, transparent)', 
-                textTransform: 'uppercase',
-                marginBottom: '8px',
-                marginTop: 0
-              }}>
-                Google Account
-              </h3>
-              
-              {!driveReady ? (
-                <button className="btn btn-primary" onClick={handleConnect} disabled={syncing}>
-                  {syncing ? 'Connecting...' : 'Connect Google Account'}
-                </button>
-              ) : (
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between',
-                  padding: '10px 12px',
-                  border: '1px solid var(--color-divider)',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--color-surface)'
+            <div style={{ maxWidth: '460px' }}>
+              {/* Google Account subsection */}
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ 
+                  fontSize: '11px', 
+                  fontWeight: 600, 
+                  letterSpacing: '0.06em', 
+                  color: 'color-mix(in srgb, var(--color-text) 60%, transparent)', 
+                  textTransform: 'uppercase',
+                  marginBottom: '8px',
+                  marginTop: 0
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span 
+                  Google Account
+                </h3>
+                
+                {!driveReady ? (
+                  <button className="btn btn-primary" onClick={handleConnect} disabled={syncing}>
+                    {syncing ? 'Connecting...' : 'Connect Google Account'}
+                  </button>
+                ) : (
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '10px 12px',
+                    border: '1px solid var(--color-divider)',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--color-surface)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span 
+                        style={{ 
+                          width: '8px', 
+                          height: '8px', 
+                          borderRadius: '50%',
+                          backgroundColor: '#2BAE66',
+                          flexShrink: 0
+                        }}
+                      />
+                      <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
+                        {driveEmail || 'Connected'}
+                      </span>
+                    </div>
+                    <span
+                      onClick={handleDisconnect}
                       style={{ 
-                        width: '8px', 
-                        height: '8px', 
-                        borderRadius: '50%',
-                        backgroundColor: '#2BAE66',
-                        flexShrink: 0
+                        fontSize: '12px', 
+                        color: 'var(--color-accent)', 
+                        cursor: 'pointer',
+                        textDecoration: 'none'
                       }}
-                    />
-                    <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
-                      {driveEmail || 'Connected'}
+                    >
+                      Disconnect
                     </span>
                   </div>
-                  <span
-                    onClick={handleDisconnect}
-                    style={{ 
-                      fontSize: '12px', 
-                      color: 'var(--color-accent)', 
-                      cursor: 'pointer',
-                      textDecoration: 'none'
-                    }}
-                  >
-                    Disconnect
-                  </span>
-                </div>
+                )}
+              </div>
+
+              {/* Drive Sync Actions (only when connected) */}
+              {driveReady && (
+                <>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary" onClick={handleSync} disabled={syncing}>
+                      {syncing ? 'Syncing...' : 'Sync Now'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
+                      {syncing ? 'Restoring...' : 'Restore from Drive'}
+                    </button>
+                  </div>
+                  {backupFileId && (
+                    <p style={{ marginTop: '12px', marginBottom: 0 }}>
+                      <a
+                        href={`https://drive.google.com/file/d/${backupFileId}/view`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        View backup in Google Drive
+                      </a>
+                    </p>
+                  )}
+                </>
               )}
             </div>
-
-            {/* Drive Sync Actions (only when connected) */}
-            {driveReady && (
-              <>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button className="btn btn-primary" onClick={handleSync} disabled={syncing}>
-                    {syncing ? 'Syncing...' : 'Sync Now'}
-                  </button>
-                  <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
-                    {syncing ? 'Restoring...' : 'Restore from Drive'}
-                  </button>
-                </div>
-                {backupFileId && (
-                  <p style={{ marginTop: '12px', marginBottom: 0 }}>
-                    <a
-                      href={`https://drive.google.com/file/d/${backupFileId}/view`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View backup in Google Drive
-                    </a>
-                  </p>
-                )}
-              </>
-            )}
             {crossPasswordPrompt && (
-              <div style={{ marginTop: '16px' }}>
+              <div style={{ marginTop: '16px', maxWidth: '460px' }}>
                 <p>This backup was saved with a different password. Enter that password to restore:</p>
                 <div className="field">
                   <label>Backup Password</label>
@@ -403,52 +405,54 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
           {/* Change Password section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
             <h2>Change Password</h2>
-            <div className="field">
-              <label>Current Password</label>
-              <input
-                className="input"
-                type="password"
-                value={currentPasswordInput}
-                onChange={(e) => setCurrentPasswordInput(e.target.value)}
-                autoComplete="current-password"
-              />
+            <div style={{ maxWidth: '460px' }}>
+              <div className="field">
+                <label>Current Password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={currentPasswordInput}
+                  onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+              <div className="field">
+                <label>New Password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="field">
+                <label>Confirm New Password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={confirmNewPasswordInput}
+                  onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={handleChangePassword}
+                disabled={changingPassword}
+              >
+                {changingPassword ? 'Changing Password...' : 'Change Password'}
+              </button>
+              {passwordError && (
+                <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{passwordError}</p>
+              )}
+              {passwordSuccess && (
+                <p style={{ marginTop: '12px', marginBottom: 0 }}>{passwordSuccess}</p>
+              )}
+              {driveSyncWarning && (
+                <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
+              )}
             </div>
-            <div className="field">
-              <label>New Password</label>
-              <input
-                className="input"
-                type="password"
-                value={newPasswordInput}
-                onChange={(e) => setNewPasswordInput(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="field">
-              <label>Confirm New Password</label>
-              <input
-                className="input"
-                type="password"
-                value={confirmNewPasswordInput}
-                onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-            <button
-              className="btn btn-primary"
-              onClick={handleChangePassword}
-              disabled={changingPassword}
-            >
-              {changingPassword ? 'Changing Password...' : 'Change Password'}
-            </button>
-            {passwordError && (
-              <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{passwordError}</p>
-            )}
-            {passwordSuccess && (
-              <p style={{ marginTop: '12px', marginBottom: 0 }}>{passwordSuccess}</p>
-            )}
-            {driveSyncWarning && (
-              <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
-            )}
           </section>
         </>
       )}
