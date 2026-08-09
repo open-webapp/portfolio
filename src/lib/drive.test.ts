@@ -57,6 +57,19 @@ describe('drive.ts Drive-sync wiring', () => {
   })
 
   /**
+   * Test: index.html must load the Google Identity Services script.
+   * drive-sync's gis.ts only POLLS for window.google.accounts.oauth2 to exist
+   * (10s timeout) — it never injects the script itself. Without this tag,
+   * connect fails with "Google Identity Services failed to load in time".
+   */
+  it('index.html loads the Google Identity Services client script', () => {
+    const { readFileSync } = require('fs')
+    const html = readFileSync('/Users/mdoraiswamy/owa/portfolio/index.html', 'utf-8')
+    expect(html).toContain('https://accounts.google.com/gsi/client')
+  })
+
+
+  /**
    * Test 2: syncBackup() writes state as JSON blob without error.
    */
   it('syncBackup() writes state blob without error', async () => {
