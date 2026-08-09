@@ -107,7 +107,7 @@ App
     [tab === 'positions']
       PositionsTable          (state, dispatch)  — groups visiblePositions() into aggregate rows (symbol+effectiveAssetClass+taxCategory+retirement); selectedGroupKey is component-local useState
         ClosedPositionsTable    (state, dispatch)       — when state.showClosed
-      PositionGroupOverlay    (group, accounts, dispatch, onClose)  — when a row is clicked; lists underlying positions sorted by account name
+      PositionGroupOverlay    (group, accounts, dispatch, onClose)  — when a row is clicked; lists underlying positions sorted by account name. Cells for shares, avgCost (Cost Basis), price (Current Price), and taxes (new Taxes column) are independently click-to-edit: click → `<input type="number">` pre-filled with current value → Enter or blur commits via `UPDATE_POSITION` dispatch (patch `{ [field]: parsed number }`), Escape cancels/reverts (no dispatch). Invalid input (negative, non-numeric, or empty) on shares/avgCost/price reverts silently; empty taxes saves as 0 (exception). Computed columns (Amount Invested, Market Value, G/L, G/L%) remain read-only text. No new props added (still `{ group, accounts, dispatch, onClose }`).
         AssetClassOverrideSelect (position, dispatch)  — per underlying position, inside the overlay
     [tab === 'transactions']
       TransactionsTable       (state, dispatch)

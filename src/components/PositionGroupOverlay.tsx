@@ -1,8 +1,99 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { Account } from '../lib/types'
 import type { AggregateRow } from './PositionsTable'
 import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
 import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
+
+function parseNonNegative(raw: string): number | null {
+  if (raw.trim() === '') return null
+  const n = Number(raw)
+  if (Number.isNaN(n) || n < 0) return null
+  return n
+}
+
+function EditableCell({
+  value,
+  positionId,
+  field,
+  dispatch,
+}: {
+  value: number
+  positionId: string
+  field: 'shares' | 'avgCost' | 'price' | 'taxes'
+  dispatch: (action: any) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(String(value))
+
+  const formatDisplay = () => {
+    if (field === 'shares') {
+      return value.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    }
+    return fmtUSD(value)
+  }
+
+  const commit = () => {
+    if (field === 'taxes' && draft.trim() === '') {
+      dispatch({
+        type: 'UPDATE_POSITION',
+        positionId,
+        patch: { taxes: 0 },
+      })
+      setIsEditing(false)
+      return
+    }
+
+    const parsed = parseNonNegative(draft)
+    if (parsed === null) {
+      setIsEditing(false)
+      return
+    }
+
+    dispatch({
+      type: 'UPDATE_POSITION',
+      positionId,
+      patch: { [field]: parsed },
+    })
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      commit()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        type="number"
+        className="input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        autoFocus
+        style={{ width: '100%' }}
+      />
+    )
+  }
+
+  return (
+    <span
+      onClick={() => {
+        setDraft(String(value))
+        setIsEditing(true)
+      }}
+    >
+      {formatDisplay()}
+    </span>
+  )
+}
 
 export interface PositionGroupOverlayProps {
   group: AggregateRow
@@ -56,6 +147,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
       avgCostStr: fmtUSD(computed.avgCost),
       costBasisStr: fmtUSD(computed.costBasis),
       priceStr: fmtUSD(computed.price),
+      taxesStr: fmtUSD(computed.taxes ?? 0),
       marketValueStr: fmtUSD(computed.marketValue),
       accountName:
         accounts.find((ac) => ac.id === p.accountId)?.name?.trim() ||
@@ -125,6 +217,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                 <th style={{ textAlign: 'right' }}>Shares</th>
                 <th style={{ textAlign: 'right' }}>Cost Basis</th>
                 <th style={{ textAlign: 'right' }}>Current Price</th>
+                <th style={{ textAlign: 'right' }}>Taxes</th>
                 <th style={{ textAlign: 'right' }}>Amount Invested</th>
                 <th style={{ textAlign: 'right' }}>Market Value</th>
                 <th style={{ textAlign: 'right' }}>G/L</th>
@@ -138,9 +231,38 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                   <td>
                     <div style={{ fontWeight: '600' }}>{p.accountName}</div>
                   </td>
-                  <td style={{ textAlign: 'right' }}>{p.sharesStr}</td>
-                  <td style={{ textAlign: 'right' }}>{p.avgCostStr}</td>
-                  <td style={{ textAlign: 'right' }}>{p.priceStr}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <EditableCell
+                      value={p.shares}
+                      positionId={p.id}
+                      field="shares"
+                      dispatch={dispatch}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <EditableCell
+                      value={p.avgCost}
+                      positionId={p.id}
+                      field="avgCost"
+                      dispatch={dispatch}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <EditableCell
+                      value={p.price}
+                      positionId={p.id}
+                      field="price"
+                      dispatch={dispatch}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <EditableCell
+                      value={p.taxes ?? 0}
+                      positionId={p.id}
+                      field="taxes"
+                      dispatch={dispatch}
+                    />
+                  </td>
                   <td style={{ textAlign: 'right' }}>{p.costBasisStr}</td>
                   <td style={{ textAlign: 'right', fontWeight: '600' }}>{p.marketValueStr}</td>
                   <td style={{ textAlign: 'right', color: p.glColor, fontWeight: '600' }}>
