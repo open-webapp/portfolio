@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
 import { initialState } from './lib/state'
@@ -6,7 +6,12 @@ import { appReducer } from './lib/reducer'
 import { importPositions } from './lib/positionsImport'
 import { importTransactions } from './lib/transactionsImport'
 import { loadPersistedApp } from './lib/persist'
+import { drive } from './lib/drive'
 import App, { processPendingImport } from './App'
+
+vi.mock('./lib/drive', () => ({
+  drive: { activate: vi.fn(() => vi.fn()) },
+}))
 
 afterEach(cleanup)
 
@@ -490,5 +495,27 @@ describe('persistence on unmount within the debounce window', () => {
       const persisted = await loadPersistedApp()
       expect(persisted?.showClosed).toBe(true)
     })
+  })
+})
+
+describe('Drive-sync activation', () => {
+  it('calls drive.activate() on mount and disposes it on unmount, so the cached Drive token is silently warmed up instead of going stale between settings-opens/syncs', async () => {
+    const activateMock = vi.mocked(drive.activate)
+    const disposeSpy = vi.fn()
+    activateMock.mockReturnValue(disposeSpy)
+    activateMock.mockClear()
+
+    const { unmount } = render(<App />)
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
+    })
+
+    expect(activateMock).toHaveBeenCalledTimes(1)
+    expect(disposeSpy).not.toHaveBeenCalled()
+
+    unmount()
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1)
   })
 })

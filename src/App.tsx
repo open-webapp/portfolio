@@ -12,6 +12,7 @@ import { TransactionsTable } from './components/TransactionsTable'
 import { SettingsPage } from './components/Settings'
 import { ImportDialog } from './components/import/ImportDialog'
 import type { ImportSession } from './lib/types'
+import { drive } from './lib/drive'
 import './App.css'
 
 /**
@@ -104,6 +105,19 @@ function App() {
     }
 
     hydrate()
+  }, [])
+
+  // Drive-sync boot wiring: activate() attaches the visibility/pageshow
+  // listeners that silently warm up the cached Drive token in the
+  // background before it goes stale. Without this, drive.ts's
+  // ensureFreshConnection() only ever finds an expired token and falls
+  // back to the fully interactive connect flow, popping the Google auth
+  // window on every settings-open/sync instead of reusing the stored one.
+  useEffect(() => {
+    const dispose = drive.activate()
+    return () => {
+      dispose()
+    }
   }, [])
 
   useEffect(() => {
