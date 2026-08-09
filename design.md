@@ -20,17 +20,17 @@ src/
     reducer.ts               # appReducer(state, action) dispatch table
     persist.ts               # IndexedDB load/save (single blob)
     drive.ts                 # drive-sync singleton + syncBackup/restoreBackup
-    csv.ts                    # Papa.parse wrapper: parseCsvFile
-    mappingProfiles.ts        # profile CRUD + applyMapping + validateProfile
-    accounts.ts               # account resolution / first-seen / finalizeNewAccount
+    csv.ts                    # Papa.parse wrapper: parseCsvFile, parseCsvNumber
+    accounts.ts               # empty stub retained for future use
     positionsImport.ts        # replace + closed-position diff + snapshot upsert
     transactionsImport.ts     # dedup-by-natural-key insert
     computations.ts           # computePosition, allocationByAssetClass, fmtUSD, fmtPct
     sort.ts                   # generic sortBy<T>
     selectors.ts               # visiblePositions/visibleTransactions/summaryCards/etc.
+    importPreview.ts           # applyFieldMap / validatePreviewRow / isReviewValid
     seed.ts                    # uid(prefix)
   components/
-    Nav.tsx                    # category tabs, retirement tags, range select
+    Nav.tsx                    # nav-brand, category seg tabs, range select, settings gear
     SummaryCards.tsx
     PerformanceChart.tsx        # SVG polyline
     AllocationChart.tsx         # bar list
@@ -38,10 +38,9 @@ src/
     ClosedPositionsTable.tsx
     TransactionsTable.tsx
     AssetClassOverrideSelect.tsx
-    Settings.tsx                  # 4 sections: Drive backup / Import Sessions / Accounts / Saved Mappings
+    Settings.tsx                  # 3 sections: Drive backup / Import Sessions / Accounts
     import/
-      ImportDialog.tsx          # unified positions + transactions dialog
-      MappingProfileEditor.tsx   # field mapping UI (reused by both import kinds)
+      ImportDialog.tsx          # 2-step positions/transactions import wizard (Setup → Review)
       index.ts
 plans/                        # historical planning docs, superseded by this file
 portfolio-dashboard-design/   # pixel-reference prototype (.dc.html) — not shipped code
@@ -58,15 +57,14 @@ Single `useReducer(appReducer, initialState())` in `App.tsx`. No Redux/Zustand/C
 
 ```ts
 interface AppState {
-  // Data collections (7)
+  // Data collections (6)
   accounts: Account[]
   positions: Position[]
   closedPositions: ClosedPosition[]
   transactions: Transaction[]
   snapshots: PortfolioSnapshot[]
-  mappingProfiles: MappingProfile[]
   importSessions: ImportSession[]
-  
+
   // UI state
   category: TaxCategory | 'all'
   range: string  // '6m' | '1y' | 'ytd' | 'all'
@@ -80,53 +78,53 @@ interface AppState {
   txTypeFilter: string
   txSearch: string
   showClosed: boolean
-  pendingImport?: { kind, profileId, rows, fileName }
 }
 ```
 
-- `src/lib/state.ts` — `AppState` interface (7 data collections + 8 UI filter fields) and one pure `stateAction(state, ...): AppState` helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `deleteClosedPosition`, `setCategory`, `setRange`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setRetirementFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `addImportSession`, `deleteImportSession`).
-- `src/lib/reducer.ts` — `appReducer(state, action)` switches on `action.type` (string) and calls the matching `state.ts` helper, or the CRUD logic in `accounts.ts`/`positionsImport.ts`/`transactionsImport.ts`. `default: return state`. Special case `__SET_STATE` replaces the whole state (used by hydration).
+- `src/lib/state.ts` — `AppState` interface (6 data collections + 12 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `deleteClosedPosition`, `setCategory`, `setRange`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setRetirementFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `addImportSession`, `deleteImportSession`).
+- `src/lib/reducer.ts` — `appReducer(state, action)` switches on `action.type` (string) and calls the matching `state.ts` helper, or the import logic in `positionsImport.ts`/`transactionsImport.ts`. `default: return state`. Special case `__SET_STATE` replaces the whole state (used by hydration).
 - Components never mutate state directly; they `dispatch({ type: '...', ...payload })`.
 
 ### Action types (reducer.ts)
 
-`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_RANGE`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `ADD_MAPPING_PROFILE`, `UPDATE_MAPPING_PROFILE`, `DELETE_MAPPING_PROFILE`, `ADD_IMPORT_SESSION`, `DELETE_IMPORT_SESSION`, `SET_VIEW`.
+`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_RANGE`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `ADD_IMPORT_SESSION`, `DELETE_IMPORT_SESSION`, `SET_VIEW`.
 
 ## Component tree
 
 ```
 App
-  ImportDialog                (state, dispatch)  — rendered above all tabs
-    MappingProfileEditor      (kind, csvHeaders, existingProfile?, onSave, onCancel)
   [view === 'dashboard']
-    Nav                       (state, dispatch)
-    SummaryCards              (state)
-    PerformanceChart          (state)
-    AllocationChart           (state)
+    Nav                       (state, dispatch)  — nav-brand 'Ledger' + category seg tabs + range select + settings gear
+    portfolio header row      (inline in App)    — kicker 'Portfolio' + <h1>Ledger</h1> + retirement .tag pills
+    SummaryCards              (state)            — cards in rows of 4 (.card.blueprint.elev-sm); 5th card 'Total Taxes Paid' on its own row
+    charts row                (inline in App)    — grid 2fr 1fr (Performance wider than Allocation)
+      PerformanceChart        (state)
+      AllocationChart         (state)
+    tabs row                  (inline in App)    — flex space-between: Positions/Transactions .seg + Import CSV trigger
+      ImportDialog            (state, dispatch)  — renders the trigger button; open state is component-local (isOpen)
     [tab === 'positions']
       PositionsTable          (state, dispatch)
         AssetClassOverrideSelect (position, dispatch)  — per row
-        ClosedPositionsTable  (state, dispatch)       — when state.showClosed
+        ClosedPositionsTable    (state, dispatch)       — when state.showClosed
     [tab === 'transactions']
       TransactionsTable       (state, dispatch)
   [view === 'settings']
-    SettingsPage              (state, dispatch)  — 4 sections: Drive backup / Import Sessions / Accounts / Saved Mappings (modal `MappingProfileEditor` on edit)
+    SettingsPage              (state, dispatch)  — 3 sections: Drive backup / Import Sessions / Accounts
 ```
 
 Props convention: presentational components take `{ state: AppState, dispatch }`; a few (`AssetClassOverrideSelect`) take a narrower prop (`position`) plus `dispatch`. `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
 
 ## Data flow
 
-**CSV import** — synchronous 4-step wizard within `ImportDialog` (positions or transactions):
-1. **Pick account**: `ImportDialog` opens; user selects an `Account` (existing or creates new via inline form) or resolves new account number to account details.
-2. **Map columns**: User selects existing `MappingProfile` (filtered by `kind`: 'positions' or 'transactions') or creates one via `MappingProfileEditor` → `createProfile`/`updateProfile` → `validateProfile` → `ADD_MAPPING_PROFILE`/`UPDATE_MAPPING_PROFILE` dispatched; `parseCsvFile(file)` (`csv.ts`) yields `{ headers, rows }`.
-3. **Preview**: `applyMapping(row, profile)` renames each CSV row to internal field names; dialog displays matched columns and a preview table of transformed data.
-4. **Commit**: User clicks "Import"; dialog calls `importPositions()` (replaces positions, creates closed positions, upserts snapshot) or `importTransactions()` (deduplicates, inserts) for the selected account and mapped rows, then dispatches `IMPORT_POSITIONS` or `IMPORT_TRANSACTIONS`, closes itself, and returns to tab view.
-5. **Session logging** (`App.tsx` `pendingImport` effect): After state merge completes, `processPendingImport(state, pendingImport)` generates a fresh `ImportSession` (id via `uid('import')`), tags all newly-created rows with that `importSessionId`, logs the session (fileName, kind, accountIds, rowCount) to `state.importSessions`, and dispatches `ADD_IMPORT_SESSION`.
+**CSV import** — synchronous 2-step wizard inside `ImportDialog` (positions or transactions). Dialog-open state is component-local (`isOpen`), not in `AppState`.
+1. **Setup** (`step === 1`): pick data type (`.seg`: Transactions / Positions — default Positions), destination account (existing `<select>` or new-account form: name, number, category, retirement checkbox), and a `.csv` file — `parseCsvFile` (`csv.ts`) yields `{ headers, rows }` immediately. Continue (enabled once the account is resolved and ≥1 row parsed) advances to Review.
+2. **Review** (`step === 2`): `headers` drive one mapping `<select>` per field — `{ csvColumn: targetField }`, values are internal field names — in required-then-optional order; `applyFieldMap(row, fieldMap)` renames each CSV row to internal field names; `<input>` cells overlay user edits (`importEdits[rowIdx]`); `validatePreviewRow(dataType, row)` flags required-missing cells (honoring avgCost/purchaseAmount and price/marketValue alternatives); `isReviewValid(dataType, fieldMap)` gates the primary button. `applyFieldMap`/`validatePreviewRow`/`isReviewValid` come from `importPreview.ts`.
+3. **Commit**: primary button dispatches `ADD_ACCOUNT` first when new-account mode (capturing the new account id), then `IMPORT_POSITIONS` (replaces positions, creates closed positions, upserts snapshot) or `IMPORT_TRANSACTIONS` (dedups, inserts) with `accountId`, the valid user-edited rows, and a fresh `uid('import')` `importSessionId` tagging every created row. "Import complete" renders in the same step-2 slot; "Done" closes and resets local state.
+4. **Session logging**: `processPendingImport(state, kind, fileName, importSessionId, affectedAccountIds)` (App.tsx, exported pure helper, covered by App.test.tsx) counts rows tagged with `importSessionId`, builds an `ImportSession`, and prepends it via `addImportSession` (capped at 50, newest-first).
 
 All steps are **synchronous**; no async queue beyond the debounce-save to IndexedDB.
 
-**Persistence**: `App.tsx` calls `loadPersistedApp()` (`persist.ts`) once on mount via `dispatch({ type: '__SET_STATE', newState })`, gated by an `isHydrated` flag (renders "Loading dashboard..." until then). Every state change after hydration schedules `savePersistedApp(state)` 500ms later (debounced via `setTimeout` in a `useEffect`, cleared/reset on each state change).
+**Persistence**: `App.tsx` calls `loadPersistedApp()` (`persist.ts`) once on mount via `dispatch({ type: '__SET_STATE', newState })`, gated by an `isHydrated` flag (renders "Loading dashboard..." until then). Every state change after hydration schedules `savePersistedApp(state)` 500ms later (debounced via `setTimeout` in a `useEffect`, cleared/reset on each state change). A separate effect flushes the pending save on `pagehide`, `visibilitychange → hidden`, and unmount (via a ref holding the latest state) so a refresh/reload within the debounce window never loses the newest state (e.g. a just-finished import). `savePersistedApp` rethrows IndexedDB open/write failures so callers' `.catch` fires (no silent success).
 
 **Drive sync**: `drive.ts` exports a `drive` singleton (`createDriveSync({ appId: 'portfolio', folderPath: ['OpenWebApp','Portfolio'] })`) plus `syncBackup(state)`/`restoreBackup()`, both operating on `drive.project('app')`. The `SettingsPage` component provides UI affordances to sync and disconnect.
 
@@ -134,14 +132,15 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 - `visiblePositions(state)` — category → retirement filter → asset-class filter → search (symbol/name, case-insensitive) → `sortBy(state.sortKey, state.sortDir)`.
 - `visibleTransactions(state)` — category filter → type filter → search (symbol/date) → always sorted by `date desc` (not user-sortable).
 - `totalValueSeries(state, accountIds?)` — groups `PortfolioSnapshot[]` by `date`, sums `value`; defaults to accounts in the selected category if `accountIds` omitted.
-- `summaryCards(state)` — Total Value / Day Change / Total Gain-Loss / Cost Basis, computed live from `positions` and `totalValueSeries` (no stored placeholder).
+- `totalValueSeriesInRange(state, range)` — drops series points before a cutoff derived from `range` (`6m`/`1y`/`ytd`/`all`).
+- `summaryCards(state)` — Total Value / Day Change / Total Gain-Loss / Amount Invested / Total Taxes Paid, computed live from `positions` and `totalValueSeries` (no stored placeholder).
 - `allocationBars(state)` — wraps `computations.allocationByAssetClass`, respecting `assetClassManualOverride`.
-- `performanceLinePoints(state, range)` — builds an SVG `points` string from `totalValueSeries`; `range` param is accepted but **not yet used to filter** the series (see product-behavior.md).
+- `performanceLinePoints(state, range)` — builds an SVG `points` string from `totalValueSeriesInRange(state, range)`; a single-point series renders centered.
 
 ## Key Invariants
 
 - **Import session tagging**: Every `Position`, `ClosedPosition`, `Transaction`, and `PortfolioSnapshot` carries an `importSessionId` field linking it back to the `ImportSession` that created it. This enables session-based deletion and audit trails.
-- **Forward-only session deletion**: `DeleteImportSession` removes the session record but does NOT recursively delete its tagged rows (data remains orphaned, unlinked to any session). This preserves imported data while allowing session metadata cleanup.
+- **Session cascade delete**: `DELETE_IMPORT_SESSION` removes the session record AND all rows tagged with its `importSessionId` (positions, closed positions, transactions, snapshots). The Settings delete dialog states the row count that will be removed.
 - **Account cascade delete**: Deleting an `Account` cascade-deletes all its `Position`s, `ClosedPosition`s, `Transaction`s, `PortfolioSnapshot`s, and `ImportSession`s (those with the account in `importSession.accountIds`).
 
 ## Design patterns
@@ -150,8 +149,4 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 - **Category filter is compositional**: every selector re-derives "accounts in category" via a local `getAccountsForCategory`/inline filter rather than storing a filtered account list.
 - **Effective asset class**: anywhere a position's asset class is displayed or grouped, code reads `p.assetClassManualOverride || p.assetClass`, never `p.assetClass` alone.
 - **Natural-key upsert**: `positionsImport.ts` (snapshot) and `transactionsImport.ts` (transaction) both dedup by recomputing a string key and filtering pre-existing entries out before appending, rather than mutating in place.
-- **Styling**: components use inline `style={{ ... }}` extensively alongside the design-system classes (`.card.blueprint.elev-sm`, `.tag`/`.tag-accent`, `.seg`/`.seg-opt`, `.table`, `.nav`, `.field`/`.input`) — this is a live deviation from the CLAUDE.md styling rule ("Components consume the existing class vocabulary ... rather than inline styles"); most layout/spacing (flex, gap, padding, modal positioning) is inline today, only the visual vocabulary (colors, card chrome, tags, table borders) comes from `styles.css` classes.
-
-## Known gaps vs. plan (`plans/portfolio-dashboard-v1.md`)
-
-- `performanceLinePoints` ignores the `range` argument — the Performance chart always plots the full snapshot history regardless of the Nav's date-range select.
+- **Styling**: components use inline `style={{ ... }}` extensively alongside the design-system classes (`.card.blueprint.elev-sm`, `.tag`/`.tag-accent`, `.seg`/`.seg-opt`, `.table`, `.nav`, `.field`/`.input`, `.dialog-backdrop`/`.dialog`) — this is a live deviation from the CLAUDE.md styling rule ("Components consume the existing class vocabulary ... rather than inline styles"); most layout/spacing (flex, gap, padding, modal positioning) is inline today, only the visual vocabulary (colors, card chrome, tags, table borders) comes from `styles.css` classes.

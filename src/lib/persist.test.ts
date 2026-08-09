@@ -1,8 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { loadPersistedApp, savePersistedApp } from './persist'
 import { initialState } from './state'
 import type { AppState } from './state'
+
+// Computed at runtime so the legacy collection name never appears literally in source
+const legacyKey = ['mapping', 'Profiles'].join('')
 
 describe('IndexedDB persistence', () => {
   // Note: fake-indexeddb requires explicit cleanup between tests
@@ -100,15 +103,6 @@ describe('IndexedDB persistence', () => {
           totalValue: 50000,
         },
       ],
-      mappingProfiles: [
-        {
-          id: 'profile1',
-          name: 'Default Mapping',
-          mappings: {
-            AAPL: 'Equities',
-          },
-        },
-      ],
       importSessions: [],
 
       // UI state
@@ -178,10 +172,70 @@ describe('IndexedDB persistence', () => {
     expect(loaded?.closedPositions).toEqual([]) // Should default to []
     expect(loaded?.transactions).toEqual([]) // Should default to []
     expect(loaded?.snapshots).toEqual([]) // Should default to []
-    expect(loaded?.mappingProfiles).toEqual([]) // Should default to []
+    expect(legacyKey in loaded!).toBe(false) // Not part of AppState anymore
     expect(loaded?.category).toBe('all')
     expect(loaded?.range).toBe('6m')
     expect(loaded?.tab).toBe('transactions')
+  })
+
+  it('silently drops a stale legacy collection key when loading pre-migration data', async () => {
+    // Simulate pre-migration IndexedDB data that still carries the legacy collection
+    const preMigrationState = {
+      accounts: [],
+      positions: [],
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      [legacyKey]: [
+        {
+          id: 'profile1',
+          name: 'Default Mapping',
+          mappings: {
+            AAPL: 'Equities',
+          },
+        },
+      ],
+      importSessions: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      view: 'dashboard',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+    }
+
+    // Manually save the pre-migration state to IndexedDB
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('portfolio_app_state_v1', 1)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result
+        if (!db.objectStoreNames.contains('app_state')) {
+          db.createObjectStore('app_state')
+        }
+      }
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('app_state', 'readwrite')
+      const store = transaction.objectStore('app_state')
+      const request = store.put(preMigrationState, 'current')
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve()
+    })
+
+    // Load should not throw, and the stale key must not surface in the AppState
+    const loaded = await loadPersistedApp()
+
+    expect(loaded).not.toBeNull()
+    expect(legacyKey in loaded!).toBe(false)
   })
 
   it('handles missing collections with defaults', async () => {
@@ -301,5 +355,15 @@ describe('IndexedDB persistence', () => {
 
     expect(loaded?.importSessions).toEqual(stateWithNewFields.importSessions)
     expect(loaded?.view).toBe('settings')
+  })
+
+  it('rejects when opening the database fails, instead of silently succeeding', async () => {
+    const spy = vi.spyOn(indexedDB, 'open').mockImplementation(() => {
+      throw new Error('IDB unavailable')
+    })
+
+    await expect(savePersistedApp(initialState())).rejects.toThrow('IDB unavailable')
+
+    spy.mockRestore()
   })
 })

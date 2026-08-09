@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/industry-d6813734-98aa-45d9-91f2-80a53a291d8e/styles.css"></link>
+  <link rel="stylesheet" href="styles.css"></link>
+  <script src="_ds/industry-d6813734-98aa-45d9-91f2-80a53a291d8e/_ds_bundle.js"></script>
+</helmet>
+
+<div style="min-height:100vh; background:var(--color-bg); color:var(--color-text); font-family:var(--font-body);">
+
+  <!-- Nav -->
+  <div class="nav" style="border-bottom:1px solid var(--color-divider); background:var(--color-surface); padding:var(--space-3) var(--space-6);">
+    <div class="nav-brand">Ledger</div>
+    <div class="seg">
+      <sc-for list="{{ categoryTabs }}" as="a" hint-placeholder-count="4">
+        <label class="seg-opt" onClick="{{ a.onClick }}">
+          <input type="radio" name="category" checked="{{ a.active }}" readOnly="{{ true }}"></input>
+          <span>{{ a.label }}</span>
+        </label>
+      </sc-for>
+    </div>
+    <select class="input" onChange="{{ onRangeChange }}" value="{{ range }}" style="width:auto; margin-left:var(--space-4);">
+      <option value="1M">1 Month</option>
+      <option value="3M">3 Months</option>
+      <option value="1Y">1 Year</option>
+      <option value="ALL">All Time</option>
+    </select>
+  </div>
+
+  <div style="padding:var(--space-8) var(--space-6);">
+
+    <div style="margin-bottom:var(--space-6); display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:var(--space-3);">
+      <div>
+        <div class="text-muted" style="font-size:11px; letter-spacing:0.08em; text-transform:uppercase;">Portfolio</div>
+        <h1 style="margin:0;">{{ portfolioName }}</h1>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <sc-for list="{{ retirementFilters }}" as="f" hint-placeholder-count="3">
+          <span onClick="{{ f.onClick }}" class="tag {{ f.tagClass }}" style="cursor:pointer;">{{ f.label }}</span>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:var(--space-4); margin-bottom:var(--space-6);">
+      <sc-for list="{{ summaryCards }}" as="s" hint-placeholder-count="4">
+        <div class="card blueprint elev-sm">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="card-kicker">{{ s.label }}</div>
+          <div style="font-family:var(--font-heading); font-size:28px; font-weight:600; color:{{ s.color }};">{{ s.value }}</div>
+          <sc-if value="{{ s.sub }}" hint-placeholder-val="{{ false }}">
+            <div class="card-meta" style="color:{{ s.color }};">{{ s.sub }}</div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- Chart row -->
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:var(--space-4); margin-bottom:var(--space-6);">
+      <div class="card blueprint elev-sm">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div class="card-title" style="margin-bottom:var(--space-3);">Performance</div>
+        <svg viewBox="0 0 600 170" style="width:100%; height:170px; display:block;">
+          <line x1="0" y1="42.5" x2="600" y2="42.5" stroke="var(--color-divider)" stroke-width="1"></line>
+          <line x1="0" y1="85" x2="600" y2="85" stroke="var(--color-divider)" stroke-width="1"></line>
+          <line x1="0" y1="127.5" x2="600" y2="127.5" stroke="var(--color-divider)" stroke-width="1"></line>
+          <polyline points="{{ linePoints }}" fill="none" stroke="var(--color-accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+        </svg>
+        <div style="display:flex; justify-content:space-between; font-size:11px;" class="text-muted">
+          <span>{{ chartStartLabel }}</span>
+          <span>{{ chartEndLabel }}</span>
+        </div>
+      </div>
+
+      <div class="card blueprint elev-sm">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div class="card-title" style="margin-bottom:var(--space-3);">Allocation</div>
+        <sc-for list="{{ allocationBars }}" as="a" hint-placeholder-count="4">
+          <div style="margin-bottom:var(--space-2);">
+            <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:3px;">
+              <span>{{ a.label }}</span>
+              <span class="text-muted">{{ a.pctStr }}</span>
+            </div>
+            <div style="height:8px; border:1px solid var(--color-divider); background:transparent;">
+              <div style="height:100%; width:{{ a.pct }}%; background:var(--color-accent);"></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-4); flex-wrap:wrap;">
+      <div class="seg">
+        <sc-for list="{{ mainTabs }}" as="t" hint-placeholder-count="2">
+          <label class="seg-opt" onClick="{{ t.onClick }}">
+            <input type="radio" name="maintab" checked="{{ t.active }}" readOnly="{{ true }}"></input>
+            <span>{{ t.label }}</span>
+          </label>
+        </sc-for>
+      </div>
+      <button type="button" class="btn btn-secondary blueprint" onClick="{{ openImport }}">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="margin-right:6px; vertical-align:-2px;"><path d="M12 3v12"></path><path d="m7 8 5-5 5 5"></path><path d="M5 21h14"></path></svg>
+        Import CSV
+      </button>
+    </div>
+
+    <!-- CSV Import Dialog -->
+    <sc-if value="{{ importOpen }}" hint-placeholder-val="{{ false }}">
+      <div class="dialog-backdrop" style="z-index:1000;">
+        <div class="dialog blueprint" style="width:min(96vw, 1400px); max-width:96vw; max-height:88vh; overflow:auto; background:var(--color-bg); box-shadow:var(--shadow-lg);">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="dialog-title">Import from CSV</div>
+            <button type="button" onClick="{{ closeImport }}" aria-label="Close" style="border:none; background:none; cursor:pointer; color:var(--color-text); opacity:0.6; padding:4px; line-height:0;" style-hover="opacity:1; color:var(--color-accent-700);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+          </div>
+
+          <div style="display:flex; gap:var(--space-4); margin-bottom:var(--space-5); flex-wrap:wrap;">
+            <sc-for list="{{ importSteps }}" as="s" hint-placeholder-count="4">
+              <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+                <span class="tag {{ s.tagClass }}">{{ s.num }}</span>
+                <span class="{{ s.textClass }}">{{ s.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div class="dialog-body" style="text-align:left;">
+
+            <!-- Step 1: Setup -->
+            <sc-if value="{{ isStep1 }}" hint-placeholder-val="{{ true }}">
+              <div class="field">
+                <label>What are you importing?</label>
+                <div class="seg">
+                  <sc-for list="{{ dataTypeOptions }}" as="o" hint-placeholder-count="2">
+                    <label class="seg-opt" onClick="{{ o.onClick }}">
+                      <input type="radio" name="importDataType" checked="{{ o.active }}" readOnly="{{ true }}"></input>
+                      <span>{{ o.label }}</span>
+                    </label>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div class="field">
+                <label>Destination account</label>
+                <div class="seg">
+                  <sc-for list="{{ accountModeOptions }}" as="o" hint-placeholder-count="2">
+                    <label class="seg-opt" onClick="{{ o.onClick }}">
+                      <input type="radio" name="importAccountMode" checked="{{ o.active }}" readOnly="{{ true }}"></input>
+                      <span>{{ o.label }}</span>
+                    </label>
+                  </sc-for>
+                </div>
+              </div>
+
+              <sc-if value="{{ isExistingAccountMode }}" hint-placeholder-val="{{ true }}">
+                <div class="field">
+                  <label>Account</label>
+                  <select class="input" value="{{ importAccountKey }}" onChange="{{ onImportAccountKeyChange }}">
+                    <sc-for list="{{ accountOptions }}" as="a" hint-placeholder-count="4">
+                      <option value="{{ a.key }}">{{ a.label }}</option>
+                    </sc-for>
+                  </select>
+                </div>
+              </sc-if>
+              <sc-if value="{{ isNewAccountMode }}" hint-placeholder-val="{{ false }}">
+                <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:var(--space-3);">
+                  <div class="field">
+                    <label>New account name</label>
+                    <input class="input" placeholder="e.g. Fidelity Rollover IRA" value="{{ importNewAccountName }}" onChange="{{ onImportNewAccountNameChange }}"></input>
+                  </div>
+                  <div class="field">
+                    <label>Account number</label>
+                    <input class="input" placeholder="e.g. 8842-1190" value="{{ importNewAccountNumber }}" onChange="{{ onImportNewAccountNumberChange }}"></input>
+                  </div>
+                  <div class="field">
+                    <label>Category</label>
+                    <select class="input" value="{{ importNewAccountCategory }}" onChange="{{ onImportNewAccountCategoryChange }}">
+                      <option value="taxable">Taxable</option>
+                      <option value="nonTaxable">Non-Taxable</option>
+                      <option value="taxDeferred">Tax-Deferred</option>
+                    </select>
+                  </div>
+                </div>
+              </sc-if>
+
+              <div class="field">
+                <label>CSV file</label>
+                <div onClick="{{ onDropZoneClick }}" onDrop="{{ onFileDrop }}" onDragOver="{{ onDragOver }}" style="border:1px dashed var(--color-divider); padding:var(--space-6); text-align:center; cursor:pointer;">
+                  <input ref="{{ fileInputRef }}" type="file" accept=".csv" style="display:none;" onChange="{{ onFileChange }}"></input>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="22" height="22" style="color:var(--color-accent); margin-bottom:8px;"><path d="M12 3v12"></path><path d="m7 8 5-5 5 5"></path><path d="M5 21h14"></path></svg>
+                  <div>{{ importFileLabel }}</div>
+                  <div class="text-muted" style="font-size:11px; margin-top:4px;">Drag and drop, or click to browse</div>
+                </div>
+                <sc-if value="{{ importFileError }}" hint-placeholder-val="{{ false }}">
+                  <div style="color:#8a3c2e; font-size:12px; margin-top:6px;">{{ importFileError }}</div>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <!-- Step 2: Map + review, then import -->
+            <sc-if value="{{ isStep2 }}" hint-placeholder-val="{{ false }}">
+              <sc-if value="{{ importDone }}" hint-placeholder-val="{{ false }}">
+                <div style="text-align:center; padding:var(--space-6) 0;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="40" height="40" style="color:var(--color-accent-700);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><path d="m9 11 3 3L22 4"></path></svg>
+                  <div class="card-title" style="margin:var(--space-3) 0 4px;">Import complete</div>
+                  <div class="text-muted">{{ importResultSummary }}</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ isStep2Review }}" hint-placeholder-val="{{ true }}">
+                <div class="text-muted" style="font-size:12px; margin-bottom:var(--space-3);">Importing into <strong style="color:var(--color-text);">{{ importDestinationLabel }}</strong> &middot; {{ importCategoryLabel }}</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-3); flex-wrap:wrap; gap:6px;">
+                  <div class="text-muted" style="font-size:12px;">Pick the file's column for each field below. {{ importRowCount }} row(s) detected &middot; {{ importValidCount }} valid. Fields marked * are required.</div>
+                  <sc-if value="{{ hasImportErrors }}" hint-placeholder-val="{{ false }}">
+                    <span class="tag tag-outline">{{ importErrorCount }} row(s) need fixing before you can continue</span>
+                  </sc-if>
+                </div>
+                <datalist id="import-type-options"><option value="Buy"></option><option value="Sell"></option><option value="Dividend"></option></datalist>
+                <div style="max-height:420px; overflow:auto; border:1px solid var(--color-divider); width:100%;">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <sc-for list="{{ reviewCols }}" as="c" hint-placeholder-count="6">
+                          <th style="white-space:nowrap; vertical-align:top; min-width:150px;">
+                            <div>{{ c.label }}{{ c.requiredMark }}</div>
+                            <select class="input" style="margin-top:6px; font-weight:400; text-transform:none; letter-spacing:normal;" value="{{ c.mapValue }}" onChange="{{ c.onMapChange }}">
+                              <option value="-1">\u2014 Not mapped \u2014</option>
+                              <sc-for list="{{ c.headerOptions }}" as="h" hint-placeholder-count="4">
+                                <option value="{{ h.value }}">{{ h.label }}</option>
+                              </sc-for>
+                            </select>
+                            <sc-if value="{{ c.hint }}" hint-placeholder-val="{{ false }}">
+                              <div class="text-muted" style="font-size:10px; font-weight:400; text-transform:none; letter-spacing:normal; margin-top:4px; white-space:normal;">{{ c.hint }}</div>
+                            </sc-if>
+                          </th>
+                        </sc-for>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <sc-for list="{{ previewRows }}" as="r" hint-placeholder-count="5">
+                        <tr style="background:{{ r.rowBg }};">
+                          <sc-for list="{{ r.cells }}" as="cell" hint-placeholder-count="6">
+                            <td style="padding:6px 8px; vertical-align:top;">
+                              <input class="input" list="{{ cell.listId }}" style="{{ cell.inputStyle }}" value="{{ cell.value }}" onChange="{{ cell.onChange }}"></input>
+                              <sc-if value="{{ cell.error }}" hint-placeholder-val="{{ false }}">
+                                <div style="color:#8a3c2e; font-size:10px; margin-top:2px;">{{ cell.error }}</div>
+                              </sc-if>
+                            </td>
+                          </sc-for>
+                        </tr>
+                      </sc-for>
+                    </tbody>
+                  </table>
+                </div>
+              </sc-if>
+            </sc-if>
+
+          </div>
+
+          <div class="dialog-actions">
+            <sc-if value="{{ showImportBack }}" hint-placeholder-val="{{ false }}">
+              <button type="button" class="btn btn-secondary blueprint" onClick="{{ onImportBack }}">
+                <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>Back
+              </button>
+            </sc-if>
+            <button type="button" class="btn btn-primary blueprint" disabled="{{ importPrimaryDisabled }}" onClick="{{ onImportPrimary }}">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>{{ importPrimaryLabel }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Positions -->
+    <sc-if value="{{ isPositionsTab }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); flex-wrap:wrap;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <sc-for list="{{ assetClassFilters }}" as="f" hint-placeholder-count="5">
+            <span onClick="{{ f.onClick }}" class="tag {{ f.tagClass }}" style="cursor:pointer;">{{ f.label }}</span>
+          </sc-for>
+        </div>
+        <div class="field" style="margin:0; width:220px; position:relative;">
+          <input class="input" placeholder="Search symbol or name" value="{{ posSearch }}" onChange="{{ onPosSearchChange }}" style="padding-left:30px;"></input>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="position:absolute; left:9px; top:11px; opacity:0.55;"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        </div>
+      </div>
+
+      <table class="table" style="margin-bottom:var(--space-4);">
+        <thead>
+          <tr>
+            <sc-for list="{{ positionCols }}" as="c" hint-placeholder-count="8">
+              <th onClick="{{ c.onClick }}" style="text-align:{{ c.align }}; cursor:pointer; white-space:nowrap;">{{ c.label }}{{ c.sortArrow }}</th>
+            </sc-for>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ visiblePositions }}" as="p" hint-placeholder-count="6">
+            <tr>
+              <td>
+                <div style="font-weight:600; display:flex; align-items:center; gap:5px;">
+                  <span>{{ p.symbol }}</span>
+                  <sc-if value="{{ p.retirement }}" hint-placeholder-val="{{ false }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" style="color:var(--color-accent-700); flex-shrink:0;"><title>Retirement account</title><rect x="3" y="11" width="18" height="10"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  </sc-if>
+                </div>
+                <div style="font-size:11px;" class="text-muted">{{ p.name }}</div>
+              </td>
+              <td class="text-muted">{{ p.assetClass }}</td>
+              <td style="text-align:right;">{{ p.sharesStr }}</td>
+              <td style="text-align:right;">{{ p.avgCostStr }}</td>
+              <td style="text-align:right;">{{ p.costBasisStr }}</td>
+              <td style="text-align:right;">{{ p.priceStr }}</td>
+              <td style="text-align:right; font-weight:600;">{{ p.marketValueStr }}</td>
+              <td style="text-align:right; color:{{ p.glColor }}; font-weight:600;">{{ p.glStr }}</td>
+              <td style="text-align:right; color:{{ p.glColor }};">{{ p.glPctStr }}</td>
+              <td style="text-align:center;">
+                <sc-if value="{{ p.noTx }}" hint-placeholder-val="{{ false }}">
+                  <span class="tag tag-outline" title="No transaction history available for this position">NO TX DATA</span>
+                </sc-if>
+              </td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+
+      <div onClick="{{ toggleClosed }}" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:var(--space-3); user-select:none;">
+        <span style="font-family:var(--font-heading); font-weight:600; font-size:14px;">{{ closedToggleLabel }}</span>
+        <span class="tag tag-neutral">{{ closedPositions.length }}</span>
+      </div>
+
+      <sc-if value="{{ showClosed }}" hint-placeholder-val="{{ false }}">
+        <table class="table" style="margin-bottom:var(--space-2);">
+          <thead>
+            <tr><th>Security</th><th>Closed</th><th style="text-align:right;">Realized G/L</th><th style="text-align:center; width:40px;"></th></tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ closedPositions }}" as="cp" hint-placeholder-count="2">
+              <tr>
+                <td><div style="font-weight:600;">{{ cp.symbol }}</div><div style="font-size:11px;" class="text-muted">{{ cp.name }}</div></td>
+                <td class="text-muted">{{ cp.closedDate }}</td>
+                <td style="text-align:right; color:{{ cp.glColor }}; font-weight:600;">{{ cp.glStr }}</td>
+                <td style="text-align:center;">
+                  <button type="button" class="btn-icon" title="Delete" onClick="{{ cp.onDelete }}" style="border:none; background:none; cursor:pointer; color:var(--color-text); opacity:0.6; padding:4px;" style-hover="opacity:1; color:var(--color-accent-700);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
+                  </button>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </sc-if>
+    </sc-if>
+
+    <!-- Transactions -->
+    <sc-if value="{{ isTransactionsTab }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); flex-wrap:wrap;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <sc-for list="{{ txTypeFilters }}" as="f" hint-placeholder-count="4">
+            <span onClick="{{ f.onClick }}" class="tag {{ f.tagClass }}" style="cursor:pointer;">{{ f.label }}</span>
+          </sc-for>
+        </div>
+        <div class="field" style="margin:0; width:220px; position:relative;">
+          <input class="input" placeholder="Search symbol" value="{{ txSearch }}" onChange="{{ onTxSearchChange }}" style="padding-left:30px;"></input>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="position:absolute; left:9px; top:11px; opacity:0.55;"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        </div>
+      </div>
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Symbol</th><th>Type</th>
+            <th style="text-align:right;">Shares</th><th style="text-align:right;">Cost Basis</th>
+            <th style="text-align:right;">Amount Invested</th><th style="text-align:center;">Position Link</th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ visibleTransactions }}" as="tx" hint-placeholder-count="8">
+            <tr>
+              <td class="text-muted">{{ tx.dateStr }}</td>
+              <td style="font-weight:600;">{{ tx.symbol }}</td>
+              <td><span class="tag {{ tx.tagClass }}">{{ tx.type }}</span></td>
+              <td style="text-align:right;">{{ tx.sharesStr }}</td>
+              <td style="text-align:right;">{{ tx.priceStr }}</td>
+              <td style="text-align:right; font-weight:600;">{{ tx.amountStr }}</td>
+              <td style="text-align:center;">
+                <sc-if value="{{ tx.orphaned }}" hint-placeholder-val="{{ false }}">
+                  <span class="tag tag-outline" title="No matching open position — likely fully sold or removed">UNMATCHED</span>
+                </sc-if>
+                <sc-if value="{{ tx.matched }}" hint-placeholder-val="{{ false }}">
+                  <span class="text-muted">Linked</span>
+                </sc-if>
+              </td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 1000}}">
+function fmtUSD(n) {
+  const neg = n < 0;
+  const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (neg ? '-$' : '$') + s;
+}
+function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
+
+const GAIN = 'var(--color-accent-700)';
+const LOSS = '#8a3c2e';
+
+const CATEGORY_META = {
+  taxable: { label: 'Taxable', full: 'Taxable Accounts' },
+  nonTaxable: { label: 'Non-Taxable', full: 'Non-Taxable Accounts' },
+  taxDeferred: { label: 'Tax-Deferred', full: 'Tax-Deferred Accounts' },
+  all: { label: 'All', full: 'All Accounts' }
+};
+
+const ACCOUNTS = {
+  brokerage: {
+    label: 'Brokerage',
+    name: 'Individual Brokerage',
+    number: '4471-2039',
+    category: 'taxable',
+    retirement: false,
+    positions: [
+      { symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Equity', shares: 120, avgCost: 148.20, price: 214.50, noTx: false },
+      { symbol: 'MSFT', name: 'Microsoft Corp.', assetClass: 'Equity', shares: 60, avgCost: 310.00, price: 428.80, noTx: false },
+      { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', assetClass: 'ETF', shares: 85, avgCost: 380.40, price: 512.30, noTx: false },
+      { symbol: 'VXUS', name: 'Vanguard Total Intl Stock ETF', assetClass: 'ETF', shares: 200, avgCost: 55.10, price: 61.75, noTx: true },
+      { symbol: 'NVDA', name: 'NVIDIA Corp.', assetClass: 'Equity', shares: 40, avgCost: 92.00, price: 118.40, noTx: false },
+      { symbol: 'BND', name: 'Vanguard Total Bond ETF', assetClass: 'Fixed Income', shares: 300, avgCost: 71.50, price: 69.20, noTx: false },
+      { symbol: 'BTC', name: 'Bitcoin', assetClass: 'Crypto', shares: 0.85, avgCost: 38000, price: 61200, noTx: false },
+      { symbol: 'AMZN', name: 'Amazon.com Inc.', assetClass: 'Equity', shares: 55, avgCost: 145.00, price: 189.90, noTx: false },
+      { symbol: 'GOOGL', name: 'Alphabet Inc.', assetClass: 'Equity', shares: 45, avgCost: 128.00, price: 172.30, noTx: true },
+      { symbol: 'CASH', name: 'Cash & Equivalents', assetClass: 'Cash', shares: 1, avgCost: 18500, price: 18500, noTx: true }
+    ],
+    closedPositions: [
+      { symbol: 'META', name: 'Meta Platforms Inc.', closedDate: 'Apr 12, 2026', gl: 8420.50 },
+      { symbol: 'DIS', name: 'The Walt Disney Company', closedDate: 'Feb 3, 2026', gl: -1120.75 }
+    ],
+    orphanedSells: [
+      { symbol: 'META', mult: 1 }, { symbol: 'DIS', mult: 2 }, { symbol: 'PYPL', mult: 3 }
+    ],
+    watchlist: [
+      { symbol: 'TSLA', name: 'Tesla Inc.', price: 248.10, alert: 'Below target', tagClass: 'tag-neutral' },
+      { symbol: 'AMD', name: 'Advanced Micro Devices', price: 172.40, alert: 'Target hit', tagClass: 'tag-accent' },
+      { symbol: 'SPY', name: 'SPDR S&P 500 ETF', price: 618.90, alert: 'Watching', tagClass: 'tag-outline' }
+    ],
+    perf: [612000, 618500, 609800, 625300, 641200, 637900, 652800, 668400, 671200, 684900]
+  },
+  roth: {
+    label: 'Roth IRA',
+    name: 'Roth IRA',
+    number: '7729-5510',
+    category: 'nonTaxable',
+    retirement: true,
+    positions: [
+      { symbol: 'VTI', name: 'Vanguard Total Stock Market ETF', assetClass: 'ETF', shares: 140, avgCost: 210.00, price: 298.60, noTx: false },
+      { symbol: 'SCHD', name: 'Schwab US Dividend Equity ETF', assetClass: 'ETF', shares: 210, avgCost: 71.10, price: 84.30, noTx: false },
+      { symbol: 'BND', name: 'Vanguard Total Bond ETF', assetClass: 'Fixed Income', shares: 180, avgCost: 72.80, price: 69.20, noTx: true },
+      { symbol: 'VNQ', name: 'Vanguard Real Estate ETF', assetClass: 'ETF', shares: 70, avgCost: 88.20, price: 84.10, noTx: false },
+      { symbol: 'CASH', name: 'Cash & Equivalents', assetClass: 'Cash', shares: 1, avgCost: 3200, price: 3200, noTx: true }
+    ],
+    closedPositions: [
+      { symbol: 'IWM', name: 'iShares Russell 2000 ETF', closedDate: 'Jun 20, 2026', gl: 640.20 }
+    ],
+    orphanedSells: [ { symbol: 'IWM', mult: 1 } ],
+    watchlist: [
+      { symbol: 'QQQ', name: 'Invesco QQQ Trust', price: 512.20, alert: 'Watching', tagClass: 'tag-outline' }
+    ],
+    perf: [98000, 99200, 97800, 100100, 102400, 101900, 103800, 105200, 106100, 108400]
+  },
+  four01k: {
+    label: '401(k)',
+    name: 'Traditional 401(k)',
+    number: '9903-8845',
+    category: 'taxDeferred',
+    retirement: true,
+    positions: [
+      { symbol: 'FXAIX', name: 'Fidelity 500 Index Fund', assetClass: 'Mutual Fund', shares: 320, avgCost: 130.00, price: 189.40, noTx: true },
+      { symbol: 'FTBFX', name: 'Fidelity Total Bond Fund', assetClass: 'Fixed Income', shares: 410, avgCost: 10.80, price: 10.10, noTx: true },
+      { symbol: 'FSPSX', name: 'Fidelity Intl Index Fund', assetClass: 'Mutual Fund', shares: 260, avgCost: 38.50, price: 44.20, noTx: true }
+    ],
+    closedPositions: [],
+    orphanedSells: [],
+    watchlist: [],
+    perf: [210000, 213500, 209800, 217200, 221900, 219400, 226800, 231200, 233900, 238600]
+  },
+  hsa: {
+    label: 'HSA',
+    name: 'Health Savings Account',
+    number: '2214-6603',
+    category: 'nonTaxable',
+    retirement: false,
+    positions: [
+      { symbol: 'VTSAX', name: 'Vanguard Total Stock Mkt Index', assetClass: 'Mutual Fund', shares: 90, avgCost: 95.00, price: 128.70, noTx: true },
+      { symbol: 'CASH', name: 'Cash & Equivalents', assetClass: 'Cash', shares: 1, avgCost: 2100, price: 2100, noTx: true }
+    ],
+    closedPositions: [],
+    orphanedSells: [],
+    watchlist: [],
+    perf: [13200, 13350, 13100, 13600, 13900, 13780, 14150, 14400, 14550, 14820]
+  }
+};
+
+const IMPORT_FIELDS = {
+  transactions: [
+    { key: 'type', label: 'Type', required: true, hints: ['type', 'action'] },
+    { key: 'date', label: 'Date', required: true, hints: ['date'] },
+    { key: 'symbol', label: 'Symbol', required: true, hints: ['symbol', 'ticker'] },
+    { key: 'shares', label: 'Shares', required: false, hints: ['shares', 'quantity', 'qty'] },
+    { key: 'price', label: 'Cost Basis', required: false, hints: ['price'] },
+    { key: 'amount', label: 'Amount Invested', required: false, hints: ['amount', 'total'] }
+  ],
+  positions: [
+    { key: 'assetClass', label: 'Asset Class', required: true, hints: ['class', 'asset'] },
+    { key: 'date', label: 'Date', required: false, hints: ['date'] },
+    { key: 'symbol', label: 'Symbol', required: true, hints: ['symbol', 'ticker'] },
+    { key: 'name', label: 'Name', required: false, hints: ['name', 'description'] },
+    { key: 'shares', label: 'Shares', required: true, hints: ['shares', 'quantity', 'qty'] },
+    { key: 'avgCost', label: 'Cost Basis', required: true, hints: ['cost', 'basis'] },
+    { key: 'price', label: 'Current Price', required: false, hints: ['price', 'current price'] },
+    { key: 'marketValue', label: 'Market Value', required: false, hints: ['market value', 'value'] }
+  ]
+};
+
+function parseCSVText(text) {
+  const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim().length);
+  const parseLine = (line) => {
+    const out = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += ch;
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ',') { out.push(cur); cur = ''; }
+        else cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map(s => s.trim());
+  };
+  if (!lines.length) return { headers: [], rows: [] };
+  const headers = parseLine(lines[0]);
+  const rows = lines.slice(1).map(parseLine);
+  return { headers, rows };
+}
+
+function autoMapFields(headers, fields) {
+  const mapping = {};
+  fields.forEach(f => {
+    let idx = headers.findIndex(h => h.toLowerCase() === f.key.toLowerCase() || h.toLowerCase() === f.label.toLowerCase());
+    if (idx === -1) idx = headers.findIndex(h => f.hints.some(hint => h.toLowerCase().includes(hint)));
+    mapping[f.key] = idx;
+  });
+  return mapping;
+}
+
+function validateImportCell(field, value) {
+  const v = (value || '').trim();
+  if (!v) return field.required ? 'Required' : null;
+  if (field.key === 'date') return isNaN(Date.parse(v)) ? 'Invalid date' : null;
+
+  if (['shares', 'price', 'amount', 'avgCost'].includes(field.key)) return isNaN(parseFloat(v)) ? 'Not a number' : null;
+  return null;
+}
+
+const IMPORT_DEFAULTS = {
+  importOpen: false, importStep: 1, importDataType: 'transactions', importAccountMode: 'existing',
+  importAccountKey: Object.keys(ACCOUNTS)[0], importNewAccountName: '', importNewAccountCategory: 'taxable',
+  importFileName: '', importFileError: '', importHeaders: [], importRawRows: [], importMapping: {}, importConstants: {},
+  importEdits: {}, importDone: false, importResultSummary: '', importNewAccountNumber: ''
+};
+
+class Component extends DCLogic {
+  state = {
+    category: 'taxable',
+    range: '1Y',
+    tab: 'positions',
+    sortKey: 'marketValue',
+    sortDir: 'desc',
+    assetClassFilter: 'All',
+    retirementFilter: 'All',
+    posSearch: '',
+    txTypeFilter: 'All',
+    txSearch: '',
+    showClosed: false,
+    ...IMPORT_DEFAULTS
+  };
+
+  fileInputRef = React.createRef();
+
+  getBuiltImportRows() {
+    const fields = IMPORT_FIELDS[this.state.importDataType];
+    const { importRawRows, importMapping, importEdits } = this.state;
+    const getCellValue = (rowIdx, key) => {
+      const editKey = rowIdx + ':' + key;
+      if (importEdits[editKey] !== undefined) return importEdits[editKey];
+      const hIdx = importMapping[key];
+      if (hIdx === -2) return this.state.importConstants[key] || '';
+      if (hIdx === undefined || hIdx === -1 || hIdx == null) return '';
+      return (importRawRows[rowIdx] && importRawRows[rowIdx][hIdx]) || '';
+    };
+    return importRawRows.map((_, rowIdx) => {
+      const values = {};
+      const cells = fields.map(f => {
+        const val = getCellValue(rowIdx, f.key);
+        const err = validateImportCell(f, val);
+        values[f.key] = val;
+        return {
+          key: f.key, label: f.label, value: val, error: err,
+          onChange: (e) => this.setState(s => ({ importEdits: { ...s.importEdits, [rowIdx + ':' + f.key]: e.target.value } })),
+          inputStyle: err ? 'border-color:#8a3c2e;' : '',
+          listId: f.key === 'type' ? 'import-type-options' : undefined
+        };
+      });
+      const hasError = cells.some(c => c.error);
+      return { rowIdx, values, cells, hasError };
+    });
+  }
+
+  onDataTypeChange(type) {
+    this.setState(s => {
+      const fields = IMPORT_FIELDS[type];
+      const mapping = s.importHeaders.length ? autoMapFields(s.importHeaders, fields) : {};
+      return { importDataType: type, importMapping: mapping, importConstants: {}, importEdits: {} };
+    });
+  }
+
+  loadImportFile(file) {
+    if (!file.name.toLowerCase().endsWith('.csv')) { this.setState({ importFileError: 'Please upload a .csv file' }); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const { headers, rows } = parseCSVText(String(e.target.result));
+      if (!headers.length) { this.setState({ importFileError: 'Could not read any rows from this file' }); return; }
+      const fields = IMPORT_FIELDS[this.state.importDataType];
+      const mapping = autoMapFields(headers, fields);
+      this.setState({ importFileName: file.name, importFileError: '', importHeaders: headers, importRawRows: rows, importMapping: mapping, importEdits: {} });
+    };
+    reader.readAsText(file);
+  }
+
+  commitImport() {
+    const st = this.state;
+    const builtRows = this.getBuiltImportRows();
+    const validRows = builtRows.filter(r => !r.hasError);
+
+    let accountKey = st.importAccountKey;
+    if (st.importAccountMode === 'new') {
+      accountKey = 'acct_' + Date.now();
+      ACCOUNTS[accountKey] = {
+        label: st.importNewAccountName.trim() || 'New Account',
+        name: st.importNewAccountName.trim() || 'New Account',
+        number: st.importNewAccountNumber.trim(),
+        category: st.importNewAccountCategory,
+        retirement: false,
+        positions: [], closedPositions: [], orphanedSells: [], watchlist: [], importedTransactions: [], perf: [0]
+      };
+    }
+    const account = ACCOUNTS[accountKey];
+    if (!account.importedTransactions) account.importedTransactions = [];
+
+    if (st.importDataType === 'positions') {
+      validRows.forEach(r => {
+        const v = r.values;
+        const shares = parseFloat(v.shares);
+        const avgCost = parseFloat(v.avgCost);
+        let price = v.price ? parseFloat(v.price) : NaN;
+        if (!price && v.marketValue && shares) price = parseFloat(v.marketValue) / shares;
+        if (!price || isNaN(price)) price = avgCost;
+        account.positions.push({ symbol: v.symbol.toUpperCase(), name: v.name || v.symbol, assetClass: v.assetClass, shares, avgCost, price, noTx: true });
+      });
+    } else {
+      validRows.forEach(r => {
+        const v = r.values;
+        const shares = v.shares ? parseFloat(v.shares) : 0;
+        const price = v.price ? parseFloat(v.price) : 0;
+        const amount = v.amount ? parseFloat(v.amount) : shares * price;
+        const type = v.type.charAt(0).toUpperCase() + v.type.slice(1).toLowerCase();
+        account.importedTransactions.push({ date: new Date(v.date), symbol: v.symbol.toUpperCase(), name: v.name || '', type, shares, price, amount, orphaned: false });
+      });
+    }
+    if (!account.perf || !account.perf.length) account.perf = [0];
+
+    this.setState({
+      importDone: true,
+      importResultSummary: validRows.length + ' row(s) imported into ' + (account.label || account.name) + '.',
+      category: account.category
+    });
+  }
+
+  buildTransactions(account) {
+    const symbols = account.positions.filter(p => !p.noTx).map(p => p.symbol);
+    const txs = [];
+    symbols.forEach((sym, i) => {
+      const nBuys = 1 + (i % 2);
+      for (let k = 0; k < nBuys; k++) {
+        const date = new Date(2026, (i * 2 + k) % 8, 3 + ((i + k) * 5) % 25);
+        txs.push({ date, symbol: sym, type: 'Buy', shares: 5 + (i + k) * 3, price: 50 + (i * 17 + k * 9) % 300, orphaned: false });
+      }
+      if (i % 3 === 0) {
+        const date = new Date(2026, (i + 3) % 8, 10 + (i % 15));
+        txs.push({ date, symbol: sym, type: 'Dividend', shares: 0, price: 0, amount: 20 + i * 7, orphaned: false });
+      }
+    });
+    account.orphanedSells.forEach((o, i) => {
+      const date = new Date(2026, 1 + i * 2, 5 + i * 4);
+      txs.push({ date, symbol: o.symbol, type: 'Sell', shares: 30 + i * 10, price: 120 + o.mult * 40, orphaned: true });
+    });
+    (account.importedTransactions || []).forEach(t => txs.push(t));
+    txs.sort((a, b) => b.date - a.date);
+    return txs;
+  }
+
+  deleteClosedPosition(cp) {
+    for (const key in ACCOUNTS) {
+      const idx = ACCOUNTS[key].closedPositions.indexOf(cp);
+      if (idx !== -1) { ACCOUNTS[key].closedPositions.splice(idx, 1); break; }
+    }
+    this.forceUpdate();
+  }
+
+  getAccountsForCategory(cat, retFilter) {
+    const all = Object.values(ACCOUNTS);
+    let accounts = cat === 'all' ? all : all.filter(a => a.category === cat);
+    if (retFilter === 'Retirement') accounts = accounts.filter(a => a.retirement);
+    if (retFilter === 'Non-Retirement') accounts = accounts.filter(a => !a.retirement);
+    return accounts.length ? accounts : all.filter(() => false).concat([{ positions: [], closedPositions: [], orphanedSells: [], watchlist: [], perf: [0] }]);
+  }
+
+  combineAccounts(accounts) {
+    const perfLen = Math.max(...accounts.map(a => a.perf.length));
+    const perf = Array.from({ length: perfLen }, (_, i) =>
+      accounts.reduce((sum, a) => sum + (a.perf[i] ?? a.perf[a.perf.length - 1]), 0)
+    );
+    return {
+      positions: accounts.flatMap(a => a.positions.map(p => ({ ...p, retirement: !!a.retirement }))),
+      closedPositions: accounts.flatMap(a => a.closedPositions),
+      orphanedSells: accounts.flatMap(a => a.orphanedSells),
+      importedTransactions: accounts.flatMap(a => a.importedTransactions || []),
+      watchlist: accounts.flatMap(a => a.watchlist),
+      perf
+    };
+  }
+
+  computePositions(account) {
+    return account.positions.map(p => {
+      const marketValue = p.shares * p.price;
+      const costBasis = p.shares * p.avgCost;
+      const gl = marketValue - costBasis;
+      const glPct = costBasis === 0 ? 0 : (gl / costBasis) * 100;
+      return { ...p, marketValue, costBasis, gl, glPct };
+    });
+  }
+
+  renderVals() {
+    const catKey = CATEGORY_META[this.state.category] ? this.state.category : 'taxable';
+    const retKey = ['All', 'Retirement', 'Non-Retirement'].includes(this.state.retirementFilter) ? this.state.retirementFilter : 'All';
+    const accountsForCat = this.getAccountsForCategory(catKey, retKey);
+    const account = this.combineAccounts(accountsForCat);
+    const positions = this.computePositions(account);
+    const transactions = this.buildTransactions(account);
+    const totalValue = positions.reduce((s, p) => s + p.marketValue, 0);
+    const totalCost = positions.reduce((s, p) => s + p.costBasis, 0);
+    const totalGL = totalValue - totalCost;
+    const totalGLPct = totalCost === 0 ? 0 : (totalGL / totalCost) * 100;
+    const dayChange = totalValue * 0.0064;
+
+    const byClass = {};
+    positions.forEach(p => { byClass[p.assetClass] = (byClass[p.assetClass] || 0) + p.marketValue; });
+    const classEntries = Object.entries(byClass).sort((a, b) => b[1] - a[1]);
+    const allocationBars = classEntries.map(([cls, val]) => ({
+      label: cls, pct: (val / totalValue) * 100, pctStr: ((val / totalValue) * 100).toFixed(1) + '%'
+    }));
+
+    const perf = account.perf;
+    const min = Math.min(...perf), max = Math.max(...perf);
+    const range = max - min || 1;
+    const w = 600, h = 170, pad = 6;
+    const pts = perf.map((v, i) => {
+      const x = (i / (perf.length - 1)) * (w - pad * 2) + pad;
+      const y = h - pad - ((v - min) / range) * (h - pad * 2);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    });
+    const linePoints = pts.join(' ');
+
+    const summaryCards = [
+      { label: 'Total Value', value: fmtUSD(totalValue), color: 'var(--color-text)' },
+      { label: 'Day Change', value: (dayChange >= 0 ? '+' : '') + fmtUSD(dayChange), color: dayChange >= 0 ? GAIN : LOSS },
+      { label: 'Total Gain/Loss', value: (totalGL >= 0 ? '+' : '') + fmtUSD(totalGL), sub: fmtPct(totalGLPct), color: totalGL >= 0 ? GAIN : LOSS },
+      { label: 'Amount Invested', value: fmtUSD(totalCost), color: 'var(--color-text)' }
+    ];
+
+    const assetClasses = ['All', ...Object.keys(byClass)];
+    let visiblePositions = positions.filter(p => {
+      if (this.state.assetClassFilter !== 'All' && p.assetClass !== this.state.assetClassFilter) return false;
+      const q = this.state.posSearch.toLowerCase();
+      if (q && !p.symbol.toLowerCase().includes(q) && !p.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const sk = this.state.sortKey, sd = this.state.sortDir === 'asc' ? 1 : -1;
+    visiblePositions = [...visiblePositions].sort((a, b) => {
+      const av = a[sk], bv = b[sk];
+      if (typeof av === 'string') return av.localeCompare(bv) * sd;
+      return (av - bv) * sd;
+    });
+
+    const cols = [
+      { key: 'symbol', label: 'Symbol', align: 'left' },
+      { key: 'assetClass', label: 'Asset Class', align: 'left' },
+      { key: 'shares', label: 'Shares', align: 'right' },
+      { key: 'avgCost', label: 'Cost Basis', align: 'right' },
+      { key: 'costBasis', label: 'Amount Invested', align: 'right' },
+      { key: 'price', label: 'Current Price', align: 'right' },
+      { key: 'marketValue', label: 'Market Value', align: 'right' },
+      { key: 'gl', label: 'Gain/Loss', align: 'right' },
+      { key: 'glPct', label: 'Return', align: 'right' },
+      { key: 'noTx', label: '', align: 'center' }
+    ];
+    const positionCols = cols.map(c => ({
+      ...c,
+      onClick: () => this.setState(s => ({ sortKey: c.key, sortDir: s.sortKey === c.key && s.sortDir === 'desc' ? 'asc' : 'desc' })),
+      sortArrow: sk === c.key ? (sd === 1 ? ' \u2191' : ' \u2193') : ''
+    }));
+
+    const assetClassFilters = assetClasses.map(cls => ({
+      label: cls,
+      onClick: () => this.setState({ assetClassFilter: cls }),
+      tagClass: this.state.assetClassFilter === cls ? 'tag-accent' : 'tag-outline'
+    }));
+
+    const retirementFilters = ['All', 'Retirement', 'Non-Retirement'].map(r => ({
+      label: r,
+      onClick: () => this.setState({ retirementFilter: r }),
+      tagClass: retKey === r ? 'tag-accent' : 'tag-outline'
+    }));
+
+    const visiblePositionsOut = visiblePositions.map(p => ({
+      symbol: p.symbol, name: p.name, assetClass: p.assetClass,
+      sharesStr: p.shares.toLocaleString('en-US', { maximumFractionDigits: 2 }),
+      avgCostStr: fmtUSD(p.avgCost), priceStr: fmtUSD(p.price),
+      costBasisStr: fmtUSD(p.costBasis),
+      marketValueStr: fmtUSD(p.marketValue),
+      glStr: (p.gl >= 0 ? '+' : '') + fmtUSD(p.gl),
+      glPctStr: fmtPct(p.glPct),
+      glColor: p.gl >= 0 ? GAIN : LOSS,
+      noTx: p.noTx,
+      retirement: p.retirement
+    }));
+
+    const closedPositions = account.closedPositions.map(cp => ({
+      ...cp,
+      glStr: (cp.gl >= 0 ? '+' : '') + fmtUSD(cp.gl),
+      glColor: cp.gl >= 0 ? GAIN : LOSS,
+      onDelete: () => this.deleteClosedPosition(cp)
+    }));
+
+    const txTypes = ['All', 'Buy', 'Sell', 'Dividend'];
+    const txTagClass = { Buy: 'tag-accent', Sell: 'tag-outline', Dividend: 'tag-neutral' };
+    let visibleTx = transactions.filter(tx => {
+      if (this.state.txTypeFilter !== 'All' && tx.type !== this.state.txTypeFilter) return false;
+      const q = this.state.txSearch.toLowerCase();
+      if (q && !tx.symbol.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const heldSymbols = new Set(account.positions.map(p => p.symbol));
+    const visibleTransactions = visibleTx.map(tx => ({
+      dateStr: tx.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      symbol: tx.symbol, type: tx.type, tagClass: txTagClass[tx.type],
+      sharesStr: tx.shares ? tx.shares.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '\u2014',
+      priceStr: tx.price ? fmtUSD(tx.price) : '\u2014',
+      amountStr: fmtUSD(tx.amount != null ? tx.amount : tx.shares * tx.price),
+      orphaned: tx.orphaned,
+      matched: !tx.orphaned && heldSymbols.has(tx.symbol)
+    }));
+
+    const txTypeFilters = txTypes.map(t => ({
+      label: t, onClick: () => this.setState({ txTypeFilter: t }),
+      tagClass: this.state.txTypeFilter === t ? 'tag-accent' : 'tag-outline'
+    }));
+
+    const categoryTabs = Object.keys(CATEGORY_META).map(id => ({
+      label: CATEGORY_META[id].label, active: catKey === id,
+      onClick: () => this.setState({ category: id, assetClassFilter: 'All', txTypeFilter: 'All', posSearch: '', txSearch: '', showClosed: false })
+    }));
+
+    const mainTabs = [
+      { key: 'positions', label: 'Positions', active: this.state.tab === 'positions', onClick: () => this.setState({ tab: 'positions' }) },
+      { key: 'transactions', label: 'Transactions', active: this.state.tab === 'transactions', onClick: () => this.setState({ tab: 'transactions' }) }
+    ];
+
+    return {
+      portfolioName: CATEGORY_META[catKey].full,
+      range: this.state.range,
+      onRangeChange: (e) => this.setState({ range: e.target.value }),
+      categoryTabs,
+      summaryCards,
+      linePoints,
+      chartStartLabel: this.state.range === 'ALL' ? 'Inception' : '10 periods ago',
+      chartEndLabel: 'Today',
+      allocationBars,
+      mainTabs,
+      isPositionsTab: this.state.tab === 'positions',
+      isTransactionsTab: this.state.tab === 'transactions',
+      assetClassFilters,
+      retirementFilters,
+      posSearch: this.state.posSearch,
+      onPosSearchChange: (e) => this.setState({ posSearch: e.target.value }),
+      positionCols,
+      visiblePositions: visiblePositionsOut,
+      closedPositions,
+      showClosed: this.state.showClosed,
+      closedToggleLabel: (this.state.showClosed ? '\u2212 Hide' : '+ Show') + ' Closed Positions',
+      toggleClosed: () => this.setState(s => ({ showClosed: !s.showClosed })),
+      txTypeFilters,
+      txSearch: this.state.txSearch,
+      onTxSearchChange: (e) => this.setState({ txSearch: e.target.value }),
+      visibleTransactions,
+      ...this.renderImportVals()
+    };
+  }
+
+  renderImportVals() {
+    const st = this.state;
+    const fields = IMPORT_FIELDS[st.importDataType];
+    const builtRows = this.getBuiltImportRows();
+    const importRowCount = builtRows.length;
+    const importErrorCount = builtRows.filter(r => r.hasError).length;
+    const importValidCount = importRowCount - importErrorCount;
+    const hasImportErrors = importErrorCount > 0;
+
+    const stepLabels = ['Setup', 'Review'];
+    const importSteps = stepLabels.map((label, i) => {
+      const num = i + 1;
+      return {
+        num, label,
+        tagClass: st.importStep === num ? 'tag-accent' : (st.importStep > num ? 'tag-neutral' : 'tag-outline'),
+        textClass: st.importStep === num ? '' : 'text-muted'
+      };
+    });
+
+    const dataTypeOptions = [
+      { key: 'transactions', label: 'Transactions', active: st.importDataType === 'transactions', onClick: () => this.onDataTypeChange('transactions') },
+      { key: 'positions', label: 'Positions / Holdings', active: st.importDataType === 'positions', onClick: () => this.onDataTypeChange('positions') }
+    ];
+    const accountModeOptions = [
+      { key: 'existing', label: 'Existing account', active: st.importAccountMode === 'existing', onClick: () => this.setState({ importAccountMode: 'existing' }) },
+      { key: 'new', label: 'New account', active: st.importAccountMode === 'new', onClick: () => this.setState({ importAccountMode: 'new' }) }
+    ];
+    const accountOptions = Object.keys(ACCOUNTS).map(k => {
+      const a = ACCOUNTS[k];
+      return { key: k, label: a.label + (a.number ? ' \u2022 #' + a.number : '') + ' \u2014 ' + CATEGORY_META[a.category].label };
+    });
+
+    const FIELD_HINTS = {
+      amount: 'Total cash value of the transaction (shares \u00d7 price). Leave unmapped to calculate it automatically.',
+      price: st.importDataType === 'positions'
+        ? 'Today\u2019s market price, used to value the position. Leave unmapped to use Cost Basis.'
+        : 'What you paid or received per share in this transaction \u2014 not today\u2019s price.',
+      marketValue: 'Total current value of the position (shares \u00d7 price). Leave unmapped if you\u2019re providing Current Price instead.'
+    };
+    const reviewCols = fields.map(f => ({
+      label: f.label,
+      requiredMark: f.required ? ' *' : '',
+      hint: FIELD_HINTS[f.key] || '',
+      mapValue: st.importMapping[f.key] !== undefined ? st.importMapping[f.key] : -1,
+      headerOptions: st.importHeaders.map((h, i) => ({ value: i, label: h })),
+      isConstant: st.importMapping[f.key] === -2,
+      constantValue: st.importConstants[f.key] || '',
+      onMapChange: (e) => this.setState(s => ({ importMapping: { ...s.importMapping, [f.key]: parseInt(e.target.value, 10) }, importEdits: {} })),
+      onConstantChange: (e) => this.setState(s => ({ importConstants: { ...s.importConstants, [f.key]: e.target.value }, importEdits: {} }))
+    }));
+
+    const previewRows = builtRows.map(r => ({
+      rowBg: r.hasError ? 'rgba(138,60,46,0.06)' : 'transparent',
+      cells: r.cells
+    }));
+
+    const isExistingAccountMode = st.importAccountMode === 'existing';
+    const isNewAccountMode = st.importAccountMode === 'new';
+    const step1Valid = st.importHeaders.length > 0 &&
+      (isExistingAccountMode ? !!st.importAccountKey : (st.importNewAccountName.trim().length > 0 && st.importNewAccountNumber.trim().length > 0));
+    const step2Valid = !fields.some(f => {
+      const v = st.importMapping[f.key];
+      if (!f.required) return false;
+      if (v === -2) return !(st.importConstants[f.key] || '').trim();
+      return v === undefined || v === -1;
+    });
+
+    let importPrimaryLabel = 'Continue';
+    let importPrimaryDisabled = false;
+    if (st.importStep === 1) { importPrimaryLabel = 'Continue'; importPrimaryDisabled = !step1Valid; }
+    else if (st.importStep === 2) { importPrimaryLabel = st.importDone ? 'Done' : 'Import'; importPrimaryDisabled = !st.importDone && (!step2Valid || hasImportErrors); }
+
+    return {
+      importOpen: st.importOpen,
+      openImport: () => this.setState({ ...IMPORT_DEFAULTS, importOpen: true }),
+      closeImport: () => this.setState({ ...IMPORT_DEFAULTS }),
+      importSteps,
+      isStep1: st.importStep === 1,
+      isStep2: st.importStep === 2,
+      isStep2Review: st.importStep === 2 && !st.importDone,
+      dataTypeOptions,
+      accountModeOptions,
+      isExistingAccountMode,
+      isNewAccountMode,
+      accountOptions,
+      importAccountKey: st.importAccountKey,
+      onImportAccountKeyChange: (e) => this.setState({ importAccountKey: e.target.value }),
+      importNewAccountName: st.importNewAccountName,
+      onImportNewAccountNameChange: (e) => this.setState({ importNewAccountName: e.target.value }),
+      importNewAccountNumber: st.importNewAccountNumber,
+      onImportNewAccountNumberChange: (e) => this.setState({ importNewAccountNumber: e.target.value }),
+      importNewAccountCategory: st.importNewAccountCategory,
+      onImportNewAccountCategoryChange: (e) => this.setState({ importNewAccountCategory: e.target.value }),
+      fileInputRef: this.fileInputRef,
+      onDropZoneClick: () => this.fileInputRef.current && this.fileInputRef.current.click(),
+      onFileChange: (e) => { const f = e.target.files[0]; if (f) this.loadImportFile(f); },
+      onFileDrop: (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) this.loadImportFile(f); },
+      onDragOver: (e) => e.preventDefault(),
+      importFileLabel: st.importFileName || 'No file selected',
+      importFileError: st.importFileError,
+      importFileName: st.importFileName,
+      importRowCount, importValidCount, importErrorCount, hasImportErrors,
+      reviewCols,
+      previewRows,
+      importDone: st.importDone,
+      importResultSummary: st.importResultSummary,
+      importDataTypeLabel: st.importDataType === 'positions' ? 'Positions / Holdings' : 'Transactions',
+      importDestinationLabel: isExistingAccountMode
+        ? (ACCOUNTS[st.importAccountKey] ? ACCOUNTS[st.importAccountKey].label + (ACCOUNTS[st.importAccountKey].number ? ' \u2022 #' + ACCOUNTS[st.importAccountKey].number : '') : '')
+        : (st.importNewAccountName.trim() || 'New Account') + ' \u2022 #' + st.importNewAccountNumber.trim() + ' (new)',
+      importCategoryLabel: CATEGORY_META[isExistingAccountMode
+        ? (ACCOUNTS[st.importAccountKey] ? ACCOUNTS[st.importAccountKey].category : 'taxable')
+        : st.importNewAccountCategory].label,
+      showImportBack: st.importStep > 1 && !st.importDone,
+      showImportCancel: !st.importDone,
+      onImportBack: () => this.setState(s => ({ importStep: Math.max(1, s.importStep - 1) })),
+      importPrimaryLabel, importPrimaryDisabled,
+      onImportPrimary: () => {
+        if (st.importStep === 1) { this.setState({ importStep: 2 }); return; }
+        if (st.importStep === 2) { st.importDone ? this.setState({ ...IMPORT_DEFAULTS }) : this.commitImport(); }
+      }
+    };
+  }
+}
+
+</script>
+</body>
+</html>

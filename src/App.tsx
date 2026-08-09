@@ -15,6 +15,18 @@ import type { ImportSession } from './lib/types'
 import './App.css'
 
 /**
+ * Portfolio header (matches v3 design header row):
+ * left side kicker 'Portfolio' + portfolio name, right side retirement filter tags.
+ */
+const PORTFOLIO_NAME = 'Ledger'
+
+const retirementFilters = [
+  { value: 'All', label: 'All' },
+  { value: 'Retirement', label: 'Retirement' },
+  { value: 'Non-Retirement', label: 'Non-Retirement' },
+]
+
+/**
  * processPendingImport: Given the current state and import metadata, creates an ImportSession
  * and adds it to state. Should be called after positions/transactions have been imported.
  *
@@ -68,6 +80,10 @@ function App() {
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // Latest state + hydration flag, so a flush-on-unmount can save even when the debounce hasn't fired
+  const latestStateRef = useRef(state)
+  latestStateRef.current = state
+  const isHydratedRef = useRef(false)
 
   // Hydration effect: load persisted state on mount
   useEffect(() => {
@@ -88,6 +104,38 @@ function App() {
     }
 
     hydrate()
+  }, [])
+
+  useEffect(() => {
+    if (isHydrated) {
+      isHydratedRef.current = true
+    }
+  }, [isHydrated])
+
+  // Flush the pending save on page unload/hide so a refresh within the debounce
+  // window doesn't lose the latest state (e.g. a just-finished import).
+  useEffect(() => {
+    const flush = () => {
+      if (!isHydratedRef.current) return
+      savePersistedApp(latestStateRef.current).catch((error) => {
+        console.error('Failed to save app state:', error)
+      })
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flush()
+      }
+    }
+
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      flush()
+    }
   }, [])
 
   // Debounce-save effect: save state to IndexedDB on changes (500ms delay)
@@ -132,6 +180,54 @@ function App() {
 
           {/* Main content area with padding */}
           <div style={{ padding: 'var(--space-6)' }}>
+            {/* Portfolio header: kicker + name on the left, retirement filter tags on the right */}
+            <div
+              style={{
+                marginBottom: 'var(--space-6)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-end',
+                flexWrap: 'wrap',
+                gap: 'var(--space-3)',
+              }}
+            >
+              <div>
+                <div
+                  className="text-muted"
+                  style={{
+                    fontSize: '11px',
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Portfolio
+                </div>
+                <h1 style={{ margin: 0 }}>{PORTFOLIO_NAME}</h1>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {retirementFilters.map((filter) => (
+                  <span
+                    key={filter.value}
+                    onClick={() =>
+                      dispatch({
+                        type: 'SET_RETIREMENT_FILTER',
+                        filter: filter.value as
+                          | 'All'
+                          | 'Retirement'
+                          | 'Non-Retirement',
+                      })
+                    }
+                    className={`tag ${
+                      state.retirementFilter === filter.value ? 'tag-accent' : ''
+                    }`}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {filter.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
             {/* Summary cards row */}
             <SummaryCards state={state} />
 
@@ -139,7 +235,7 @@ function App() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: '2fr 1fr',
                 gap: 'var(--space-6)',
                 marginBottom: 'var(--space-6)',
               }}
@@ -148,59 +244,52 @@ function App() {
               <AllocationChart state={state} />
             </div>
 
-            {/* Tabs: Positions and Transactions */}
-            <div style={{ marginBottom: 'var(--space-6)' }}>
+            {/* Tabs row: Positions/Transactions selector + Import trigger */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 'var(--space-4)',
+              }}
+            >
               {/* Tab selector */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '12px',
-                  marginBottom: 'var(--space-4)',
-                  borderBottom: '1px solid var(--color-divider)',
-                  paddingBottom: 'var(--space-2)',
-                }}
-              >
-                <button
+              <div className="seg">
+                <label
+                  className="seg-opt"
                   onClick={() => dispatch({ type: 'SET_TAB', tab: 'positions' })}
-                  style={{
-                    padding: '8px 16px',
-                    background: state.tab === 'positions' ? 'var(--color-accent)' : 'transparent',
-                    color: state.tab === 'positions' ? 'var(--color-bg)' : 'inherit',
-                    border: 'none',
-                    borderRadius: '4px 4px 0 0',
-                    cursor: 'pointer',
-                    fontWeight: state.tab === 'positions' ? '600' : 'normal',
-                  }}
                 >
-                  Positions
-                </button>
-                <button
+                  <input
+                    type="radio"
+                    name="positions-transactions"
+                    checked={state.tab === 'positions'}
+                    readOnly
+                  />
+                  <span>Positions</span>
+                </label>
+                <label
+                  className="seg-opt"
                   onClick={() => dispatch({ type: 'SET_TAB', tab: 'transactions' })}
-                  style={{
-                    padding: '8px 16px',
-                    background: state.tab === 'transactions' ? 'var(--color-accent)' : 'transparent',
-                    color: state.tab === 'transactions' ? 'var(--color-bg)' : 'inherit',
-                    border: 'none',
-                    borderRadius: '4px 4px 0 0',
-                    cursor: 'pointer',
-                    fontWeight: state.tab === 'transactions' ? '600' : 'normal',
-                  }}
                 >
-                  Transactions
-                </button>
+                  <input
+                    type="radio"
+                    name="positions-transactions"
+                    checked={state.tab === 'transactions'}
+                    readOnly
+                  />
+                  <span>Transactions</span>
+                </label>
               </div>
 
               {/* Import Dialog - unified, visible on all tabs */}
-              <div style={{ marginBottom: 'var(--space-4)', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
-              </div>
-
-              {/* Positions tab */}
-              {state.tab === 'positions' && <PositionsTable state={state} dispatch={dispatch} />}
-
-              {/* Transactions tab */}
-              {state.tab === 'transactions' && <TransactionsTable state={state} dispatch={dispatch} />}
+              <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
             </div>
+
+            {/* Positions tab */}
+            {state.tab === 'positions' && <PositionsTable state={state} dispatch={dispatch} />}
+
+            {/* Transactions tab */}
+            {state.tab === 'transactions' && <TransactionsTable state={state} dispatch={dispatch} />}
           </div>
         </div>
       ) : (

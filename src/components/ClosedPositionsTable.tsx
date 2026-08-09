@@ -28,7 +28,7 @@ export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTablePr
           <th>Security</th>
           <th>Closed</th>
           <th style={{ textAlign: 'right' }}>Realized G/L</th>
-          <th style={{ width: '40px' }}></th>
+          <th style={{ textAlign: 'center', width: '40px' }}></th>
         </tr>
       </thead>
       <tbody>
@@ -52,9 +52,10 @@ export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTablePr
               </td>
               <td className="text-muted">{cp.closedDate}</td>
               <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
-              <td style={{ textAlign: 'center', paddingRight: '8px' }}>
+              <td style={{ textAlign: 'center' }}>
                 <button
                   onClick={() => handleDeleteClosedPosition(cp.id)}
+                  className="btn-icon"
                   style={{
                     background: 'none',
                     border: 'none',

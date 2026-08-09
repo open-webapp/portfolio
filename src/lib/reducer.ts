@@ -90,27 +90,6 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'DELETE_IMPORT_SESSION':
       return StateActions.deleteImportSession(state, action.sessionId)
 
-    // Mapping profile management
-    case 'ADD_MAPPING_PROFILE':
-      return {
-        ...state,
-        mappingProfiles: [...state.mappingProfiles, action.profile],
-      }
-
-    case 'UPDATE_MAPPING_PROFILE':
-      return {
-        ...state,
-        mappingProfiles: state.mappingProfiles.map((p) =>
-          p.id === action.profileId ? action.profile : p
-        ),
-      }
-
-    case 'DELETE_MAPPING_PROFILE':
-      return {
-        ...state,
-        mappingProfiles: state.mappingProfiles.filter((p) => p.id !== action.profileId),
-      }
-
     default:
       return state
   }

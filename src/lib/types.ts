@@ -70,16 +70,6 @@ export interface PortfolioSnapshot {
   value: number
 }
 
-export interface MappingProfile {
-  id: string
-  name: string
-  kind: 'positions' | 'transactions'
-  fieldMap: Record<string, string>
-  constants?: Record<string, string>
-  createdAt: string
-  updatedAt: string
-}
-
 export const POSITIONS_REQUIRED_FIELDS = [
   'symbol',
   'assetClass',

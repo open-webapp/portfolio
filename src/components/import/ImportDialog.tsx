@@ -8,7 +8,7 @@ import {
   TRANSACTIONS_REQUIRED_FIELDS,
   TRANSACTIONS_OPTIONAL_FIELDS,
 } from '../../lib/types'
-import { listProfilesForKind, createProfile, updateProfile, applyMapping, validateProfile } from '../../lib/mappingProfiles'
+import { applyFieldMap, validatePreviewRow, isReviewValid } from '../../lib/importPreview'
 import { uid } from '../../lib/seed'
 
 export interface ImportDialogProps {
@@ -24,13 +24,41 @@ interface NewAccountFields {
   retirement: boolean
 }
 
-type DialogStep = 1 | 2 | 3 | 4
+const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
+  taxable: 'Taxable',
+  nonTaxable: 'Non-Taxable',
+  taxDeferred: 'Tax-Deferred',
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  symbol: 'Symbol',
+  name: 'Name',
+  assetClass: 'Asset Class',
+  shares: 'Shares',
+  avgCost: 'Cost Basis',
+  purchaseAmount: 'Purchase Amount',
+  price: 'Price',
+  marketValue: 'Market Value',
+  date: 'Date',
+  type: 'Type',
+  amount: 'Amount',
+  taxes: 'Taxes',
+}
+
+const FIELD_HINTS: Record<string, string> = {
+  avgCost: 'Alternative: Purchase Amount (avgCost = purchaseAmount ÷ shares)',
+  purchaseAmount: 'Alternative: Cost Basis (avgCost = purchaseAmount ÷ shares)',
+  price: 'Alternative: Market Value (price = marketValue ÷ shares)',
+  marketValue: 'Alternative: Price (price = marketValue ÷ shares)',
+  amount: 'Total cash value of the transaction (shares × price)',
+}
+
+type DialogStep = 1 | 2
 
 /**
- * ImportDialog: Unified 4-step CSV import dialog.
+ * ImportDialog: Unified 2-step CSV import dialog.
  * Step 1: Setup - choose data type, destination account (existing or new), select file
- * Step 2: Map columns - map CSV columns to fields, save mapping profiles
- * Steps 3-4: Implemented separately
+ * Step 2: Review - map CSV columns to fields, edit preview rows, import
  */
 export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -55,58 +83,11 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([])
 
-  // Step 2 state - mapping and constants
+  // Step 2 state - column mapping, editable preview, import completion
   const [fieldMap, setFieldMap] = useState<Record<string, string>>({})
-  const [constants, setConstants] = useState<Record<string, string>>({})
-  const [selectedProfileId, setSelectedProfileId] = useState<string>('')
-  const [profileMode, setProfileMode] = useState<'use-existing' | 'create-new'>('use-existing')
-  const [profileName, setProfileName] = useState('')
-
-  // Step 3 state - preview and validation
   const [importEdits, setImportEdits] = useState<Record<string, Record<string, string>>>({})
-
-  // Step 4 state - import completion
   const [importDone, setImportDone] = useState(false)
   const [importedRowCount, setImportedRowCount] = useState(0)
-
-  /**
-   * Validate a single preview row for required fields and alternative pairs.
-   * Returns {valid: boolean, errors: string[]}
-   */
-  const validatePreviewRow = useCallback(
-    (dataType: 'positions' | 'transactions', values: Record<string, string>): { valid: boolean; errors: string[] } => {
-      const errors: string[] = []
-
-      if (dataType === 'positions') {
-        // Check always-required fields
-        if (!values.symbol?.trim()) errors.push('Missing symbol')
-        if (!values.assetClass?.trim()) errors.push('Missing asset class')
-        if (!values.shares?.trim()) errors.push('Missing shares')
-
-        // Check alternative pairs
-        if (!values.avgCost?.trim() && !values.purchaseAmount?.trim()) {
-          errors.push('Missing cost basis (avgCost or purchaseAmount)')
-        }
-        if (!values.price?.trim() && !values.marketValue?.trim()) {
-          errors.push('Missing price (price or marketValue)')
-        }
-      } else if (dataType === 'transactions') {
-        // Check all required fields
-        if (!values.date?.trim()) errors.push('Missing date')
-        if (!values.symbol?.trim()) errors.push('Missing symbol')
-        if (!values.type?.trim()) errors.push('Missing type')
-        if (!values.shares?.trim()) errors.push('Missing shares')
-        if (!values.price?.trim()) errors.push('Missing price')
-        if (!values.amount?.trim()) errors.push('Missing amount')
-      }
-
-      return {
-        valid: errors.length === 0,
-        errors,
-      }
-    },
-    []
-  )
 
   const handleOpenDialog = useCallback(() => {
     setIsOpen(true)
@@ -130,10 +111,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setCsvHeaders([])
     setCsvRows([])
     setFieldMap({})
-    setConstants({})
-    setSelectedProfileId('')
-    setProfileMode('use-existing')
-    setProfileName('')
     setImportEdits({})
     setImportDone(false)
     setImportedRowCount(0)
@@ -223,67 +200,42 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     return accountResolved && fileSelected
   }
 
-  const isStep3Complete = (): boolean => {
-    // All rows must be valid for Step 3 to complete
-    const previewRows = csvRows.map((row) =>
-      applyMapping(row, { fieldMap, constants } as any)
-    )
-
-    return previewRows.every((previewRow, idx) => {
-      const editedRow = {
-        ...previewRow,
-        ...importEdits[idx],
-      }
-      const validation = validatePreviewRow(dataType, editedRow)
-      return validation.valid
-    })
-  }
-
   const handleContinue = useCallback(() => {
     if (step === 1) {
       if (!isStep1Complete()) return
-      // When entering Step 2, reset mapping state
-      setFieldMap({})
-      setConstants({})
-      setSelectedProfileId('')
-      setProfileName('')
       setStep(2)
-    } else if (step === 2) {
-      // Step 2 complete, proceed to Step 3
-      setImportEdits({}) // Reset edits when entering Step 3
-      setStep(3)
-    } else if (step === 3) {
-      // Step 3 complete, proceed to Step 4
-      if (!isStep3Complete()) return
-      setStep(4)
     }
-  }, [step, csvRows.length, file, accountMode, selectedAccountId, newAccountFields, dataType, fieldMap, constants, importEdits, validatePreviewRow])
+  }, [step, isStep1Complete])
 
   const handleBack = useCallback(() => {
-    setStep((s) => (s > 1 ? (s - 1) as DialogStep : 1))
+    setStep(1)
   }, [])
 
-  // Step 4: Handle import
+  // Step 2: Handle field mapping change
+  const handleFieldMapChange = useCallback((field: string, csvColumn: string) => {
+    setFieldMap((prev) => {
+      // Remove any existing column mapped to this field (fieldMap is { csvColumn: targetField })
+      const next: Record<string, string> = {}
+      for (const [col, target] of Object.entries(prev)) {
+        if (target !== field) next[col] = target
+      }
+      if (csvColumn !== '') next[csvColumn] = field
+      return next
+    })
+  }, [])
+
+  // Step 2: Build final rows from edited + validated preview and dispatch the import
   const handleImport = useCallback(() => {
-    // Build preview rows
-    const previewRows = csvRows.map((row) =>
-      applyMapping(row, { fieldMap, constants } as any)
-    )
+    const previewRows = csvRows.map((row) => applyFieldMap(row, fieldMap))
 
-    // Determine which rows are valid
-    const validRowIndices: number[] = []
     const finalRows: Record<string, string>[] = []
-
     previewRows.forEach((previewRow, idx) => {
       const editedRow = {
         ...previewRow,
         ...importEdits[idx],
       }
       const validation = validatePreviewRow(dataType, editedRow)
-      if (validation.valid) {
-        validRowIndices.push(idx)
-        finalRows.push(editedRow)
-      }
+      if (validation.valid) finalRows.push(editedRow)
     })
 
     // Determine the account ID
@@ -332,9 +284,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   }, [
     csvRows,
     fieldMap,
-    constants,
     importEdits,
-    validatePreviewRow,
     dataType,
     accountMode,
     selectedAccountId,
@@ -342,360 +292,275 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     dispatch,
   ])
 
-  // Step 2: Handle profile selection
-  const handleProfileSelect = useCallback(
-    (profileId: string) => {
-      setSelectedProfileId(profileId)
-      if (profileId === 'create-new') {
-        setFieldMap({})
-        setConstants({})
-      } else {
-        const profile = state.mappingProfiles.find((p) => p.id === profileId)
-        if (profile) {
-          setFieldMap({ ...profile.fieldMap })
-          setConstants(profile.constants ? { ...profile.constants } : {})
-        }
-      }
-    },
-    [state.mappingProfiles]
-  )
-
-  // Step 2: Handle field mapping change
-  const handleFieldMapChange = useCallback((field: string, csvColumn: string) => {
-    setFieldMap((prev) => {
-      if (csvColumn === 'enter-value' || csvColumn === '') {
-        // Remove the entry mapping to this field (fieldMap is { csvColumn: targetField })
-        const next: Record<string, string> = {}
-        for (const [col, target] of Object.entries(prev)) {
-          if (target !== field) next[col] = target
-        }
-        return next
-      } else {
-        return {
-          ...prev,
-          [csvColumn]: field,
-        }
-      }
-    })
-    // "Enter a value…" seeds an (empty) constant so the value input appears;
-    // any other choice clears the constant for this field.
-    setConstants((prev) => {
-      const next = { ...prev }
-      if (csvColumn === 'enter-value') {
-        next[field] = prev[field] ?? ''
-      } else {
-        delete next[field]
-      }
-      return next
-    })
-  }, [])
-
-  // Step 2: Handle constant value change
-  const handleConstantChange = useCallback((field: string, value: string) => {
-    setConstants((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }, [])
-
-  // Step 2: Handle use-existing continue
-  const handleUseExistingContinue = useCallback(() => {
-    if (!selectedProfileId) return
-    handleProfileSelect(selectedProfileId)
-    setImportEdits({})
-    setStep(3)
-  }, [selectedProfileId, handleProfileSelect])
-
-  // Step 2: Handle save profile and continue
-  const handleSaveProfileAndContinue = useCallback(() => {
-    const name = profileName.trim()
-    if (!name) return
-    if (!validateProfile(createProfile(name, dataType, fieldMap, constants), dataType).valid) return
-
-    const existing = state.mappingProfiles.find(
-      (p) => p.kind === dataType && p.name.trim().toLowerCase() === name.toLowerCase()
-    )
-    if (existing) {
-      if (!window.confirm(`A mapping profile named '${existing.name}' already exists. Overwrite it with this mapping?`)) {
-        return
-      }
-      const updated = updateProfile(existing, name, fieldMap, constants)
-      dispatch({ type: 'UPDATE_MAPPING_PROFILE', profileId: existing.id, profile: updated })
-      setSelectedProfileId(existing.id)
-    } else {
-      const created = createProfile(name, dataType, fieldMap, constants)
-      dispatch({ type: 'ADD_MAPPING_PROFILE', profile: created })
-      setSelectedProfileId(created.id)
+  const handlePrimary = useCallback(() => {
+    if (importDone) {
+      handleCloseDialog()
+      return
     }
-
-    setImportEdits({})
-    setStep(3)
-  }, [profileName, dataType, fieldMap, constants, state.mappingProfiles, dispatch])
+    handleImport()
+  }, [importDone, handleImport, handleCloseDialog])
 
   // Closed state: render button only
   if (!isOpen) {
     return (
-      <button
-        onClick={handleOpenDialog}
-        style={{
-          padding: '8px 16px',
-          borderRadius: '4px',
-          border: 'none',
-          background: 'var(--color-accent)',
-          color: 'var(--color-bg)',
-          cursor: 'pointer',
-        }}
-      >
+      <button type="button" className="btn btn-secondary blueprint" onClick={handleOpenDialog} aria-label="Import CSV">
+        <i className="corner tl"></i>
+        <i className="corner tr"></i>
+        <i className="corner bl"></i>
+        <i className="corner br"></i>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="14"
+          height="14"
+          style={{ marginRight: '6px', verticalAlign: '-2px' }}
+        >
+          <path d="M12 3v12"></path>
+          <path d="m7 8 5-5 5 5"></path>
+          <path d="M5 21h14"></path>
+        </svg>
         Import CSV
       </button>
     )
   }
 
-  // Dialog is open, render Step 1
+  // Derived Step 2 review state
+  const previewRows = csvRows.map((row) => applyFieldMap(row, fieldMap))
+  const requiredFields =
+    dataType === 'positions' ? POSITIONS_REQUIRED_FIELDS : TRANSACTIONS_REQUIRED_FIELDS
+  const optionalFields =
+    dataType === 'positions' ? POSITIONS_OPTIONAL_FIELDS : TRANSACTIONS_OPTIONAL_FIELDS
+  const allFields = [...requiredFields, ...optionalFields]
+  const rowValidations = previewRows.map((previewRow, idx) =>
+    validatePreviewRow(dataType, {
+      ...previewRow,
+      ...importEdits[idx],
+    })
+  )
+  const validRowCount = rowValidations.filter((v) => v.valid).length
+  const errorCount = rowValidations.length - validRowCount
+  const hasImportErrors = errorCount > 0
+
+  const destinationAccount =
+    accountMode === 'existing' ? state.accounts.find((a) => a.id === selectedAccountId) : null
+  const accountLabel =
+    accountMode === 'existing'
+      ? destinationAccount
+        ? destinationAccount.name +
+          (destinationAccount.accountNumber ? ` • #${destinationAccount.accountNumber}` : '')
+        : ''
+      : newAccountFields.name
+  const categoryLabel =
+    accountMode === 'existing'
+      ? destinationAccount
+        ? TAX_CATEGORY_LABELS[destinationAccount.taxCategory]
+        : ''
+      : TAX_CATEGORY_LABELS[newAccountFields.category]
+
+  const mappedColumnFor = (field: string): string =>
+    Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
+
+  // Dialog is open
   return (
     <>
-      {/* Modal backdrop */}
-      <div
-        onClick={handleCloseDialog}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.5)',
-          zIndex: 999,
-        }}
-      />
+      <div className="dialog-backdrop" onClick={handleCloseDialog} style={{ zIndex: 1000 }}>
+        <div
+          className="dialog blueprint"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: 'min(96vw, 1400px)',
+            maxWidth: '96vw',
+            maxHeight: '88vh',
+            overflow: 'auto',
+            background: 'var(--color-bg)',
+            boxShadow: 'var(--shadow-lg)',
+          }}
+        >
+          <i className="corner tl"></i>
+          <i className="corner tr"></i>
+          <i className="corner bl"></i>
+          <i className="corner br"></i>
 
-      {/* Modal dialog */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-divider)',
-          borderRadius: '8px',
-          padding: 'var(--space-6)',
-          maxWidth: 'min(1200px, 95vw)',
-          maxHeight: '80vh',
-          overflowY: 'auto',
-          zIndex: 1000,
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-        }}
-      >
-        <h2 style={{ marginBottom: 'var(--space-4)' }}>Import CSV</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="dialog-title">Import from CSV</div>
+            <button
+              type="button"
+              onClick={handleCloseDialog}
+              aria-label="Close"
+              style={{
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                color: 'var(--color-text)',
+                opacity: 0.6,
+                padding: '4px',
+                lineHeight: 0,
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="18"
+                height="18"
+              >
+                <path d="M18 6 6 18"></path>
+                <path d="m6 6 12 12"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 'var(--space-4)', marginBottom: 'var(--space-5)', flexWrap: 'wrap' }}>
+            {[
+              { num: 1, label: 'Setup', active: step === 1, completed: step > 1 },
+              { num: 2, label: 'Review', active: step === 2, completed: step > 2 },
+            ].map((s) => (
+              <div key={s.num} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                <span className={`tag ${s.active ? 'tag-accent' : s.completed ? 'tag-neutral' : 'tag-outline'}`}>
+                  {s.num}
+                </span>
+                <span className={s.active ? '' : 'text-muted'}>{s.label}</span>
+              </div>
+            ))}
+          </div>
 
         {/* Step 1: Setup */}
         {step === 1 && (
           <div>
-            {/* Data Type Selection */}
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                <strong>Data Type</strong>
-              </label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => setDataType('positions')}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    border: '1px solid var(--color-divider)',
-                    borderRadius: '4px',
-                    background:
-                      dataType === 'positions'
-                        ? 'var(--color-accent)'
-                        : 'var(--color-bg)',
-                    color:
-                      dataType === 'positions'
-                        ? 'var(--color-bg)'
-                        : 'var(--color-text)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Positions
-                </button>
-                <button
-                  onClick={() => setDataType('transactions')}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    border: '1px solid var(--color-divider)',
-                    borderRadius: '4px',
-                    background:
-                      dataType === 'transactions'
-                        ? 'var(--color-accent)'
-                        : 'var(--color-bg)',
-                    color:
-                      dataType === 'transactions'
-                        ? 'var(--color-bg)'
-                        : 'var(--color-text)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Transactions
-                </button>
-              </div>
-            </div>
-
-            {/* Account Mode Selection */}
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                <strong>Destination Account</strong>
-              </label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => setAccountMode('existing')}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    border: '1px solid var(--color-divider)',
-                    borderRadius: '4px',
-                    background:
-                      accountMode === 'existing'
-                        ? 'var(--color-accent)'
-                        : 'var(--color-bg)',
-                    color:
-                      accountMode === 'existing'
-                        ? 'var(--color-bg)'
-                        : 'var(--color-text)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Existing
-                </button>
-                <button
-                  onClick={() => setAccountMode('new')}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    border: '1px solid var(--color-divider)',
-                    borderRadius: '4px',
-                    background:
-                      accountMode === 'new'
-                        ? 'var(--color-accent)'
-                        : 'var(--color-bg)',
-                    color:
-                      accountMode === 'new'
-                        ? 'var(--color-bg)'
-                        : 'var(--color-text)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  New
-                </button>
-              </div>
-            </div>
-
-            {/* Existing Account Selection */}
-            {accountMode === 'existing' && (
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                  <strong>Select Account</strong>
+            <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+              <label>What are you importing?</label>
+              <div className="seg">
+                <label className="seg-opt">
+                  <input
+                    type="radio"
+                    name="importDataType"
+                    checked={dataType === 'transactions'}
+                    onChange={() => setDataType('transactions')}
+                  />
+                  <span>Transactions</span>
                 </label>
+                <label className="seg-opt">
+                  <input
+                    type="radio"
+                    name="importDataType"
+                    checked={dataType === 'positions'}
+                    onChange={() => setDataType('positions')}
+                  />
+                  <span>Positions / Holdings</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+              <label>Destination account</label>
+              <div className="seg">
+                <label className="seg-opt">
+                  <input
+                    type="radio"
+                    name="importAccountMode"
+                    checked={accountMode === 'existing'}
+                    onChange={() => setAccountMode('existing')}
+                  />
+                  <span>Existing account</span>
+                </label>
+                <label className="seg-opt">
+                  <input
+                    type="radio"
+                    name="importAccountMode"
+                    checked={accountMode === 'new'}
+                    onChange={() => setAccountMode('new')}
+                  />
+                  <span>New account</span>
+                </label>
+              </div>
+            </div>
+
+            {accountMode === 'existing' && (
+              <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                <label>Account</label>
                 <select
+                  className="input"
                   value={selectedAccountId}
                   onChange={(e) => setSelectedAccountId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid var(--color-divider)',
-                    borderRadius: '4px',
-                    background: 'var(--color-bg)',
-                  }}
                 >
                   <option value="">-- Select an account --</option>
                   {state.accounts.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} ({account.accountNumber})
+                      {account.name}
+                      {account.accountNumber ? ` • #${account.accountNumber}` : ''}
+                      {' — '}
+                      {TAX_CATEGORY_LABELS[account.taxCategory]}
                     </option>
                   ))}
                 </select>
               </div>
             )}
 
-            {/* New Account Fields */}
             {accountMode === 'new' && (
-              <div style={{ marginBottom: 'var(--space-4)' }}>
-                <div style={{ marginBottom: 'var(--space-3)' }}>
-                  <label style={{ display: 'block', marginBottom: 'var(--space-1)' }}>
-                    <strong>Account Name</strong>
-                  </label>
-                  <input
-                    type="text"
-                    value={newAccountFields.name}
-                    onChange={(e) =>
-                      setNewAccountFields({
-                        ...newAccountFields,
-                        name: e.target.value,
-                      })
-                    }
-                    placeholder="e.g., Fidelity Brokerage"
-                    className="input"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid var(--color-divider)',
-                      borderRadius: '4px',
-                      background: 'var(--color-bg)',
-                    }}
-                  />
+              <>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '2fr 1fr 1fr',
+                    gap: 'var(--space-3)',
+                    marginBottom: 'var(--space-3)',
+                  }}
+                >
+                  <div className="field">
+                    <label>New account name</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={newAccountFields.name}
+                      onChange={(e) =>
+                        setNewAccountFields({
+                          ...newAccountFields,
+                          name: e.target.value,
+                        })
+                      }
+                      placeholder="e.g. Fidelity Rollover IRA"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Account number</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={newAccountFields.number}
+                      onChange={(e) =>
+                        setNewAccountFields({
+                          ...newAccountFields,
+                          number: e.target.value,
+                        })
+                      }
+                      placeholder="e.g. 8842-1190"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Category</label>
+                    <select
+                      className="input"
+                      value={newAccountFields.category}
+                      onChange={(e) =>
+                        setNewAccountFields({
+                          ...newAccountFields,
+                          category: e.target.value as TaxCategory,
+                        })
+                      }
+                    >
+                      <option value="taxable">Taxable</option>
+                      <option value="nonTaxable">Non-Taxable</option>
+                      <option value="taxDeferred">Tax-Deferred</option>
+                    </select>
+                  </div>
                 </div>
-
-                <div style={{ marginBottom: 'var(--space-3)' }}>
-                  <label style={{ display: 'block', marginBottom: 'var(--space-1)' }}>
-                    <strong>Account Number</strong>
-                  </label>
-                  <input
-                    type="text"
-                    value={newAccountFields.number}
-                    onChange={(e) =>
-                      setNewAccountFields({
-                        ...newAccountFields,
-                        number: e.target.value,
-                      })
-                    }
-                    placeholder="e.g., 123456789"
-                    className="input"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid var(--color-divider)',
-                      borderRadius: '4px',
-                      background: 'var(--color-bg)',
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: 'var(--space-3)' }}>
-                  <label style={{ display: 'block', marginBottom: 'var(--space-1)' }}>
-                    <strong>Tax Category</strong>
-                  </label>
-                  <select
-                    value={newAccountFields.category}
-                    onChange={(e) =>
-                      setNewAccountFields({
-                        ...newAccountFields,
-                        category: e.target.value as TaxCategory,
-                      })
-                    }
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid var(--color-divider)',
-                      borderRadius: '4px',
-                      background: 'var(--color-bg)',
-                    }}
-                  >
-                    <option value="taxable">Taxable</option>
-                    <option value="nonTaxable">Non-Taxable</option>
-                    <option value="taxDeferred">Tax-Deferred</option>
-                  </select>
-                </div>
-
                 <div style={{ marginBottom: 'var(--space-3)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <input
@@ -711,25 +576,20 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                     <strong>Retirement Account</strong>
                   </label>
                 </div>
-              </div>
+              </>
             )}
 
-            {/* File Drop Zone */}
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                <strong>Select CSV File</strong>
-              </label>
+            <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+              <label>CSV file</label>
               <div
+                onClick={() => fileInputRef.current?.click()}
                 onDrop={handleFileDrop}
                 onDragOver={handleFileDragOver}
                 style={{
-                  border: '2px dashed var(--color-divider)',
-                  borderRadius: '4px',
-                  padding: 'var(--space-4)',
+                  border: '1px dashed var(--color-divider)',
+                  padding: 'var(--space-6)',
                   textAlign: 'center',
-                  background: 'var(--color-bg)',
                   cursor: 'pointer',
-                  transition: 'background-color 0.2s',
                 }}
               >
                 <input
@@ -739,801 +599,67 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                   onChange={handleFileInputChange}
                   style={{ display: 'none' }}
                 />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: 'var(--color-accent)',
-                    color: 'var(--color-bg)',
-                    cursor: 'pointer',
-                  }}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  width="22"
+                  height="22"
+                  style={{ color: 'var(--color-accent)', marginBottom: '8px' }}
                 >
-                  Choose File
-                </button>
-                <p style={{ margin: 'var(--space-2) 0 0 0', fontSize: '14px' }}>
-                  or drag and drop a CSV file here
-                </p>
+                  <path d="M12 3v12"></path>
+                  <path d="m7 8 5-5 5 5"></path>
+                  <path d="M5 21h14"></path>
+                </svg>
+                <div>{file ? file.name : 'No file selected'}</div>
+                <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
+                  Drag and drop, or click to browse
+                </div>
                 {file && (
-                  <p
-                    style={{
-                      margin: 'var(--space-2) 0 0 0',
-                      fontSize: '14px',
-                      color: 'var(--color-text-secondary)',
-                    }}
-                  >
+                  <div style={{ margin: 'var(--space-2) 0 0 0', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
                     Selected: <strong>{file.name}</strong> ({csvRows.length} rows)
-                  </p>
+                  </div>
                 )}
               </div>
               {fileError && (
-                <p
-                  style={{
-                    marginTop: 'var(--space-2)',
-                    color: 'var(--color-accent-2-800)',
-                    fontSize: '14px',
-                  }}
-                >
-                  {fileError}
-                </p>
+                <div style={{ color: '#8a3c2e', fontSize: '12px', marginTop: '6px' }}>{fileError}</div>
               )}
             </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={handleCloseDialog}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--color-divider)',
-                  background: 'var(--color-surface)',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleContinue}
-                disabled={!isStep1Complete()}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  background: isStep1Complete()
-                    ? 'var(--color-accent)'
-                    : 'var(--color-divider)',
-                  color: isStep1Complete()
-                    ? 'var(--color-bg)'
-                    : 'var(--color-text-secondary)',
-                  cursor: isStep1Complete() ? 'pointer' : 'not-allowed',
-                }}
-              >
+            <div className="dialog-actions">
+              <button className="btn btn-primary" onClick={handleContinue} disabled={!isStep1Complete()}>
                 Continue
               </button>
             </div>
           </div>
         )}
 
-        {/* Step 2: Map Columns */}
+        {/* Step 2: Review */}
         {step === 2 && (
           <div>
-            {(() => {
-              const kindProfiles = listProfilesForKind(state.mappingProfiles, dataType)
-              const effectiveMode = kindProfiles.length === 0 ? 'create-new' : profileMode
-              const requiredMapped = validateProfile(
-                createProfile(profileName.trim(), dataType, fieldMap, constants),
-                dataType
-              ).valid
-              const canSaveAndContinue = profileName.trim() !== '' && requiredMapped
-
-              return (
-                <>
-                  {kindProfiles.length > 0 && (
-                    <div style={{ marginBottom: 'var(--space-4)' }}>
-                      <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                        <strong>Mapping Source</strong>
-                      </label>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          onClick={() => setProfileMode('use-existing')}
-                          style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            border: '1px solid var(--color-divider)',
-                            borderRadius: '4px',
-                            background:
-                              effectiveMode === 'use-existing'
-                                ? 'var(--color-accent)'
-                                : 'var(--color-bg)',
-                            color:
-                              effectiveMode === 'use-existing'
-                                ? 'var(--color-bg)'
-                                : 'var(--color-text)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Use existing
-                        </button>
-                        <button
-                          onClick={() => setProfileMode('create-new')}
-                          style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            border: '1px solid var(--color-divider)',
-                            borderRadius: '4px',
-                            background:
-                              effectiveMode === 'create-new'
-                                ? 'var(--color-accent)'
-                                : 'var(--color-bg)',
-                            color:
-                              effectiveMode === 'create-new'
-                                ? 'var(--color-bg)'
-                                : 'var(--color-text)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Create new
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {effectiveMode === 'use-existing' ? (
-                    <>
-                      <div style={{ marginBottom: 'var(--space-4)' }}>
-                        <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                          <strong>Select Profile</strong>
-                        </label>
-                        <select
-                          value={selectedProfileId}
-                          onChange={(e) => handleProfileSelect(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            border: '1px solid var(--color-divider)',
-                            borderRadius: '4px',
-                            background: 'var(--color-bg)',
-                          }}
-                        >
-                          {kindProfiles.map((profile) => (
-                            <option key={profile.id} value={profile.id}>
-                              {profile.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={handleBack}
-                          style={{
-                            padding: '8px 16px',
-                            borderRadius: '4px',
-                            border: '1px solid var(--color-divider)',
-                            background: 'var(--color-surface)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Back
-                        </button>
-                        <button
-                          onClick={handleUseExistingContinue}
-                          disabled={selectedProfileId === ''}
-                          style={{
-                            padding: '8px 16px',
-                            borderRadius: '4px',
-                            border: 'none',
-                            background: selectedProfileId !== ''
-                              ? 'var(--color-accent)'
-                              : 'var(--color-divider)',
-                            color: selectedProfileId !== ''
-                              ? 'var(--color-bg)'
-                              : 'var(--color-text-secondary)',
-                            cursor: selectedProfileId !== '' ? 'pointer' : 'not-allowed',
-                          }}
-                        >
-                          Continue
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-
-            {/* Mapping grid */}
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <strong style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                Field Mapping
-              </strong>
-              <div
-                style={{
-                  border: '1px solid var(--color-divider)',
-                  borderRadius: '4px',
-                  overflow: 'auto',
-                }}
-              >
-                <table
-                  style={{
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    fontSize: '14px',
-                  }}
+            {importDone ? (
+              <div style={{ textAlign: 'center', padding: 'var(--space-6) 0' }}>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  width="40"
+                  height="40"
+                  style={{ color: 'var(--color-accent-700)' }}
                 >
-                  <thead>
-                    <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-divider)' }}>
-                      <th
-                        style={{
-                          padding: '8px 12px',
-                          textAlign: 'left',
-                          fontWeight: '600',
-                          width: '40%',
-                        }}
-                      >
-                        Field
-                      </th>
-                      <th
-                        style={{
-                          padding: '8px 12px',
-                          textAlign: 'left',
-                          fontWeight: '600',
-                          width: '60%',
-                        }}
-                      >
-                        CSV Column or Constant Value
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const requiredFields =
-                        dataType === 'positions'
-                          ? POSITIONS_REQUIRED_FIELDS
-                          : TRANSACTIONS_REQUIRED_FIELDS
-                      const optionalFields =
-                        dataType === 'positions'
-                          ? POSITIONS_OPTIONAL_FIELDS
-                          : TRANSACTIONS_OPTIONAL_FIELDS
-
-                      return (
-                        <>
-                          {/* Required fields */}
-                          {(requiredFields as readonly string[]).map((field) => (
-                            <tr
-                              key={field}
-                              style={{
-                                borderBottom: '1px solid var(--color-divider)',
-                              }}
-                            >
-                              <td style={{ padding: '8px 12px', fontWeight: '500' }}>
-                                {field}
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                  <select
-                                    value={
-                                      constants[field] !== undefined
-                                        ? 'enter-value'
-                                        : Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
-                                    }
-                                    onChange={(e) => handleFieldMapChange(field, e.target.value)}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px 8px',
-                                      border: '1px solid var(--color-divider)',
-                                      borderRadius: '3px',
-                                      background: 'var(--color-bg)',
-                                      fontSize: '14px',
-                                    }}
-                                  >
-                                    <option value="">-- Select column --</option>
-                                    {csvHeaders.map((header) => (
-                                      <option key={header} value={header}>
-                                        {header}
-                                      </option>
-                                    ))}
-                                    <option value="enter-value">Enter a value…</option>
-                                  </select>
-                                </div>
-                                {constants[field] !== undefined && (
-                                  <input
-                                    type="text"
-                                    value={constants[field] ?? ''}
-                                    onChange={(e) =>
-                                      handleConstantChange(field, e.target.value)
-                                    }
-                                    placeholder="Constant value"
-                                    style={{
-                                      width: '100%',
-                                      padding: '6px 8px',
-                                      border: '1px solid var(--color-divider)',
-                                      borderRadius: '3px',
-                                      background: 'var(--color-bg)',
-                                      fontSize: '14px',
-                                      marginTop: '6px',
-                                    }}
-                                  />
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-
-                          {/* Optional fields */}
-                          {(optionalFields as readonly string[]).map((field) => (
-                            <tr
-                              key={field}
-                              style={{
-                                borderBottom: '1px solid var(--color-divider)',
-                                background: 'var(--color-bg-secondary)',
-                              }}
-                            >
-                              <td style={{ padding: '8px 12px', fontWeight: '500', opacity: 0.8 }}>
-                                {field} (optional)
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                                  <select
-                                    value={
-                                      constants[field] !== undefined
-                                        ? 'enter-value'
-                                        : Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
-                                    }
-                                    onChange={(e) => handleFieldMapChange(field, e.target.value)}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px 8px',
-                                      border: '1px solid var(--color-divider)',
-                                      borderRadius: '3px',
-                                      background: 'var(--color-bg)',
-                                      fontSize: '14px',
-                                    }}
-                                  >
-                                    <option value="">-- Select column --</option>
-                                    {csvHeaders.map((header) => (
-                                      <option key={header} value={header}>
-                                        {header}
-                                      </option>
-                                    ))}
-                                    <option value="enter-value">Enter a value…</option>
-                                  </select>
-                                </div>
-                                {constants[field] !== undefined && (
-                                  <input
-                                    type="text"
-                                    value={constants[field] ?? ''}
-                                    onChange={(e) =>
-                                      handleConstantChange(field, e.target.value)
-                                    }
-                                    placeholder="Constant value"
-                                    style={{
-                                      width: '100%',
-                                      padding: '6px 8px',
-                                      border: '1px solid var(--color-divider)',
-                                      borderRadius: '3px',
-                                      background: 'var(--color-bg)',
-                                      fontSize: '14px',
-                                      marginTop: '6px',
-                                    }}
-                                  />
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </>
-                      )
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-                      <div style={{ marginBottom: 'var(--space-4)' }}>
-                        <label style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
-                          <strong>Profile Name</strong>
-                        </label>
-                        <input
-                          type="text"
-                          value={profileName}
-                          onChange={(e) => setProfileName(e.target.value)}
-                          placeholder="e.g., Fidelity Positions"
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            border: '1px solid var(--color-divider)',
-                            borderRadius: '4px',
-                            background: 'var(--color-bg)',
-                          }}
-                        />
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={handleBack}
-                          style={{
-                            padding: '8px 16px',
-                            borderRadius: '4px',
-                            border: '1px solid var(--color-divider)',
-                            background: 'var(--color-surface)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Back
-                        </button>
-                        <button
-                          onClick={handleSaveProfileAndContinue}
-                          disabled={!canSaveAndContinue}
-                          style={{
-                            padding: '8px 16px',
-                            borderRadius: '4px',
-                            border: 'none',
-                            background: canSaveAndContinue
-                              ? 'var(--color-accent)'
-                              : 'var(--color-divider)',
-                            color: canSaveAndContinue
-                              ? 'var(--color-bg)'
-                              : 'var(--color-text-secondary)',
-                            cursor: canSaveAndContinue ? 'pointer' : 'not-allowed',
-                          }}
-                        >
-                          Save Profile & Continue
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </>
-              )
-            })()}
-          </div>
-        )}
-
-        {/* Step 3: Preview & Validate */}
-        {step === 3 && (
-          <div>
-            <p style={{ marginBottom: 'var(--space-4)', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-              Review and edit the imported data below. Fix any errors to continue.
-            </p>
-
-            {(() => {
-              // Build preview rows
-              const previewRows = csvRows.map((row) =>
-                applyMapping(row, { fieldMap, constants } as any)
-              )
-
-              // Get field list (required + optional for this data type)
-              const requiredFields = dataType === 'positions'
-                ? POSITIONS_REQUIRED_FIELDS
-                : TRANSACTIONS_REQUIRED_FIELDS
-              const optionalFields = dataType === 'positions'
-                ? POSITIONS_OPTIONAL_FIELDS
-                : TRANSACTIONS_OPTIONAL_FIELDS
-              const allFields = [...requiredFields, ...optionalFields]
-
-              // Validate all rows
-              const rowValidations = previewRows.map((previewRow, idx) => {
-                const editedRow = {
-                  ...previewRow,
-                  ...importEdits[idx],
-                }
-                return validatePreviewRow(dataType, editedRow)
-              })
-
-              const validRowCount = rowValidations.filter((v) => v.valid).length
-              const hasErrors = rowValidations.some((v) => !v.valid)
-
-              return (
-                <div>
-                  {/* Row count summary */}
-                  <div
-                    style={{
-                      marginBottom: 'var(--space-4)',
-                      padding: 'var(--space-3)',
-                      background: 'var(--color-bg)',
-                      borderRadius: '4px',
-                      fontSize: '14px',
-                    }}
-                  >
-                    <strong>
-                      {validRowCount} of {previewRows.length} rows valid
-                    </strong>
-                  </div>
-
-                  {/* Editable preview table */}
-                  <div
-                    style={{
-                      border: '1px solid var(--color-divider)',
-                      borderRadius: '4px',
-                      overflow: 'auto',
-                      marginBottom: 'var(--space-4)',
-                      maxHeight: '400px',
-                    }}
-                  >
-                    <table
-                      style={{
-                        width: '100%',
-                        borderCollapse: 'collapse',
-                        fontSize: '13px',
-                      }}
-                    >
-                      <thead style={{ position: 'sticky', top: 0 }}>
-                        <tr style={{ background: 'var(--color-bg)', borderBottom: '1px solid var(--color-divider)' }}>
-                          <th
-                            style={{
-                              padding: '8px 12px',
-                              textAlign: 'center',
-                              fontWeight: '600',
-                              width: '50px',
-                            }}
-                          >
-                            Row
-                          </th>
-                          {(allFields as readonly string[]).map((field) => (
-                            <th
-                              key={field}
-                              style={{
-                                padding: '8px 12px',
-                                textAlign: 'left',
-                                fontWeight: '600',
-                                minWidth: '100px',
-                              }}
-                            >
-                              {field}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewRows.map((previewRow, rowIdx) => {
-                          const editedRow = {
-                            ...previewRow,
-                            ...importEdits[rowIdx],
-                          }
-                          const validation = validatePreviewRow(dataType, editedRow)
-                          const hasRowError = !validation.valid
-
-                          return (
-                            <tr
-                              key={rowIdx}
-                              style={{
-                                background: hasRowError ? 'rgba(200, 50, 50, 0.05)' : 'transparent',
-                                borderBottom: '1px solid var(--color-divider)',
-                              }}
-                            >
-                              <td
-                                style={{
-                                  padding: '8px 12px',
-                                  textAlign: 'center',
-                                  fontWeight: '500',
-                                  color: hasRowError ? 'var(--color-accent-2-800)' : 'var(--color-text-secondary)',
-                                }}
-                              >
-                                {rowIdx + 1}
-                                {hasRowError && <span style={{ display: 'block', fontSize: '10px' }}>✕</span>}
-                              </td>
-                              {(allFields as readonly string[]).map((field) => {
-                                const cellValue = editedRow[field] ?? ''
-                                const isRequiredMissing =
-                                  (requiredFields as readonly string[]).includes(field) &&
-                                  !cellValue.trim() &&
-                                  // Exception: avgCost/purchaseAmount and price/marketValue have alternatives
-                                  !(
-                                    (field === 'avgCost' && editedRow.purchaseAmount?.trim()) ||
-                                    (field === 'purchaseAmount' && editedRow.avgCost?.trim()) ||
-                                    (field === 'price' && editedRow.marketValue?.trim()) ||
-                                    (field === 'marketValue' && editedRow.price?.trim())
-                                  )
-                                const cellHasError = isRequiredMissing
-
-                                return (
-                                  <td
-                                    key={field}
-                                    style={{
-                                      padding: '8px 12px',
-                                      background: cellHasError ? 'rgba(200, 50, 50, 0.1)' : 'transparent',
-                                    }}
-                                  >
-                                    <input
-                                      type="text"
-                                      value={cellValue}
-                                      onChange={(e) => {
-                                        setImportEdits((prev) => ({
-                                          ...prev,
-                                          [rowIdx]: {
-                                            ...prev[rowIdx],
-                                            [field]: e.target.value,
-                                          },
-                                        }))
-                                      }}
-                                      style={{
-                                        width: '100%',
-                                        padding: '6px 8px',
-                                        border: cellHasError
-                                          ? '1px solid var(--color-accent-2-800)'
-                                          : '1px solid var(--color-divider)',
-                                        borderRadius: '3px',
-                                        background: 'var(--color-surface)',
-                                        fontSize: '13px',
-                                        boxSizing: 'border-box',
-                                      }}
-                                    />
-                                  </td>
-                                )
-                              })}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Error summary */}
-                  {hasErrors && (
-                    <div
-                      style={{
-                        marginBottom: 'var(--space-4)',
-                        padding: 'var(--space-3)',
-                        background: 'rgba(200, 50, 50, 0.05)',
-                        border: '1px solid var(--color-accent-2-800)',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                      }}
-                    >
-                      <strong style={{ color: 'var(--color-accent-2-800)' }}>Validation errors:</strong>
-                      <ul
-                        style={{
-                          margin: 'var(--space-1) 0 0 var(--space-4)',
-                          paddingLeft: '20px',
-                          color: 'var(--color-accent-2-800)',
-                        }}
-                      >
-                        {rowValidations.map((validation, idx) =>
-                          validation.errors.map((error) => (
-                            <li key={`${idx}-${error}`} style={{ margin: '4px 0' }}>
-                              Row {idx + 1}: {error}
-                            </li>
-                          ))
-                        )}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                    <button
-                      onClick={handleBack}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '4px',
-                        border: '1px solid var(--color-divider)',
-                        background: 'var(--color-surface)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Back
-                    </button>
-                    <button
-                      onClick={handleContinue}
-                      disabled={hasErrors}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        background: hasErrors
-                          ? 'var(--color-divider)'
-                          : 'var(--color-accent)',
-                        color: hasErrors
-                          ? 'var(--color-text-secondary)'
-                          : 'var(--color-bg)',
-                        cursor: hasErrors ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      Review Import
-                    </button>
-                  </div>
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <path d="m9 11 3 3L22 4"></path>
+                </svg>
+                <div className="card-title" style={{ margin: 'var(--space-3) 0 4px' }}>
+                  Import complete
                 </div>
-              )
-            })()}
-          </div>
-        )}
-
-        {/* Step 4: Confirm & Import */}
-        {step === 4 && (
-          <div>
-            {!importDone ? (
-              <div>
-                {/* Review Card */}
-                <div
-                  style={{
-                    marginBottom: 'var(--space-4)',
-                    padding: 'var(--space-4)',
-                    border: '1px solid var(--color-divider)',
-                    borderRadius: '4px',
-                    background: 'var(--color-bg)',
-                  }}
-                >
-                  <h3 style={{ marginBottom: 'var(--space-3)' }}>Import Summary</h3>
-
-                  {/* Data Type */}
-                  <div style={{ marginBottom: 'var(--space-3)' }}>
-                    <label style={{ display: 'block', marginBottom: 'var(--space-1)', fontSize: '12px', opacity: 0.7 }}>
-                      Data Type
-                    </label>
-                    <p style={{ margin: 0, fontWeight: '500' }}>
-                      {dataType === 'positions' ? 'Positions' : 'Transactions'}
-                    </p>
-                  </div>
-
-                  {/* Destination Account */}
-                  <div style={{ marginBottom: 'var(--space-3)' }}>
-                    <label style={{ display: 'block', marginBottom: 'var(--space-1)', fontSize: '12px', opacity: 0.7 }}>
-                      Destination Account
-                    </label>
-                    <p style={{ margin: 0, fontWeight: '500' }}>
-                      {accountMode === 'existing'
-                        ? state.accounts.find((a) => a.id === selectedAccountId)?.name || 'Unknown'
-                        : newAccountFields.name}
-                    </p>
-                  </div>
-
-                  {/* Valid Row Count */}
-                  <div>
-                    <label style={{ display: 'block', marginBottom: 'var(--space-1)', fontSize: '12px', opacity: 0.7 }}>
-                      Rows to Import
-                    </label>
-                    <p style={{ margin: 0, fontWeight: '500' }}>
-                      {(() => {
-                        const previewRows = csvRows.map((row) =>
-                          applyMapping(row, { fieldMap, constants } as any)
-                        )
-                        const validRows = previewRows.filter((previewRow, idx) => {
-                          const editedRow = {
-                            ...previewRow,
-                            ...importEdits[idx],
-                          }
-                          const validation = validatePreviewRow(dataType, editedRow)
-                          return validation.valid
-                        })
-                        return validRows.length
-                      })()}{' '}
-                      of {csvRows.length}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Action Buttons - no Back button on Step 4 */}
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={handleCloseDialog}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      border: '1px solid var(--color-divider)',
-                      background: 'var(--color-surface)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleImport}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      background: 'var(--color-accent)',
-                      color: 'var(--color-bg)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Import
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: 'var(--space-6)' }}>
-                <h3 style={{ marginBottom: 'var(--space-3)', color: 'var(--color-text)' }}>
-                  Import Complete
-                </h3>
-                <p style={{ marginBottom: 'var(--space-4)', fontSize: '16px', fontWeight: '500' }}>
+                <div className="text-muted">
                   Successfully imported {importedRowCount}{' '}
                   {dataType === 'positions'
                     ? importedRowCount === 1
@@ -1542,24 +668,176 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                     : importedRowCount === 1
                     ? 'transaction'
                     : 'transactions'}
-                </p>
-                <button
-                  onClick={handleCloseDialog}
+                  .
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="text-muted" style={{ fontSize: '12px', marginBottom: 'var(--space-3)' }}>
+                  Importing into{' '}
+                  <strong style={{ color: 'var(--color-text)' }}>{accountLabel}</strong> · {categoryLabel}
+                </div>
+                <div
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: 'var(--color-accent)',
-                    color: 'var(--color-bg)',
-                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 'var(--space-3)',
+                    flexWrap: 'wrap',
+                    gap: '6px',
                   }}
                 >
-                  Close
-                </button>
-              </div>
+                  <div className="text-muted" style={{ fontSize: '12px' }}>
+                    Pick the file's column for each field below. {previewRows.length} row(s) detected ·{' '}
+                    {validRowCount} valid. Fields marked * are required.
+                  </div>
+                  {hasImportErrors && (
+                    <span className="tag tag-outline">
+                      {errorCount} row(s) need fixing before you can continue
+                    </span>
+                  )}
+                </div>
+                <div
+                  style={{
+                    maxHeight: '420px',
+                    overflow: 'auto',
+                    border: '1px solid var(--color-divider)',
+                    width: '100%',
+                  }}
+                >
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        {(allFields as readonly string[]).map((field) => (
+                          <th
+                            key={field}
+                            style={{ whiteSpace: 'nowrap', verticalAlign: 'top', minWidth: '150px' }}
+                          >
+                            <div>
+                              {FIELD_LABELS[field] ?? field}
+                              {(requiredFields as readonly string[]).includes(field) && <span>*</span>}
+                            </div>
+                            <select
+                              className="input"
+                              style={{
+                                marginTop: '6px',
+                                fontWeight: 400,
+                                textTransform: 'none',
+                                letterSpacing: 'normal',
+                              }}
+                              value={mappedColumnFor(field)}
+                              onChange={(e) => handleFieldMapChange(field, e.target.value)}
+                            >
+                              <option value="">— Not mapped —</option>
+                              {csvHeaders.map((header) => (
+                                <option key={header} value={header}>
+                                  {header}
+                                </option>
+                              ))}
+                            </select>
+                            {FIELD_HINTS[field] && (
+                              <div
+                                className="text-muted"
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 400,
+                                  textTransform: 'none',
+                                  letterSpacing: 'normal',
+                                  marginTop: '4px',
+                                  whiteSpace: 'normal',
+                                }}
+                              >
+                                {FIELD_HINTS[field]}
+                              </div>
+                            )}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((previewRow, rowIdx) => {
+                        const editedRow = {
+                          ...previewRow,
+                          ...importEdits[rowIdx],
+                        }
+                        const validation = validatePreviewRow(dataType, editedRow)
+                        const hasRowError = !validation.valid
+
+                        return (
+                          <tr
+                            key={rowIdx}
+                            style={{
+                              background: hasRowError ? 'rgba(138, 60, 46, 0.06)' : 'transparent',
+                            }}
+                          >
+                            {(allFields as readonly string[]).map((field) => {
+                              const cellValue = editedRow[field] ?? ''
+                              const isRequiredMissing =
+                                (requiredFields as readonly string[]).includes(field) &&
+                                !cellValue.trim() &&
+                                // Exception: avgCost/purchaseAmount and price/marketValue have alternatives
+                                !(
+                                  (field === 'avgCost' && editedRow.purchaseAmount?.trim()) ||
+                                  (field === 'purchaseAmount' && editedRow.avgCost?.trim()) ||
+                                  (field === 'price' && editedRow.marketValue?.trim()) ||
+                                  (field === 'marketValue' && editedRow.price?.trim())
+                                )
+                              const cellHasError = isRequiredMissing
+
+                              return (
+                                <td key={field} style={{ padding: '6px 8px', verticalAlign: 'top' }}>
+                                  <input
+                                    type="text"
+                                    className="input"
+                                    value={cellValue}
+                                    style={
+                                      cellHasError
+                                        ? { borderColor: '#8a3c2e' }
+                                        : undefined
+                                    }
+                                    onChange={(e) => {
+                                      setImportEdits((prev) => ({
+                                        ...prev,
+                                        [rowIdx]: {
+                                          ...prev[rowIdx],
+                                          [field]: e.target.value,
+                                        },
+                                      }))
+                                    }}
+                                  />
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
+
+            <div className="dialog-actions">
+              {!importDone && (
+                <button type="button" className="btn btn-secondary blueprint" onClick={handleBack}>
+                  <i className="corner tl"></i>
+                  <i className="corner tr"></i>
+                  <i className="corner bl"></i>
+                  <i className="corner br"></i>
+                  Back
+                </button>
+              )}
+              <button
+                className="btn btn-primary"
+                onClick={handlePrimary}
+                disabled={importDone ? false : !isReviewValid(dataType, fieldMap) || hasImportErrors}
+              >
+                {importDone ? 'Done' : 'Import'}
+              </button>
+            </div>
           </div>
         )}
+        </div>
       </div>
     </>
   )

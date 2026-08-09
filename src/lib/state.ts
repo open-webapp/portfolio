@@ -4,7 +4,6 @@ import type {
   ClosedPosition,
   Transaction,
   PortfolioSnapshot,
-  MappingProfile,
   TaxCategory,
   ImportSession,
 } from './types'
@@ -16,7 +15,6 @@ export interface AppState {
   closedPositions: ClosedPosition[]
   transactions: Transaction[]
   snapshots: PortfolioSnapshot[]
-  mappingProfiles: MappingProfile[]
   importSessions: ImportSession[]
 
   // UI state
@@ -51,7 +49,6 @@ export function initialState(): AppState {
     closedPositions: [],
     transactions: [],
     snapshots: [],
-    mappingProfiles: [],
     importSessions: [],
 
     // UI state

@@ -7,7 +7,7 @@ export interface NavProps {
 }
 
 /**
- * Nav component: category tabs, retirement filter tags, and date range select.
+ * Nav component: category tabs and date range select.
  */
 export function Nav({ state, dispatch }: NavProps) {
   const categoryTabs = [
@@ -15,12 +15,6 @@ export function Nav({ state, dispatch }: NavProps) {
     { value: 'taxable', label: 'Taxable' },
     { value: 'nonTaxable', label: 'Non-Taxable' },
     { value: 'taxDeferred', label: 'Tax-Deferred' },
-  ]
-
-  const retirementFilters = [
-    { value: 'All', label: 'All' },
-    { value: 'Retirement', label: 'Retirement' },
-    { value: 'Non-Retirement', label: 'Non-Retirement' },
   ]
 
   const rangeOptions = [
@@ -35,16 +29,6 @@ export function Nav({ state, dispatch }: NavProps) {
       dispatch({
         type: 'SET_CATEGORY',
         category,
-      })
-    },
-    [dispatch]
-  )
-
-  const handleRetirementFilterChange = useCallback(
-    (filter: 'All' | 'Retirement' | 'Non-Retirement') => {
-      dispatch({
-        type: 'SET_RETIREMENT_FILTER',
-        filter,
       })
     },
     [dispatch]
@@ -69,6 +53,8 @@ export function Nav({ state, dispatch }: NavProps) {
         padding: 'var(--space-3) var(--space-6)',
       }}
     >
+      <div className="nav-brand">Ledger</div>
+
       {/* Category tabs */}
       <div className="seg">
         {categoryTabs.map((tab) => (
@@ -106,48 +92,28 @@ export function Nav({ state, dispatch }: NavProps) {
         ))}
       </select>
 
-      {/* Retirement filter tags and Settings */}
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
-        {retirementFilters.map((filter) => (
-          <span
-            key={filter.value}
-            onClick={() =>
-              handleRetirementFilterChange(
-                filter.value as 'All' | 'Retirement' | 'Non-Retirement'
-              )
-            }
-            className={`tag ${
-              state.retirementFilter === filter.value ? 'tag-accent' : ''
-            }`}
-            style={{ cursor: 'pointer' }}
-          >
-            {filter.label}
-          </span>
-        ))}
-
-        {/* Settings button */}
-        <button
-          onClick={() => dispatch({ type: 'SET_VIEW', view: 'settings' })}
-          title="Settings"
-          style={{
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '20px',
-            padding: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--color-text-secondary)',
-            transition: 'color 0.2s',
-            marginLeft: 'var(--space-4)',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-        >
-          ⚙️
-        </button>
-      </div>
+      {/* Settings button */}
+      <button
+        onClick={() => dispatch({ type: 'SET_VIEW', view: 'settings' })}
+        title="Settings"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: '20px',
+          padding: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--color-text-secondary)',
+          transition: 'color 0.2s',
+          marginLeft: 'auto',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
+        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+      >
+        ⚙️
+      </button>
     </div>
   )
 }

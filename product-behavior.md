@@ -6,15 +6,22 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Top to bottom: `Nav` (with gear button navigating to Settings page) → 5 `SummaryCards` → 2-column chart grid (`PerformanceChart`, `AllocationChart`) → tab selector (Positions / Transactions) → Import button + table for the active tab.
+Top to bottom: `Nav` → portfolio header row (kicker + title + retirement tags) → 4-column `SummaryCards` grid → 2-column chart grid (`2fr 1fr` — Performance wider than Allocation) → tabs row (Positions/Transactions `.seg` selector + right-aligned "Import CSV" button) → active tab's table.
 
 ## Nav
 
+- **Brand**: `.nav-brand` "Ledger".
 - **Category tabs** (radio-style `.seg`): All / Taxable / Non-Taxable / Tax-Deferred. Filters accounts by `Account.taxCategory`; "All" includes every account. Drives every downstream selector (positions, transactions, summary cards, allocation, performance series).
-- **Retirement filter tags**: All / Retirement / Non-Retirement. Filters *positions only* (not transactions, not summary cards, not allocation, not performance) by the owning `Account.retirement` boolean.
 - **Date range select**: 6 Months / 1 Year / YTD / All. Filters the Performance chart's plotted snapshots to those on/after a cutoff computed from today (`6m`/`1y` roll back that many months/years, `ytd` cuts off at Jan 1 of the current year, `all` shows everything). Does **not** affect summary cards, allocation, or the tables — those are category/retirement-filtered only.
+- **Settings gear**: navigates to the Settings page.
+
+## Portfolio header
+
+In the dashboard content area, below `Nav`: kicker "Portfolio" + `<h1>Ledger</h1>` on the left; retirement-filter `.tag` pills (All / Retirement / Non-Retirement) on the right. Pills filter **positions only** (not transactions, not summary cards, not allocation, not performance) by the owning `Account.retirement` boolean.
 
 ## Summary cards
+
+Rendered as `.card.blueprint.elev-sm` cards with corner marks, in rows of 4 equal columns (grid gap `var(--space-4)`, rows separated by `var(--space-4)`). The four main cards (items 1-4) render in one row of 4; **Total Taxes Paid** (item 5) renders on its own separate row below:
 
 1. **Total Value** — sum of `shares * price` across positions in the selected category. Always neutral-colored.
 2. **Day Change** — `lastSnapshotSeriesValue - previousSnapshotSeriesValue` across *all* accounts (not filtered by category), as a signed USD delta. Renders `N/A` when fewer than 2 distinct snapshot dates exist across the whole portfolio. Green (`--color-accent-700`) when ≥ 0, red (`#8a3c2e`) when negative.
@@ -32,12 +39,12 @@ Bar list grouped by *effective* asset class (`assetClassManualOverride || assetC
 
 ## Positions table
 
-- Filters (asset-class tags, computed from all positions currently in state — not category-scoped — sorted alphabetically) + free-text search (matches symbol or name, case-insensitive substring) + category + retirement filter (from Nav) all compose.
+- Filters (asset-class tags, computed from all positions currently in state — not category-scoped — sorted alphabetically) + free-text search (matches symbol or name, case-insensitive substring) + category + retirement filter (from the header row) all compose.
 - Columns: Symbol (symbol + name), Asset Class (effective), Shares, Cost Basis, Current Price, Amount Invested, Market Value, G/L (signed, colored), G/L %, Override.
 - Clicking a sortable column header (Symbol/Asset Class/Shares/Cost Basis/Current Price) toggles asc/desc via `TOGGLE_SORT`; clicking the currently-sorted column flips direction, clicking a different one resets to `asc`. An arrow (`↑`/`↓`) appears next to the active sort column. Amount Invested/Market Value/G/L/G/L % columns are display-only, not sortable.
 - **Override** column: `AssetClassOverrideSelect` — a button that opens a searchable dropdown of 7 seeded classes (Equity, ETF, Mutual Fund, Fixed Income, Crypto, Cash, Other) plus free-typed values. Selecting one sets `Position.assetClassManualOverride`; a "Clear override" option (shown only when an override is active) resets it to `undefined`. The button reads "Set" normally, "Override" (accent-colored) when an override is active.
 - **Closed Positions** toggle: a clickable row showing "Show/Hide Closed Positions" + a badge with `state.closedPositions.length` (unfiltered — the badge is not scoped to the current category/retirement filter, even though the table itself, when shown, still lists all closed positions with no filter applied either).
-- `ClosedPositionsTable` (shown when toggled): Security / Closed date / Realized G/L / Delete columns. Realized G/L renders `"unknown"` when `realizedGLBasis === 'unknown'`, otherwise a signed formatted USD amount; never a fabricated number. Delete column contains a trash-icon button per row; clicking it prompts with `window.confirm('Delete this closed position? This permanently discards its realized G/L history.')` — if confirmed, the closed position is removed permanently (unrecoverable).
+- `ClosedPositionsTable` (shown when toggled): Security / Closed date / Realized G/L / Delete columns. Realized G/L renders `"unknown"` when `realizedGLBasis === 'unknown'`, otherwise a signed formatted USD amount; never a fabricated number. Delete column (centered): a trash-icon `.btn-icon` button per row; clicking it opens a native browser dialog (`Delete this closed position? This permanently discards its realized G/L history.`) — accepting removes the closed position permanently (unrecoverable).
 
 ## Transactions table
 
@@ -48,50 +55,35 @@ Bar list grouped by *effective* asset class (`assetClassManualOverride || assetC
 
 ## CSV import (Positions / Transactions)
 
-A single "Import CSV" button (visible on both Positions and Transactions tabs) opens a unified 4-step `ImportDialog`:
+A single **Import CSV** button (`.btn.btn-secondary.blueprint` + 4 corner marks + upload SVG) sits right-aligned in the tabs row, visible on both Positions and Transactions tabs. It opens a 2-step `ImportDialog`:
 
-**Step 1 — Setup (choose data type & destination account)**:
-- **Data type** (`seg` control): Positions or Transactions.
-- **Destination account** (`seg` control): Existing account (dropdown populated from `state.accounts`) or New account.
-- **New account fields** (shown when "New account" is selected): name (required), number (required), tax category (`seg`: Taxable / Non-Taxable / Tax-Deferred), retirement toggle (`seg`: Yes / No).
-- **File selector**: drag-and-drop or `<input type=file accept=.csv>` zone. Parses immediately via Papa.parse (header row required, empty lines skipped, no type coercion).
-- **Continue** button: disabled until data type chosen, destination account resolved (existing selected OR new account name+number filled), and file parsed with ≥1 row.
+Dialog chrome: `.dialog.blueprint` + four corner marks; width `min(96vw, 1400px)`, `max-width: 96vw`, `max-height: 88vh`, `overflow: auto`. Header row (space-between): title "Import from CSV" + ✕ close button (`aria-label="Close"`). Step indicator `[Setup, Review]` as numbered tags: active = `tag-accent`, completed = `tag-neutral`, future = `tag-outline` + muted label. Footer `.dialog-actions`: Cancel (`.btn.btn-secondary`) / Continue (`.btn.btn-primary`) / primary import button.
 
-**Step 2 — Map columns (choose or build a mapping profile)**:
-- A "Mapping Source" seg control ("Use existing" / "Create new") renders at the top **only when** at least one `MappingProfile` exists for the chosen data type; default is "Use existing". If no profiles exist for the data type, the seg is absent and the create-new grid renders directly.
-- **Use existing** branch: a kind-scoped profile `<select>` (no "create new" sentinel option) + "Back" + "Continue" (disabled until a profile is selected). Continue re-loads the profile's `fieldMap`/`constants`, resets import edits, and advances to Step 3. No mapping grid and no missing-column warning here — Step 3 validates.
-- **Create new** branch: the mapping grid + an always-visible "Profile Name" text input (placeholder "e.g., Fidelity Positions", starts blank) + "Back" + a primary **"Save Profile & Continue"** button.
-  - **Mapping grid**: one row per field in `POSITIONS_REQUIRED_FIELDS`/`POSITIONS_OPTIONAL_FIELDS` (or `TRANSACTIONS_*` equivalents). Each field's dropdown shows parsed CSV headers plus a synthetic "Enter a value…" option.
-    - Selecting a CSV header maps that column to the field.
-    - Selecting "Enter a value…" reveals a text input; the constant value is applied to every row for this field.
-    - No "Account Number Column" option (v2 resolves the account upfront in Step 1, not per-row).
-  - "Save Profile & Continue" is disabled until the name is non-blank **and** `validateProfile` passes (Positions: symbol/name/assetClass/shares + *either* avgCost or purchaseAmount + *either* price or marketValue; Transactions: all 6 required fields).
-  - On click it trims the name and looks up same-`kind`, trim+case-insensitive matches. No match → `ADD_MAPPING_PROFILE` (`createProfile`); exact match → `window.confirm("A mapping profile named '<X>' already exists. Overwrite it with this mapping?")` — accept → `UPDATE_MAPPING_PROFILE` (same id/createdAt, fresh updatedAt), cancel → stays on the grid with the name intact. Either way it sets `selectedProfileId`, resets import edits, and advances to Step 3.
-- Toggling between branches preserves `fieldMap`, `constants`, `profileName`, and `selectedProfileId`. Back from Step 3 returns to the same branch with work intact. The grid's `fieldMap` is canonical `{ csvColumn: targetField }`; each dropdown reverse-looks-up `fieldMap[col] === field`.
+**Step 1 — Setup**:
+- **What are you importing?** (`.seg` radios): Transactions / Positions / Holdings — default Positions.
+- **Destination account** (`.seg` radios): Existing account / New account.
+  - Existing: `<select class="input">` with a blank `-- Select an account --` option; each option reads `{name} • #{number} — {category}` (or `{name} — {category}` when the account has no number).
+  - New: a `2fr/1fr/1fr` grid of "New account name", "Account number", "Category" select (Taxable / Non-Taxable / Tax-Deferred) + a "Retirement Account" checkbox.
+- **CSV file**: dashed dropzone (upload SVG, "No file selected" / "Drag and drop, or click to browse"; once a file parses, shows `{name} ({rows} rows)`). Non-`.csv` files and empty CSVs show an inline error.
+- **Continue** is disabled until the destination account is resolved (existing selected OR new name+number filled) and a file parsed with ≥1 row. Cancel/✕ closes the dialog and fully resets local state.
 
-**Step 3 — Preview & validate (edit rows, catch errors)**:
-- **Editable table**: one row per CSV row, one column per mapped field. Each cell is an `<input>`, reflecting the pre-mapped or constant value with any user edits applied locally.
-- **Per-cell validation**: Positions requires `symbol`, `name`, `assetClass`, `shares`, and *either* `avgCost` or `purchaseAmount`, and *either* `price` or `marketValue` (invalid cells show inline error messages). Transactions requires all of `date, symbol, type, shares, price, amount`. Rows with errors are styled to highlight the invalid cells.
-- **"Review Import"** button: disabled while any row has an error; enabled once all rows are valid or invalid rows are removed.
-
-**Step 4 — Confirm (review, commit, show completion)**:
-- **Review card**: shows data type label (Positions / Transactions), destination label (existing account name, or the new account's name), and valid-row count.
-- **"Import"** button: on click, (a) if new account, dispatch `ADD_ACCOUNT` with the Step 1 details (name, number, category, retirement), capturing the new account's id; (b) dispatch `IMPORT_POSITIONS` or `IMPORT_TRANSACTIONS` with the destination `accountId` and the preview rows (including any user edits from Step 3).
-- **"Import complete"** screen: shows a success message and row-count summary, allowing the user to review before closing.
-- **"Back"** from any step: returns to the prior step, preserving file, mapping, and edits.
-- **"Cancel"** from any step: closes the dialog and fully resets local state (file, mapping, edits, destination account).
+**Step 2 — Review**:
+- Destination line: `Importing into {account} · {category}` (existing-account label = `name` + ` • #number` when a number is present; category via `TAX_CATEGORY_LABELS`).
+- Summary line: `Pick the file's column for each field below. {n} row(s) detected · {valid} valid. Fields marked * are required.` A `tag-outline` pill reads `{n} row(s) need fixing before you can continue` whenever any row is invalid.
+- One `<table class="table">`: `<thead>` has one `<th>` per field in required-then-optional order (`*` on required); each `<th>` holds a mapping `<select>` (`— Not mapped —` + CSV headers; no "Enter a value…"/constant-value option) plus an alternative-pair hint for `avgCost`/`purchaseAmount`, `price`/`marketValue`, and `amount`. `<tbody>` renders one editable `<input>` per field per CSV row (values from `applyFieldMap(csvRow, fieldMap)`, user edits overlaid); cells missing a required field — with `avgCost`/`purchaseAmount` and `price`/`marketValue` treated as alternatives — get red-border error styling and a tinted row background.
+- **Back** (`.btn.btn-secondary.blueprint`) returns to Step 1 with file, account, and edits intact.
+- **Import** (primary): label `importDone ? 'Done' : 'Import'`; disabled while `!importDone && (!isReviewValid(dataType, fieldMap) || hasImportErrors)`. On commit, new-account mode dispatches `ADD_ACCOUNT` first (name, number, category, retirement) and captures the new account's id; then `IMPORT_POSITIONS` or `IMPORT_TRANSACTIONS` runs with the destination `accountId` and the valid, user-edited rows. All created rows are tagged with a fresh import-session id.
+- **Import complete**: a success block (check icon, "Import complete", "Successfully imported N position(s)/transaction(s).") replaces the review table in the same step-2 slot; the primary button becomes **Done** and closes + resets the dialog. Cancel/✕ at any point fully resets local state. Dialog-open state is component-local.
 
 ## Settings page
 
-A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Contains four sections:
+A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Contains three sections:
 
 **Drive backup**: Shows current sync status (connected/disconnected). A "Sync Now" button triggers `syncBackup(state)` to upload the current `AppState` to Google Drive. When connected, a "Disconnect" button calls `restoreBackup()` flow and clears the Drive link. Displays the date of the last successful backup, or "Never synced" if none exists.
 
-**Import Sessions**: A table listing all past CSV imports with columns: File name, Kind (Positions/Transactions), Date, Accounts affected (comma-separated account names), Row count. Each row has a "Copy" button (copies session metadata to clipboard, displays a confirmation toast) and a "Delete" button (prompts `window.confirm()` before removing the session and its associations from `state.importSessions`).
+**Import Sessions**: A table listing all past CSV imports with columns: Date/Time, Kind (Positions/Transactions), File Name, Accounts affected (comma-separated account names), Row Count. Each row has a Delete button (✕) that opens a native browser dialog (`Delete this import? This will remove ${rowCount} positions/transactions.`) — accepting removes the session and all rows tagged with its `importSessionId`.
 
-**Accounts**: A list of all accounts with inline edit/delete affordances. Each account row shows: name (editable), account number (editable), tax category (dropdown: Taxable/Non-Taxable/Tax-Deferred), retirement toggle (checkbox). Deleting an account via the trash-icon button prompts with `window.confirm('Delete account and all associated data? This is permanent.')` — if confirmed, the account and all its positions, transactions, snapshots, and import sessions are cascade-deleted.
-
-**Saved Mappings**: A list of all saved mapping profiles (created during the CSV import wizard), ordered by most recently updated first. Each row shows: Name, Kind (Positions/Transactions), Updated date (ISO string). Each row has an Edit button (pencil icon, opens `MappingProfileEditor` modal to update name/mapping) and a Delete button (trash icon, prompts with `window.confirm('Delete this saved profile? It will no longer be available for import.')` before removing). Empty state: "No saved profiles yet." when no profiles exist. No create-new-profile button in Settings (profiles are created only during the import wizard).
+**Accounts**: A list of all accounts with inline edit/delete affordances. Each account row shows: account number (editable), name (editable), tax category (dropdown: Taxable/Non-Taxable/Tax-Deferred), retirement toggle (checkbox). Deleting an account via the trash-icon button opens a native browser dialog (`Delete this account? This removes all its positions, closed positions, transactions, and snapshots.`) — accepting cascade-deletes the account and its associated data.
 
 **Back button**: Returns to the dashboard.
 

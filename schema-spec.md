@@ -2,14 +2,14 @@
 
 See also: [design.md](design.md), [product-behavior.md](product-behavior.md)
 
-All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `map` (MappingProfile), `import` (ImportSession).
+All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `import` (ImportSession).
 
 ## Account
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('acc')` |
-| `accountNumber` | `string` | Raw value from the mapped account-number CSV column, or user-typed on first-seen prompt (prompt UI not yet built — see product-behavior.md) |
+| `accountNumber` | `string` | User-typed in the import dialog's new-account form; not derived from CSV |
 | `name` | `string` | User-assigned, editable |
 | `taxCategory` | `TaxCategory` | `'taxable' \| 'nonTaxable' \| 'taxDeferred'` |
 | `retirement` | `boolean` | |
@@ -19,11 +19,11 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | `string` | `uid('pos')`. Regenerated fresh on every import — **not** stable across re-imports of the same `(accountId, symbol)` (differs from the original v1 plan) |
+| `id` | `string` | `uid('pos')`. Regenerated fresh on every import — **not** stable across re-imports of the same `(accountId, symbol)` |
 | `importSessionId` | `string` | FK → `ImportSession.id`. Tags which CSV import created this row. |
 | `accountId` | `string` | FK → `Account.id` |
 | `symbol` | `string` | |
-| `name` | `string \| null` | `null` if the mapping profile has no `name` column mapped. Never required (`name` removed from `POSITIONS_REQUIRED_FIELDS`). UI falls back to `symbol` when null. |
+| `name` | `string \| null` | `null` if the CSV has no `name` column mapped. Never required (`name` not in `POSITIONS_REQUIRED_FIELDS`). UI falls back to `symbol` when null. |
 | `assetClass` | `string` | From CSV mapping; not a closed enum in storage |
 | `assetClassManualOverride?` | `string` | If set, wins over `assetClass` everywhere (filtering, grouping, display) |
 | `shares` | `number` | `parseCsvNumber` of mapped `shares` column |
@@ -82,18 +82,6 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 
 **Natural key**: `(accountId, date)`. Re-importing the same account on the same calendar date **replaces** the prior snapshot for that key (upsert, not append). A CSV spanning multiple accounts produces one snapshot per resolved account, not one combined snapshot. Whole-portfolio series are derived, never stored — see `selectors.totalValueSeries`.
 
-## MappingProfile
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` | `string` | `uid('map')` |
-| `name` | `string` | User-named |
-| `kind` | `'positions' \| 'transactions'` | Profiles are scoped to one CSV shape; `listProfilesForKind` filters by this |
-| `fieldMap` | `Record<string, string>` | Keys are **CSV header names**, values are our internal field names, e.g. `{ 'Symbol': 'symbol', 'Qty': 'shares' }` — i.e. `fieldMap[csvHeader] = ourField` (note: inverted relative to the original plan's `ourField -> csvHeader` description) |
-| `constants?` | `Record<string, string>` | Constant values applied to every imported row, keyed by internal field name (e.g., `assetClass`, `category`) |
-| `createdAt` | `string` | ISO, set once |
-| `updatedAt` | `string` | ISO, bumped on every `updateProfile` call |
-
 ## ImportSession
 
 | Field | Type | Notes |
@@ -106,6 +94,8 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | `rowCount` | `number` | Number of rows successfully imported in this session |
 
 ### Required field sets
+
+Defined in `src/lib/types.ts`:
 
 ```ts
 POSITIONS_REQUIRED_FIELDS = [
@@ -120,7 +110,13 @@ TRANSACTIONS_REQUIRED_FIELDS = ['date', 'symbol', 'type', 'shares', 'price', 'am
 TRANSACTIONS_OPTIONAL_FIELDS = ['taxes']
 ```
 
-`name` (positions) and `taxes` (positions + transactions) are **never** in a required-fields list — always optional, defaulting to `null` when unmapped. `MappingProfileEditor` renders `POSITIONS_OPTIONAL_FIELDS`/`TRANSACTIONS_OPTIONAL_FIELDS` in a separate "Map Optional Fields" section (below required fields) so users can still map a CSV column to them; `validateProfile` never requires them. (`name` must stay listed in `POSITIONS_OPTIONAL_FIELDS` — it was briefly missing from both the required and optional lists, which silently made the editor offer no dropdown for it at all; see `MappingProfileEditor.test.tsx`'s regression test.)
+Optional fields (`name` for positions; `taxes` for both kinds) are never required — unmapped → `null`. The import Review step renders the mapping table in required-then-optional order: required fields carry a `*` next to their label, optional fields don't. `avgCost`/`purchaseAmount` and `price`/`marketValue` are validated as alternative pairs (at least one of each pair suffices) and the mapping `<select>` headers show cross-hints for them.
+
+### Import validation (`src/lib/importPreview.ts`)
+
+- `applyFieldMap(row, fieldMap)` — renames each row's keys per `{ csvColumn: targetField }`.
+- `validatePreviewRow(dataType, values) → { valid, errors }` — per-row required-missing checks. Positions: `symbol`/`assetClass`/`shares` + ≥1 of `{avgCost, purchaseAmount}` + ≥1 of `{price, marketValue}`. Transactions: all of `TRANSACTIONS_REQUIRED_FIELDS`, no alternative pairs.
+- `isReviewValid(dataType, fieldMap) → boolean` — all required fields present among `Object.values(fieldMap)`; positions honor the alternative pairs.
 
 ## Action Types
 
@@ -148,22 +144,13 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 **Imports**
 - `IMPORT_POSITIONS`: Merge/replace positions for an account (calls `importPositions` helper)
 - `IMPORT_TRANSACTIONS`: Merge transactions for an account (calls `importTransactions` helper)
-
-**Mapping Profiles**
-- `ADD_MAPPING_PROFILE`: Add new `MappingProfile`
-- `UPDATE_MAPPING_PROFILE`: Replace a `MappingProfile` entirely
-- `DELETE_MAPPING_PROFILE`: Remove a `MappingProfile`
-
-### `validateProfile(profile, kind)` rules
-
-- **positions**: `symbol`, `assetClass`, `shares` always required. Error if neither `avgCost` nor `purchaseAmount` is mapped; error if neither `price` nor `marketValue` is mapped. Warning (non-blocking) if *both* of a pair are mapped — import prefers `avgCost`/`price` over the fallback.
-- **transactions**: all of `TRANSACTIONS_REQUIRED_FIELDS` required, no alternative-pair logic, no warnings.
-- Returns `{ valid: boolean, errors: string[], warnings?: string[] }`.
+- `ADD_IMPORT_SESSION`: Add an `ImportSession` (newest-first, capped at 50)
+- `DELETE_IMPORT_SESSION`: Remove an `ImportSession` and all rows tagged with its id
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
-`category: TaxCategory | 'all'`, `range: string` (`'6m' | '1y' | 'ytd' | 'all'`, currently inert — see product-behavior.md), `tab: 'positions' | 'transactions'`, `view: 'dashboard' | 'settings'`, `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `assetClassFilter: string`, `retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'`, `posSearch: string`, `txTypeFilter: string`, `txSearch: string`, `showClosed: boolean`.
+`category: TaxCategory | 'all'`, `range: string` (`'6m' | '1y' | 'ytd' | 'all'`), `tab: 'positions' | 'transactions'`, `view: 'dashboard' | 'settings'`, `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `assetClassFilter: string`, `retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'`, `posSearch: string`, `txTypeFilter: string`, `txSearch: string`, `showClosed: boolean`.
 
 ## Persistence envelope
 
-IndexedDB (`persist.ts`): DB `portfolio_app_state_v1`, object store `app_state`, single key `'current'` holding the entire `AppState` object (all 7 collections + all UI fields) as one blob — no per-collection stores. On load, every collection field is coalesced against `initialState()` defaults (`loaded.x ?? defaults.x`), so a blob missing a newer collection/field loads with that field defaulted rather than throwing. `pendingImport?: { kind, profileId, rows, fileName }`.
+IndexedDB (`persist.ts`): DB `portfolio_app_state_v1`, object store `app_state`, single key `'current'` holding the entire `AppState` object (all 6 collections + all UI fields) as one blob — no per-collection stores. On load, `loadPersistedApp` rebuilds the object field-by-field from a fixed whitelist, coalescing missing collections/fields against `initialState()` defaults (`loaded.x ?? defaults.x`) — so a blob missing a newer collection/field loads with that field defaulted rather than throwing, and stale keys not on the whitelist (left over from removed features) are silently dropped. `savePersistedApp` rethrows IndexedDB open/write failures (rejections propagate to the caller — no silent success).

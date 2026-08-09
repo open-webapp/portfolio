@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { importPositions } from './positionsImport'
 import { initialState, addAccount } from './state'
 import type { Account, Position, ClosedPosition, Transaction } from './types'
-import { createProfile, validateProfile } from './mappingProfiles'
 import { uid } from './seed'
 
 // Helper to create test accounts
@@ -787,48 +786,6 @@ describe('positionsImport', () => {
     const closedTsla = result.closedPositions.find((cp) => cp.symbol === 'TSLA')
     expect(closedTsla).toBeDefined()
     expect(closedTsla!.name).toBeNull()
-  })
-
-  // Task 8: Test 5 - Validation passes without name mapped
-  it('Test 8.5: Validation passes without name mapped', () => {
-    const profile = createProfile(
-      'Profile without name',
-      'positions',
-      {
-        Symbol: 'symbol',
-        Class: 'assetClass',
-        Qty: 'shares',
-        Cost: 'avgCost',
-        Price: 'price',
-        // name is not mapped
-      }
-    )
-
-    const result = validateProfile(profile, 'positions')
-
-    expect(result.valid).toBe(true)
-    expect(result.errors).toHaveLength(0)
-  })
-
-  // Task 8: Test 6 - Validation passes without taxes mapped
-  it('Test 8.6: Validation passes without taxes mapped', () => {
-    const profile = createProfile(
-      'Profile without taxes',
-      'positions',
-      {
-        Symbol: 'symbol',
-        Class: 'assetClass',
-        Qty: 'shares',
-        Cost: 'avgCost',
-        Price: 'price',
-        // taxes is not mapped
-      }
-    )
-
-    const result = validateProfile(profile, 'positions')
-
-    expect(result.valid).toBe(true)
-    expect(result.errors).toHaveLength(0)
   })
 
   // Regression: a CSV row with blank cells for required fields (e.g. missing

@@ -1,9 +1,6 @@
 import { useCallback, useState, useEffect } from 'react'
 import type { AppState } from '../lib/state'
-import type { MappingProfile, TaxCategory } from '../lib/types'
-import { listProfilesForKind } from '../lib/mappingProfiles'
-import { MappingProfileEditor } from './import/MappingProfileEditor'
-import { Pencil, Trash } from 'lucide-react'
+import type { TaxCategory } from '../lib/types'
 import {
   getDriveConnection,
   connectDrive,
@@ -23,8 +20,6 @@ export interface SettingsPageProps {
 export function SettingsPage({ state, dispatch }: SettingsPageProps) {
   const [syncing, setSyncing] = useState(false)
   const [driveReady, setDriveReady] = useState(false)
-  const [mappingProfilesModalOpen, setMappingProfilesModalOpen] = useState(false)
-  const [editingProfile, setEditingProfile] = useState<MappingProfile | undefined>(undefined)
 
   // Check Drive connection status on mount
   useEffect(() => {
@@ -95,27 +90,6 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
       setSyncing(false)
     }
   }, [])
-
-  const handleSaveProfile = (profile: MappingProfile) => {
-    dispatch({ type: 'UPDATE_MAPPING_PROFILE', profileId: profile.id, profile })
-    setMappingProfilesModalOpen(false)
-    setEditingProfile(undefined)
-  }
-
-  const handleDeleteProfile = (profileId: string) => {
-    if (!window.confirm('Delete this saved profile? It will no longer be available for import.')) return
-    dispatch({ type: 'DELETE_MAPPING_PROFILE', profileId })
-  }
-
-  const closeProfileModal = () => {
-    setMappingProfilesModalOpen(false)
-    setEditingProfile(undefined)
-  }
-
-  const sortedProfiles = [
-    ...listProfilesForKind(state.mappingProfiles, 'positions'),
-    ...listProfilesForKind(state.mappingProfiles, 'transactions'),
-  ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
 
   return (
     <div>
@@ -240,99 +214,6 @@ export function SettingsPage({ state, dispatch }: SettingsPageProps) {
           </table>
         )}
       </section>
-
-      {/* Saved Mappings section */}
-      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <h2>Saved Mappings</h2>
-        {state.mappingProfiles.length === 0 ? (
-          <p>No saved profiles yet.</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Kind</th>
-                <th>Updated</th>
-                <th style={{ width: '40px' }}></th>
-                <th style={{ width: '40px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProfiles.map((profile) => (
-                <tr key={profile.id}>
-                  <td>{profile.name}</td>
-                  <td>{profile.kind === 'positions' ? 'Positions' : 'Transactions'}</td>
-                  <td className="text-muted">{profile.updatedAt}</td>
-                  <td style={{ textAlign: 'center', paddingRight: '8px' }}>
-                    <button
-                      onClick={() => {
-                        setEditingProfile(profile)
-                        setMappingProfilesModalOpen(true)
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--color-text-secondary)',
-                        transition: 'color 0.2s',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-accent)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                      title="Edit this profile"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                  </td>
-                  <td style={{ textAlign: 'center', paddingRight: '8px' }}>
-                    <button
-                      onClick={() => handleDeleteProfile(profile.id)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--color-text-secondary)',
-                        transition: 'color 0.2s',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-                      title="Delete this profile"
-                    >
-                      <Trash size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {mappingProfilesModalOpen && editingProfile && (
-        <div
-          className="dialog-backdrop"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              closeProfileModal()
-            }
-          }}
-        >
-          <MappingProfileEditor
-            kind={editingProfile.kind}
-            csvHeaders={Object.keys(editingProfile.fieldMap)}
-            existingProfile={editingProfile}
-            onSave={handleSaveProfile}
-            onCancel={closeProfileModal}
-          />
-        </div>
-      )}
     </div>
   )
 }

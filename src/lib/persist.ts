@@ -57,7 +57,6 @@ export async function loadPersistedApp(): Promise<AppState | null> {
           closedPositions: loaded.closedPositions ?? defaults.closedPositions,
           transactions: loaded.transactions ?? defaults.transactions,
           snapshots: loaded.snapshots ?? defaults.snapshots,
-          mappingProfiles: loaded.mappingProfiles ?? defaults.mappingProfiles,
           importSessions: loaded.importSessions ?? defaults.importSessions,
 
           // UI state with existing values or defaults
@@ -101,5 +100,6 @@ export async function savePersistedApp(state: AppState): Promise<void> {
     })
   } catch (error) {
     console.error('Failed to save app state:', error)
+    throw error
   }
 }
