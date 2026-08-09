@@ -30,7 +30,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
   const [driveReady, setDriveReady] = useState(false)
   const [driveEmail, setDriveEmail] = useState<string | null>(null)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'accounts' | 'drive' | 'encryption'>('accounts')
+  const [activeTab, setActiveTab] = useState<'general' | 'importSessions'>('general')
 
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -223,14 +223,13 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
       {/* Settings tabs */}
       <div className="seg" style={{ marginBottom: '24px' }}>
         {[
-          { value: 'accounts', label: 'Accounts' },
-          { value: 'drive', label: 'Google Drive Sync' },
-          { value: 'encryption', label: 'Encryption Password' },
+          { value: 'general', label: 'General' },
+          { value: 'importSessions', label: 'Import Sessions' },
         ].map((tab) => (
           <label
             key={tab.value}
             className="seg-opt"
-            onClick={() => setActiveTab(tab.value as 'accounts' | 'drive' | 'encryption')}
+            onClick={() => setActiveTab(tab.value as 'general' | 'importSessions')}
           >
             <input
               type="radio"
@@ -243,7 +242,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
         ))}
       </div>
 
-      {activeTab === 'accounts' && (
+      {activeTab === 'general' && (
         <>
           {/* Accounts section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
@@ -275,11 +274,8 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
               </table>
             )}
           </section>
-        </>
-      )}
 
-      {activeTab === 'drive' && (
-        <>
+          {/* Google Drive Sync section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
             <h2 style={{ textAlign: 'left' }}>Google Drive Sync</h2>
             
@@ -405,11 +401,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
               </div>
             )}
           </section>
-        </>
-      )}
 
-      {activeTab === 'encryption' && (
-        <>
           {/* Change Encryption Password section */}
           <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
             <h2 style={{ textAlign: 'left' }}>Change Encryption Password</h2>
@@ -461,6 +453,69 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
                 <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
               )}
             </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'importSessions' && (
+        <>
+          {/* Import Sessions section */}
+          <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
+            <h2 style={{ textAlign: 'left' }}>Import Sessions</h2>
+            {state.importSessions.length === 0 ? (
+              <p>No imports yet.</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Date/Time</th>
+                    <th>Kind</th>
+                    <th>File Name</th>
+                    <th>Accounts</th>
+                    <th>Row Count</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.importSessions.map((session) => (
+                    <tr key={session.id}>
+                      <td>{new Date(session.importedAt).toLocaleString()}</td>
+                      <td>{session.kind === 'positions' ? 'Positions' : 'Transactions'}</td>
+                      <td>{session.fileName}</td>
+                      <td>
+                        {session.accountIds
+                          .map((id) => state.accounts.find((a) => a.id === id)?.name || id)
+                          .join(', ')}
+                      </td>
+                      <td>{session.rowCount}</td>
+                      <td>
+                        <button
+                          title="Delete this import session"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Delete this import? This will remove ${session.rowCount} positions/transactions.`
+                              )
+                            ) {
+                              dispatch({ type: 'DELETE_IMPORT_SESSION', sessionId: session.id })
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: '#8a3c2e',
+                            fontSize: '18px',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </section>
         </>
       )}

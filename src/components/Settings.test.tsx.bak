@@ -100,6 +100,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       await waitFor(() => {
         const heading = screen.getByRole('heading', { name: 'Google Drive Sync' })
@@ -123,6 +124,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       expect(connectButton.className).toContain('btn btn-primary')
@@ -138,6 +140,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       fireEvent.click(connectButton)
@@ -160,6 +163,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       fireEvent.click(connectButton)
@@ -182,6 +186,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
       fireEvent.click(connectButton)
@@ -206,6 +211,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Sync Now' })).toBeTruthy()
@@ -228,6 +234,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       expect(syncButton.className).toContain('btn btn-primary')
@@ -245,6 +252,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       await screen.findByRole('button', { name: 'Sync Now' })
 
@@ -260,6 +268,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const link = await screen.findByRole('link', { name: 'View backup in Google Drive' })
       expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-123/view')
@@ -275,6 +284,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -296,6 +306,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -318,6 +329,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -340,6 +352,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -372,6 +385,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -399,6 +413,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -421,6 +436,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -444,6 +460,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -467,6 +484,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
@@ -493,6 +511,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const disconnectLink = await screen.findByText('Disconnect')
       fireEvent.click(disconnectLink)
@@ -524,6 +543,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const disconnectLink = await screen.findByText('Disconnect')
       fireEvent.click(disconnectLink)
@@ -546,6 +566,7 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
 
       const disconnectLink = await screen.findByText('Disconnect')
       fireEvent.click(disconnectLink)
@@ -569,10 +590,10 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
-      // By default, the "General" tab is shown with Accounts and Google Drive Sync sections
+      // By default, the "Accounts" tab is shown
       expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
-      // Import Sessions should not be visible until its tab is clicked
+      // Other sections should not be visible until their tabs are clicked
+      expect(screen.queryByRole('heading', { name: 'Google Drive Sync' })).toBeFalsy()
       expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
     })
 
@@ -621,21 +642,11 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
-      // First, verify General tab is active with Accounts and Drive Sync visible
-      expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
-      expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
-
-      // Click Import Sessions tab
       await clickSettingsTab('Import Sessions')
       expect(screen.getByRole('heading', { name: 'Import Sessions' })).toBeTruthy()
-      expect(screen.queryByRole('heading', { name: 'Accounts' })).toBeFalsy()
-      expect(screen.queryByRole('heading', { name: 'Google Drive Sync' })).toBeFalsy()
 
-      // Click back to General tab
-      await clickSettingsTab('General')
+      await clickSettingsTab('Accounts')
       expect(screen.getByRole('heading', { name: 'Accounts' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
       expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
     })
 
@@ -652,6 +663,7 @@ describe('SettingsPage', () => {
       expect(accountsHeading).toBeTruthy()
 
       // Click to Drive Sync tab to verify Drive Sync heading appears
+      await clickSettingsTab('Google Drive Sync')
       const driveSyncHeading = screen.getByRole('heading', { name: 'Google Drive Sync' })
       expect(driveSyncHeading).toBeTruthy()
     })
@@ -1077,7 +1089,7 @@ describe('SettingsPage', () => {
       fireEvent.change(currentInput, { target: { value: fields.current } })
       fireEvent.change(newInput, { target: { value: fields.next } })
       fireEvent.change(confirmInput, { target: { value: fields.confirm } })
-      fireEvent.click(screen.getByRole('button', { name: 'Change Encryption Password' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Change Password' }))
     }
 
     it('happy path: saves locally, calls onKeyChange, shows success, clears fields, no Drive sync when not connected', async () => {
@@ -1095,6 +1107,7 @@ describe('SettingsPage', () => {
         />
       )
 
+      await clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1119,7 +1132,7 @@ describe('SettingsPage', () => {
       expect(keyChangeArgs[1]).toEqual(saveArgs[2])
 
       await waitFor(() => {
-        expect(screen.getByText('Encryption password changed')).toBeTruthy()
+        expect(screen.getByText('Password changed')).toBeTruthy()
       })
 
       const inputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
@@ -1143,6 +1156,7 @@ describe('SettingsPage', () => {
         />
       )
 
+      await clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'wrong-password',
@@ -1151,7 +1165,7 @@ describe('SettingsPage', () => {
       })
 
       await waitFor(() => {
-        expect(screen.getByText('Current encryption password is incorrect')).toBeTruthy()
+        expect(screen.getByText('Current password is incorrect')).toBeTruthy()
       })
 
       expect(persistModule.savePersistedApp).not.toHaveBeenCalled()
@@ -1172,6 +1186,7 @@ describe('SettingsPage', () => {
         />
       )
 
+      await clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1180,7 +1195,7 @@ describe('SettingsPage', () => {
       })
 
       await waitFor(() => {
-        expect(screen.getByText('Encryption password must be at least 6 characters')).toBeTruthy()
+        expect(screen.getByText('Password must be at least 6 characters')).toBeTruthy()
       })
 
       expect(persistModule.savePersistedApp).not.toHaveBeenCalled()
@@ -1201,6 +1216,7 @@ describe('SettingsPage', () => {
         />
       )
 
+      await clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1209,7 +1225,7 @@ describe('SettingsPage', () => {
       })
 
       await waitFor(() => {
-        expect(screen.getByText('Encryption passwords do not match')).toBeTruthy()
+        expect(screen.getByText('Passwords do not match')).toBeTruthy()
       })
 
       expect(persistModule.savePersistedApp).not.toHaveBeenCalled()
@@ -1233,6 +1249,7 @@ describe('SettingsPage', () => {
         />
       )
 
+      await clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1251,7 +1268,7 @@ describe('SettingsPage', () => {
       expect(syncArgs[2]).toEqual(saveArgs[2])
 
       await waitFor(() => {
-        expect(screen.getByText('Encryption password changed')).toBeTruthy()
+        expect(screen.getByText('Password changed')).toBeTruthy()
       })
       expect(screen.queryByText(/Drive re-sync failed/)).toBeFalsy()
     })
@@ -1273,6 +1290,7 @@ describe('SettingsPage', () => {
         />
       )
 
+      await clickSettingsTab('Encryption Password')
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -1288,7 +1306,7 @@ describe('SettingsPage', () => {
       })
       await waitFor(() => {
         expect(
-          screen.getByText(/Encryption password changed locally, but Drive re-sync failed: network down/)
+          screen.getByText(/Password changed locally, but Drive re-sync failed: network down/)
         ).toBeTruthy()
       })
     })
