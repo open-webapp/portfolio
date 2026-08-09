@@ -252,6 +252,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       await screen.findByRole('button', { name: 'Sync Now' })
 
       expect(screen.queryByRole('link', { name: 'View backup in Google Drive' })).toBeFalsy()
@@ -266,6 +268,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       const link = await screen.findByRole('link', { name: 'View backup in Google Drive' })
       expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-123/view')
       expect(link.getAttribute('target')).toBe('_blank')
@@ -279,6 +283,8 @@ describe('SettingsPage', () => {
         sessionSalt={sessionSalt}
         onKeyChange={mockOnKeyChange}
       />)
+
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -299,6 +305,8 @@ describe('SettingsPage', () => {
         sessionSalt={sessionSalt}
         onKeyChange={mockOnKeyChange}
       />)
+
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -321,6 +329,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
 
@@ -341,6 +351,8 @@ describe('SettingsPage', () => {
         sessionSalt={sessionSalt}
         onKeyChange={mockOnKeyChange}
       />)
+
+      await clickSettingsTab('Google Drive Sync')
 
       const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
@@ -373,6 +385,8 @@ describe('SettingsPage', () => {
         onKeyChange={mockOnKeyChange}
       />)
 
+      await clickSettingsTab('Google Drive Sync')
+
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
@@ -398,6 +412,8 @@ describe('SettingsPage', () => {
         sessionSalt={sessionSalt}
         onKeyChange={mockOnKeyChange}
       />)
+
+      await clickSettingsTab('Google Drive Sync')
 
       const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
