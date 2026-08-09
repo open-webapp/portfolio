@@ -281,11 +281,12 @@ describe('ImportDialog (2-step wizard)', () => {
 
     expect(document.querySelectorAll('table')).toHaveLength(1)
     const ths = document.querySelectorAll('table thead th')
-    expect(ths).toHaveLength(9)
+    expect(ths).toHaveLength(10)
     expect(document.querySelectorAll('table thead th select')).toHaveLength(9)
+    expect(ths[0].querySelector('div')).toBeNull()
 
     const labelTexts = Array.from(ths).map((th) => th.querySelector('div')?.textContent?.trim())
-    expect(labelTexts).toEqual([
+    expect(labelTexts.slice(1)).toEqual([
       'Symbol*',
       'Asset Class*',
       'Shares*',
@@ -298,7 +299,7 @@ describe('ImportDialog (2-step wizard)', () => {
     ])
 
     const expectedOptions = ['— Not mapped —', ...POS_HEADERS]
-    for (const th of ths) {
+    for (const th of Array.from(ths).slice(1)) {
       const options = Array.from(th.querySelectorAll('option')).map((o) => o.textContent)
       expect(options).toEqual(expectedOptions)
     }
@@ -393,6 +394,56 @@ describe('ImportDialog (2-step wizard)', () => {
     mapPositions()
     expect((screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(/1 row\(s\) need fixing before you can continue/)).toBeTruthy()
+  })
+
+  it('13b. Step 2: deleting a row removes it from the preview and the import payload, re-keying edits after it', async () => {
+    await mockCsv(POS_HEADERS, [
+      { Symbol: 'AAPL', 'Asset Class': 'Equity', Shares: '100', 'Cost Basis': '150', Price: '180' },
+      { Symbol: 'MSFT', 'Asset Class': 'Equity', Shares: '50', 'Cost Basis': '200', Price: '210' },
+      { Symbol: 'GOOG', 'Asset Class': 'Equity', Shares: '10', 'Cost Basis': '100', Price: '120' },
+    ])
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    mapPositions()
+
+    // Edit the last row (GOOG) so its edit must survive the delete's index re-key
+    const lastRowInputs = document.querySelectorAll(
+      'tbody tr:last-child td input'
+    ) as NodeListOf<HTMLInputElement>
+    fireEvent.change(lastRowInputs[0], { target: { value: 'GOOGL' } })
+
+    expect(screen.getAllByTitle('Delete this row')).toHaveLength(3)
+
+    fireEvent.click(screen.getAllByTitle('Delete this row')[1])
+
+    expect(screen.getAllByTitle('Delete this row')).toHaveLength(2)
+    expect(screen.getByText(/2 row\(s\) detected/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    const importCall = dispatch.mock.calls.find((c) => c[0].type === 'IMPORT_POSITIONS')
+    expect(importCall).toBeTruthy()
+    expect(importCall![0].mappedRows).toEqual([
+      { symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' },
+      { symbol: 'GOOGL', assetClass: 'Equity', shares: '10', avgCost: '100', price: '120' },
+    ])
+  })
+
+  it('13c. Step 2: deleting all rows disables the Import button', async () => {
+    await advanceToStep2()
+    mapPositions()
+
+    expect((screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(screen.getByTitle('Delete this row'))
+
+    expect(screen.queryAllByTitle('Delete this row')).toHaveLength(0)
+    expect((screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('14. Step 2 new-account mode (positions): Import dispatches ADD_ACCOUNT (retirement flag) then IMPORT_POSITIONS with the new id — no intermediate confirm', async () => {

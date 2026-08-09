@@ -115,7 +115,8 @@ Optional fields (`name` for positions; `taxes` for both kinds) are never require
 ### Import validation (`src/lib/importPreview.ts`)
 
 - `applyFieldMap(row, fieldMap)` — renames each row's keys per `{ csvColumn: targetField }`.
-- `validatePreviewRow(dataType, values) → { valid, errors }` — per-row required-missing checks. Positions: `symbol`/`assetClass`/`shares` + ≥1 of `{avgCost, purchaseAmount}` + ≥1 of `{price, marketValue}`. Transactions: all of `TRANSACTIONS_REQUIRED_FIELDS`, no alternative pairs.
+- `isBlankRow(values)` — true when every value is empty after trim (trailing blank CSV rows).
+- `validatePreviewRow(dataType, values) → { valid, errors }` — per-row required-missing checks. Positions: `symbol`/`assetClass`/`shares` + ≥1 of `{avgCost, purchaseAmount}` + ≥1 of `{price, marketValue}`. Transactions: all of `TRANSACTIONS_REQUIRED_FIELDS`, no alternative pairs. Blank rows (`isBlankRow`) always return `valid: true` — they never block import and are skipped at commit.
 - `isReviewValid(dataType, fieldMap) → boolean` — all required fields present among `Object.values(fieldMap)`; positions honor the alternative pairs.
 
 ## Action Types

@@ -82,6 +82,19 @@ describe('validatePreviewRow (positions)', () => {
     expect(result.errors).toHaveLength(0)
   })
 
+  it('is valid when every field is empty (blank row should not block import)', () => {
+    const result = validatePreviewRow('positions', {
+      symbol: '',
+      assetClass: '',
+      shares: '',
+      avgCost: '',
+      price: '',
+    })
+
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+  })
+
   it('errors when symbol is missing', () => {
     const result = validatePreviewRow('positions', { ...completePositionsValues, symbol: '' })
 
@@ -147,6 +160,20 @@ describe('validatePreviewRow (positions)', () => {
 describe('validatePreviewRow (transactions)', () => {
   it('is valid when all six required fields are present', () => {
     const result = validatePreviewRow('transactions', completeTransactionsValues)
+
+    expect(result.valid).toBe(true)
+    expect(result.errors).toHaveLength(0)
+  })
+
+  it('is valid when every field is empty (blank row should not block import)', () => {
+    const result = validatePreviewRow('transactions', {
+      date: '',
+      symbol: '',
+      type: '',
+      shares: '',
+      price: '',
+      amount: '',
+    })
 
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)

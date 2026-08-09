@@ -15,10 +15,18 @@ export function applyFieldMap(
   return mapped
 }
 
+export function isBlankRow(values: Record<string, string>): boolean {
+  return Object.values(values).every((value) => !value.trim())
+}
+
 export function validatePreviewRow(
   dataType: 'positions' | 'transactions',
   values: Record<string, string>
 ): { valid: boolean; errors: string[] } {
+  if (isBlankRow(values)) {
+    return { valid: true, errors: [] }
+  }
+
   const errors: string[] = []
 
   if (dataType === 'positions') {

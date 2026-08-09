@@ -8,8 +8,9 @@ import {
   TRANSACTIONS_REQUIRED_FIELDS,
   TRANSACTIONS_OPTIONAL_FIELDS,
 } from '../../lib/types'
-import { applyFieldMap, validatePreviewRow, isReviewValid } from '../../lib/importPreview'
+import { applyFieldMap, validatePreviewRow, isReviewValid, isBlankRow } from '../../lib/importPreview'
 import { uid } from '../../lib/seed'
+import { Trash } from 'lucide-react'
 
 export interface ImportDialogProps {
   state: AppState
@@ -224,6 +225,20 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     })
   }, [])
 
+  // Step 2: Drop a row from the preview (removes it from csvRows and re-keys importEdits)
+  const handleDeleteRow = useCallback((rowIdx: number) => {
+    setCsvRows((prev) => prev.filter((_, idx) => idx !== rowIdx))
+    setImportEdits((prev) => {
+      const next: Record<string, Record<string, string>> = {}
+      for (const [key, value] of Object.entries(prev)) {
+        const idx = Number(key)
+        if (idx === rowIdx) continue
+        next[idx > rowIdx ? String(idx - 1) : key] = value
+      }
+      return next
+    })
+  }, [])
+
   // Step 2: Build final rows from edited + validated preview and dispatch the import
   const handleImport = useCallback(() => {
     const previewRows = csvRows.map((row) => applyFieldMap(row, fieldMap))
@@ -235,7 +250,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         ...importEdits[idx],
       }
       const validation = validatePreviewRow(dataType, editedRow)
-      if (validation.valid) finalRows.push(editedRow)
+      if (validation.valid && !isBlankRow(editedRow)) finalRows.push(editedRow)
     })
 
     // Determine the account ID
@@ -710,6 +725,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                   <table className="table">
                     <thead>
                       <tr>
+                        <th style={{ width: '32px' }}></th>
                         {(allFields as readonly string[]).map((field) => (
                           <th
                             key={field}
@@ -772,6 +788,31 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                               background: hasRowError ? 'rgba(138, 60, 46, 0.06)' : 'transparent',
                             }}
                           >
+                            <td style={{ padding: '6px 4px', verticalAlign: 'top' }}>
+                              <button
+                                type="button"
+                                className="btn-icon"
+                                onClick={() => handleDeleteRow(rowIdx)}
+                                title="Delete this row"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: 'var(--color-text-secondary)',
+                                  transition: 'color 0.2s',
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
+                                onMouseLeave={(e) =>
+                                  (e.currentTarget.style.color = 'var(--color-text-secondary)')
+                                }
+                              >
+                                <Trash size={14} />
+                              </button>
+                            </td>
                             {(allFields as readonly string[]).map((field) => {
                               const cellValue = editedRow[field] ?? ''
                               const isRequiredMissing =
@@ -832,7 +873,11 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
               <button
                 className="btn btn-primary"
                 onClick={handlePrimary}
-                disabled={importDone ? false : !isReviewValid(dataType, fieldMap) || hasImportErrors}
+                disabled={
+                  importDone
+                    ? false
+                    : !isReviewValid(dataType, fieldMap) || hasImportErrors || previewRows.length === 0
+                }
               >
                 {importDone ? 'Done' : 'Import'}
               </button>
