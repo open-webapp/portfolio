@@ -70,6 +70,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
 
   // Step 1 state
   const [dataType, setDataType] = useState<'positions' | 'transactions'>('positions')
+  const [entryMode, setEntryMode] = useState<'upload' | 'manual'>('upload')
   const [accountMode, setAccountMode] = useState<'existing' | 'new'>('existing')
   const [selectedAccountId, setSelectedAccountId] = useState<string>('')
   const [newAccountFields, setNewAccountFields] = useState<NewAccountFields>({
@@ -100,6 +101,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setIsOpen(false)
     setStep(1)
     setDataType('positions')
+    setEntryMode('upload')
     setAccountMode('existing')
     setSelectedAccountId('')
     setNewAccountFields({
@@ -200,8 +202,8 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       accountMode === 'existing'
         ? selectedAccountId !== ''
         : newAccountFields.name.trim() !== '' && newAccountFields.number.trim() !== ''
-    // File must be selected and parsed with >= 1 row
-    const fileSelected = file !== null && csvRows.length > 0
+    // In manual mode there is no CSV file requirement.
+    const fileSelected = entryMode === 'manual' || (file !== null && csvRows.length > 0)
     return accountResolved && fileSelected
   }
 
@@ -209,25 +211,29 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     if (step === 1) {
       if (!isStep1Complete()) return
 
-      // Prefill fieldMap from saved mapping if importing to existing account
-      if (accountMode === 'existing' && selectedAccountId) {
-        const saved = state.csvMappings.find(
-          (m) => m.accountId === selectedAccountId && m.kind === dataType
-        )
-        if (saved) {
-          // Filter saved fieldMap to only columns present in current CSV
-          const prefill = Object.fromEntries(
-            Object.entries(saved.fieldMap).filter(([csvCol]) => csvHeaders.includes(csvCol))
+      if (entryMode === 'manual') {
+        setCsvRows(Array.from({ length: 10 }, () => ({})))
+      } else {
+        // Prefill fieldMap from saved mapping if importing to existing account
+        if (accountMode === 'existing' && selectedAccountId) {
+          const saved = state.csvMappings.find(
+            (m) => m.accountId === selectedAccountId && m.kind === dataType
           )
-          setFieldMap(prefill)
+          if (saved) {
+            // Filter saved fieldMap to only columns present in current CSV
+            const prefill = Object.fromEntries(
+              Object.entries(saved.fieldMap).filter(([csvCol]) => csvHeaders.includes(csvCol))
+            )
+            setFieldMap(prefill)
+          }
+          // If no saved mapping, leave fieldMap as-is (preserves manual mappings from back-and-continue flow)
         }
-        // If no saved mapping, leave fieldMap as-is (preserves manual mappings from back-and-continue flow)
+        // For new account mode, also leave fieldMap as-is (user's manual mappings already set)
       }
-      // For new account mode, also leave fieldMap as-is (user's manual mappings already set)
 
       setStep(2)
     }
-  }, [step, isStep1Complete, accountMode, selectedAccountId, dataType, csvHeaders, state.csvMappings])
+  }, [step, isStep1Complete, entryMode, accountMode, selectedAccountId, dataType, csvHeaders, state.csvMappings])
 
   const handleBack = useCallback(() => {
     setStep(1)
@@ -346,8 +352,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       })
     }
 
-    // Save the mapping for future use
-    dispatch({ type: 'UPSERT_CSV_MAPPING', accountId, kind: dataType, fieldMap })
+    // Save mappings only for CSV-upload sessions.
+    if (entryMode === 'upload') {
+      dispatch({ type: 'UPSERT_CSV_MAPPING', accountId, kind: dataType, fieldMap })
+    }
 
     // Show completion state
     setImportDone(true)
@@ -358,6 +366,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     importEdits,
     dataType,
     accountMode,
+    entryMode,
     selectedAccountId,
     newAccountFields,
     dispatch,
@@ -374,7 +383,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   // Closed state: render button only
   if (!isOpen) {
     return (
-      <button type="button" className="btn btn-secondary blueprint" onClick={handleOpenDialog} aria-label="Import CSV">
+      <button type="button" className="btn btn-secondary blueprint" onClick={handleOpenDialog} aria-label="Import">
         <i className="corner tl"></i>
         <i className="corner tr"></i>
         <i className="corner bl"></i>
@@ -394,7 +403,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
           <path d="m7 8 5-5 5 5"></path>
           <path d="M5 21h14"></path>
         </svg>
-        Import CSV
+        Import
       </button>
     )
   }
@@ -406,6 +415,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const optionalFields =
     dataType === 'positions' ? POSITIONS_OPTIONAL_FIELDS : TRANSACTIONS_OPTIONAL_FIELDS
   const allFields = [...requiredFields, ...optionalFields]
+  const isManualAssetClassOnlyRow = (row: Record<string, string>): boolean =>
+    entryMode === 'manual' &&
+    dataType === 'positions' &&
+    Object.entries(row).every(([field, value]) => (field === 'assetClass' ? true : !value.trim()))
   const rowValidations = previewRows.map((previewRow, idx) =>
     validatePreviewRow(dataType, {
       ...previewRow,
@@ -414,7 +427,23 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   )
   const validRowCount = rowValidations.filter((v) => v.valid).length
   const errorCount = rowValidations.length - validRowCount
-  const hasImportErrors = errorCount > 0
+  const hasImportErrors = rowValidations.some((v, idx) => {
+    if (v.valid) return false
+    return !isManualAssetClassOnlyRow({
+      ...previewRows[idx],
+      ...importEdits[idx],
+    })
+  })
+  const hasNoValidManualRows =
+    entryMode === 'manual' &&
+    rowValidations.every((v, idx) => {
+      if (!v.valid) return true
+      const mergedRow = {
+        ...previewRows[idx],
+        ...importEdits[idx],
+      }
+      return isBlankRow(mergedRow) || isManualAssetClassOnlyRow(mergedRow)
+    })
 
   const destinationAccount =
     accountMode === 'existing' ? state.accounts.find((a) => a.id === selectedAccountId) : null
@@ -457,7 +486,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
           <i className="corner br"></i>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="dialog-title">Import from CSV</div>
+            <div className="dialog-title">Import</div>
             <button
               type="button"
               onClick={handleCloseDialog}
@@ -513,7 +542,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                     type="radio"
                     name="importDataType"
                     checked={dataType === 'transactions'}
-                    onChange={() => setDataType('transactions')}
+                    onChange={() => {
+                      setDataType('transactions')
+                      setEntryMode('upload')
+                    }}
                   />
                   <span>Transactions</span>
                 </label>
@@ -652,55 +684,83 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
               </>
             )}
 
-            <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-              <label>CSV file</label>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                onDrop={handleFileDrop}
-                onDragOver={handleFileDragOver}
-                style={{
-                  border: '1px dashed var(--color-divider)',
-                  padding: 'var(--space-6)',
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileInputChange}
-                  style={{ display: 'none' }}
-                />
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  width="22"
-                  height="22"
-                  style={{ color: 'var(--color-accent)', marginBottom: '8px' }}
-                >
-                  <path d="M12 3v12"></path>
-                  <path d="m7 8 5-5 5 5"></path>
-                  <path d="M5 21h14"></path>
-                </svg>
-                <div>{file ? file.name : 'No file selected'}</div>
-                <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
-                  Drag and drop, or click to browse
+            {dataType === 'positions' && (
+              <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                <label>How would you like to add positions?</label>
+                <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
+                  <label className="seg-opt">
+                    <input
+                      type="radio"
+                      name="importEntryMode"
+                      checked={entryMode === 'upload'}
+                      onChange={() => setEntryMode('upload')}
+                    />
+                    <span>Upload CSV file</span>
+                  </label>
+                  <label className="seg-opt">
+                    <input
+                      type="radio"
+                      name="importEntryMode"
+                      checked={entryMode === 'manual'}
+                      onChange={() => setEntryMode('manual')}
+                    />
+                    <span>Enter manually</span>
+                  </label>
                 </div>
-                {file && (
-                  <div style={{ margin: 'var(--space-2) 0 0 0', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                    Selected: <strong>{file.name}</strong> ({csvRows.length} rows)
+              </div>
+            )}
+
+            {entryMode === 'upload' && (
+              <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                <label>CSV file</label>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDrop={handleFileDrop}
+                  onDragOver={handleFileDragOver}
+                  style={{
+                    border: '1px dashed var(--color-divider)',
+                    padding: 'var(--space-6)',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileInputChange}
+                    style={{ display: 'none' }}
+                  />
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    width="22"
+                    height="22"
+                    style={{ color: 'var(--color-accent)', marginBottom: '8px' }}
+                  >
+                    <path d="M12 3v12"></path>
+                    <path d="m7 8 5-5 5 5"></path>
+                    <path d="M5 21h14"></path>
+                  </svg>
+                  <div>{file ? file.name : 'No file selected'}</div>
+                  <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
+                    Drag and drop, or click to browse
                   </div>
+                  {file && (
+                    <div style={{ margin: 'var(--space-2) 0 0 0', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                      Selected: <strong>{file.name}</strong> ({csvRows.length} rows)
+                    </div>
+                  )}
+                </div>
+                {fileError && (
+                  <div style={{ color: '#8a3c2e', fontSize: '12px', marginTop: '6px' }}>{fileError}</div>
                 )}
               </div>
-              {fileError && (
-                <div style={{ color: '#8a3c2e', fontSize: '12px', marginTop: '6px' }}>{fileError}</div>
-              )}
-            </div>
+            )}
 
             <div className="dialog-actions">
               <button className="btn btn-primary" onClick={handleContinue} disabled={!isStep1Complete()}>
@@ -805,7 +865,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                                 onChange={(e) => handleAssetClassHeaderChange(e.target.value)}
                                 placeholder="e.g. Equity"
                               />
-                            ) : (
+                            ) : entryMode === 'manual' && dataType === 'positions' ? null : (
                               <select
                                 className="input"
                                 style={{
@@ -951,8 +1011,9 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                 disabled={
                   importDone
                     ? false
-                    : !isReviewValid(dataType, fieldMap) ||
+                    : (entryMode === 'upload' && !isReviewValid(dataType, fieldMap)) ||
                       hasImportErrors ||
+                      hasNoValidManualRows ||
                       previewRows.length === 0 ||
                       (dataType === 'positions' && !assetClassHeaderValue.trim())
                 }

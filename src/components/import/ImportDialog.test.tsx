@@ -40,7 +40,7 @@ async function mockCsv(headers: string[], rows: Record<string, string>[]) {
 }
 
 function openDialog() {
-  fireEvent.click(screen.getByRole('button', { name: 'Import CSV' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 }
 
 function getFileInput(): HTMLInputElement {
@@ -120,6 +120,16 @@ async function advanceToStep2(
   await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
 }
 
+async function advanceToStep2Manual(dispatch: (action: any) => void = vi.fn()) {
+  render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+  openDialog()
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+  fireEvent.click(screen.getByRole('radio', { name: 'Enter manually' }))
+  await continueEnabled()
+  clickContinue()
+  await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+}
+
 async function advanceToStep2NewAccount(
   dispatch: (action: any) => void,
   fields: { name: string; number: string; category?: TaxCategory; retirement?: boolean },
@@ -156,12 +166,12 @@ describe('ImportDialog (2-step wizard)', () => {
     dispatch = vi.fn()
   })
 
-  it('1. closed state renders a single "Import CSV" trigger styled .btn.btn-secondary.blueprint regardless of state.tab', () => {
+  it('1. closed state renders a single "Import" trigger styled .btn.btn-secondary.blueprint regardless of state.tab', () => {
     const { container } = render(
       <ImportDialog state={createState({ tab: 'transactions' })} dispatch={dispatch} onClose={vi.fn()} />
     )
 
-    const buttons = screen.getAllByRole('button', { name: 'Import CSV' })
+    const buttons = screen.getAllByRole('button', { name: 'Import' })
     expect(buttons).toHaveLength(1)
     const button = buttons[0]
     expect(button.className).toContain('btn btn-secondary blueprint')
@@ -176,7 +186,7 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(container.querySelector('.dialog-backdrop')).toBeTruthy()
     expect(container.querySelector('.dialog.blueprint')).toBeTruthy()
     expect(container.querySelectorAll('.dialog.blueprint i.corner')).toHaveLength(4)
-    expect(screen.getByText('Import from CSV')).toBeTruthy()
+    expect(container.querySelector('.dialog-title')?.textContent).toBe('Import')
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
 
     expect(screen.getByText('Setup')).toBeTruthy()
@@ -557,7 +567,7 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.dialog-backdrop')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Import CSV' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy()
 
     openDialog()
     expect(screen.getByText('Setup')).toBeTruthy()
@@ -720,7 +730,7 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(document.querySelector('.dialog-backdrop')).toBeNull()
 
     // Reopen the dialog
-    fireEvent.click(screen.getByRole('button', { name: 'Import CSV' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
     await waitFor(() => expect(screen.getByText('Setup')).toBeTruthy())
 
     // Header should be reset
@@ -939,5 +949,118 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(selectForField('Shares').value).toBe('')
     expect(selectForField('Price').value).toBe('')
     expect(selectForField('Amount').value).toBe('')
+  })
+
+  it('31. manual toggle appears only for positions; transactions does not render it', () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    expect(screen.getByRole('radio', { name: 'Upload CSV file' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Enter manually' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
+
+    expect(screen.queryByRole('radio', { name: 'Upload CSV file' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Enter manually' })).toBeNull()
+  })
+
+  it('32. manual mode hides CSV field and enables Continue once account is resolved', async () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Enter manually' }))
+    expect(screen.queryByText('CSV file')).toBeNull()
+    expect(document.querySelector('input[type="file"]')).toBeNull()
+
+    const continueBtn = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+    expect(continueBtn.disabled).toBe(true)
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    await continueEnabled()
+  })
+
+  it('33. switching from positions manual to transactions resets to upload when switching back', () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Enter manually' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Positions / Holdings' }))
+
+    const upload = screen.getByRole('radio', { name: 'Upload CSV file' }) as HTMLInputElement
+    const manual = screen.getByRole('radio', { name: 'Enter manually' }) as HTMLInputElement
+    expect(upload.checked).toBe(true)
+    expect(manual.checked).toBe(false)
+  })
+
+  it('34. manual continue seeds 10 blank rows in Step 2 and renders no column-mapping selects', async () => {
+    await advanceToStep2Manual()
+
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(10)
+    expect(document.querySelectorAll('table thead th select')).toHaveLength(0)
+
+    const firstRowInputs = document.querySelectorAll('tbody tr:first-child input') as NodeListOf<HTMLInputElement>
+    expect(firstRowInputs[0].value).toBe('')
+    expect(firstRowInputs[1].value).toBe('')
+  })
+
+  it('35. manual import dispatches IMPORT_POSITIONS rows and skips UPSERT_CSV_MAPPING', async () => {
+    await advanceToStep2Manual(dispatch)
+
+    setAssetClassHeaderValue('Equity')
+    const firstRowInputs = document.querySelectorAll('tbody tr:first-child input') as NodeListOf<HTMLInputElement>
+    fireEvent.change(firstRowInputs[0], { target: { value: 'AAPL' } })
+    fireEvent.change(firstRowInputs[2], { target: { value: '100' } })
+    fireEvent.change(firstRowInputs[3], { target: { value: '150' } })
+    fireEvent.change(firstRowInputs[5], { target: { value: '180' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    expect(calls.map((a) => a.type)).toEqual(['IMPORT_POSITIONS'])
+    expect(calls[0].mappedRows).toEqual([
+      { symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' },
+    ])
+  })
+
+  it('36. manual Import stays disabled while all rows are blank and enables once one valid row exists', async () => {
+    await advanceToStep2Manual()
+
+    const importBtn = screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement
+    expect(importBtn.disabled).toBe(true)
+
+    setAssetClassHeaderValue('Equity')
+    expect(importBtn.disabled).toBe(true)
+
+    const firstRowInputs = document.querySelectorAll('tbody tr:first-child input') as NodeListOf<HTMLInputElement>
+    fireEvent.change(firstRowInputs[0], { target: { value: 'AAPL' } })
+    fireEvent.change(firstRowInputs[2], { target: { value: '100' } })
+    fireEvent.change(firstRowInputs[3], { target: { value: '150' } })
+    fireEvent.change(firstRowInputs[5], { target: { value: '180' } })
+
+    expect(importBtn.disabled).toBe(false)
+  })
+
+  it('37. manual mode row delete works and re-keys remaining rows', async () => {
+    await advanceToStep2Manual()
+
+    const firstRowInputs = document.querySelectorAll('tbody tr:first-child input') as NodeListOf<HTMLInputElement>
+    fireEvent.change(firstRowInputs[0], { target: { value: 'AAPL' } })
+
+    fireEvent.click(screen.getAllByTitle('Delete this row')[0])
+
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(9)
+    const newFirstRowInputs = document.querySelectorAll('tbody tr:first-child input') as NodeListOf<HTMLInputElement>
+    expect(newFirstRowInputs[0].value).toBe('')
+  })
+
+  it('38. trigger and dialog copy use "Import" text and aria-label', () => {
+    const { container } = render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    const closedTrigger = screen.getByRole('button', { name: 'Import' })
+    expect(closedTrigger).toBeTruthy()
+    expect(closedTrigger.getAttribute('aria-label')).toBe('Import')
+
+    openDialog()
+    expect(container.querySelector('.dialog-title')?.textContent).toBe('Import')
   })
 })
