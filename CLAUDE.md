@@ -29,7 +29,7 @@ Local-first, single-user React 19 + TypeScript + Vite portfolio tracker ("Ledger
 - `src/lib/reducer.ts` — thin `appReducer(state, action)` dispatch table that just calls the `state.ts` helpers
 - New features that mutate state: add a helper in `state.ts`, then a case in `reducer.ts` — don't put logic directly in the reducer or in components.
 
-**Persistence**: IndexedDB via `src/lib/persist.ts` (`loadPersistedApp`/`savePersistedApp`), one versioned blob (`portfolio_app_state_v1`) for the whole `AppState`. Migration-tolerant: missing collections must default to `[]`, never throw. `App.tsx` hydrates on mount and debounce-saves (500ms) on every state change.
+**Persistence**: IndexedDB via `src/lib/persist.ts` (`loadPersistedApp`/`savePersistedApp`), one versioned blob (`portfolio_app_state_v1`) for the whole `AppState`. Migration-tolerant: missing collections must default to `[]`, never throw. `App.tsx` hydrates on mount and debounce-saves (500ms) on every state change, with a flush on `pagehide`/`visibilitychange→hidden`/unmount so a refresh within the debounce window doesn't lose the newest state. `savePersistedApp` rethrows open/write failures (no silent success).
 
 **Sync**: `src/lib/drive.ts` wraps `@open-webapp/drive-sync`. The `drive` singleton's `folderPath: ['OpenWebApp', 'Portfolio']` is load-bearing and silent-failure-prone — a wrong value doesn't error, it just creates a fresh empty Drive folder and makes existing backups appear to vanish (see the comment in that file and `drive.test.ts`, which pins the array exactly). Backup format is a JSON dump of the whole `AppState`, not CSV.
 

@@ -207,7 +207,7 @@ describe('ImportDialog (2-step wizard)', () => {
 
     const accountSelect = screen.getByRole('combobox') as HTMLSelectElement
     expect(accountSelect.className).toContain('input')
-    expect(screen.getByRole('option', { name: 'Test Brokerage • #123456 — Taxable' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Test Brokerage • #123456 — Taxable — Non-Retirement' })).toBeTruthy()
 
     const continueBtn = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
     expect(continueBtn.disabled).toBe(true)

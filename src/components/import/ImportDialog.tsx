@@ -433,10 +433,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
 
         {/* Step 1: Setup */}
         {step === 1 && (
-          <div>
+          <div style={{ maxWidth: '720px' }}>
             <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
               <label>What are you importing?</label>
-              <div className="seg">
+              <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
                 <label className="seg-opt">
                   <input
                     type="radio"
@@ -460,7 +460,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
 
             <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
               <label>Destination account</label>
-              <div className="seg">
+              <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
                 <label className="seg-opt">
                   <input
                     type="radio"
@@ -497,6 +497,8 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                       {account.accountNumber ? ` • #${account.accountNumber}` : ''}
                       {' — '}
                       {TAX_CATEGORY_LABELS[account.taxCategory]}
+                      {' — '}
+                      {account.retirement ? 'Retirement' : 'Non-Retirement'}
                     </option>
                   ))}
                 </select>
