@@ -1,6 +1,5 @@
 import { useReducer, useEffect, useRef, useState } from 'react'
-import type { AppState } from './lib/state'
-import { initialState, addImportSession } from './lib/state'
+import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
 import { Nav } from './components/Nav'
@@ -12,7 +11,6 @@ import { TransactionsTable } from './components/TransactionsTable'
 import { SettingsPage } from './components/Settings'
 import { ImportDialog } from './components/import/ImportDialog'
 import { PasswordGate } from './components/PasswordGate'
-import type { ImportSession } from './lib/types'
 import { drive } from './lib/drive'
 import './App.css'
 
@@ -28,44 +26,6 @@ const retirementFilters = [
   { value: 'Non-Retirement', label: 'Non-Retirement' },
 ]
 
-/**
- * processPendingImport: Given the current state and import metadata, creates an ImportSession
- * and adds it to state. Should be called after positions/transactions have been imported.
- *
- * @param state The current AppState after imports have been applied
- * @param kind 'positions' or 'transactions' (the type of data imported)
- * @param fileName The name of the uploaded CSV file
- * @param importSessionId The session ID that was used to tag the imported rows
- * @param affectedAccountIds Set of account IDs that were touched by this import
- * @returns Updated state with the ImportSession added (or unchanged if no rows were created)
- */
-function processPendingImport(
-  state: AppState,
-  kind: 'positions' | 'transactions',
-  fileName: string,
-  importSessionId: string,
-  affectedAccountIds: Set<string>
-): AppState {
-  // Calculate rowCount by filtering for rows tagged with this importSessionId
-  const rowCount =
-    kind === 'positions'
-      ? state.positions.filter((p) => p.importSessionId === importSessionId).length +
-        state.closedPositions.filter((c) => c.importSessionId === importSessionId).length
-      : state.transactions.filter((t) => t.importSessionId === importSessionId).length
-
-  // Build the ImportSession
-  const session: ImportSession = {
-    id: importSessionId,
-    importedAt: new Date().toISOString(),
-    kind,
-    fileName,
-    accountIds: Array.from(affectedAccountIds),
-    rowCount,
-  }
-
-  // Add the session to state (via the helper, which caps at 50 newest-first)
-  return addImportSession(state, session)
-}
 
 /**
  * App: Main component that wires everything together.
@@ -377,4 +337,3 @@ function App() {
 }
 
 export default App
-export { processPendingImport }
