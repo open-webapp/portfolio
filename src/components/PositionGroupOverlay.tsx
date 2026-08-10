@@ -171,9 +171,35 @@ function AccountDropdown({
   const [isOpen, setIsOpen] = useState(false)
 
   const currentAccount = accounts.find((a) => a.id === position.accountId)
-  const accountDisplay = currentAccount
-    ? `${currentAccount.name}${currentAccount.accountNumber ? ` • #${currentAccount.accountNumber}` : ''}`
-    : 'Unknown Account'
+
+  // Helper to format tax category label
+  const getTaxCategoryLabel = (taxCategory: string): string => {
+    switch (taxCategory) {
+      case 'taxable':
+        return 'Taxable'
+      case 'nonTaxable':
+        return 'Non-Taxable'
+      case 'taxDeferred':
+        return 'Tax-Deferred'
+      default:
+        return ''
+    }
+  }
+
+  // Helper to format retirement label
+  const getRetirementLabel = (retirement: boolean): string => {
+    return retirement ? 'Retirement' : 'Non-Retirement'
+  }
+
+  // Render two-line account display
+  const renderAccountDisplay = (account: Account) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <div>{account.institution} — {account.name}</div>
+      <div style={{ fontSize: '0.875em', color: 'var(--text-muted)' }}>
+        {getTaxCategoryLabel(account.taxCategory)} • {getRetirementLabel(account.retirement)}
+      </div>
+    </div>
+  )
 
   const handleSelectAccount = (account: Account) => {
     dispatch({
@@ -200,7 +226,7 @@ function AccountDropdown({
           textAlign: 'left',
         }}
       >
-        {accountDisplay}
+        {currentAccount ? renderAccountDisplay(currentAccount) : 'Unknown Account'}
       </button>
 
       {isOpen && (
@@ -238,10 +264,7 @@ function AccountDropdown({
                 background: currentAccount?.id === account.id ? 'var(--color-hover-bg, rgba(0,0,0,0.05))' : 'transparent',
               }}
             >
-              <div style={{ fontWeight: '500' }}>{account.name}</div>
-              {account.accountNumber && (
-                <div style={{ fontSize: '0.85em', opacity: 0.7 }}>#{account.accountNumber}</div>
-              )}
+              {renderAccountDisplay(account)}
             </div>
           ))}
         </div>

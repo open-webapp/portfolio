@@ -502,8 +502,8 @@ describe('PositionGroupOverlay', () => {
 
     fireEvent.click(accountButton!)
 
-    // Both accounts should be visible in the dropdown
-    expect(screen.getByText('Brokerage B')).toBeDefined()
+    // Both accounts should be visible in the dropdown (checking for institution—name format)
+    expect(screen.getByText(/Test Institution — Brokerage B/)).toBeDefined()
   })
 
   it('Account dropdown selection dispatches UPDATE_POSITION', () => {
@@ -528,8 +528,8 @@ describe('PositionGroupOverlay', () => {
     const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
     fireEvent.click(accountButton!)
 
-    // Click on the second account
-    const account2Option = screen.getByText('Brokerage B')
+    // Click on the second account (using regex to match the two-line format)
+    const account2Option = screen.getByText(/Test Institution — Brokerage B/)
     fireEvent.click(account2Option)
 
     expect(mockDispatch).toHaveBeenCalledWith({
