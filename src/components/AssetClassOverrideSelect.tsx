@@ -1,28 +1,21 @@
 import { useCallback, useState } from 'react'
-import type { Position, AssetClass } from '../lib/types'
+import type { Position } from '../lib/types'
 
 export interface AssetClassOverrideSelectProps {
   position: Position
   dispatch: (action: any) => void
+  existingAssetClasses: string[]
 }
 
 /**
  * AssetClassOverrideSelect component: dropdown for manually overriding a position's asset class.
- * Provides seeded options and free-typing support.
+ * Shows existing asset classes from positions and supports free-typing for new values.
  */
-export function AssetClassOverrideSelect({ position, dispatch }: AssetClassOverrideSelectProps) {
+export function AssetClassOverrideSelect({ position, dispatch, existingAssetClasses }: AssetClassOverrideSelectProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
-  const seededOptions: AssetClass[] = [
-    'Equity',
-    'ETF',
-    'Mutual Fund',
-    'Fixed Income',
-    'Crypto',
-    'Cash',
-    'Other',
-  ]
+  const seededOptions = existingAssetClasses
 
   const currentValue = position.assetClassManualOverride || position.assetClass
 

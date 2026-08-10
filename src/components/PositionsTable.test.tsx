@@ -1075,6 +1075,19 @@ describe('PositionsTable', () => {
         taxes: null,
         lastImportedAt: '2024-01-01',
       },
+      {
+        id: 'pos-124',
+        importSessionId: 'sess-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 180,
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
     ]
 
     const state: AppState = {
@@ -1099,10 +1112,13 @@ describe('PositionsTable', () => {
 
     render(<PositionsTable state={state} dispatch={mockDispatch} />)
 
-    // Open overlay by clicking the row
+    // Open overlay by clicking the row for 'UNKNOWN' (pos-123)
     const tbody = screen.getByRole('table').querySelector('tbody')
-    const row = tbody?.querySelector('tr')
-    fireEvent.click(row!)
+    const rows = tbody?.querySelectorAll('tr')
+    const unknownRow = Array.from(rows || []).find(row =>
+      row.textContent?.includes('UNKNOWN')
+    )
+    fireEvent.click(unknownRow as HTMLElement)
 
     // Find the override select button in the overlay and click it
     // The button shows "Set" if no override is active
@@ -1113,8 +1129,13 @@ describe('PositionsTable', () => {
     fireEvent.click(overrideButton)
 
     // Select an option from the dropdown
-    const equityOption = screen.getByText('Equity')
-    fireEvent.click(equityOption)
+    // Use getAllByText and pick the one that's a dropdown option (has specific padding style)
+    const equityOptions = screen.getAllByText('Equity')
+    // Find the dropdown option (it should have the cursor:pointer padding style from the dropdown)
+    const equityOption = equityOptions.find(el =>
+      el.tagName === 'DIV' && el.style.padding === '8px'
+    )
+    fireEvent.click(equityOption!)
 
     // Verify dispatch was called with correct shape
     expect(mockDispatch).toHaveBeenCalledWith(

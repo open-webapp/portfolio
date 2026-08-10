@@ -286,6 +286,7 @@ export interface PositionGroupOverlayProps {
   accounts: Account[]
   dispatch: (action: any) => void
   onClose: () => void
+  existingAssetClasses: string[]
 }
 
 /**
@@ -297,6 +298,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
   accounts,
   dispatch,
   onClose,
+  existingAssetClasses,
 }) => {
   // Escape key listener
   useEffect(() => {
@@ -472,7 +474,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                     />
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <AssetClassOverrideSelect position={p} dispatch={dispatch} />
+                    <AssetClassOverrideSelect position={p} dispatch={dispatch} existingAssetClasses={existingAssetClasses} />
                   </td>
                 </tr>
               ))}

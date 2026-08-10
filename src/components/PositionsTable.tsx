@@ -360,6 +360,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
           accounts={state.accounts}
           dispatch={dispatch}
           onClose={() => setSelectedGroupKey(null)}
+          existingAssetClasses={assetClassOptions}
         />
       )}
     </div>

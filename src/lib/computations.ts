@@ -80,3 +80,16 @@ export function allocationByAssetClass(
 
   return entries
 }
+
+/**
+ * Extract all unique asset classes from positions (including manual overrides).
+ * Returns sorted alphabetically.
+ */
+export function getAllExistingAssetClasses(positions: Position[]): string[] {
+  const classes = new Set<string>()
+  positions.forEach(p => {
+    // Include manual override if it exists, otherwise the computed asset class
+    classes.add(p.assetClassManualOverride || p.assetClass)
+  })
+  return Array.from(classes).sort()
+}

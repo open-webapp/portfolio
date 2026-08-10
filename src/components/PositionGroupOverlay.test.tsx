@@ -64,6 +64,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -86,6 +87,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -109,6 +111,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -132,6 +135,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -158,6 +162,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -189,6 +194,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -220,6 +226,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -250,6 +257,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -274,6 +282,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -302,6 +311,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -326,6 +336,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -354,6 +365,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -386,6 +398,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -408,6 +421,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -436,6 +450,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -466,6 +481,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account1, account2]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -492,6 +508,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account1, account2]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -527,6 +544,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -549,6 +567,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -570,6 +589,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -591,6 +611,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -631,6 +652,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -655,6 +677,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -679,6 +702,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -703,6 +727,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -727,6 +752,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -751,6 +777,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -772,6 +799,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -789,6 +817,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -811,6 +840,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -839,6 +869,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -867,6 +898,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -891,6 +923,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -917,6 +950,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -939,6 +973,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -992,6 +1027,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[accFidTaxable, accSchwabTaxable, accFidDeferred]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -1029,6 +1065,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -1046,6 +1083,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -1063,6 +1101,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -1080,6 +1119,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
@@ -1097,6 +1137,7 @@ describe('PositionGroupOverlay', () => {
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
       />
     )
 
