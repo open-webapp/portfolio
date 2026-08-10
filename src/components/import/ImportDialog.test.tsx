@@ -1096,6 +1096,32 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(newFirstRowInputs[0].value).toBe('')
   })
 
+  it('3b. Step 1: New account mode shows a Save button to confirm new account creation (parallel to existing account save button)', async () => {
+    await mockCsv(POS_HEADERS, POS_ROWS)
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    // Select new account
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: '__new__' } })
+
+    // Initially Save button should be disabled (form empty)
+    const saveBtnInitial = screen.queryByRole('button', { name: /Save/ })
+    expect((saveBtnInitial as HTMLButtonElement).disabled).toBe(true)
+
+    // Fill in new account name and number
+    fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), { target: { value: 'My New Account' } })
+    fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: '9999' } })
+    uploadCsvFile()
+
+    // Now Save button should be enabled
+    const saveBtn = screen.getByRole('button', { name: /Save/ })
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(false)
+
+    // Click Save and verify button text changes to "Saved"
+    fireEvent.click(saveBtn)
+    expect(screen.getByRole('button', { name: /Saved/ })).toBeTruthy()
+  })
+
   it('38. trigger and dialog copy - trigger says "Accounts & Import", dialog says "Import"', () => {
     const { container } = render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     const closedTrigger = screen.getByRole('button', { name: 'Accounts & Import' })
