@@ -129,11 +129,12 @@ describe('PositionsTable', () => {
   })
 
   /**
-   * Test 2a: Differing grouping fields - different taxCategory
-   * Same symbol, same asset class, same retirement, but different taxCategory
-   * Should produce 2 separate rows
+   * Test 2a: Merge on different taxCategory
+   * Same symbol, same asset class, but different taxCategory
+   * With v2 grouping (2-field key: symbol + effectiveAssetClass only),
+   * these should merge into 1 aggregated row (tax category is ignored)
    */
-  it('does not aggregate positions with different tax categories', () => {
+  it('aggregates positions with different tax categories', () => {
     const accounts: Account[] = [
       {
         id: 'acc-1',
@@ -204,15 +205,39 @@ describe('PositionsTable', () => {
 
     render(<PositionsTable state={state} dispatch={mockDispatch} />)
 
+    // Should have exactly one row (merged on symbol + effectiveAssetClass, tax category ignored)
     const tbody = screen.getByRole('table').querySelector('tbody')
     const rows = tbody?.querySelectorAll('tr')
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(1)
+
+    // Verify the row is aggregated correctly
+    const row = rows?.[0]
+    expect(row).toBeDefined()
+    expect(row?.textContent).toContain('MSFT')
+
+    // Expected aggregated values:
+    // shares: 10 + 15 = 25
+    // costBasis: (10 * 100) + (15 * 105) = 1000 + 1575 = 2575
+    // marketValue: (10 * 120) + (15 * 120) = 1200 + 1800 = 3000
+    // avgCost: 2575 / 25 = 103
+    // price: 3000 / 25 = 120
+    // gl: 3000 - 2575 = 425
+    // glPct: (425 / 2575) * 100 ≈ 16.50%
+
+    expect(row?.textContent).toContain('25.00')
+    expect(row?.textContent).toContain(fmtUSD(103))
+    expect(row?.textContent).toContain(fmtUSD(120))
+    expect(row?.textContent).toContain(fmtUSD(2575))
+    expect(row?.textContent).toContain(fmtUSD(3000))
   })
 
   /**
-   * Test 2b: Differing grouping fields - different retirement status
+   * Test 2b: Merge on different retirement status
+   * Same symbol, same asset class, but different retirement status
+   * With v2 grouping (2-field key: symbol + effectiveAssetClass only),
+   * these should merge into 1 aggregated row (retirement status is ignored)
    */
-  it('does not aggregate positions with different retirement status', () => {
+  it('aggregates positions with different retirement status', () => {
     const accounts: Account[] = [
       {
         id: 'acc-1',
@@ -283,9 +308,28 @@ describe('PositionsTable', () => {
 
     render(<PositionsTable state={state} dispatch={mockDispatch} />)
 
+    // Should have exactly one row (merged on symbol + effectiveAssetClass, retirement status ignored)
     const tbody = screen.getByRole('table').querySelector('tbody')
     const rows = tbody?.querySelectorAll('tr')
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(1)
+
+    // Verify the row is aggregated correctly
+    const row = rows?.[0]
+    expect(row).toBeDefined()
+    expect(row?.textContent).toContain('GOOG')
+
+    // Expected aggregated values:
+    // shares: 5 + 8 = 13
+    // costBasis: (5 * 120) + (8 * 125) = 600 + 1000 = 1600
+    // marketValue: (5 * 140) + (8 * 140) = 700 + 1120 = 1820
+    // avgCost: 1600 / 13 ≈ 123.08
+    // price: 1820 / 13 = 140
+    // gl: 1820 - 1600 = 220
+    // glPct: (220 / 1600) * 100 = 13.75%
+
+    expect(row?.textContent).toContain('13.00')
+    expect(row?.textContent).toContain(fmtUSD(1600))
+    expect(row?.textContent).toContain(fmtUSD(1820))
   })
 
   /**

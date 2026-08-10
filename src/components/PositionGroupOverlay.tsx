@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Account, Position } from '../lib/types'
 import type { AggregateRow } from './PositionsTable'
 import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
@@ -99,10 +99,12 @@ function EditableTextCell({
   value,
   positionId,
   dispatch,
+  field = 'symbol',
 }: {
   value: string
   positionId: string
   dispatch: (action: any) => void
+  field?: 'symbol' | 'name'
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -118,7 +120,7 @@ function EditableTextCell({
       dispatch({
         type: 'UPDATE_POSITION',
         positionId,
-        patch: { symbol: trimmed },
+        patch: { [field]: trimmed },
       })
     }
     setIsEditing(false)
@@ -299,16 +301,21 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  // Sort positions by account name ascending (fallback to accountNumber)
-  const sortedPositions = [...group.positions].sort((a, b) => {
-    const accountA = accounts.find((ac) => ac.id === a.accountId)
-    const accountB = accounts.find((ac) => ac.id === b.accountId)
-
-    const nameA = accountA?.name?.trim() || accountA?.accountNumber || ''
-    const nameB = accountB?.name?.trim() || accountB?.accountNumber || ''
-
-    return nameA.localeCompare(nameB)
-  })
+  // Sort positions by account institution ascending, then account name ascending (fallback to accountNumber)
+  const sortedPositions = useMemo(() => {
+    const accountMap = new Map(accounts.map(a => [a.id, a]))
+    return [...group.positions].sort((a, b) => {
+      const accA = accountMap.get(a.accountId)
+      const accB = accountMap.get(b.accountId)
+      if (!accA || !accB) return 0
+      const instComp = (accA.institution || '').localeCompare(accB.institution || '')
+      if (instComp !== 0) return instComp
+      const nameComp = (accA.name.trim() || accA.accountNumber).localeCompare(
+        accB.name.trim() || accB.accountNumber
+      )
+      return nameComp
+    })
+  }, [group.positions, accounts])
 
   // Compute derived fields for each position
   const computedPositions = sortedPositions.map((p) => {
@@ -393,14 +400,11 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
               <tr>
                 <th style={{ textAlign: 'left' }}>Account</th>
                 <th style={{ textAlign: 'left' }}>Symbol</th>
+                <th style={{ textAlign: 'left' }}>Name</th>
                 <th style={{ textAlign: 'right' }}>Shares</th>
-                <th style={{ textAlign: 'right' }}>Cost Basis</th>
+                <th style={{ textAlign: 'right' }}>Avg Cost</th>
                 <th style={{ textAlign: 'right' }}>Current Price</th>
                 <th style={{ textAlign: 'right' }}>Taxes</th>
-                <th style={{ textAlign: 'right' }}>Amount Invested</th>
-                <th style={{ textAlign: 'right' }}>Market Value</th>
-                <th style={{ textAlign: 'right' }}>G/L</th>
-                <th style={{ textAlign: 'right' }}>G/L %</th>
                 <th style={{ textAlign: 'center' }}>Override</th>
               </tr>
             </thead>
@@ -418,6 +422,14 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                     <EditableTextCell
                       value={p.symbol}
                       positionId={p.id}
+                      dispatch={dispatch}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'left' }}>
+                    <EditableTextCell
+                      value={p.name ?? ''}
+                      positionId={p.id}
+                      field="name"
                       dispatch={dispatch}
                     />
                   </td>
@@ -453,12 +465,6 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                       dispatch={dispatch}
                     />
                   </td>
-                  <td style={{ textAlign: 'right' }}>{p.costBasisStr}</td>
-                  <td style={{ textAlign: 'right', fontWeight: '600' }}>{p.marketValueStr}</td>
-                  <td style={{ textAlign: 'right', color: p.glColor, fontWeight: '600' }}>
-                    {p.glStr}
-                  </td>
-                  <td style={{ textAlign: 'right', color: p.glColor }}>{p.glPctStr}</td>
                   <td style={{ textAlign: 'center' }}>
                     <AssetClassOverrideSelect position={p} dispatch={dispatch} />
                   </td>

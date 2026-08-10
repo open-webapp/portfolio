@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { AppState } from '../lib/state'
-import type { Position, Account } from '../lib/types'
+import type { Position } from '../lib/types'
 import { visiblePositions } from '../lib/selectors'
 import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
 import { sortBy } from '../lib/sort'
@@ -14,21 +14,13 @@ export interface PositionsTableProps {
 
 /**
  * Build a grouping key from a position and accounts array.
- * Key format: `${symbol}|${effectiveAssetClass}|${taxCategory}|${retirement}`
+ * Key format: `${symbol}|${effectiveAssetClass}`
  *
- * For orphaned positions (account not found), uses sentinel values:
- * taxCategory = 'unknown', retirement = false
+ * Tax category and retirement status are ignored in grouping.
  */
-function buildGroupKey(position: Position, accounts: Account[]): string {
-  const account = accounts.find((a) => a.id === position.accountId)
+function buildGroupKey(position: Position): string {
   const effectiveAssetClass = position.assetClassManualOverride || position.assetClass
-
-  if (!account) {
-    // Sentinel values for orphaned positions
-    return `${position.symbol}|${effectiveAssetClass}|unknown|false`
-  }
-
-  return `${position.symbol}|${effectiveAssetClass}|${account.taxCategory}|${account.retirement}`
+  return `${position.symbol}|${effectiveAssetClass}`
 }
 
 /**
@@ -64,12 +56,12 @@ const AGGREGATE_SORT_FIELD: Record<string, keyof AggregateRow> = {
  * Group positions by their aggregation key and compute aggregate values.
  * Returns sorted list of AggregateRow objects.
  */
-function buildAggregateRows(positions: Position[], accounts: Account[]): AggregateRow[] {
+function buildAggregateRows(positions: Position[]): AggregateRow[] {
   // Group positions by key
   const groups: Record<string, Position[]> = {}
 
   positions.forEach((p) => {
-    const key = buildGroupKey(p, accounts)
+    const key = buildGroupKey(p)
     if (!groups[key]) {
       groups[key] = []
     }
@@ -128,7 +120,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
 
   const positions = visiblePositions(state);
-  const aggregateRows = buildAggregateRows(positions, state.accounts);
+  const aggregateRows = buildAggregateRows(positions);
   const selectedGroup = aggregateRows.find(r => r.key === selectedGroupKey) ?? null;
   const sortedRows = sortBy(aggregateRows, AGGREGATE_SORT_FIELD[state.sortKey] ?? state.sortKey as keyof AggregateRow, state.sortDir);
 
