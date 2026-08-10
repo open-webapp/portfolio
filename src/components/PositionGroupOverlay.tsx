@@ -155,8 +155,14 @@ function EditableTextCell({
         setDraft(value)
         setIsEditing(true)
       }}
+      style={{
+        display: 'block',
+        minHeight: '1.5em',
+        cursor: 'pointer',
+        color: value ? 'inherit' : 'var(--text-muted)',
+      }}
     >
-      {value}
+      {value || '(no name)'}
     </span>
   )
 }

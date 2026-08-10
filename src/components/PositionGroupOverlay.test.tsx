@@ -906,6 +906,50 @@ describe('PositionGroupOverlay', () => {
     expect(mockDispatch).not.toHaveBeenCalled()
   })
 
+  it('Name column: empty name shows placeholder and is editable', () => {
+    const position = createTestPosition({ name: '' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const nameCell = screen.getByText('(no name)')
+    fireEvent.click(nameCell)
+
+    const input = screen.getByDisplayValue('') as HTMLInputElement
+    expect(input).toBeTruthy()
+    expect(input.type).toBe('text')
+  })
+
+  it('Name column: null name shows placeholder and is editable', () => {
+    const position = createTestPosition({ name: null as any })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const nameCell = screen.getByText('(no name)')
+    fireEvent.click(nameCell)
+
+    const input = screen.getByDisplayValue('') as HTMLInputElement
+    expect(input).toBeTruthy()
+    expect(input.type).toBe('text')
+  })
+
   /**
    * Test 4: Sort order (institution→name)
    */
