@@ -373,32 +373,6 @@ describe('PositionGroupOverlay', () => {
   })
 
   /**
-   * Test 8: Computed columns (Amount Invested/Market Value/G/L/G/L%) have no click-to-edit
-   */
-  it('does not allow editing of computed columns', () => {
-    const position = createTestPosition()
-    const group = createTestGroup([position])
-    const account = createTestAccount()
-
-    render(
-      <PositionGroupOverlay
-        group={group}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-      />
-    )
-
-    // Click on Market Value cell (a computed column)
-    const marketValueCell = screen.getByText('$18,000.00')
-    fireEvent.click(marketValueCell)
-
-    // Verify no input was created
-    const inputs = screen.queryAllByRole('spinbutton')
-    expect(inputs).toHaveLength(0)
-  })
-
-  /**
    * Test 3: Symbol cell is click-to-edit with text input
    */
   it('renders text input pre-filled when clicking symbol cell', () => {
@@ -601,5 +575,487 @@ describe('PositionGroupOverlay', () => {
 
     const taxesCells = screen.getAllByText('$0.00')
     expect(taxesCells.length).toBeGreaterThan(0)
+  })
+
+  /**
+   * Test 1: Column count and headers (v2 layout)
+   */
+  it('renders exactly 8 column headers in correct order', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const headers = screen.getAllByRole('columnheader')
+    expect(headers).toHaveLength(8)
+
+    const headerTexts = headers.map(h => h.textContent)
+    expect(headerTexts).toEqual([
+      'Account',
+      'Symbol',
+      'Name',
+      'Shares',
+      'Avg Cost',
+      'Current Price',
+      'Taxes',
+      'Override',
+    ])
+  })
+
+  /**
+   * Test 2: Account display (two-line format)
+   * Tests all 6 combinations: 3 tax categories × 2 retirement states
+   */
+  it('renders two-line account format: taxable + non-retirement', () => {
+    const position = createTestPosition()
+    const account = createTestAccount({
+      institution: 'Fidelity',
+      name: 'Brokerage',
+      taxCategory: 'taxable',
+      retirement: false,
+    })
+
+    const group = createTestGroup([position])
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.getByText('Fidelity — Brokerage')).toBeTruthy()
+    expect(screen.getByText('Taxable • Non-Retirement')).toBeTruthy()
+  })
+
+  it('renders two-line account format: taxable + retirement', () => {
+    const position = createTestPosition()
+    const account = createTestAccount({
+      institution: 'Vanguard',
+      name: 'IRA',
+      taxCategory: 'taxable',
+      retirement: true,
+    })
+
+    const group = createTestGroup([position])
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.getByText('Vanguard — IRA')).toBeTruthy()
+    expect(screen.getByText('Taxable • Retirement')).toBeTruthy()
+  })
+
+  it('renders two-line account format: non-taxable + non-retirement', () => {
+    const position = createTestPosition()
+    const account = createTestAccount({
+      institution: 'Charles Schwab',
+      name: 'HSA',
+      taxCategory: 'nonTaxable',
+      retirement: false,
+    })
+
+    const group = createTestGroup([position])
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.getByText('Charles Schwab — HSA')).toBeTruthy()
+    expect(screen.getByText('Non-Taxable • Non-Retirement')).toBeTruthy()
+  })
+
+  it('renders two-line account format: non-taxable + retirement', () => {
+    const position = createTestPosition()
+    const account = createTestAccount({
+      institution: 'Fidelity',
+      name: 'Roth IRA',
+      taxCategory: 'nonTaxable',
+      retirement: true,
+    })
+
+    const group = createTestGroup([position])
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.getByText('Fidelity — Roth IRA')).toBeTruthy()
+    expect(screen.getByText('Non-Taxable • Retirement')).toBeTruthy()
+  })
+
+  it('renders two-line account format: tax-deferred + non-retirement', () => {
+    const position = createTestPosition()
+    const account = createTestAccount({
+      institution: 'E*TRADE',
+      name: 'SEP IRA',
+      taxCategory: 'taxDeferred',
+      retirement: false,
+    })
+
+    const group = createTestGroup([position])
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.getByText('E*TRADE — SEP IRA')).toBeTruthy()
+    expect(screen.getByText('Tax-Deferred • Non-Retirement')).toBeTruthy()
+  })
+
+  it('renders two-line account format: tax-deferred + retirement', () => {
+    const position = createTestPosition()
+    const account = createTestAccount({
+      institution: 'Schwab',
+      name: '401(k)',
+      taxCategory: 'taxDeferred',
+      retirement: true,
+    })
+
+    const group = createTestGroup([position])
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.getByText('Schwab — 401(k)')).toBeTruthy()
+    expect(screen.getByText('Tax-Deferred • Retirement')).toBeTruthy()
+  })
+
+  /**
+   * Test 3: Name column editable
+   */
+  it('renders Name column cell with initial value', () => {
+    const position = createTestPosition({ name: 'Tech Holdings' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.getByText('Tech Holdings')).toBeTruthy()
+  })
+
+  it('Name column: clicking cell enters edit mode', () => {
+    const position = createTestPosition({ name: 'Tech Holdings' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const nameCell = screen.getByText('Tech Holdings')
+    fireEvent.click(nameCell)
+
+    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
+    expect(input).toBeTruthy()
+    expect(input.type).toBe('text')
+  })
+
+  it('Name column: pressing Enter commits non-empty value', () => {
+    const position = createTestPosition({ name: 'Tech Holdings' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const nameCell = screen.getByText('Tech Holdings')
+    fireEvent.click(nameCell)
+
+    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Updated Name' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'UPDATE_POSITION',
+      positionId: position.id,
+      patch: { name: 'Updated Name' },
+    })
+  })
+
+  it('Name column: blurring with non-empty value commits', () => {
+    const position = createTestPosition({ name: 'Tech Holdings' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const nameCell = screen.getByText('Tech Holdings')
+    fireEvent.click(nameCell)
+
+    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'New Name' } })
+    fireEvent.blur(input)
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'UPDATE_POSITION',
+      positionId: position.id,
+      patch: { name: 'New Name' },
+    })
+  })
+
+  it('Name column: blurring with empty value reverts silently', () => {
+    const position = createTestPosition({ name: 'Tech Holdings' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    const nameCell = screen.getByText('Tech Holdings')
+    fireEvent.click(nameCell)
+
+    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.blur(input)
+
+    expect(mockDispatch).not.toHaveBeenCalled()
+  })
+
+  it('Name column: pressing Escape reverts without dispatching', () => {
+    const position = createTestPosition({ name: 'Tech Holdings' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    mockDispatch.mockClear()
+
+    const nameCell = screen.getByText('Tech Holdings')
+    fireEvent.click(nameCell)
+
+    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Will be reverted' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(mockDispatch).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Test 4: Sort order (institution→name)
+   */
+  it('renders positions sorted by institution then account name', () => {
+    // Create 3 positions across 2 institutions, varying account name/tax status
+    const pos1 = createTestPosition({ id: 'pos-1', symbol: 'AAPL', accountId: 'acc-fid-taxable' })
+    const pos2 = createTestPosition({ id: 'pos-2', symbol: 'MSFT', accountId: 'acc-schwab-taxable' })
+    const pos3 = createTestPosition({ id: 'pos-3', symbol: 'GOOG', accountId: 'acc-fid-deferred' })
+
+    const accFidTaxable = createTestAccount({
+      id: 'acc-fid-taxable',
+      institution: 'Fidelity',
+      name: 'Brokerage',
+      taxCategory: 'taxable',
+      retirement: false,
+    })
+
+    const accSchwabTaxable = createTestAccount({
+      id: 'acc-schwab-taxable',
+      institution: 'Charles Schwab',
+      name: 'Brokerage',
+      taxCategory: 'taxable',
+      retirement: false,
+    })
+
+    const accFidDeferred = createTestAccount({
+      id: 'acc-fid-deferred',
+      institution: 'Fidelity',
+      name: 'IRA',
+      taxCategory: 'taxDeferred',
+      retirement: true,
+    })
+
+    // Render with positions in random order to test sorting
+    const group = createTestGroup([pos2, pos1, pos3])
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[accFidTaxable, accSchwabTaxable, accFidDeferred]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    // Find all rows in the table body
+    const rows = screen.getAllByRole('row')
+    // rows[0] is thead, rows[1..n] are tbody
+    const bodyRows = rows.slice(1)
+
+    // Expected sort order (alphabetical by institution, then by account name):
+    // 1. Charles Schwab → Brokerage (pos2: MSFT)
+    // 2. Fidelity → Brokerage (pos1: AAPL)
+    // 3. Fidelity → IRA (pos3: GOOG)
+
+    expect(bodyRows[0].textContent).toContain('Charles Schwab — Brokerage')
+    expect(bodyRows[0].textContent).toContain('MSFT')
+
+    expect(bodyRows[1].textContent).toContain('Fidelity — Brokerage')
+    expect(bodyRows[1].textContent).toContain('AAPL')
+
+    expect(bodyRows[2].textContent).toContain('Fidelity — IRA')
+    expect(bodyRows[2].textContent).toContain('GOOG')
+  })
+
+  /**
+   * Test 5: Regression tests (old columns must not exist)
+   */
+  it('does not render Cost Basis header', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.queryByText('Cost Basis')).toBeNull()
+  })
+
+  it('does not render Amount Invested header', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.queryByText('Amount Invested')).toBeNull()
+  })
+
+  it('does not render Market Value header', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.queryByText('Market Value')).toBeNull()
+  })
+
+  it('does not render G/L header', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.queryByText(/^G\/L$/)).toBeNull()
+  })
+
+  it('does not render G/L% header', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      />
+    )
+
+    expect(screen.queryByText(/^G\/L%$/)).toBeNull()
   })
 })
