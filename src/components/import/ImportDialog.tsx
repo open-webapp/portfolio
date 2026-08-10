@@ -73,7 +73,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const [isAddingInstitution, setIsAddingInstitution] = useState(false)
   const [newInstitutionName, setNewInstitutionName] = useState('')
   const [importSaved, setImportSaved] = useState(false)
-  const [newAccountSaved, setNewAccountSaved] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [fileName, setFileName] = useState<string>('')
   const [fileError, setFileError] = useState<string>('')
@@ -106,7 +105,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setIsAddingInstitution(false)
     setNewInstitutionName('')
     setImportSaved(false)
-    setNewAccountSaved(false)
     setFile(null)
     setFileName('')
     setFileError('')
@@ -125,7 +123,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     (key: string) => {
       setImportAccountKey(key)
       setImportSaved(false)
-      setNewAccountSaved(false)
       if (key === '__new__') {
         setFormInstitution('')
         setFormName('')
@@ -149,7 +146,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     (updater: () => void) => {
       updater()
       setImportSaved(false)
-      setNewAccountSaved(false)
     },
     []
   )
@@ -159,9 +155,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       ? state.accounts.find((a) => a.id === importAccountKey)
       : undefined
   const isExistingAccountSelected = importAccountKey !== '' && importAccountKey !== '__new__'
-  const isNewAccountMode = importAccountKey === '__new__'
-  const newAccountFormValid = formName.trim() !== '' && formNumber.trim() !== ''
-  const newAccountSaveDisabled = !newAccountFormValid || newAccountSaved
   const saveDisabled =
     !isExistingAccountSelected ||
     !selectedAccount ||
@@ -186,11 +179,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     dispatch({ type: 'UPDATE_ACCOUNT', accountId: selectedAccount.id, patch })
     setImportSaved(true)
   }, [selectedAccount, formInstitution, formName, formNumber, formCategory, formRetirement, dispatch])
-
-  const handleSaveNewAccount = useCallback(() => {
-    if (!newAccountFormValid) return
-    setNewAccountSaved(true)
-  }, [newAccountFormValid])
 
   const handleFileSelect = useCallback(
     async (selectedFile: File | null) => {
@@ -946,21 +934,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                   <i className="corner bl"></i>
                   <i className="corner br"></i>
                   {importSaved ? 'Saved' : 'Save'}
-                </button>
-              )}
-              {isNewAccountMode && (
-                <button
-                  type="button"
-                  className="btn btn-secondary blueprint"
-                  style={{ marginRight: 'auto' }}
-                  disabled={newAccountSaveDisabled}
-                  onClick={handleSaveNewAccount}
-                >
-                  <i className="corner tl"></i>
-                  <i className="corner tr"></i>
-                  <i className="corner bl"></i>
-                  <i className="corner br"></i>
-                  {newAccountSaved ? 'Saved' : 'Save'}
                 </button>
               )}
               <button
