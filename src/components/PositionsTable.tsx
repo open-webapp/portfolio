@@ -38,7 +38,7 @@ export interface AggregateRow {
   avgCost: number
   gl: number
   glPct: number
-  accountCount: number
+  rowCount: number
   positions: Position[]
 }
 
@@ -91,8 +91,8 @@ function buildAggregateRows(positions: Position[]): AggregateRow[] {
     // Get displayName from first position
     const displayName = groupPositions[0].name ?? groupPositions[0].symbol
 
-    // Count distinct accounts in group
-    const accountCount = new Set(groupPositions.map((p) => p.accountId)).size
+    // Count total positions in group
+    const rowCount = groupPositions.length
 
     return {
       key,
@@ -106,7 +106,7 @@ function buildAggregateRows(positions: Position[]): AggregateRow[] {
       avgCost,
       gl,
       glPct,
-      accountCount,
+      rowCount,
       positions: groupPositions,
     }
   })
@@ -287,7 +287,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
             <th style={{ textAlign: 'right' }}>Market Value</th>
             <th style={{ textAlign: 'right' }}>G/L</th>
             <th style={{ textAlign: 'right' }}>G/L %</th>
-            <th style={{ textAlign: 'right' }}>Accounts</th>
+            <th style={{ textAlign: 'right' }}></th>
           </tr>
         </thead>
         <tbody>
@@ -316,7 +316,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
                 <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
                 <td style={{ textAlign: 'right', color: glColor }}>{glPctStr}</td>
                 <td style={{ textAlign: 'right' }}>
-                  <span className="tag tag-neutral">{row.accountCount}</span>
+                  <span className="tag tag-neutral">{row.rowCount}</span>
                 </td>
               </tr>
             )

@@ -3,6 +3,7 @@ import type { Account, Position } from '../lib/types'
 import type { AggregateRow } from './PositionsTable'
 import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
 import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
+import { Trash } from 'lucide-react'
 
 function parseNonNegative(raw: string): number | null {
   if (raw.trim() === '') return null
@@ -349,6 +350,15 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
     }
   })
 
+  const handleDeletePosition = (positionId: string) => {
+    const confirmed = window.confirm(
+      'Delete this position? It will be moved to Closed Positions.'
+    )
+    if (confirmed) {
+      dispatch({ type: 'CLOSE_POSITION', positionId })
+    }
+  }
+
   return (
     <div className="dialog-backdrop" onClick={onClose} style={{ zIndex: 1001 }}>
       <div
@@ -414,6 +424,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                 <th style={{ textAlign: 'right' }}>Current Price</th>
                 <th style={{ textAlign: 'right' }}>Taxes</th>
                 <th style={{ textAlign: 'center' }}>Override</th>
+                <th style={{ textAlign: 'center' }}></th>
               </tr>
             </thead>
             <tbody>
@@ -475,6 +486,28 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <AssetClassOverrideSelect position={p} dispatch={dispatch} existingAssetClasses={existingAssetClasses} />
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <button
+                      onClick={() => handleDeletePosition(p.id)}
+                      className="btn-icon"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--color-text-secondary)',
+                        transition: 'color 0.2s',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#8a3c2e')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                      title="Delete this position"
+                    >
+                      <Trash size={16} />
+                    </button>
                   </td>
                 </tr>
               ))}

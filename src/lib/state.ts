@@ -5,7 +5,6 @@ import type {
   Transaction,
   PortfolioSnapshot,
   TaxCategory,
-  ImportSession,
   SavedCsvMapping,
 } from './types'
 import { uid } from './seed'
@@ -17,7 +16,6 @@ export interface AppState {
   closedPositions: ClosedPosition[]
   transactions: Transaction[]
   snapshots: PortfolioSnapshot[]
-  importSessions: ImportSession[]
   csvMappings: SavedCsvMapping[]
   customInstitutions: string[]
 
@@ -53,7 +51,6 @@ export function initialState(): AppState {
     closedPositions: [],
     transactions: [],
     snapshots: [],
-    importSessions: [],
     csvMappings: [],
     customInstitutions: [],
 
@@ -110,12 +107,6 @@ export function deleteAccount(state: AppState, accountId: string): AppState {
     closedPositions: state.closedPositions.filter((c) => c.accountId !== accountId),
     transactions: state.transactions.filter((t) => t.accountId !== accountId),
     snapshots: state.snapshots.filter((s) => s.accountId !== accountId),
-    importSessions: state.importSessions
-      .map((session) => ({
-        ...session,
-        accountIds: session.accountIds.filter((id) => id !== accountId),
-      }))
-      .filter((session) => session.accountIds.length > 0),
     csvMappings: state.csvMappings.filter((m) => m.accountId !== accountId),
   }
 }
@@ -143,6 +134,29 @@ export function deleteClosedPosition(state: AppState, id: string): AppState {
   return {
     ...state,
     closedPositions: state.closedPositions.filter((cp) => cp.id !== id),
+  }
+}
+
+/**
+ * Close a position by moving it to closedPositions (to be implemented in reducer cases).
+ */
+export function closePosition(state: AppState, positionId: string): AppState {
+  const position = state.positions.find((p) => p.id === positionId)
+  if (!position) return state
+  const closed: ClosedPosition = {
+    id: uid('closed'),
+    accountId: position.accountId,
+    symbol: position.symbol,
+    name: position.name,
+    closedDate: new Date().toISOString().slice(0, 10),
+    assetClass: position.assetClassManualOverride || position.assetClass,
+    realizedGL: null,
+    realizedGLBasis: 'unknown',
+  }
+  return {
+    ...state,
+    positions: state.positions.filter((p) => p.id !== positionId),
+    closedPositions: [...state.closedPositions, closed],
   }
 }
 
@@ -265,32 +279,6 @@ export function toggleShowClosed(state: AppState): AppState {
   return {
     ...state,
     showClosed: !state.showClosed,
-  }
-}
-
-/**
- * Add a new import session (to be implemented in reducer cases).
- * Prepends the session to the list (newest first), then caps at 50 sessions.
- */
-export function addImportSession(state: AppState, session: ImportSession): AppState {
-  return {
-    ...state,
-    importSessions: [session, ...state.importSessions].slice(0, 50),
-  }
-}
-
-/**
- * Delete an import session by ID (to be implemented in reducer cases).
- * Removes the session entry and all data rows tagged with that sessionId.
- */
-export function deleteImportSession(state: AppState, sessionId: string): AppState {
-  return {
-    ...state,
-    positions: state.positions.filter((p) => p.importSessionId !== sessionId),
-    closedPositions: state.closedPositions.filter((c) => c.importSessionId !== sessionId),
-    transactions: state.transactions.filter((t) => t.importSessionId !== sessionId),
-    snapshots: state.snapshots.filter((s) => s.importSessionId !== sessionId),
-    importSessions: state.importSessions.filter((s) => s.id !== sessionId),
   }
 }
 

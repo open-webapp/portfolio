@@ -509,7 +509,6 @@ describe('ImportDialog (2-step wizard)', () => {
       { symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' },
     ])
     expect(calls[1].fileName).toBe('test.csv')
-    expect(calls[1].importSessionId).toBeTruthy()
     expect(screen.queryByText(/Confirm/i)).toBeNull()
   })
 

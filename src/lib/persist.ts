@@ -51,7 +51,6 @@ function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     closedPositions: loaded.closedPositions ?? defaults.closedPositions,
     transactions: loaded.transactions ?? defaults.transactions,
     snapshots: loaded.snapshots ?? defaults.snapshots,
-    importSessions: loaded.importSessions ?? defaults.importSessions,
     csvMappings: loaded.csvMappings ?? defaults.csvMappings,
     customInstitutions: loaded.customInstitutions ?? defaults.customInstitutions,
 

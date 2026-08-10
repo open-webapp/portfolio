@@ -129,7 +129,6 @@ function fixtureState(): AppState {
         totalValue: 50000,
       },
     ],
-    importSessions: [],
     csvMappings: [],
     customInstitutions: [],
 
@@ -264,28 +263,17 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.showClosed).toBe(true)
     })
 
-    it('round-trips populated importSessions and non-default view', async () => {
-      const stateWithNewFields: AppState = {
+    it('round-trips non-default view', async () => {
+      const stateWithUIChange: AppState = {
         ...initialState(),
-        importSessions: [
-          {
-            id: 'session1',
-            fileName: 'positions_2024.csv',
-            kind: 'positions',
-            importedAt: '2024-01-15T10:30:00Z',
-            accountIds: ['acc1'],
-            rowCount: 10,
-          },
-        ],
         view: 'settings',
       }
       const salt = generateSalt()
       const key = await deriveKey('pw', salt)
 
-      await savePersistedApp(stateWithNewFields, key, salt)
+      await savePersistedApp(stateWithUIChange, key, salt)
       const loaded = await loadPersistedApp(key)
 
-      expect(loaded?.importSessions).toEqual(stateWithNewFields.importSessions)
       expect(loaded?.view).toBe('settings')
     })
 
@@ -438,7 +426,6 @@ describe('IndexedDB persistence', () => {
             },
           },
         ],
-        importSessions: [],
         category: 'all',
         range: '1y',
         tab: 'positions',
@@ -483,14 +470,14 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.accounts[0].institution).toBe('')
     })
 
-    it('loads missing importSessions and view with defaults', async () => {
+    it('loads missing view with default', async () => {
       const preExistingState: Partial<AppState> = {
         accounts: [],
         positions: [],
         category: 'all',
         range: '1y',
         tab: 'positions',
-        // Missing importSessions and view
+        // Missing view
       }
 
       await putRaw(preExistingState)
@@ -498,7 +485,6 @@ describe('IndexedDB persistence', () => {
       const loaded = await loadLegacyPlaintextApp()
 
       expect(loaded).not.toBeNull()
-      expect(loaded?.importSessions).toEqual([])
       expect(loaded?.view).toBe('dashboard')
     })
 
@@ -509,7 +495,6 @@ describe('IndexedDB persistence', () => {
         closedPositions: [],
         transactions: [],
         snapshots: [],
-        importSessions: [],
         category: 'all',
         range: '1y',
         tab: 'positions',

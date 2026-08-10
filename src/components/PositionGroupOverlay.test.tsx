@@ -15,7 +15,6 @@ describe('PositionGroupOverlay', () => {
 
   const createTestPosition = (overrides?: Partial<Position>): Position => ({
     id: 'pos-1',
-    importSessionId: 'sess-1',
     accountId: 'acc-1',
     symbol: 'AAPL',
     name: 'Apple Inc',
@@ -616,7 +615,7 @@ describe('PositionGroupOverlay', () => {
     )
 
     const headers = screen.getAllByRole('columnheader')
-    expect(headers).toHaveLength(8)
+    expect(headers).toHaveLength(9)
 
     const headerTexts = headers.map(h => h.textContent)
     expect(headerTexts).toEqual([
@@ -628,6 +627,7 @@ describe('PositionGroupOverlay', () => {
       'Current Price',
       'Taxes',
       'Override',
+      '',
     ])
   })
 
@@ -1142,5 +1142,128 @@ describe('PositionGroupOverlay', () => {
     )
 
     expect(screen.queryByText(/^G\/L%$/)).toBeNull()
+  })
+
+  /**
+   * Test: Delete column (9th column)
+   */
+  it('renders exactly 9 column headers with empty 9th column', () => {
+    const position = createTestPosition()
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
+      />
+    )
+
+    const headers = screen.getAllByRole('columnheader')
+    expect(headers).toHaveLength(9)
+
+    // The 9th column (last one) should have empty textContent
+    expect(headers[8].textContent).toBe('')
+  })
+
+  it('renders a trash-icon delete button in each row', () => {
+    const pos1 = createTestPosition({ id: 'pos-1' })
+    const pos2 = createTestPosition({ id: 'pos-2' })
+    const group = createTestGroup([pos1, pos2])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
+      />
+    )
+
+    // Should have 2 delete buttons (one per position in the group)
+    const deleteButtons = screen.getAllByTitle('Delete this position')
+    expect(deleteButtons).toHaveLength(2)
+  })
+
+  it('clicking delete + confirming dispatches CLOSE_POSITION exactly once', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const position = createTestPosition({ id: 'pos-123' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
+      />
+    )
+
+    const deleteButton = screen.getByTitle('Delete this position')
+    fireEvent.click(deleteButton)
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'CLOSE_POSITION',
+      positionId: 'pos-123',
+    })
+    expect(mockDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('clicking delete + cancelling does not dispatch anything', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    const position = createTestPosition({ id: 'pos-456' })
+    const group = createTestGroup([position])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
+      />
+    )
+
+    const deleteButton = screen.getByTitle('Delete this position')
+    fireEvent.click(deleteButton)
+
+    expect(mockDispatch).not.toHaveBeenCalled()
+  })
+
+  it('multi-row group: deleting one row only dispatches with that row\'s positionId', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const pos1 = createTestPosition({ id: 'pos-first' })
+    const pos2 = createTestPosition({ id: 'pos-second' })
+    const group = createTestGroup([pos1, pos2])
+    const account = createTestAccount()
+
+    render(
+      <PositionGroupOverlay
+        group={group}
+        accounts={[account]}
+        dispatch={mockDispatch}
+        onClose={() => {}}
+      existingAssetClasses={["Equity", "Crypto"]}
+      />
+    )
+
+    const deleteButtons = screen.getAllByTitle('Delete this position')
+    fireEvent.click(deleteButtons[1]) // Click the second delete button
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'CLOSE_POSITION',
+      positionId: 'pos-second',
+    })
   })
 })

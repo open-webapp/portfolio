@@ -8,7 +8,6 @@ describe('AssetClassOverrideSelect', () => {
 
   const mockPosition: Position = {
     id: 'pos-1',
-    importSessionId: 'sess-1',
     accountId: 'acc-1',
     symbol: 'TEST',
     name: 'Test Position',

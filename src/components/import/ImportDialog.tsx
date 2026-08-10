@@ -381,9 +381,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       dispatch({ type: 'ADD_ACCOUNT', account: newAccount })
     }
 
-    // Generate a unique session ID for this import
-    const importSessionId = uid('import')
-
     // Dispatch the import action
     if (dataType === 'positions') {
       dispatch({
@@ -391,7 +388,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         accountId,
         mappedRows: finalRows,
         importDate: new Date().toISOString(),
-        importSessionId,
         fileName,
       })
     } else {
@@ -399,7 +395,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         type: 'IMPORT_TRANSACTIONS',
         accountId,
         mappedRows: finalRows,
-        importSessionId,
         fileName,
       })
     }

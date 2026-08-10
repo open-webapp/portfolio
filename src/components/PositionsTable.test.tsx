@@ -43,7 +43,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'AAPL',
         name: 'Apple Inc',
@@ -56,7 +55,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-2',
         symbol: 'AAPL',
         name: 'Apple Inc',
@@ -157,7 +155,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'MSFT',
         name: 'Microsoft',
@@ -170,7 +167,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-2',
         symbol: 'MSFT',
         name: 'Microsoft',
@@ -260,7 +256,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'GOOG',
         name: 'Google',
@@ -273,7 +268,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-2',
         symbol: 'GOOG',
         name: 'Google',
@@ -350,7 +344,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'VOO',
         name: 'Vanguard 500',
@@ -363,7 +356,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'VOO',
         name: 'Vanguard 500',
@@ -406,7 +398,7 @@ describe('PositionsTable', () => {
 
   /**
    * Test 3: Single-position group
-   * Renders as a row, accountCount badge shows "1", row is clickable
+   * Renders as a row, row count badge shows "1", row is clickable
    */
   it('renders single-position group with correct account count badge', () => {
     const accounts: Account[] = [
@@ -423,7 +415,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'TSLA',
         name: 'Tesla',
@@ -502,7 +493,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-z',
         symbol: 'AAPL',
         name: 'Apple Inc',
@@ -515,7 +505,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-a',
         symbol: 'AAPL',
         name: 'Apple Inc',
@@ -596,7 +585,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'FB',
         name: 'Meta',
@@ -609,7 +597,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-2',
         symbol: 'FB',
         name: 'Meta',
@@ -687,7 +674,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'NFLX',
         name: 'Netflix',
@@ -700,7 +686,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-2',
         symbol: 'NFLX',
         name: 'Netflix',
@@ -778,7 +763,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'AMZN',
         name: 'Amazon',
@@ -791,7 +775,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-2',
         symbol: 'AMZN',
         name: 'Amazon',
@@ -864,7 +847,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'STOCK1',
         name: 'Stock 1',
@@ -877,7 +859,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'STOCK2',
         name: 'Stock 2',
@@ -931,10 +912,106 @@ describe('PositionsTable', () => {
   })
 
   /**
-   * Test 7: Account-count badge
-   * Shows correct count: 2 for a group with 2 accounts, 1 for a single-account group
+   * Test 6b: Row-count badge with multiple positions in same account
+   * 3 positions across 2 accounts (2 in account A, 1 in account B)
+   * Badge should show "3" (total row count), not "2" (distinct accounts)
    */
-  it('displays correct account count in badge', () => {
+  it('displays row count badge with 3 positions across 2 distinct accounts', () => {
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Account 1',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+      {
+        id: 'acc-2',
+        accountNumber: '002',
+        name: 'Account 2',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+    ]
+
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'MULTI',
+        name: 'Multi Position',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 50,
+        price: 60,
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-1',
+        symbol: 'MULTI',
+        name: 'Multi Position',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 52,
+        price: 60,
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+      {
+        id: 'pos-3',
+        accountId: 'acc-2',
+        symbol: 'MULTI',
+        name: 'Multi Position',
+        assetClass: 'Equity',
+        shares: 8,
+        avgCost: 55,
+        price: 60,
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+    ]
+
+    const state: AppState = {
+      accounts,
+      positions,
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+      csvMappings: [],
+    }
+
+    render(<PositionsTable state={state} dispatch={mockDispatch} />)
+
+    const tbody = screen.getByRole('table').querySelector('tbody')
+    const rows = tbody?.querySelectorAll('tr')
+    expect(rows).toHaveLength(1)
+
+    // Badge should show "3" (total row count), not "2" (distinct accounts)
+    const row = rows![0]
+    const badge = within(row).getByText('3')
+    expect(badge).toBeDefined()
+  })
+
+  /**
+   * Test 7: Row-count badge for various group sizes
+   * Shows correct count: 1 for a single-position group, 2 for a two-position group, etc.
+   */
+  it('displays correct row count in badge for different group sizes', () => {
     const accounts: Account[] = [
       {
         id: 'acc-1',
@@ -965,7 +1042,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'XYZ',
         name: 'XYZ Corp',
@@ -978,7 +1054,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-2',
         symbol: 'XYZ',
         name: 'XYZ Corp',
@@ -991,7 +1066,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-3',
-        importSessionId: 'sess-1',
         accountId: 'acc-3',
         symbol: 'ABC',
         name: 'ABC Corp',
@@ -1064,7 +1138,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-123',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'UNKNOWN',
         name: 'Unknown Asset',
@@ -1077,7 +1150,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-124',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'AAPL',
         name: 'Apple Inc',
@@ -1167,7 +1239,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-1',
         symbol: 'AAPL',
         name: 'Apple Inc',
@@ -1215,6 +1286,69 @@ describe('PositionsTable', () => {
   })
 
   /**
+   * Test 9b: Table header doesn't contain "Accounts" label
+   * The row count column header should be blank
+   */
+  it('does not display "Accounts" label in table header', () => {
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Account 1',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+    ]
+
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'TEST',
+        name: 'Test Position',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 100,
+        price: 120,
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+    ]
+
+    const state: AppState = {
+      accounts,
+      positions,
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+      csvMappings: [],
+    }
+
+    render(<PositionsTable state={state} dispatch={mockDispatch} />)
+
+    // Get the main table
+    const tables = screen.getAllByRole('table')
+    const mainTable = tables[0]
+    const headerRow = mainTable.querySelector('thead tr')
+    const headerText = headerRow?.textContent || ''
+
+    // "Accounts" text should not appear in header
+    expect(headerText).not.toContain('Accounts')
+  })
+
+  /**
    * Bonus test: Orphaned position (account not found in the live accounts list)
    * The buildGroupKey function should use sentinel values for orphaned positions.
    * This test verifies that even if an account is deleted but its positions remain,
@@ -1240,7 +1374,6 @@ describe('PositionsTable', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
-        importSessionId: 'sess-1',
         accountId: 'acc-deleted', // Account was deleted
         symbol: 'ORPHAN',
         name: 'Orphaned Position',
@@ -1253,7 +1386,6 @@ describe('PositionsTable', () => {
       },
       {
         id: 'pos-2',
-        importSessionId: 'sess-1',
         accountId: 'acc-deleted', // Same deleted account
         symbol: 'ORPHAN',
         name: 'Orphaned Position',

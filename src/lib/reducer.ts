@@ -37,6 +37,9 @@ export function appReducer(state: AppState, action: Action): AppState {
         assetClassManualOverride: action.override || undefined,
       })
 
+    case 'CLOSE_POSITION':
+      return StateActions.closePosition(state, action.positionId)
+
     case 'DELETE_CLOSED_POSITION':
       return StateActions.deleteClosedPosition(state, action.id)
 
@@ -79,16 +82,10 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     // Import flow
     case 'IMPORT_POSITIONS':
-      return importPositions(state, action.accountId, action.mappedRows, action.importDate, action.importSessionId)
+      return importPositions(state, action.accountId, action.mappedRows, action.importDate)
 
     case 'IMPORT_TRANSACTIONS':
-      return importTransactions(state, action.accountId, action.mappedRows, action.importSessionId)
-
-    case 'ADD_IMPORT_SESSION':
-      return StateActions.addImportSession(state, action.session)
-
-    case 'DELETE_IMPORT_SESSION':
-      return StateActions.deleteImportSession(state, action.sessionId)
+      return importTransactions(state, action.accountId, action.mappedRows)
 
     case 'UPSERT_CSV_MAPPING':
       return StateActions.upsertCsvMapping(state, action.accountId, action.kind, action.fieldMap)
