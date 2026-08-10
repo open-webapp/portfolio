@@ -53,6 +53,7 @@ function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     snapshots: loaded.snapshots ?? defaults.snapshots,
     importSessions: loaded.importSessions ?? defaults.importSessions,
     csvMappings: loaded.csvMappings ?? defaults.csvMappings,
+    customInstitutions: loaded.customInstitutions ?? defaults.customInstitutions,
 
     // UI state with existing values or defaults
     category: loaded.category ?? defaults.category,

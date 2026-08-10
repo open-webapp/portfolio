@@ -41,7 +41,7 @@ async function mockCsv(headers: string[], rows: Record<string, string>[]) {
 }
 
 function openDialog() {
-  fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 }
 
 function getFileInput(): HTMLInputElement {
@@ -114,7 +114,7 @@ async function advanceToStep2(
   if (dataType === 'transactions') {
     fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
   }
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+  fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
   uploadCsvFile()
   await continueEnabled()
   clickContinue()
@@ -124,7 +124,7 @@ async function advanceToStep2(
 async function advanceToStep2Manual(dispatch: (action: any) => void = vi.fn()) {
   render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
   openDialog()
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+  fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
   fireEvent.click(screen.getByRole('radio', { name: 'Enter manually' }))
   await continueEnabled()
   clickContinue()
@@ -144,27 +144,22 @@ async function advanceToStep2NewAccount(
   if (dataType === 'transactions') {
     fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
   }
-  fireEvent.click(screen.getByRole('radio', { name: 'New account' }))
+  fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: '__new__' } })
   fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), { target: { value: fields.name } })
   fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: fields.number } })
   
-  // Select institution
-  const institutionInput = screen.getAllByPlaceholderText('— Select —')[0] as HTMLInputElement
+  // Select institution from dropdown
   const institutionValue = fields.institution !== undefined ? fields.institution : 'Fidelity'
-  fireEvent.change(institutionInput, { target: { value: institutionValue } })
-  fireEvent.focus(institutionInput)
-  // Wait for the option to appear and click it
-  await waitFor(() => {
-    const option = screen.getByText(institutionValue)
-    expect(option.tagName).toBe('BUTTON')
-    fireEvent.click(option)
-  })
+  const institutionSelects = document.querySelectorAll('select')
+  if (institutionSelects.length >= 2) {
+    fireEvent.change(institutionSelects[1], { target: { value: institutionValue } })
+  }
   
   if (fields.category) {
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: fields.category } })
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: fields.category } })
   }
   if (fields.retirement) {
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.change(screen.getByLabelText('Retirement'), { target: { value: 'retirement' } })
   }
   uploadCsvFile()
   await continueEnabled()
@@ -252,7 +247,7 @@ describe('ImportDialog (2-step wizard)', () => {
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
 
-    const accountSelect = screen.getByRole('combobox') as HTMLSelectElement
+    const accountSelect = document.querySelector('select') as HTMLSelectElement as HTMLSelectElement
     expect(accountSelect.className).toContain('input')
     expect(screen.getByRole('option', { name: 'Test Brokerage • #123456 — Taxable — Non-Retirement' })).toBeTruthy()
 
@@ -307,7 +302,7 @@ describe('ImportDialog (2-step wizard)', () => {
       />
     )
     openDialog()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-2' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-2' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -411,7 +406,7 @@ describe('ImportDialog (2-step wizard)', () => {
     const symbolInput = document.querySelector('tbody tr input') as HTMLInputElement
     fireEvent.change(symbolInput, { target: { value: 'MSFT' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
     const importCall = dispatch.mock.calls.find((c) => c[0].type === 'IMPORT_POSITIONS')
     expect(importCall).toBeTruthy()
     expect(importCall![0].mappedRows).toEqual([
@@ -435,7 +430,7 @@ describe('ImportDialog (2-step wizard)', () => {
     ])
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -454,7 +449,7 @@ describe('ImportDialog (2-step wizard)', () => {
     ])
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -475,7 +470,7 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(screen.getAllByTitle('Delete this row')).toHaveLength(2)
     expect(screen.getByText(/2 row\(s\) detected/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
     const importCall = dispatch.mock.calls.find((c) => c[0].type === 'IMPORT_POSITIONS')
     expect(importCall).toBeTruthy()
     expect(importCall![0].mappedRows).toEqual([
@@ -500,7 +495,7 @@ describe('ImportDialog (2-step wizard)', () => {
     await advanceToStep2NewAccount(dispatch, { name: 'Roth IRA', number: '8842', category: 'nonTaxable', retirement: true }, 'positions')
     mapPositions()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
     expect(calls.map((a) => a.type)).toEqual(['ADD_ACCOUNT', 'IMPORT_POSITIONS', 'UPSERT_CSV_MAPPING'])
@@ -523,7 +518,7 @@ describe('ImportDialog (2-step wizard)', () => {
     await advanceToStep2NewAccount(dispatch, { name: 'Checking', number: '111', category: 'taxable', retirement: false }, 'transactions')
     mapTransactions()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
     expect(calls.map((a) => a.type)).toEqual(['ADD_ACCOUNT', 'IMPORT_TRANSACTIONS', 'UPSERT_CSV_MAPPING'])
@@ -538,7 +533,7 @@ describe('ImportDialog (2-step wizard)', () => {
     await advanceToStep2(dispatch, 'transactions')
     mapTransactions()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
     expect(calls.map((a) => a.type)).toEqual(['IMPORT_TRANSACTIONS', 'UPSERT_CSV_MAPPING'])
@@ -553,7 +548,7 @@ describe('ImportDialog (2-step wizard)', () => {
     await advanceToStep2(dispatch)
     mapPositions()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 
     expect(screen.getByText('Import complete')).toBeTruthy()
     expect(screen.getByText(/Successfully imported 1 position/)).toBeTruthy()
@@ -604,7 +599,7 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.dialog-backdrop')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Accounts & Import' })).toBeTruthy()
 
     openDialog()
     expect(screen.getByText('Setup')).toBeTruthy()
@@ -652,7 +647,7 @@ describe('ImportDialog (2-step wizard)', () => {
     ])
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -714,7 +709,7 @@ describe('ImportDialog (2-step wizard)', () => {
     ])
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -767,7 +762,7 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(document.querySelector('.dialog-backdrop')).toBeNull()
 
     // Reopen the dialog
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
     await waitFor(() => expect(screen.getByText('Setup')).toBeTruthy())
 
     // Header should be reset
@@ -805,7 +800,7 @@ describe('ImportDialog (2-step wizard)', () => {
     await advanceToStep2NewAccount(dispatch, { name: 'New Brokerage', number: '999', category: 'taxable', retirement: false }, 'positions')
     mapPositions()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
     const upsertCall = calls.find((c) => c.type === 'UPSERT_CSV_MAPPING')
@@ -847,7 +842,7 @@ describe('ImportDialog (2-step wizard)', () => {
     render(<ImportDialog state={stateWithMapping} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
     fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -884,7 +879,7 @@ describe('ImportDialog (2-step wizard)', () => {
     render(<ImportDialog state={stateWithMapping} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
     fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -921,7 +916,7 @@ describe('ImportDialog (2-step wizard)', () => {
     render(<ImportDialog state={stateAfterFirstImport} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
     fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     uploadCsvFile()
     await continueEnabled()
     clickContinue()
@@ -929,7 +924,7 @@ describe('ImportDialog (2-step wizard)', () => {
 
     // Import with different mapping (mapping B - all fields mapped)
     mapTransactions()
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
     const upsertCall = calls.find((c) => c.type === 'UPSERT_CSV_MAPPING')
@@ -1022,7 +1017,7 @@ describe('ImportDialog (2-step wizard)', () => {
     const continueBtn = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
     expect(continueBtn.disabled).toBe(true)
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acc-1' } })
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
     await continueEnabled()
   })
 
@@ -1061,7 +1056,7 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.change(firstRowInputs[3], { target: { value: '150' } })
     fireEvent.change(firstRowInputs[5], { target: { value: '180' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
 
     const calls = dispatch.mock.calls.map((c) => c[0])
     expect(calls.map((a) => a.type)).toEqual(['IMPORT_POSITIONS'])
@@ -1101,11 +1096,11 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(newFirstRowInputs[0].value).toBe('')
   })
 
-  it('38. trigger and dialog copy use "Import" text and aria-label', () => {
+  it('38. trigger and dialog copy - trigger says "Accounts & Import", dialog says "Import"', () => {
     const { container } = render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
-    const closedTrigger = screen.getByRole('button', { name: 'Import' })
+    const closedTrigger = screen.getByRole('button', { name: 'Accounts & Import' })
     expect(closedTrigger).toBeTruthy()
-    expect(closedTrigger.getAttribute('aria-label')).toBe('Import')
+    expect(closedTrigger.getAttribute('aria-label')).toBe('Accounts & Import')
 
     openDialog()
     expect(container.querySelector('.dialog-title')?.textContent).toBe('Import')

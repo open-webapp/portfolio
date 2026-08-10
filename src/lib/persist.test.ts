@@ -131,6 +131,7 @@ function fixtureState(): AppState {
     ],
     importSessions: [],
     csvMappings: [],
+    customInstitutions: [],
 
     // UI state
     category: 'all',

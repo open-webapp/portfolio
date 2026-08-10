@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react'
 import type { AppState } from '../../lib/state'
 import { parseCsvFile } from '../../lib/csv'
 import type { TaxCategory, Account } from '../../lib/types'
-import { InstitutionSelect } from '../InstitutionSelect'
 import {
   POSITIONS_REQUIRED_FIELDS,
   POSITIONS_OPTIONAL_FIELDS,
@@ -17,14 +16,6 @@ export interface ImportDialogProps {
   state: AppState
   dispatch: (action: any) => void
   onClose: () => void
-}
-
-interface NewAccountFields {
-  name: string
-  number: string
-  category: TaxCategory
-  retirement: boolean
-  institution: string
 }
 
 const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
@@ -73,15 +64,15 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   // Step 1 state
   const [dataType, setDataType] = useState<'positions' | 'transactions'>('positions')
   const [entryMode, setEntryMode] = useState<'upload' | 'manual'>('upload')
-  const [accountMode, setAccountMode] = useState<'existing' | 'new'>('existing')
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('')
-  const [newAccountFields, setNewAccountFields] = useState<NewAccountFields>({
-    name: '',
-    number: '',
-    category: 'taxable',
-    retirement: false,
-    institution: '',
-  })
+  const [importAccountKey, setImportAccountKey] = useState<string>('')
+  const [formInstitution, setFormInstitution] = useState<string>('')
+  const [formName, setFormName] = useState<string>('')
+  const [formNumber, setFormNumber] = useState<string>('')
+  const [formCategory, setFormCategory] = useState<TaxCategory>('taxable')
+  const [formRetirement, setFormRetirement] = useState<'retirement' | 'nonRetirement'>('nonRetirement')
+  const [isAddingInstitution, setIsAddingInstitution] = useState(false)
+  const [newInstitutionName, setNewInstitutionName] = useState('')
+  const [importSaved, setImportSaved] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [fileName, setFileName] = useState<string>('')
   const [fileError, setFileError] = useState<string>('')
@@ -105,15 +96,15 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setStep(1)
     setDataType('positions')
     setEntryMode('upload')
-    setAccountMode('existing')
-    setSelectedAccountId('')
-    setNewAccountFields({
-      name: '',
-      number: '',
-      category: 'taxable',
-      retirement: false,
-      institution: '',
-    })
+    setImportAccountKey('')
+    setFormInstitution('')
+    setFormName('')
+    setFormNumber('')
+    setFormCategory('taxable')
+    setFormRetirement('nonRetirement')
+    setIsAddingInstitution(false)
+    setNewInstitutionName('')
+    setImportSaved(false)
     setFile(null)
     setFileName('')
     setFileError('')
@@ -127,6 +118,67 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setTouchedAssetClassRows(new Set())
     onClose()
   }, [onClose])
+
+  const handleAccountKeyChange = useCallback(
+    (key: string) => {
+      setImportAccountKey(key)
+      setImportSaved(false)
+      if (key === '__new__') {
+        setFormInstitution('')
+        setFormName('')
+        setFormNumber('')
+        setFormCategory('taxable')
+        setFormRetirement('nonRetirement')
+      } else {
+        const a = state.accounts.find((acc) => acc.id === key)
+        if (!a) return
+        setFormInstitution(a.institution || '')
+        setFormName(a.name)
+        setFormNumber(a.accountNumber || '')
+        setFormCategory(a.taxCategory)
+        setFormRetirement(a.retirement ? 'retirement' : 'nonRetirement')
+      }
+    },
+    [state.accounts]
+  )
+
+  const updateFormField = useCallback(
+    (updater: () => void) => {
+      updater()
+      setImportSaved(false)
+    },
+    []
+  )
+
+  const selectedAccount =
+    importAccountKey !== '__new__'
+      ? state.accounts.find((a) => a.id === importAccountKey)
+      : undefined
+  const isExistingAccountSelected = importAccountKey !== '' && importAccountKey !== '__new__'
+  const saveDisabled =
+    !isExistingAccountSelected ||
+    !selectedAccount ||
+    (formInstitution === (selectedAccount.institution || '') &&
+      formName.trim() === selectedAccount.name &&
+      formNumber.trim() === (selectedAccount.accountNumber || '') &&
+      formCategory === selectedAccount.taxCategory &&
+      formRetirement === (selectedAccount.retirement ? 'retirement' : 'nonRetirement'))
+
+  const handleSaveAccountChanges = useCallback(() => {
+    if (!selectedAccount) return
+    const patch: Partial<Account> = {}
+    if (formInstitution !== (selectedAccount.institution || ''))
+      patch.institution = formInstitution
+    if (formName.trim() !== selectedAccount.name) patch.name = formName.trim()
+    if (formNumber.trim() !== (selectedAccount.accountNumber || ''))
+      patch.accountNumber = formNumber.trim()
+    if (formCategory !== selectedAccount.taxCategory) patch.taxCategory = formCategory
+    const retirementBool = formRetirement === 'retirement'
+    if (retirementBool !== selectedAccount.retirement) patch.retirement = retirementBool
+    if (Object.keys(patch).length === 0) return
+    dispatch({ type: 'UPDATE_ACCOUNT', accountId: selectedAccount.id, patch })
+    setImportSaved(true)
+  }, [selectedAccount, formInstitution, formName, formNumber, formCategory, formRetirement, dispatch])
 
   const handleFileSelect = useCallback(
     async (selectedFile: File | null) => {
@@ -200,15 +252,8 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   }, [])
 
   const isStep1Complete = (): boolean => {
-    // Data type must be chosen (always is, default to 'positions')
-    // Account must be resolved
-    const accountResolved =
-      accountMode === 'existing'
-        ? selectedAccountId !== ''
-        : newAccountFields.name.trim() !== '' &&
-          newAccountFields.number.trim() !== '' &&
-          newAccountFields.institution.trim() !== ''
-    // In manual mode there is no CSV file requirement.
+    const isExisting = importAccountKey !== '' && importAccountKey !== '__new__'
+    const accountResolved = isExisting ? true : formName.trim() !== '' && formNumber.trim() !== ''
     const fileSelected = entryMode === 'manual' || (file !== null && csvRows.length > 0)
     return accountResolved && fileSelected
   }
@@ -221,9 +266,9 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         setCsvRows(Array.from({ length: 10 }, () => ({})))
       } else {
         // Prefill fieldMap from saved mapping if importing to existing account
-        if (accountMode === 'existing' && selectedAccountId) {
+        if (importAccountKey !== '' && importAccountKey !== '__new__') {
           const saved = state.csvMappings.find(
-            (m) => m.accountId === selectedAccountId && m.kind === dataType
+            (m) => m.accountId === importAccountKey && m.kind === dataType
           )
           if (saved) {
             // Filter saved fieldMap to only columns present in current CSV
@@ -239,7 +284,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
 
       setStep(2)
     }
-  }, [step, isStep1Complete, entryMode, accountMode, selectedAccountId, dataType, csvHeaders, state.csvMappings])
+  }, [step, isStep1Complete, entryMode, importAccountKey, dataType, csvHeaders, state.csvMappings])
 
   const handleBack = useCallback(() => {
     setStep(1)
@@ -319,17 +364,17 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     })
 
     // Determine the account ID
-    let accountId = selectedAccountId
+    let accountId = importAccountKey
 
     // If new account mode, create the account first
-    if (accountMode === 'new') {
+    if (importAccountKey === '__new__') {
       const newAccount: Account = {
         id: uid('acc'),
-        accountNumber: newAccountFields.number,
-        name: newAccountFields.name,
-        institution: newAccountFields.institution,
-        taxCategory: newAccountFields.category,
-        retirement: newAccountFields.retirement,
+        accountNumber: formNumber.trim(),
+        name: formName.trim(),
+        institution: formInstitution,
+        taxCategory: formCategory,
+        retirement: formRetirement === 'retirement',
         createdAt: new Date().toISOString(),
       }
       accountId = newAccount.id
@@ -372,11 +417,15 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     fieldMap,
     importEdits,
     dataType,
-    accountMode,
+    importAccountKey,
     entryMode,
-    selectedAccountId,
-    newAccountFields,
+    formName,
+    formNumber,
+    formInstitution,
+    formCategory,
+    formRetirement,
     dispatch,
+    fileName,
   ])
 
   const handlePrimary = useCallback(() => {
@@ -390,7 +439,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   // Closed state: render button only
   if (!isOpen) {
     return (
-      <button type="button" className="btn btn-secondary blueprint" onClick={handleOpenDialog} aria-label="Import">
+      <button type="button" className="btn btn-secondary blueprint" onClick={handleOpenDialog} aria-label="Accounts & Import">
         <i className="corner tl"></i>
         <i className="corner tr"></i>
         <i className="corner bl"></i>
@@ -410,7 +459,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
           <path d="m7 8 5-5 5 5"></path>
           <path d="M5 21h14"></path>
         </svg>
-        Import
+        Accounts & Import
       </button>
     )
   }
@@ -452,21 +501,25 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       return isBlankRow(mergedRow) || isManualAssetClassOnlyRow(mergedRow)
     })
 
-  const destinationAccount =
-    accountMode === 'existing' ? state.accounts.find((a) => a.id === selectedAccountId) : null
+  const destinationAccountForStep2 =
+    importAccountKey !== '' && importAccountKey !== '__new__'
+      ? state.accounts.find((a) => a.id === importAccountKey)
+      : null
   const accountLabel =
-    accountMode === 'existing'
-      ? destinationAccount
-        ? destinationAccount.name +
-          (destinationAccount.accountNumber ? ` • #${destinationAccount.accountNumber}` : '')
+    importAccountKey !== '' && importAccountKey !== '__new__'
+      ? destinationAccountForStep2
+        ? destinationAccountForStep2.name +
+          (destinationAccountForStep2.accountNumber
+            ? ` • #${destinationAccountForStep2.accountNumber}`
+            : '')
         : ''
-      : newAccountFields.name
+      : formName
   const categoryLabel =
-    accountMode === 'existing'
-      ? destinationAccount
-        ? TAX_CATEGORY_LABELS[destinationAccount.taxCategory]
+    importAccountKey !== '' && importAccountKey !== '__new__'
+      ? destinationAccountForStep2
+        ? TAX_CATEGORY_LABELS[destinationAccountForStep2.taxCategory]
         : ''
-      : TAX_CATEGORY_LABELS[newAccountFields.category]
+      : TAX_CATEGORY_LABELS[formCategory]
 
   const mappedColumnFor = (field: string): string =>
     Object.keys(fieldMap).find((col) => fieldMap[col] === field) ?? ''
@@ -541,154 +594,206 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         {/* Step 1: Setup */}
         {step === 1 && (
           <>
-            <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-5)' }}>
-              {/* LEFT COLUMN: Destination account */}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 'var(--space-6)',
+                alignItems: 'start',
+              }}
+            >
+              {/* LEFT COLUMN */}
+              <div>
+                {/* Account select */}
                 <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-                  <label>Destination account</label>
-                  <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
-                    <label className="seg-opt">
-                      <input
-                        type="radio"
-                        name="importAccountMode"
-                        checked={accountMode === 'existing'}
-                        onChange={() => setAccountMode('existing')}
-                      />
-                      <span>Existing account</span>
-                    </label>
-                    <label className="seg-opt">
-                      <input
-                        type="radio"
-                        name="importAccountMode"
-                        checked={accountMode === 'new'}
-                        onChange={() => setAccountMode('new')}
-                      />
-                      <span>New account</span>
-                    </label>
+                  <label>Account</label>
+                  <select
+                    className="input"
+                    value={importAccountKey}
+                    onChange={(e) => handleAccountKeyChange(e.target.value)}
+                  >
+                    <option value="">-- Select an account --</option>
+                    {state.accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                        {a.accountNumber ? ` • #${a.accountNumber}` : ''}
+                        {a.institution ? ` — ${a.institution}` : ''}
+                      </option>
+                    ))}
+                    <option value="__new__">+ Add new account…</option>
+                  </select>
+                </div>
+
+                {/* Institution field */}
+                <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                  <label>Institution</label>
+                  {(() => {
+                    const SEED_INSTITUTIONS = ['Fidelity', 'Charles Schwab', 'Vanguard']
+                    const inUseInstitutions = Array.from(
+                      new Set(
+                        state.accounts
+                          .map((a) => a.institution || '')
+                          .filter((i) => i !== '')
+                      )
+                    )
+                    const seedSet = new Set(SEED_INSTITUTIONS)
+                    const extraInstitutions = Array.from(
+                      new Set([...state.customInstitutions, ...inUseInstitutions])
+                    )
+                      .filter((i) => !seedSet.has(i))
+                      .sort()
+                    const institutionOptions = [...SEED_INSTITUTIONS, ...extraInstitutions]
+
+                    return isAddingInstitution ? (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          className="input"
+                          placeholder="e.g. Ally Invest"
+                          value={newInstitutionName}
+                          onChange={(e) => setNewInstitutionName(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary blueprint"
+                          disabled={!newInstitutionName.trim()}
+                          onClick={() => {
+                            const name = newInstitutionName.trim()
+                            if (!name) return
+                            if (!state.customInstitutions.includes(name)) {
+                              dispatch({ type: 'ADD_CUSTOM_INSTITUTION', name })
+                            }
+                            setFormInstitution(name)
+                            setImportSaved(false)
+                            setIsAddingInstitution(false)
+                            setNewInstitutionName('')
+                          }}
+                        >
+                          <i className="corner tl"></i>
+                          <i className="corner tr"></i>
+                          <i className="corner bl"></i>
+                          <i className="corner br"></i>
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary blueprint"
+                          onClick={() => {
+                            setIsAddingInstitution(false)
+                            setNewInstitutionName('')
+                          }}
+                        >
+                          <i className="corner tl"></i>
+                          <i className="corner tr"></i>
+                          <i className="corner bl"></i>
+                          <i className="corner br"></i>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="input"
+                        value={formInstitution}
+                        onChange={(e) => {
+                          if (e.target.value === '__add_new__') {
+                            setIsAddingInstitution(true)
+                            setNewInstitutionName('')
+                            return
+                          }
+                          updateFormField(() => setFormInstitution(e.target.value))
+                        }}
+                      >
+                        {formInstitution === '' && <option value="">-- Select --</option>}
+                        {institutionOptions.map((i) => (
+                          <option key={i} value={i}>
+                            {i}
+                          </option>
+                        ))}
+                        <option value="__add_new__">+ Add new institution…</option>
+                      </select>
+                    )
+                  })()}
+                </div>
+
+                {/* Account name and Account number grid */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 'var(--space-3)',
+                    marginBottom: 'var(--space-4)',
+                  }}
+                >
+                  <div className="field">
+                    <label>Account name</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={formName}
+                      onChange={(e) => updateFormField(() => setFormName(e.target.value))}
+                      placeholder="e.g. Fidelity Rollover IRA"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Account number</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={formNumber}
+                      onChange={(e) => updateFormField(() => setFormNumber(e.target.value))}
+                      placeholder="e.g. 8842-1190"
+                    />
                   </div>
                 </div>
 
-                {accountMode === 'existing' && (
-                  <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-                    <label>Account</label>
+                {/* Category and Retirement grid */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 'var(--space-3)',
+                  }}
+                >
+                  <div className="field">
+                    <label>Category</label>
                     <select
                       className="input"
-                      value={selectedAccountId}
-                      onChange={(e) => setSelectedAccountId(e.target.value)}
+                      value={formCategory}
+                      onChange={(e) =>
+                        updateFormField(() => setFormCategory(e.target.value as TaxCategory))
+                      }
                     >
-                      <option value="">-- Select an account --</option>
-                      {state.accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                          {account.accountNumber ? ` • #${account.accountNumber}` : ''}
-                          {' — '}
-                          {TAX_CATEGORY_LABELS[account.taxCategory]}
-                          {' — '}
-                          {account.retirement ? 'Retirement' : 'Non-Retirement'}
-                        </option>
-                      ))}
+                      <option value="taxable">Taxable</option>
+                      <option value="nonTaxable">Non-Taxable</option>
+                      <option value="taxDeferred">Tax-Deferred</option>
                     </select>
                   </div>
-                )}
-
-                {accountMode === 'new' && (
-                  <>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '2fr 1fr 1fr 1fr',
-                        gap: 'var(--space-3)',
-                        marginBottom: 'var(--space-3)',
+                  <div className="field">
+                    <label>Retirement</label>
+                    <select
+                      className="input"
+                      value={formRetirement}
+                      onChange={(e) => {
+                        updateFormField(() =>
+                          setFormRetirement(e.target.value as 'retirement' | 'nonRetirement')
+                        )
                       }}
                     >
-                      <div className="field">
-                        <label>New account name</label>
-                        <input
-                          type="text"
-                          className="input"
-                          value={newAccountFields.name}
-                          onChange={(e) =>
-                            setNewAccountFields({
-                              ...newAccountFields,
-                              name: e.target.value,
-                            })
-                          }
-                          placeholder="e.g. Fidelity Rollover IRA"
-                        />
-                      </div>
-                      <div className="field">
-                        <label>Account number</label>
-                        <input
-                          type="text"
-                          className="input"
-                          value={newAccountFields.number}
-                          onChange={(e) =>
-                            setNewAccountFields({
-                              ...newAccountFields,
-                              number: e.target.value,
-                            })
-                          }
-                          placeholder="e.g. 8842-1190"
-                        />
-                      </div>
-                      <div className="field">
-                        <label>Institution</label>
-                        <InstitutionSelect
-                          value={newAccountFields.institution}
-                          accounts={state.accounts}
-                          onChange={(v) =>
-                            setNewAccountFields({
-                              ...newAccountFields,
-                              institution: v,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="field">
-                        <label>Category</label>
-                        <select
-                          className="input"
-                          value={newAccountFields.category}
-                          onChange={(e) =>
-                            setNewAccountFields({
-                              ...newAccountFields,
-                              category: e.target.value as TaxCategory,
-                            })
-                          }
-                        >
-                          <option value="taxable">Taxable</option>
-                          <option value="nonTaxable">Non-Taxable</option>
-                          <option value="taxDeferred">Tax-Deferred</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div style={{ marginBottom: 'var(--space-3)' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                          type="checkbox"
-                          checked={newAccountFields.retirement}
-                          onChange={(e) =>
-                            setNewAccountFields({
-                              ...newAccountFields,
-                              retirement: e.target.checked,
-                            })
-                          }
-                        />
-                        <strong>Retirement Account</strong>
-                      </label>
-                    </div>
-                  </>
-                )}
+                      <option value="retirement">Retirement</option>
+                      <option value="nonRetirement">Non-Retirement</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              {/* DIVIDER */}
-              <div style={{ alignSelf: 'stretch', borderLeft: '1px solid var(--color-divider)' }} data-testid="import-step1-divider" />
-
-              {/* RIGHT COLUMN: Data source */}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {/* RIGHT COLUMN */}
+              <div>
+                {/* Data type seg */}
                 <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
                   <label>What are you importing?</label>
-                  <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
+                  <div
+                    className="seg"
+                    style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}
+                  >
                     <label className="seg-opt">
                       <input
                         type="radio"
@@ -713,10 +818,14 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                   </div>
                 </div>
 
+                {/* Entry mode seg (positions-only) */}
                 {dataType === 'positions' && (
                   <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
-                    <label>How would you like to add positions?</label>
-                    <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}>
+                    <label>How will you add the data?</label>
+                    <div
+                      className="seg"
+                      style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}
+                    >
                       <label className="seg-opt">
                         <input
                           type="radio"
@@ -739,6 +848,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                   </div>
                 )}
 
+                {/* CSV dropzone */}
                 {entryMode === 'upload' && (
                   <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
                     <label>CSV file</label>
@@ -769,37 +879,79 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                         strokeLinejoin="round"
                         width="22"
                         height="22"
-                        style={{ color: 'var(--color-accent)', marginBottom: '8px' }}
+                        style={{
+                          color: 'var(--color-accent)',
+                          marginBottom: '8px',
+                        }}
                       >
                         <path d="M12 3v12"></path>
                         <path d="m7 8 5-5 5 5"></path>
                         <path d="M5 21h14"></path>
                       </svg>
                       <div>{file ? file.name : 'No file selected'}</div>
-                      <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
+                      <div
+                        className="text-muted"
+                        style={{ fontSize: '11px', marginTop: '4px' }}
+                      >
                         Drag and drop, or click to browse
                       </div>
-                      {file && (
-                        <div style={{ margin: 'var(--space-2) 0 0 0', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                          Selected: <strong>{file.name}</strong> ({csvRows.length} rows)
-                        </div>
-                      )}
                     </div>
                     {fileError && (
-                      <div style={{ color: '#8a3c2e', fontSize: '12px', marginTop: '6px' }}>{fileError}</div>
+                      <div
+                        style={{
+                          color: '#8a3c2e',
+                          fontSize: '12px',
+                          marginTop: '6px',
+                        }}
+                      >
+                        {fileError}
+                      </div>
                     )}
+                  </div>
+                )}
+
+                {/* Manual entry hint */}
+                {dataType === 'positions' && entryMode === 'manual' && (
+                  <div className="text-muted" style={{ fontSize: '12px' }}>
+                    You'll enter each row's data directly on the next screen.
                   </div>
                 )}
               </div>
             </div>
 
+            {/* Dialog actions */}
             <div className="dialog-actions">
-              <button className="btn btn-primary" onClick={handleContinue} disabled={!isStep1Complete()}>
+              {isExistingAccountSelected && (
+                <button
+                  type="button"
+                  className="btn btn-secondary blueprint"
+                  style={{ marginRight: 'auto' }}
+                  disabled={saveDisabled}
+                  onClick={handleSaveAccountChanges}
+                >
+                  <i className="corner tl"></i>
+                  <i className="corner tr"></i>
+                  <i className="corner bl"></i>
+                  <i className="corner br"></i>
+                  {importSaved ? 'Saved' : 'Save'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-primary blueprint"
+                onClick={handleContinue}
+                disabled={!isStep1Complete()}
+              >
+                <i className="corner tl"></i>
+                <i className="corner tr"></i>
+                <i className="corner bl"></i>
+                <i className="corner br"></i>
                 Continue
               </button>
             </div>
           </>
         )}
+
 
         {/* Step 2: Review */}
         {step === 2 && (

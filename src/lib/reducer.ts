@@ -93,6 +93,9 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'UPSERT_CSV_MAPPING':
       return StateActions.upsertCsvMapping(state, action.accountId, action.kind, action.fieldMap)
 
+    case 'ADD_CUSTOM_INSTITUTION':
+      return StateActions.addCustomInstitution(state, action.name)
+
     default:
       return state
   }

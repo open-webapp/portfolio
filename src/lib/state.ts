@@ -19,6 +19,7 @@ export interface AppState {
   snapshots: PortfolioSnapshot[]
   importSessions: ImportSession[]
   csvMappings: SavedCsvMapping[]
+  customInstitutions: string[]
 
   // UI state
   category: TaxCategory | 'all'
@@ -54,6 +55,7 @@ export function initialState(): AppState {
     snapshots: [],
     importSessions: [],
     csvMappings: [],
+    customInstitutions: [],
 
     // UI state
     category: 'all',
@@ -318,6 +320,15 @@ export function upsertCsvMapping(
       ? state.csvMappings.map((m) => (m === existing ? entry : m))
       : [...state.csvMappings, entry],
   }
+}
+
+/**
+ * Add a custom institution name if it doesn't already exist.
+ */
+export function addCustomInstitution(state: AppState, name: string): AppState {
+  const trimmed = name.trim()
+  if (!trimmed || state.customInstitutions.includes(trimmed)) return state
+  return { ...state, customInstitutions: [...state.customInstitutions, trimmed] }
 }
 
 /**
