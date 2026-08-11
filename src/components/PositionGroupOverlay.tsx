@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Account, Position } from '../lib/types'
+import type { AppState } from '../lib/state'
 import type { AggregateRow } from './PositionsTable'
-import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
+import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
+import { filteredPortfolioTotal } from '../lib/selectors'
 import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
 import { Trash } from 'lucide-react'
 
@@ -288,6 +290,7 @@ export interface PositionGroupOverlayProps {
   dispatch: (action: any) => void
   onClose: () => void
   existingAssetClasses: string[]
+  state: AppState
 }
 
 /**
@@ -300,6 +303,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
   dispatch,
   onClose,
   existingAssetClasses,
+  state,
 }) => {
   // Escape key listener
   useEffect(() => {
@@ -309,6 +313,9 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
+
+  // Calculate portfolio total for percentage calculations
+  const portfolioTotal = filteredPortfolioTotal(state)
 
   // Sort positions by account institution ascending, then account name ascending (fallback to accountNumber)
   const sortedPositions = useMemo(() => {
@@ -422,6 +429,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                 <th style={{ textAlign: 'right' }}>Shares</th>
                 <th style={{ textAlign: 'right' }}>Avg Cost</th>
                 <th style={{ textAlign: 'right' }}>Current Price</th>
+                <th style={{ textAlign: 'right' }}>% of Portfolio</th>
                 <th style={{ textAlign: 'right' }}>Taxes</th>
                 <th style={{ textAlign: 'center' }}>Override</th>
                 <th style={{ textAlign: 'center' }}></th>
@@ -475,6 +483,9 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                       field="price"
                       dispatch={dispatch}
                     />
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {fmtPortfolioPercent(computePosition(p).marketValue, portfolioTotal)}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <EditableCell

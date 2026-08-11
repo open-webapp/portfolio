@@ -158,6 +158,7 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 - `totalValueSeriesInRange(state, range)` — drops series points before a cutoff derived from `range` (`6m`/`1y`/`ytd`/`all`).
 - `summaryCards(state)` — Total Value / Day Change / Total Gain-Loss / Amount Invested / Total Taxes Paid, computed live from `positions` and `totalValueSeries` (no stored placeholder).
 - `allocationBars(state)` — wraps `computations.allocationByAssetClass`, respecting `assetClassManualOverride`.
+- `filteredPortfolioTotal(state)` — Computes sum of market values for positions matching both category and retirement filters; denominator for the portfolio % display.
 - `performanceLinePoints(state, range)` — builds an SVG `points` string from `totalValueSeriesInRange(state, range)`; a single-point series renders centered.
 
 ## Key Invariants

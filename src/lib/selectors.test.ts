@@ -7,7 +7,8 @@ import {
   summaryCards,
   allocationBars,
   performanceLinePoints,
-  totalTaxesPaid
+  totalTaxesPaid,
+  filteredPortfolioTotal
 } from './selectors'
 import { AppState, initialState } from './state'
 import { Account, Position, Transaction, PortfolioSnapshot } from './types'
@@ -844,5 +845,400 @@ describe('selectors', () => {
 
     expect(allPoints).toHaveLength(3)
     expect(sixMonthPoints.length).toBeLessThan(allPoints.length)
+  })
+
+  // === filteredPortfolioTotal() tests ===
+
+  // Test 1: filteredPortfolioTotal with 'All' category filter
+  it('filteredPortfolioTotal: calculates total with All category filter', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      category: 'all' // All category
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: (10 * 200) + (5 * 400) = 2000 + 2000 = 4000
+    expect(total).toBe(4000)
+  })
+
+  // Test 2: filteredPortfolioTotal with Taxable category filter only
+  it('filteredPortfolioTotal: filters by taxable category only', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      category: 'taxable' // Only taxable
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: only acc-1 (taxable) = 10 * 200 = 2000
+    expect(total).toBe(2000)
+  })
+
+  // Test 3: filteredPortfolioTotal with Non-Taxable category filter only
+  it('filteredPortfolioTotal: filters by non-taxable category only', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      category: 'nonTaxable' // Only non-taxable
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: only acc-2 (nonTaxable) = 5 * 400 = 2000
+    expect(total).toBe(2000)
+  })
+
+  // Test 4: filteredPortfolioTotal with Retirement filter only
+  it('filteredPortfolioTotal: filters by retirement status only', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      category: 'all',
+      retirementFilter: 'Retirement' // Only retirement accounts
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: only acc-2 (retirement) = 5 * 400 = 2000
+    expect(total).toBe(2000)
+  })
+
+  // Test 5: filteredPortfolioTotal with Non-Retirement filter only
+  it('filteredPortfolioTotal: filters by non-retirement status only', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      category: 'all',
+      retirementFilter: 'Non-Retirement' // Only non-retirement accounts
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: only acc-1 (non-retirement) = 10 * 200 = 2000
+    expect(total).toBe(2000)
+  })
+
+  // Test 6: filteredPortfolioTotal with combined category + retirement filter
+  it('filteredPortfolioTotal: combines category and retirement filters', () => {
+    // Create 4 positions across 4 different account types
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Taxable Non-Retirement',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2026-01-01'
+      },
+      {
+        id: 'acc-2',
+        accountNumber: '002',
+        name: 'Non-Taxable Retirement',
+        taxCategory: 'nonTaxable',
+        retirement: true,
+        createdAt: '2026-01-01'
+      }
+    ]
+
+    const state = createTestState({
+      accounts,
+      positions,
+      category: 'taxable',
+      retirementFilter: 'Non-Retirement'
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: only acc-1 (taxable + non-retirement) = 10 * 200 = 2000
+    expect(total).toBe(2000)
+  })
+
+  // Test 7: filteredPortfolioTotal with zero total edge case
+  it('filteredPortfolioTotal: returns zero when no matching positions', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      category: 'nonTaxable' // No positions in this category
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: 0 (no positions match)
+    expect(total).toBe(0)
+  })
+
+  // Test 8: filteredPortfolioTotal with negative position market value (short position)
+  it('filteredPortfolioTotal: includes negative market values in sum', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-1',
+        symbol: 'TSLA',
+        name: 'Tesla Short',
+        assetClass: 'Equity',
+        shares: -5, // Short position
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions,
+      category: 'all'
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: (10 * 200) + (-5 * 400) = 2000 - 2000 = 0
+    expect(total).toBe(0)
+  })
+
+  // Test 9: filteredPortfolioTotal with only negative positions
+  it('filteredPortfolioTotal: returns negative sum for all-short portfolio', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Short',
+        assetClass: 'Equity',
+        shares: -10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions,
+      category: 'all'
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: -10 * 200 = -2000
+    expect(total).toBe(-2000)
+  })
+
+  // Test 10: filteredPortfolioTotal does NOT apply asset class filter
+  it('filteredPortfolioTotal: ignores asset class filter (only uses category+retirement)', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-1',
+        symbol: 'BND',
+        name: 'Bond ETF',
+        assetClass: 'Fixed Income',
+        shares: 5,
+        avgCost: 100,
+        price: 105,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions,
+      category: 'all',
+      assetClassFilter: 'Equity' // Filter applied, but should be ignored
+    })
+
+    const total = filteredPortfolioTotal(state)
+
+    // Expected: total of ALL positions, ignoring assetClassFilter
+    // (10 * 200) + (5 * 105) = 2000 + 525 = 2525
+    expect(total).toBe(2525)
   })
 })

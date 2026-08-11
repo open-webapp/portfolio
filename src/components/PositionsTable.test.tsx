@@ -1426,4 +1426,404 @@ describe('PositionsTable', () => {
     const rows = tbody?.querySelectorAll('tr')
     expect(rows).toHaveLength(0)
   })
+
+  /**
+   * Test: "% of Portfolio" column renders with correct header
+   */
+  it('renders "% of Portfolio" column header', () => {
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Account 1',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+    ]
+
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 180,
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+    ]
+
+    const state: AppState = {
+      accounts,
+      positions,
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+      csvMappings: [],
+    }
+
+    render(<PositionsTable state={state} dispatch={mockDispatch} />)
+
+    // Check for the column header
+    const headers = screen.getAllByRole('columnheader')
+    const portfolioPercentHeader = Array.from(headers).find(h =>
+      h.textContent?.includes('% of Portfolio')
+    )
+    expect(portfolioPercentHeader).toBeDefined()
+  })
+
+  /**
+   * Test: "% of Portfolio" column displays correct percentage value
+   */
+  it('renders "% of Portfolio" with correct calculated value', () => {
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Account 1',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+    ]
+
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200, // marketValue = 2000
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 300, // marketValue = 3000
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+    ]
+
+    const state: AppState = {
+      accounts,
+      positions,
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+      csvMappings: [],
+    }
+
+    render(<PositionsTable state={state} dispatch={mockDispatch} />)
+
+    // Total portfolio = 2000 + 3000 = 5000
+    // AAPL = 2000 / 5000 * 100 = 40.0%
+    // MSFT = 3000 / 5000 * 100 = 60.0%
+    expect(screen.getByText('40.0%')).toBeDefined()
+    expect(screen.getByText('60.0%')).toBeDefined()
+  })
+
+  /**
+   * Test: "% of Portfolio" column with category filter changes percentages
+   */
+  it('"% of Portfolio" percentages change with category filter', () => {
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Taxable',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+      {
+        id: 'acc-2',
+        accountNumber: '002',
+        name: 'Non-Taxable',
+        taxCategory: 'nonTaxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+    ]
+
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200, // marketValue = 2000
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 300, // marketValue = 3000
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+    ]
+
+    // First render with 'all' category
+    const stateAll: AppState = {
+      accounts,
+      positions,
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+      csvMappings: [],
+    }
+
+    const { rerender } = render(<PositionsTable state={stateAll} dispatch={mockDispatch} />)
+
+    // With all category: AAPL = 2000/5000 = 40.0%, MSFT = 3000/5000 = 60.0%
+    expect(screen.getByText('40.0%')).toBeDefined()
+    expect(screen.getByText('60.0%')).toBeDefined()
+
+    // Now filter to taxable only
+    const stateTaxable: AppState = {
+      ...stateAll,
+      category: 'taxable',
+    }
+
+    rerender(<PositionsTable state={stateTaxable} dispatch={mockDispatch} />)
+
+    // With taxable only: AAPL = 2000/2000 = 100.0% (MSFT not visible)
+    // Only AAPL should be visible, showing 100.0%
+    expect(screen.getByText('100.0%')).toBeDefined()
+  })
+
+  /**
+   * Test: "% of Portfolio" column with retirement filter changes percentages
+   */
+  it('"% of Portfolio" percentages change with retirement filter', () => {
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Non-Retirement',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+      {
+        id: 'acc-2',
+        accountNumber: '002',
+        name: 'Retirement',
+        taxCategory: 'taxable',
+        retirement: true,
+        createdAt: '2024-01-01',
+      },
+    ]
+
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200, // marketValue = 2000
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 300, // marketValue = 3000
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+    ]
+
+    // First render with 'All' retirement filter
+    const stateAll: AppState = {
+      accounts,
+      positions,
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+      csvMappings: [],
+    }
+
+    const { rerender } = render(<PositionsTable state={stateAll} dispatch={mockDispatch} />)
+
+    // With all retirement: AAPL = 2000/5000 = 40.0%, MSFT = 3000/5000 = 60.0%
+    expect(screen.getByText('40.0%')).toBeDefined()
+    expect(screen.getByText('60.0%')).toBeDefined()
+
+    // Now filter to retirement only
+    const stateRetirement: AppState = {
+      ...stateAll,
+      retirementFilter: 'Retirement',
+    }
+
+    rerender(<PositionsTable state={stateRetirement} dispatch={mockDispatch} />)
+
+    // With retirement only: MSFT = 3000/3000 = 100.0%
+    // Only MSFT should be visible, showing 100.0%
+    expect(screen.getByText('100.0%')).toBeDefined()
+  })
+
+  /**
+   * Test: Row percentages sum to approximately 100% (or near it for rounding)
+   */
+  it('row percentages sum to approximately 100% (allowing for rounding)', () => {
+    const accounts: Account[] = [
+      {
+        id: 'acc-1',
+        accountNumber: '001',
+        name: 'Account 1',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01',
+      },
+    ]
+
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'STOCK1',
+        name: 'Stock 1',
+        assetClass: 'Equity',
+        shares: 33,
+        avgCost: 100,
+        price: 100, // marketValue = 3300
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-1',
+        symbol: 'STOCK2',
+        name: 'Stock 2',
+        assetClass: 'Equity',
+        shares: 33,
+        avgCost: 100,
+        price: 100, // marketValue = 3300
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+      {
+        id: 'pos-3',
+        accountId: 'acc-1',
+        symbol: 'STOCK3',
+        name: 'Stock 3',
+        assetClass: 'Equity',
+        shares: 34,
+        avgCost: 100,
+        price: 100, // marketValue = 3400
+        taxes: null,
+        lastImportedAt: '2024-01-01',
+      },
+    ]
+
+    const state: AppState = {
+      accounts,
+      positions,
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      range: '1y',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      retirementFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+      csvMappings: [],
+    }
+
+    render(<PositionsTable state={state} dispatch={mockDispatch} />)
+
+    // Total = 3300 + 3300 + 3400 = 10000
+    // Stock1: 33.0%, Stock2: 33.0%, Stock3: 34.0%
+    // Sum: 100%
+    const tbody = screen.getByRole('table').querySelector('tbody')
+    const rows = tbody?.querySelectorAll('tr')
+
+    // Check that the three expected percentages are present in the rendered table
+    const allText = tbody?.textContent || ''
+    expect(allText).toContain('33.0%')
+    expect(allText).toContain('34.0%')
+    expect(rows).toHaveLength(3)
+  })
 })

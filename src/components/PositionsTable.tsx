@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { AppState } from '../lib/state'
 import type { Position } from '../lib/types'
-import { visiblePositions } from '../lib/selectors'
-import { computePosition, fmtUSD, fmtPct } from '../lib/computations'
+import { visiblePositions, filteredPortfolioTotal } from '../lib/selectors'
+import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
 import { sortBy } from '../lib/sort'
 import { ClosedPositionsTable } from './ClosedPositionsTable'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
@@ -120,6 +120,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
 
   const positions = visiblePositions(state);
+  const portfolioTotal = filteredPortfolioTotal(state);
   const aggregateRows = buildAggregateRows(positions);
   const selectedGroup = aggregateRows.find(r => r.key === selectedGroupKey) ?? null;
   const sortedRows = sortBy(aggregateRows, AGGREGATE_SORT_FIELD[state.sortKey] ?? state.sortKey as keyof AggregateRow, state.sortDir);
@@ -285,6 +286,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
             ))}
             <th style={{ textAlign: 'right' }}>Amount Invested</th>
             <th style={{ textAlign: 'right' }}>Market Value</th>
+            <th style={{ textAlign: 'right' }}>% of Portfolio</th>
             <th style={{ textAlign: 'right' }}>G/L</th>
             <th style={{ textAlign: 'right' }}>G/L %</th>
             <th style={{ textAlign: 'right' }}></th>
@@ -313,6 +315,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
                 <td style={{ textAlign: 'right' }}>{fmtUSD(row.price)}</td>
                 <td style={{ textAlign: 'right' }}>{fmtUSD(row.costBasis)}</td>
                 <td style={{ textAlign: 'right', fontWeight: '600' }}>{fmtUSD(row.marketValue)}</td>
+                <td style={{ textAlign: 'right' }}>{fmtPortfolioPercent(row.marketValue, portfolioTotal)}</td>
                 <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
                 <td style={{ textAlign: 'right', color: glColor }}>{glPctStr}</td>
                 <td style={{ textAlign: 'right' }}>
@@ -361,6 +364,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
           dispatch={dispatch}
           onClose={() => setSelectedGroupKey(null)}
           existingAssetClasses={assetClassOptions}
+          state={state}
         />
       )}
     </div>
