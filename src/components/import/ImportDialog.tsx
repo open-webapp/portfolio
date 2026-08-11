@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import type { AppState } from '../../lib/state'
 import { parseCsvFile } from '../../lib/csv'
-import type { Account } from '../../lib/types'
+import type { TaxCategory, Account } from '../../lib/types'
 import {
   POSITIONS_REQUIRED_FIELDS,
   POSITIONS_OPTIONAL_FIELDS,
@@ -18,6 +18,12 @@ export interface ImportDialogProps {
   onClose: () => void
 }
 
+const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
+  taxable: 'Taxable',
+  nonTaxable: 'Non-Taxable',
+  taxDeferred: 'Tax-Deferred',
+}
+
 const FIELD_LABELS: Record<string, string> = {
   symbol: 'Symbol',
   name: 'Name',
@@ -30,6 +36,7 @@ const FIELD_LABELS: Record<string, string> = {
   date: 'Date',
   type: 'Type',
   amount: 'Amount',
+  taxes: 'Taxes',
 }
 
 const FIELD_HINTS: Record<string, string> = {
@@ -61,6 +68,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const [formInstitution, setFormInstitution] = useState<string>('')
   const [formName, setFormName] = useState<string>('')
   const [formNumber, setFormNumber] = useState<string>('')
+  const [formCategory, setFormCategory] = useState<TaxCategory>('taxable')
   const [formRetirement, setFormRetirement] = useState<'retirement' | 'nonRetirement'>('nonRetirement')
   const [isAddingInstitution, setIsAddingInstitution] = useState(false)
   const [newInstitutionName, setNewInstitutionName] = useState('')

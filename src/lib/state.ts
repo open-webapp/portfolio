@@ -4,6 +4,7 @@ import type {
   ClosedPosition,
   Transaction,
   PortfolioSnapshot,
+  TaxCategory,
   SavedCsvMapping,
 } from './types'
 import { uid } from './seed'
@@ -19,6 +20,7 @@ export interface AppState {
   customInstitutions: string[]
 
   // UI state
+  category: TaxCategory | 'all'
   range: string // e.g. '6m', '1y', 'ytd', 'all'
   tab: 'positions' | 'transactions'
   view: 'dashboard' | 'settings'
@@ -53,6 +55,7 @@ export function initialState(): AppState {
     customInstitutions: [],
 
     // UI state
+    category: 'all',
     range: '1y',
     tab: 'positions',
     view: 'dashboard',
@@ -154,6 +157,19 @@ export function closePosition(state: AppState, positionId: string): AppState {
     ...state,
     positions: state.positions.filter((p) => p.id !== positionId),
     closedPositions: [...state.closedPositions, closed],
+  }
+}
+
+/**
+ * Set the category filter (to be implemented in reducer cases).
+ */
+export function setCategory(
+  state: AppState,
+  category: TaxCategory | 'all'
+): AppState {
+  return {
+    ...state,
+    category,
   }
 }
 

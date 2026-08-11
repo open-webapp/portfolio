@@ -173,15 +173,31 @@ function AccountDropdown({
 
   const currentAccount = accounts.find((a) => a.id === position.accountId)
 
+  // Helper to format tax category label
+  const getTaxCategoryLabel = (taxCategory: string): string => {
+    switch (taxCategory) {
+      case 'taxable':
+        return 'Taxable'
+      case 'nonTaxable':
+        return 'Non-Taxable'
+      case 'taxDeferred':
+        return 'Tax-Deferred'
+      default:
+        return ''
+    }
+  }
+
+  // Helper to format retirement label
   const getRetirementLabel = (retirement: boolean): string => {
     return retirement ? 'Retirement' : 'Non-Retirement'
   }
 
+  // Render two-line account display
   const renderAccountDisplay = (account: Account) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
       <div>{account.institution} — {account.name}</div>
       <div style={{ fontSize: '0.875em', color: 'var(--text-muted)' }}>
-        {getRetirementLabel(account.retirement)}
+        {getTaxCategoryLabel(account.taxCategory)} • {getRetirementLabel(account.retirement)}
       </div>
     </div>
   )

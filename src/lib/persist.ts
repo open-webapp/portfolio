@@ -55,6 +55,7 @@ function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     customInstitutions: loaded.customInstitutions ?? defaults.customInstitutions,
 
     // UI state with existing values or defaults
+    category: loaded.category ?? defaults.category,
     range: loaded.range ?? defaults.range,
     tab: loaded.tab ?? defaults.tab,
     view: loaded.view ?? defaults.view,
