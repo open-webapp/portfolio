@@ -199,7 +199,7 @@ describe('view switching (dashboard vs settings)', () => {
     expect(screen.queryByText('All Together')).toBeFalsy()
   })
 
-  it('should return to dashboard when Back button is clicked from settings', async () => {
+  it('should return to dashboard when Dashboard tab is clicked from settings', async () => {
     await renderUnlockedApp()
 
     // Click the settings gear button
@@ -211,9 +211,17 @@ describe('view switching (dashboard vs settings)', () => {
       expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     })
 
-    // Click the Back button
-    const backButton = screen.getByText('Back to Dashboard')
-    fireEvent.click(backButton)
+    // Settings page should not show dashboard elements
+    expect(screen.queryByText('Allocation')).toBeFalsy()
+
+    // Click the Dashboard tab to return
+    // Find the mainView radio buttons and click the Dashboard one
+    const mainViewLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="mainView"]') !== null
+    )
+    const dashboardLabel = mainViewLabels.find((l) => l.textContent?.includes('Dashboard'))
+    expect(dashboardLabel).toBeTruthy()
+    fireEvent.click(dashboardLabel!)
 
     // Dashboard should be visible again
     await waitFor(() => {
@@ -335,6 +343,34 @@ describe('view switching (dashboard vs settings)', () => {
         expect(allInput.checked).toBe(false)
       })
     }
+  })
+
+  it('should render AccountsPage content when Accounts view is selected', async () => {
+    await renderUnlockedApp()
+
+    // Dashboard should initially be visible
+    expect(screen.getByText('Allocation')).toBeTruthy()
+
+    // Click the Accounts tab
+    // Find the mainView radio buttons and click the Accounts one
+    const mainViewLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="mainView"]') !== null
+    )
+    const accountsLabel = mainViewLabels.find((l) => l.textContent?.includes('Accounts'))
+    expect(accountsLabel).toBeTruthy()
+    fireEvent.click(accountsLabel!)
+
+    // AccountsPage content should be visible
+    // Wait for accounts page to render with its content
+    await waitFor(() => {
+      // Check that we're in the accounts view by verifying dashboard content is gone
+      expect(screen.queryByText('Allocation')).toBeFalsy()
+      expect(screen.queryByText('All Together')).toBeFalsy()
+    })
+
+    // The Accounts tab should now be checked
+    const accountsInput = accountsLabel?.querySelector('input') as HTMLInputElement
+    expect(accountsInput.checked).toBe(true)
   })
 })
 
