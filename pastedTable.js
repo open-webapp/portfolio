@@ -145,6 +145,16 @@
   }
 
   /**
+   * Screen-reader-only "View details for X" / "View more for X" link text
+   * that some sites emit as its own line in a table row's plain-text copy.
+   * It isn't a real column and doesn't reliably appear on every row (e.g. the
+   * last row may lack it), so it's dropped outright rather than counted
+   * toward row width — a fixed-width heuristic alone can't handle a line that
+   * shows up on some rows but not others.
+   */
+  const ACCESSIBILITY_LINK_LINE = /^(view (details|more) (for|about)\b)/i
+
+  /**
    * Detect the true per-row width of a buffered run of bare lines when it's
    * wider than the header count n — e.g. a screen-reader-only "View details
    * for X" link line copied after every row. If the buffer doesn't divide
@@ -189,6 +199,7 @@
 
     for (const line of lines) {
       if (line.trim().length === 0) continue
+      if (ACCESSIBILITY_LINK_LINE.test(line)) continue
 
       if (line.includes('\t')) {
         flush()

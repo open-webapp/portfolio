@@ -209,6 +209,42 @@ export const CASES: TableToCsvCase[] = [
     },
   },
   {
+    name: 'the "View details for X" accessibility-link line is dropped even when it only appears on SOME rows (inconsistent per-row width defeats a pure divisibility heuristic)',
+    headers: {
+      text: 'Ticker\nFund info\nClass\nShares\nPrice\nPercent\nYTD RoR\nBalance',
+    },
+    values: {
+      text:
+        'VTMNX\nVANGUARD DEVELOPED MKTS IDX I\nINTERNATIONAL LGE BLEND\n226.724\n$23.31\n21.23%\n$634.95 (16.27%)\n$5,284.94\nView details for VANGUARD DEVELOPED MKTS IDX I\n' +
+        'VEMIX\nVANGUARD EMRG MKTS STK IDX INS\nEMERGING MARKETS--INTERNATIONAL\n51.998\n$38.10\n7.96%\n$188.63 (12.04%)\n$1,981.12',
+    },
+    expect: {
+      expectRows: [
+        {
+          Ticker: 'VTMNX',
+          'Fund info': 'VANGUARD DEVELOPED MKTS IDX I',
+          Class: 'INTERNATIONAL LGE BLEND',
+          Shares: '226.724',
+          Price: '$23.31',
+          Percent: '21.23%',
+          'YTD RoR': '$634.95 (16.27%)',
+          Balance: '$5,284.94',
+        },
+        {
+          Ticker: 'VEMIX',
+          'Fund info': 'VANGUARD EMRG MKTS STK IDX INS',
+          Class: 'EMERGING MARKETS--INTERNATIONAL',
+          Shares: '51.998',
+          Price: '$38.10',
+          Percent: '7.96%',
+          'YTD RoR': '$188.63 (12.04%)',
+          Balance: '$1,981.12',
+        },
+      ],
+      expectIssues: [],
+    },
+  },
+  {
     name: 'HTML colspan=2 spills a blank sibling cell rather than shifting later columns',
     headers: { text: 'col1\tcol2\tcol3' },
     values: {

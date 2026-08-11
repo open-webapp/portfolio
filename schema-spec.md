@@ -153,7 +153,9 @@ Return shape of `tableToCsv(headersClipboard, valuesClipboard)` — a standalone
 
 **Structural superset of `ParsedCsv`**: `TableToCsvResult` is pinned via an exported conditional-type assertion, `PastedTableIsParsedCsv = TableToCsvResult extends ParsedCsv ? true : never`, so `tsc -b` fails the build if `TableToCsvResult` ever stops being assignable to `ParsedCsv` (`{ headers: string[], rows: Record<string,string>[] }`, `src/lib/csv.ts`) — i.e. `headers`/`rows` must keep matching shapes; `csv`/`issues` are pure additions.
 
-**Flat-text (no-tab) values row width detection**: when the values paste's non-tab lines are buffered and chunked into rows, chunking by `N` (header count) is only used if the buffered line count divides evenly by `N`. Otherwise the parser searches widths `N+1..N+8` for one that divides the buffer evenly (e.g. a screen-reader-only "View details for X" line copied after every real row, making each row `N+1` wide) and chunks at that width, dropping each row's trailing cell(s) beyond `N`. Falls back to chunking by `N` (with padding/truncation `issues`) if no such width exists.
+**Flat-text (no-tab) values row width detection**: when the values paste's non-tab lines are buffered and chunked into rows:
+1. Lines matching `/^(view (details|more) (for|about)\b)/i` (screen-reader-only link text some sites emit per table row) are dropped outright before buffering/chunking — this doesn't rely on the line appearing on every row.
+2. After that, chunking by `N` (header count) is used if the remaining buffered line count divides evenly by `N`. Otherwise the parser searches widths `N+1..N+8` for one that divides the buffer evenly (some other consistent extra column) and chunks at that width, dropping each row's trailing cell(s) beyond `N`. Falls back to chunking by `N` (with padding/truncation `issues`) if no such width exists.
 
 ## Action Types
 
