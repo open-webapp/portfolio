@@ -7,7 +7,7 @@ export interface NavProps {
 }
 
 /**
- * Nav component: category tabs and date range select.
+ * Nav component: category tabs and settings button.
  */
 export function Nav({ state, dispatch }: NavProps) {
   const categoryTabs = [
@@ -17,28 +17,11 @@ export function Nav({ state, dispatch }: NavProps) {
     { value: 'taxDeferred', label: 'Tax-Deferred' },
   ]
 
-  const rangeOptions = [
-    { value: '6m', label: '6 Months' },
-    { value: '1y', label: '1 Year' },
-    { value: 'ytd', label: 'YTD' },
-    { value: 'all', label: 'All' },
-  ]
-
   const handleCategoryChange = useCallback(
     (category: 'all' | 'taxable' | 'nonTaxable' | 'taxDeferred') => {
       dispatch({
         type: 'SET_CATEGORY',
         category,
-      })
-    },
-    [dispatch]
-  )
-
-  const handleRangeChange = useCallback(
-    (range: string) => {
-      dispatch({
-        type: 'SET_RANGE',
-        range,
       })
     },
     [dispatch]
@@ -53,7 +36,7 @@ export function Nav({ state, dispatch }: NavProps) {
         padding: 'var(--space-3) var(--space-6)',
       }}
     >
-      <div className="nav-brand">Ledger</div>
+      <div className="nav-brand" style={{ marginRight: 'var(--space-5)' }}>Ledger</div>
 
       {/* Category tabs */}
       <div className="seg">
@@ -78,20 +61,6 @@ export function Nav({ state, dispatch }: NavProps) {
         ))}
       </div>
 
-      {/* Date range select */}
-      <select
-        className="input"
-        onChange={(e) => handleRangeChange(e.target.value)}
-        value={state.range}
-        style={{ width: 'auto', marginLeft: 'var(--space-4)' }}
-      >
-        {rangeOptions.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-
       {/* Settings button */}
       <button
         onClick={() => dispatch({ type: 'SET_VIEW', view: 'settings' })}
@@ -112,7 +81,10 @@ export function Nav({ state, dispatch }: NavProps) {
         onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
         onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
       >
-        ⚙️
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
       </button>
     </div>
   )

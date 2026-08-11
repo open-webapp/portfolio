@@ -21,7 +21,6 @@ export interface AppState {
 
   // UI state
   category: TaxCategory | 'all'
-  range: string // e.g. '6m', '1y', 'ytd', 'all'
   tab: 'positions' | 'transactions'
   view: 'dashboard' | 'settings'
   sortKey: keyof Position
@@ -56,7 +55,6 @@ export function initialState(): AppState {
 
     // UI state
     category: 'all',
-    range: '1y',
     tab: 'positions',
     view: 'dashboard',
     sortKey: 'symbol',
@@ -170,16 +168,6 @@ export function setCategory(
   return {
     ...state,
     category,
-  }
-}
-
-/**
- * Set the date range filter (to be implemented in reducer cases).
- */
-export function setRange(state: AppState, range: string): AppState {
-  return {
-    ...state,
-    range,
   }
 }
 

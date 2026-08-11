@@ -24,49 +24,48 @@ export function AllocationChart({ state }: AllocationChartProps) {
         Allocation
       </div>
 
-      {bars.map((bar, idx) => {
-        // Extract numeric percentage value from formatted string (e.g., "+25.00%" -> 25)
-        const numericPct = parseFloat(bar.pct.replace(/[^0-9.]/g, ''))
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-3) var(--space-6)' }}>
+        {bars.map((bar, idx) => {
+          // Extract numeric percentage value from formatted string (e.g., "+25.00%" -> 25)
+          const numericPct = parseFloat(bar.pct.replace(/[^0-9.]/g, ''))
 
-        return (
-          <div key={idx} style={{ marginBottom: 'var(--space-2)' }}>
-            {/* Label with value and percentage */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '12px',
-                marginBottom: '3px'
-              }}
-            >
-              <div>
-                <span>{bar.label}</span>
-                <div className="text-muted" style={{ fontSize: '11px', marginTop: '2px' }}>
-                  {bar.value}
-                </div>
-              </div>
-              <span className="text-muted">{bar.pct}</span>
-            </div>
-
-            {/* Visual bar indicator */}
-            <div
-              style={{
-                height: '8px',
-                border: '1px solid var(--color-divider)',
-                background: 'transparent'
-              }}
-            >
+          return (
+            <div key={idx}>
+              {/* Label + value inline on one line, with percentage on right */}
               <div
                 style={{
-                  height: '100%',
-                  width: `${numericPct}%`,
-                  background: 'var(--color-accent)'
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '12px',
+                  marginBottom: '3px'
                 }}
-              ></div>
+              >
+                <span>
+                  {bar.label} <span className="text-muted" style={{ fontSize: '11px' }}>{bar.value}</span>
+                </span>
+                <span className="text-muted">{bar.pct}</span>
+              </div>
+
+              {/* Visual bar indicator */}
+              <div
+                style={{
+                  height: '6px',
+                  border: '1px solid var(--color-divider)',
+                  background: 'transparent'
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${numericPct}%`,
+                    background: 'var(--color-accent)'
+                  }}
+                ></div>
+              </div>
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }

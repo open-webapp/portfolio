@@ -3,22 +3,14 @@ import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
 import { Nav } from './components/Nav'
-import { SummaryCards } from './components/SummaryCards'
-import { SegmentSummaryCards } from './components/SegmentSummaryCards'
+import { OverviewCard } from './components/OverviewCard'
 import { AllocationChart } from './components/AllocationChart'
 import { PositionsTable } from './components/PositionsTable'
-import { TransactionsTable } from './components/TransactionsTable'
 import { SettingsPage } from './components/Settings'
 import { ImportDialog } from './components/import/ImportDialog'
 import { PasswordGate } from './components/PasswordGate'
 import { drive } from './lib/drive'
 import './App.css'
-
-/**
- * Portfolio header (matches v3 design header row):
- * left side kicker 'Portfolio' + portfolio name, right side retirement filter tags.
- */
-const PORTFOLIO_NAME = 'Ledger'
 
 const retirementFilters = [
   { value: 'All', label: 'All' },
@@ -188,105 +180,49 @@ function App() {
 
           {/* Main content area with padding */}
           <div style={{ padding: 'var(--space-6)' }}>
-            {/* Portfolio header: kicker + name */}
-            <div style={{ marginBottom: 'var(--space-6)' }}>
-              <div
-                className="text-muted"
-                style={{
-                  fontSize: '11px',
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Portfolio
-              </div>
-              <h1 style={{ margin: 0 }}>{PORTFOLIO_NAME}</h1>
-            </div>
-
-            {/* Summary cards row */}
-            <SummaryCards state={state} />
-
-            {/* Segment summary cards: Retirement and Non-Retirement rows */}
-            <SegmentSummaryCards state={state} retirement={true} label="Retirement" />
-            <SegmentSummaryCards state={state} retirement={false} label="Non-Retirement" />
+            {/* Overview card: 3-column layout with All Together, Retirement, Non-Retirement */}
+            <OverviewCard state={state} />
 
             {/* Allocation chart: full-width row */}
             <div style={{ marginBottom: 'var(--space-6)' }}>
               <AllocationChart state={state} />
             </div>
 
-            {/* Tabs row: Positions/Transactions selector + Import trigger */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 'var(--space-4)',
-              }}
-            >
-              {/* Tab selector */}
+            {/* Divider */}
+            <div style={{ borderTop: '1px solid var(--color-divider)', paddingTop: 'var(--space-5)', marginTop: 'var(--space-6)' }} />
+
+            {/* Retirement filter .seg control + Import button row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
+              {/* Left: retirement filter .seg */}
               <div className="seg">
-                <label
-                  className="seg-opt"
-                  onClick={() => dispatch({ type: 'SET_TAB', tab: 'positions' })}
-                >
-                  <input
-                    type="radio"
-                    name="positions-transactions"
-                    checked={state.tab === 'positions'}
-                    readOnly
-                  />
-                  <span>Positions</span>
-                </label>
-                <label
-                  className="seg-opt"
-                  onClick={() => dispatch({ type: 'SET_TAB', tab: 'transactions' })}
-                >
-                  <input
-                    type="radio"
-                    name="positions-transactions"
-                    checked={state.tab === 'transactions'}
-                    readOnly
-                  />
-                  <span>Transactions</span>
-                </label>
+                {retirementFilters.map((filter) => (
+                  <label key={filter.value} className="seg-opt">
+                    <input
+                      type="radio"
+                      name="retirementFilter"
+                      checked={state.retirementFilter === filter.value}
+                      readOnly
+                      onClick={() =>
+                        dispatch({
+                          type: 'SET_RETIREMENT_FILTER',
+                          filter: filter.value as
+                            | 'All'
+                            | 'Retirement'
+                            | 'Non-Retirement',
+                        })
+                      }
+                    />
+                    <span>{filter.label}</span>
+                  </label>
+                ))}
               </div>
 
-              {/* Import Dialog - unified, visible on all tabs */}
+              {/* Right: Import Dialog */}
               <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
             </div>
 
-            {/* Retirement filter tags (Positions tab only) */}
-            {state.tab === 'positions' && (
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
-                {retirementFilters.map((filter) => (
-                  <span
-                    key={filter.value}
-                    onClick={() =>
-                      dispatch({
-                        type: 'SET_RETIREMENT_FILTER',
-                        filter: filter.value as
-                          | 'All'
-                          | 'Retirement'
-                          | 'Non-Retirement',
-                      })
-                    }
-                    className={`tag ${
-                      state.retirementFilter === filter.value ? 'tag-accent' : ''
-                    }`}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {filter.label}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Positions tab */}
-            {state.tab === 'positions' && <PositionsTable state={state} dispatch={dispatch} />}
-
-            {/* Transactions tab */}
-            {state.tab === 'transactions' && <TransactionsTable state={state} dispatch={dispatch} />}
+            {/* Positions table */}
+            <PositionsTable state={state} dispatch={dispatch} />
           </div>
         </div>
       ) : (

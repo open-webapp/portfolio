@@ -47,9 +47,6 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_CATEGORY':
       return StateActions.setCategory(state, action.category)
 
-    case 'SET_RANGE':
-      return StateActions.setRange(state, action.range)
-
     case 'SET_TAB':
       return StateActions.setTab(state, action.tab)
 

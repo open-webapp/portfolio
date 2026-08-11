@@ -55,7 +55,8 @@ async function renderUnlockedApp() {
 
   await waitFor(() => {
     expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
-    expect(screen.getByText('Positions')).toBeTruthy()
+    // Wait for a guaranteed-present text after the rework (Allocation chart title from AllocationChart component)
+    expect(screen.getByText('Allocation')).toBeTruthy()
   })
 
   return utils
@@ -154,12 +155,11 @@ describe('view switching (dashboard vs settings)', () => {
     vi.mocked(savePersistedApp).mockClear()
   })
 
-  it('should render dashboard view by default with Nav and SummaryCards', async () => {
+  it('should render dashboard view by default with OverviewCard and AllocationChart', async () => {
     await renderUnlockedApp()
 
-    // Dashboard elements should be visible
-    expect(screen.getByText('Positions')).toBeTruthy()
-    expect(screen.getByText('Transactions')).toBeTruthy()
+    // OverviewCard with its 3 clusters should be visible
+    expect(screen.getByText('All Together')).toBeTruthy()
 
     // Performance chart should NOT render (removed in T5)
     expect(screen.queryByText('Performance')).toBeFalsy()
@@ -172,9 +172,9 @@ describe('view switching (dashboard vs settings)', () => {
     await renderUnlockedApp()
 
     // Dashboard should initially be visible
-    expect(screen.getByText('Positions')).toBeTruthy()
+    expect(screen.getByText('Allocation')).toBeTruthy()
 
-    // Click the settings gear button (⚙️)
+    // Click the settings gear button
     const gearButton = screen.getByTitle('Settings')
     fireEvent.click(gearButton)
 
@@ -184,8 +184,8 @@ describe('view switching (dashboard vs settings)', () => {
     })
 
     // Dashboard elements should not be visible
-    expect(screen.queryByText('Positions')).toBeFalsy()
-    expect(screen.queryByText('Transactions')).toBeFalsy()
+    expect(screen.queryByText('Allocation')).toBeFalsy()
+    expect(screen.queryByText('All Together')).toBeFalsy()
   })
 
   it('should return to dashboard when Back button is clicked from settings', async () => {
@@ -206,8 +206,8 @@ describe('view switching (dashboard vs settings)', () => {
 
     // Dashboard should be visible again
     await waitFor(() => {
-      expect(screen.getByText('Positions')).toBeTruthy()
-      expect(screen.getByText('Transactions')).toBeTruthy()
+      expect(screen.getByText('Allocation')).toBeTruthy()
+      expect(screen.getByText('All Together')).toBeTruthy()
     })
 
     // Settings page should not be visible
@@ -227,71 +227,53 @@ describe('view switching (dashboard vs settings)', () => {
     expect(nonRetirementTexts.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('should render retirement filter tags above PositionsTable when Positions tab is active', async () => {
+  it('should render retirement filter .seg-opt labels', async () => {
     await renderUnlockedApp()
 
-    // Positions tab should be active by default
-    expect(screen.getByText('Positions')).toBeTruthy()
+    // Dashboard should be visible
+    expect(screen.getByText('Allocation')).toBeTruthy()
 
-    // Find filter tags by their class name + text (more specific than just getByText)
-    const allTags = screen.queryAllByText(/^All$/)
-    const filterTagElements = allTags.filter((el) => el.className && el.className.includes('tag'))
-    expect(filterTagElements.length).toBeGreaterThan(0)
+    // Find retirement filter .seg-opt labels by looking for inputs with name="retirementFilter"
+    const retirementFilterLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="retirementFilter"]') !== null
+    )
+    expect(retirementFilterLabels.length).toBe(3) // All, Retirement, Non-Retirement
 
-    // Check that Retirement and Non-Retirement filter tags exist (clickable spans with class 'tag')
-    const retirementTags = screen.getAllByText('Retirement')
-    const retirementFilterTags = retirementTags.filter((el) => el.className && el.className.includes('tag'))
-    expect(retirementFilterTags.length).toBeGreaterThan(0)
+    // Verify each filter option is present
+    const allLabel = retirementFilterLabels.find((l) => l.textContent?.includes('All'))
+    const retirementLabel = retirementFilterLabels.find((l) => l.textContent?.includes('Retirement') && !l.textContent?.includes('Non'))
+    const nonRetirementLabel = retirementFilterLabels.find((l) => l.textContent?.includes('Non-Retirement'))
 
-    const nonRetirementTags = screen.getAllByText('Non-Retirement')
-    const nonRetirementFilterTags = nonRetirementTags.filter((el) => el.className && el.className.includes('tag'))
-    expect(nonRetirementFilterTags.length).toBeGreaterThan(0)
+    expect(allLabel).toBeTruthy()
+    expect(retirementLabel).toBeTruthy()
+    expect(nonRetirementLabel).toBeTruthy()
   })
 
-  it('should hide retirement filter tags when Transactions tab is active', async () => {
+
+  it('should dispatch SET_RETIREMENT_FILTER when a retirement filter .seg-opt is clicked', async () => {
     await renderUnlockedApp()
 
-    // First, verify tags are visible on Positions tab by checking for tag spans with specific content
-    let retirementTagsInitial = screen.queryAllByText('Retirement')
-    let retirementFilterTagsInitial = retirementTagsInitial.filter((el) => el.className && el.className.includes('tag'))
-    expect(retirementFilterTagsInitial.length).toBeGreaterThan(0)
+    // Find the retirement filter .seg control by looking for radios with name="retirementFilter"
+    const retirementFilterLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="retirementFilter"]') !== null
+    )
+    expect(retirementFilterLabels.length).toBe(3) // All, Retirement, Non-Retirement
 
-    // Switch to Transactions tab by finding and clicking the segment option label
-    const segmentLabels = screen.getAllByText('Transactions')
-    // The one in the segment control is the one we want
-    const transactionsLabel = segmentLabels.find((el) => el.parentElement?.className.includes('seg-opt'))
-    fireEvent.click(transactionsLabel!)
+    // Initially "All" should be checked
+    const allLabel = retirementFilterLabels.find((l) => l.textContent?.includes('All'))
+    const allInput = allLabel?.querySelector('input') as HTMLInputElement
+    expect(allInput.checked).toBe(true)
 
+    // Click the Retirement option
+    const retirementLabel = retirementFilterLabels.find((l) => l.textContent?.includes('Retirement'))
+    expect(retirementLabel).toBeTruthy()
+    fireEvent.click(retirementLabel!)
+
+    // After clicking, Retirement should be checked and All should be unchecked
+    const retirementInput = retirementLabel?.querySelector('input') as HTMLInputElement
     await waitFor(() => {
-      // Wait for the state change to complete - verify Transactions tab is now active
-      const transactionsInput = screen.getByRole('radio', { name: 'Transactions' }) as HTMLInputElement
-      expect(transactionsInput.checked).toBe(true)
-    })
-
-    // Filter tags should NOT be visible now - look for tag spans
-    // The segment row "Retirement" text should still exist (non-clickable), but tag spans should not
-    const retirementTagsAfter = screen.queryAllByText('Retirement')
-    const retirementFilterTagsAfter = retirementTagsAfter.filter((el) => el.className && el.className.includes('tag'))
-    expect(retirementFilterTagsAfter.length).toBe(0)
-  })
-
-  it('should dispatch SET_RETIREMENT_FILTER when a retirement tag is clicked', async () => {
-    await renderUnlockedApp()
-
-    // Find a retirement filter tag (clickable span with class 'tag' containing "Retirement")
-    const retirementTags = screen.getAllByText('Retirement')
-    const retirementFilterTag = retirementTags.find((el) => el.className && el.className.includes('tag'))
-
-    expect(retirementFilterTag).toBeTruthy()
-    // Verify it's clickable (has cursor: pointer style)
-    expect(retirementFilterTag!.style.cursor).toBe('pointer')
-
-    // Click the retirement filter tag and verify state change (the tag style should change)
-    fireEvent.click(retirementFilterTag!)
-
-    // After clicking, the tag should have the 'tag-accent' class indicating it's selected
-    await waitFor(() => {
-      expect(retirementFilterTag!.className).toContain('tag-accent')
+      expect(retirementInput.checked).toBe(true)
+      expect(allInput.checked).toBe(false)
     })
   })
 })
@@ -310,8 +292,8 @@ describe('password gate', () => {
     })
 
     // The dashboard tree must not be rendered underneath/alongside the gate.
-    expect(screen.queryByText('Positions')).toBeFalsy()
-    expect(screen.queryByText('Transactions')).toBeFalsy()
+    expect(screen.queryByText('Allocation')).toBeFalsy()
+    expect(screen.queryByText('All Together')).toBeFalsy()
   })
 
   it('renders the dashboard after unlock and saves via savePersistedApp with the session key on subsequent state changes', async () => {

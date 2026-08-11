@@ -111,35 +111,6 @@ export function visibleTransactions(state: AppState): Transaction[] {
   return results
 }
 
-/**
- * Generate a time series of portfolio values by date.
- * Groups snapshots by date and sums market value across the specified account set.
- * If accountIds not provided, uses all accounts in the selected category.
- */
-export function totalValueSeries(
-  state: AppState,
-  accountIds?: string[]
-): Array<{ date: string; value: number }> {
-  // Determine which accounts to include
-  const targetAccountIds = accountIds
-    ? new Set(accountIds)
-    : new Set(getAccountsForCategory(state).map((a) => a.id))
-
-  // Group snapshots by date and sum values
-  const byDate: Record<string, number> = {}
-  state.snapshots.forEach((snap) => {
-    if (targetAccountIds.has(snap.accountId)) {
-      byDate[snap.date] = (byDate[snap.date] || 0) + snap.value
-    }
-  })
-
-  // Convert to array and sort by date ascending
-  const series = Object.entries(byDate)
-    .map(([date, value]) => ({ date, value }))
-    .sort((a, b) => a.date.localeCompare(b.date))
-
-  return series
-}
 
 /**
  * Private helper: generate card data for Total Value, Total Gain/Loss, and Amount Invested.
@@ -197,7 +168,7 @@ function valueGlInvestedCards(
 }
 
 /**
- * Generate summary cards for Total Value, Day Change, Total Gain/Loss, and Amount Invested.
+ * Generate summary cards for Total Value, Total Gain/Loss, and Amount Invested.
  * Returns cards with formatted values, colors, and optional sub-values (percentages).
  */
 export function summaryCards(
@@ -208,34 +179,7 @@ export function summaryCards(
   sub?: string
   color: string
 }> {
-  const GAIN = 'var(--color-accent-700)'
-  const LOSS = '#8a3c2e'
-
-  // Get the three main cards (Total Value, Total Gain/Loss, Amount Invested)
-  const mainCards = valueGlInvestedCards(state.positions)
-
-  // Day Change: delta between last two totalValueSeries points (as USD value, not percentage)
-  const series = totalValueSeries(state)
-  let dayChange = 0
-  let dayChangeStr = '$0.00'
-  if (series.length >= 2) {
-    const lastValue = series[series.length - 1].value
-    const prevValue = series[series.length - 2].value
-    dayChange = lastValue - prevValue
-    dayChangeStr = (dayChange >= 0 ? '+' : '') + fmtUSD(dayChange)
-  } else {
-    // Fewer than 2 points: Day Change is N/A
-    dayChangeStr = 'N/A'
-  }
-
-  // Insert Day Change at index 1 (between Total Value and Total Gain/Loss)
-  const dayChangeCard = {
-    label: 'Day Change',
-    value: dayChangeStr,
-    color: dayChange >= 0 ? GAIN : LOSS
-  }
-
-  return [mainCards[0], dayChangeCard, mainCards[1], mainCards[2]]
+  return valueGlInvestedCards(state.positions)
 }
 
 /**
@@ -293,80 +237,6 @@ export function allocationBars(
     value: fmtUSD(item.value),
     pct: fmtPct(item.pct)
   }))
-}
-
-/**
- * Filter a totalValueSeries by a Nav date-range value ('6m' | '1y' | 'ytd' | 'all').
- * Cutoff is computed from the current date; series entries strictly before the
- * cutoff are dropped. Unknown range values behave like 'all' (no filtering).
- */
-export function totalValueSeriesInRange(
-  state: AppState,
-  range: string
-): Array<{ date: string; value: number }> {
-  const series = totalValueSeries(state)
-  if (range === 'all' || series.length === 0) {
-    return series
-  }
-
-  const now = new Date()
-  let cutoff: Date
-  switch (range) {
-    case 'ytd':
-      cutoff = new Date(now.getFullYear(), 0, 1)
-      break
-    case '6m':
-      cutoff = new Date(now)
-      cutoff.setMonth(cutoff.getMonth() - 6)
-      break
-    case '1y':
-      cutoff = new Date(now)
-      cutoff.setFullYear(cutoff.getFullYear() - 1)
-      break
-    default:
-      return series
-  }
-
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
-  return series.filter((s) => s.date >= cutoffStr)
-}
-
-/**
- * Generate SVG polyline points from the performance series filtered by date range.
- * Points are normalized to fit a standard chart space (e.g., 0-500 on Y-axis, 0-100 on X).
- * Handles single-point series without divide-by-zero.
- */
-export function performanceLinePoints(state: AppState, range: string): string {
-  const filteredSeries = totalValueSeriesInRange(state, range)
-
-  if (filteredSeries.length === 0) {
-    return ''
-  }
-
-  if (filteredSeries.length === 1) {
-    // Single point: place at center
-    const x = 50
-    const y = 250 // middle of 0-500 range
-    return `${x},${y}`
-  }
-
-  // Multiple points: normalize to fit chart space
-  const minValue = Math.min(...filteredSeries.map((s) => s.value))
-  const maxValue = Math.max(...filteredSeries.map((s) => s.value))
-  const valueRange = maxValue - minValue || 1 // Avoid divide by zero if all values are the same
-
-  const yMin = 500
-  const yMax = 0
-  const xMin = 0
-  const xMax = 100
-
-  const points = filteredSeries.map((s, i) => {
-    const x = xMin + ((i / (filteredSeries.length - 1)) * (xMax - xMin))
-    const y = yMax + (((s.value - minValue) / valueRange) * (yMin - yMax))
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  })
-
-  return points.join(' ')
 }
 
 /**

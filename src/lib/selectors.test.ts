@@ -2,11 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   visiblePositions,
   visibleTransactions,
-  totalValueSeries,
-  totalValueSeriesInRange,
   summaryCards,
   allocationBars,
-  performanceLinePoints,
   filteredPortfolioTotal
 } from './selectors'
 import { AppState, initialState } from './state'
@@ -234,43 +231,9 @@ describe('selectors', () => {
     expect(visible[0].type).toBe('Buy')
   })
 
-  // Test 5: totalValueSeries sums accounts on same date
-  it('totalValueSeries: two accounts with snapshots on same date sum into one point', () => {
-    const snapshots: PortfolioSnapshot[] = [
-      {
-        id: 'snap-1',
-        accountId: 'acc-1',
-        date: '2026-08-01',
-        value: 10000
-      },
-      {
-        id: 'snap-2',
-        accountId: 'acc-2',
-        date: '2026-08-01',
-        value: 20000
-      },
-      {
-        id: 'snap-3',
-        accountId: 'acc-1',
-        date: '2026-08-02',
-        value: 11000
-      }
-    ]
 
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      snapshots,
-    })
-
-    const series = totalValueSeries(state)
-
-    expect(series).toHaveLength(2)
-    expect(series[0]).toEqual({ date: '2026-08-01', value: 30000 })
-    expect(series[1]).toEqual({ date: '2026-08-02', value: 11000 })
-  })
-
-  // Test 6: summaryCards Day Change computed from last two points
-  it('summaryCards: Day Change is computed from last two totalValueSeries points', () => {
+  // Test 6: summaryCards returns 3 cards (Total Value, Total Gain/Loss, Amount Invested)
+  it('summaryCards: returns exactly 3 cards with correct labels', () => {
     const positions: Position[] = [
       {
         id: 'pos-1',
@@ -285,97 +248,26 @@ describe('selectors', () => {
       }
     ]
 
-    const snapshots: PortfolioSnapshot[] = [
-      {
-        id: 'snap-1',
-        accountId: 'acc-1',
-        date: '2026-08-07',
-        value: 10000
-      },
-      {
-        id: 'snap-2',
-        accountId: 'acc-1',
-        date: '2026-08-08',
-        value: 11000
-      }
-    ]
-
     const state = createTestState({
       accounts: [testAccount1],
       positions,
-      snapshots,
     })
 
     const cards = summaryCards(state)
 
-    // Find the Day Change card
-    const dayChangeCard = cards.find((c) => c.label === 'Day Change')
-    expect(dayChangeCard).toBeDefined()
-    expect(dayChangeCard!.value).not.toBe('N/A')
-    // The change is 11000 - 10000 = 1000 USD, so should be +$1,000.00
-    expect(dayChangeCard!.value).toBe('+$1,000.00')
+    // Should have exactly 3 cards
+    expect(cards).toHaveLength(3)
+
+    // Verify the labels
+    expect(cards[0].label).toBe('Total Value')
+    expect(cards[1].label).toBe('Total Gain/Loss')
+    expect(cards[2].label).toBe('Amount Invested')
+
+    // Verify values are formatted
+    expect(cards[0].value).toMatch(/^\$/)
+    expect(cards[2].value).toMatch(/^\$/)
   })
 
-  // Test 7: performanceLinePoints single-point series doesn't divide by zero
-  it('performanceLinePoints: single-point series handles without divide-by-zero', () => {
-    const snapshots: PortfolioSnapshot[] = [
-      {
-        id: 'snap-1',
-        accountId: 'acc-1',
-        date: '2026-08-08',
-        value: 10000
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      snapshots,
-    })
-
-    const points = performanceLinePoints(state, '1y')
-
-    // Should return a valid string with a single point
-    expect(points).toBeTruthy()
-    expect(points).toContain(',')
-  })
-
-  // Test 8: Round-trip: multiple snapshots → series → chart points
-  it('performanceLinePoints: multiple snapshots generate valid SVG polyline points', () => {
-    const snapshots: PortfolioSnapshot[] = [
-      {
-        id: 'snap-1',
-        accountId: 'acc-1',
-        date: '2026-08-01',
-        value: 10000
-      },
-      {
-        id: 'snap-2',
-        accountId: 'acc-1',
-        date: '2026-08-02',
-        value: 12000
-      },
-      {
-        id: 'snap-3',
-        accountId: 'acc-1',
-        date: '2026-08-03',
-        value: 11500
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      snapshots,
-    })
-
-    const points = performanceLinePoints(state, '1y')
-
-    // Should have 3 point pairs separated by spaces
-    const pointArray = points.split(' ')
-    expect(pointArray).toHaveLength(3)
-    pointArray.forEach((point) => {
-      expect(point).toMatch(/^\d+(\.\d+)??,\d+(\.\d+)?$/)
-    })
-  })
 
   // Test: Asset class manual override in visiblePositions
   it('visiblePositions: respects assetClassManualOverride when filtering', () => {
@@ -446,33 +338,6 @@ describe('selectors', () => {
     expect(visible[0].symbol).toBe('MSFT')
   })
 
-  // Test: summaryCards with no snapshots (Day Change N/A)
-  it('summaryCards: Day Change is N/A when fewer than 2 snapshots', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 100,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      positions,
-      snapshots: [],
-    })
-
-    const cards = summaryCards(state)
-
-    const dayChangeCard = cards.find((c) => c.label === 'Day Change')
-    expect(dayChangeCard!.value).toBe('N/A')
-  })
 
   // Test: allocationBars formats correctly
   it('allocationBars: returns formatted allocation data', () => {
@@ -527,8 +392,6 @@ describe('selectors', () => {
 
     expect(visiblePositions(state)).toHaveLength(0)
     expect(visibleTransactions(state)).toHaveLength(0)
-    expect(totalValueSeries(state)).toHaveLength(0)
-    expect(performanceLinePoints(state, '1y')).toBe('')
   })
 
   // Test: Sorting in visiblePositions
@@ -574,81 +437,6 @@ describe('selectors', () => {
 
 
   // Test: totalTaxesPaid with null taxes (treated as 0)
-  // Test: totalValueSeriesInRange 'all' returns the full series unfiltered
-  it('totalValueSeriesInRange: "all" returns every snapshot regardless of age', () => {
-    const snapshots: PortfolioSnapshot[] = [
-      { id: 'snap-1', accountId: 'acc-1', date: '2015-01-01', value: 5000 },
-      { id: 'snap-2', accountId: 'acc-1', date: '2026-08-08', value: 11000 }
-    ]
-
-    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
-
-    expect(totalValueSeriesInRange(state, 'all')).toHaveLength(2)
-  })
-
-  // Test: totalValueSeriesInRange drops snapshots older than the '6m' cutoff
-  it('totalValueSeriesInRange: "6m" excludes snapshots older than 6 months', () => {
-    const now = new Date()
-    const old = new Date(now)
-    old.setMonth(old.getMonth() - 8)
-    const recent = new Date(now)
-    recent.setMonth(recent.getMonth() - 1)
-
-    const snapshots: PortfolioSnapshot[] = [
-      { id: 'snap-old', accountId: 'acc-1', date: old.toISOString().slice(0, 10), value: 5000 },
-      { id: 'snap-recent', accountId: 'acc-1', date: recent.toISOString().slice(0, 10), value: 11000 }
-    ]
-
-    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
-
-    const filtered = totalValueSeriesInRange(state, '6m')
-    expect(filtered).toHaveLength(1)
-    expect(filtered[0].value).toBe(11000)
-  })
-
-  // Test: totalValueSeriesInRange 'ytd' only keeps snapshots from Jan 1 of this year onward
-  it('totalValueSeriesInRange: "ytd" excludes snapshots from before this calendar year', () => {
-    const now = new Date()
-    const lastYear = new Date(now.getFullYear() - 1, 5, 15)
-
-    const snapshots: PortfolioSnapshot[] = [
-      { id: 'snap-lastyear', accountId: 'acc-1', date: lastYear.toISOString().slice(0, 10), value: 5000 },
-      { id: 'snap-jan1', accountId: 'acc-1', date: `${now.getFullYear()}-01-01`, value: 9000 }
-    ]
-
-    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
-
-    const filtered = totalValueSeriesInRange(state, 'ytd')
-    expect(filtered).toHaveLength(1)
-    expect(filtered[0].value).toBe(9000)
-  })
-
-  // Test: performanceLinePoints actually responds to the range argument (regression:
-  // this used to ignore range entirely and always plot the full history)
-  it('performanceLinePoints: a shorter range produces fewer plotted points than "all"', () => {
-    const now = new Date()
-    const old = new Date(now)
-    old.setFullYear(old.getFullYear() - 3)
-
-    const snapshots: PortfolioSnapshot[] = [
-      { id: 'snap-old', accountId: 'acc-1', date: old.toISOString().slice(0, 10), value: 5000 },
-      { id: 'snap-recent-1', accountId: 'acc-1', date: now.toISOString().slice(0, 10), value: 6000 },
-      {
-        id: 'snap-recent-2',
-        accountId: 'acc-1',
-        date: new Date(now.getTime() - 86400000).toISOString().slice(0, 10),
-        value: 6500
-      }
-    ]
-
-    const state = createTestState({ accounts: [testAccount1], snapshots, category: 'all' })
-
-    const allPoints = performanceLinePoints(state, 'all').split(' ')
-    const sixMonthPoints = performanceLinePoints(state, '6m').split(' ')
-
-    expect(allPoints).toHaveLength(3)
-    expect(sixMonthPoints.length).toBeLessThan(allPoints.length)
-  })
 
   // === filteredPortfolioTotal() tests ===
 
