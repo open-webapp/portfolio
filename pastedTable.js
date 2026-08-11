@@ -145,11 +145,33 @@
   }
 
   /**
+   * Detect the true per-row width of a buffered run of bare lines when it's
+   * wider than the header count n — e.g. a screen-reader-only "View details
+   * for X" link line copied after every row. If the buffer doesn't divide
+   * evenly into n-sized rows, look for the smallest width > n (capped at n+8)
+   * that DOES divide it evenly, so each row's trailing extra cell(s) can be
+   * dropped instead of bleeding into the next row. Falls back to n when no
+   * such width exists (ragged paste — same behavior as before).
+   */
+  function findRowWidth(bufferLength, n) {
+    if (bufferLength === 0 || bufferLength % n === 0) return n
+    const maxExtra = 8
+    for (let extra = 1; extra <= maxExtra; extra++) {
+      const w = n + extra
+      if (w > bufferLength) break
+      if (bufferLength % w === 0) return w
+    }
+    return n
+  }
+
+  /**
    * Parse the plain-text branch into rows on a per-line basis: lines
    * containing a tab are treated as already-delimited rows (empty cells
    * preserved), while consecutive non-tab lines are buffered and flushed in
-   * document order, chunked n-at-a-time, immediately before the next tab-row
-   * (and at the end of input).
+   * document order, chunked at the detected row width (n, or a wider width if
+   * that's the only way to divide the buffer evenly — see findRowWidth),
+   * dropping any trailing extra cells beyond n, immediately before the next
+   * tab-row (and at the end of input).
    */
   function parseTextRows(text, n) {
     const lines = text.split(/\r\n|\r|\n/)
@@ -158,9 +180,9 @@
 
     const flush = () => {
       if (buffer.length === 0) return
-      const chunkSize = n > 0 ? n : 1
+      const chunkSize = n > 0 ? findRowWidth(buffer.length, n) : 1
       for (let i = 0; i < buffer.length; i += chunkSize) {
-        result.push(buffer.slice(i, i + chunkSize))
+        result.push(buffer.slice(i, i + chunkSize).slice(0, n))
       }
       buffer = []
     }
