@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { importPositions } from './positionsImport'
 import { initialState, addAccount } from './state'
-import type { Account, Position, ClosedPosition, Transaction } from './types'
+import type { Account } from './types'
 import { uid } from './seed'
 
 // Helper to create test accounts

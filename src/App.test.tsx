@@ -7,7 +7,7 @@ import { importPositions } from './lib/positionsImport'
 import { importTransactions } from './lib/transactionsImport'
 import { peekEnvelopeShape, savePersistedApp } from './lib/persist'
 import { drive } from './lib/drive'
-import App, { processPendingImport } from './App'
+import App from './App'
 
 // Stable session key/salt used by the mocked PasswordGate's onUnlock callback.
 // Declared via vi.hoisted so it's initialized before the hoisted vi.mock factories run.

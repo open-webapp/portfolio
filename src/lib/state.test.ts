@@ -6,7 +6,7 @@ import {
   setView,
   closePosition,
 } from './state'
-import type { AppState, Position, ClosedPosition, Transaction, PortfolioSnapshot, SavedCsvMapping } from './types'
+import type { AppState } from './types'
 
 describe('state helpers', () => {
   describe('deleteAccount', () => {

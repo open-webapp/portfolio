@@ -172,7 +172,7 @@ describe('IndexedDB persistence', () => {
         request.onsuccess = () => resolve()
       })
       db.close()
-    } catch (error) {
+    } catch {
       // Ignore errors
     }
   }
