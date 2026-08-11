@@ -74,7 +74,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -181,7 +180,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -277,7 +275,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -362,7 +359,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -417,7 +413,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -502,7 +497,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -589,7 +583,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -673,7 +666,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -757,7 +749,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -837,7 +828,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol', // Start with symbol sort
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -935,7 +925,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1031,7 +1020,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1111,7 +1099,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1197,7 +1184,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1259,7 +1245,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1336,7 +1321,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1392,7 +1376,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1460,7 +1443,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
@@ -1475,91 +1457,6 @@ describe('PositionsTable', () => {
     // MSFT = 3000 / 5000 * 100 = 60.0%
     expect(screen.getByText('40.0%')).toBeDefined()
     expect(screen.getByText('60.0%')).toBeDefined()
-  })
-
-  /**
-   * Test: "% of Portfolio" column with retirement filter changes percentages
-   */
-  it('"% of Portfolio" percentages change with retirement filter', () => {
-    const accounts: Account[] = [
-      {
-        id: 'acc-1',
-        accountNumber: '001',
-        name: 'Non-Retirement',
-        retirement: false,
-        createdAt: '2024-01-01',
-      },
-      {
-        id: 'acc-2',
-        accountNumber: '002',
-        name: 'Retirement',
-        retirement: true,
-        createdAt: '2024-01-01',
-      },
-    ]
-
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200, // marketValue = 2000
-        lastImportedAt: '2024-01-01',
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 300, // marketValue = 3000
-        lastImportedAt: '2024-01-01',
-      },
-    ]
-
-    // First render with 'All' retirement filter
-    const stateAll: AppState = {
-      accounts,
-      positions,
-      closedPositions: [],
-      transactions: [],
-      snapshots: [],
-      category: 'all',
-      tab: 'positions',
-      sortKey: 'symbol',
-      sortDir: 'asc',
-      assetClassFilter: 'All',
-      retirementFilter: 'All',
-      posSearch: '',
-      txTypeFilter: 'All',
-      txSearch: '',
-      showClosed: false,
-      csvMappings: [],
-    }
-
-    const { rerender } = render(<PositionsTable state={stateAll} dispatch={mockDispatch} />)
-
-    // With all retirement: AAPL = 2000/5000 = 40.0%, MSFT = 3000/5000 = 60.0%
-    expect(screen.getByText('40.0%')).toBeDefined()
-    expect(screen.getByText('60.0%')).toBeDefined()
-
-    // Now filter to retirement only
-    const stateRetirement: AppState = {
-      ...stateAll,
-      retirementFilter: 'Retirement',
-    }
-
-    rerender(<PositionsTable state={stateRetirement} dispatch={mockDispatch} />)
-
-    // With retirement only: MSFT = 3000/3000 = 100.0%
-    // Only MSFT should be visible, showing 100.0%
-    expect(screen.getByText('100.0%')).toBeDefined()
   })
 
   /**
@@ -1623,7 +1520,6 @@ describe('PositionsTable', () => {
       sortKey: 'symbol',
       sortDir: 'asc',
       assetClassFilter: 'All',
-      retirementFilter: 'All',
       posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',

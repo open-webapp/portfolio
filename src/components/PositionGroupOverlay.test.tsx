@@ -61,7 +61,6 @@ describe('PositionGroupOverlay', () => {
     sortKey: 'symbol',
     sortDir: 'asc',
     assetClassFilter: 'All',
-    retirementFilter: 'All',
     posSearch: '',
     txTypeFilter: 'All',
     txSearch: '',
@@ -1094,37 +1093,6 @@ describe('PositionGroupOverlay', () => {
     // pos2: 3000 / 5000 = 60.0%
     expect(screen.getByText('40.0%')).toBeDefined()
     expect(screen.getByText('60.0%')).toBeDefined()
-  })
-
-  /**
-   * Test: "% of Portfolio" with retirement filter changes percentages in overlay
-   */
-  it('overlay percentages reflect retirement filter', () => {
-    const pos1 = createTestPosition({ id: 'pos-1', accountId: 'acc-1', shares: 10, price: 200 }) // marketValue = 2000
-    const pos2 = createTestPosition({ id: 'pos-2', accountId: 'acc-2', shares: 15, price: 200 }) // marketValue = 3000
-    const group = createTestGroup([pos1])
-
-    const account1 = createTestAccount({ id: 'acc-1', retirement: false })
-    const account2 = createTestAccount({ id: 'acc-2', retirement: true })
-
-    // Render with retirement filter set to 'Non-Retirement'
-    const testState = createTestState([pos1, pos2], [account1, account2])
-    testState.retirementFilter = 'Non-Retirement'
-
-    render(
-      <PositionGroupOverlay
-        group={group}
-        accounts={[account1, account2]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // With non-retirement filter: portfolio total = 2000 (only pos1)
-    // pos1: 2000 / 2000 = 100.0%
-    expect(screen.getByText('100.0%')).toBeDefined()
   })
 
   /**

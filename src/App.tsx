@@ -2,6 +2,7 @@ import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
+import { assetClassOptions } from './lib/selectors'
 import { Nav } from './components/Nav'
 import { OverviewCard } from './components/OverviewCard'
 import { AllocationChart } from './components/AllocationChart'
@@ -12,10 +13,11 @@ import { PasswordGate } from './components/PasswordGate'
 import { drive, getDriveAuthStatus, getBackupFileId, connectDrive, disconnectDrive, syncBackup } from './lib/drive'
 import './App.css'
 
-const retirementFilters = [
-  { value: 'All', label: 'All' },
-  { value: 'Retirement', label: 'Retirement' },
-  { value: 'Non-Retirement', label: 'Non-Retirement' },
+const categoryTabs = [
+  { value: 'all', label: 'All' },
+  { value: 'taxable', label: 'Taxable' },
+  { value: 'nonTaxable', label: 'Non-Taxable' },
+  { value: 'taxDeferred', label: 'Tax-Deferred' },
 ]
 
 
@@ -269,6 +271,19 @@ function App() {
             {/* Overview card: 3-column layout with All Together, Retirement, Non-Retirement */}
             <OverviewCard state={state} />
 
+            {/* Divider (zero-height) */}
+            <div style={{ background: 'var(--color-divider)', margin: 'var(--space-6) 0' }} />
+
+            {/* Category tabs seg */}
+            <div className="seg" style={{ marginBottom: 'var(--space-6)' }}>
+              {categoryTabs.map((tab) => (
+                <label key={tab.value} className="seg-opt" onClick={() => dispatch({ type: 'SET_CATEGORY', category: tab.value })}>
+                  <input type="radio" name="category" checked={state.category === tab.value} readOnly />
+                  <span>{tab.label}</span>
+                </label>
+              ))}
+            </div>
+
             {/* Allocation chart: full-width row */}
             <div style={{ marginBottom: 'var(--space-6)' }}>
               <AllocationChart state={state} />
@@ -277,28 +292,14 @@ function App() {
             {/* Divider */}
             <div style={{ borderTop: '1px solid var(--color-divider)', paddingTop: 'var(--space-5)', marginTop: 'var(--space-6)' }} />
 
-            {/* Retirement filter .seg control + Import button row */}
+            {/* Asset-class filter .seg control + Import button row */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
-              {/* Left: retirement filter .seg */}
+              {/* Left: asset-class filter .seg */}
               <div className="seg">
-                {retirementFilters.map((filter) => (
-                  <label key={filter.value} className="seg-opt">
-                    <input
-                      type="radio"
-                      name="retirementFilter"
-                      checked={state.retirementFilter === filter.value}
-                      readOnly
-                      onClick={() =>
-                        dispatch({
-                          type: 'SET_RETIREMENT_FILTER',
-                          filter: filter.value as
-                            | 'All'
-                            | 'Retirement'
-                            | 'Non-Retirement',
-                        })
-                      }
-                    />
-                    <span>{filter.label}</span>
+                {['All', ...assetClassOptions(state)].map((opt) => (
+                  <label key={opt} className="seg-opt" onClick={() => dispatch({ type: 'SET_ASSET_CLASS_FILTER', assetClass: opt })}>
+                    <input type="radio" name="assetClassFilter" checked={state.assetClassFilter === opt} readOnly />
+                    <span>{opt}</span>
                   </label>
                 ))}
               </div>

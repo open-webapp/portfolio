@@ -26,7 +26,6 @@ export interface AppState {
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   assetClassFilter: string // 'All' or specific class
-  retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'
   posSearch: string // search text for positions
   txTypeFilter: string // 'All' or specific type like 'Buy'
   txSearch: string // search text for transactions
@@ -60,7 +59,6 @@ export function initialState(): AppState {
     sortKey: 'symbol',
     sortDir: 'asc',
     assetClassFilter: 'All',
-    retirementFilter: 'All',
     posSearch: '',
     txTypeFilter: 'All',
     txSearch: '',
@@ -214,19 +212,6 @@ export function setAssetClassFilter(state: AppState, filter: string): AppState {
   return {
     ...state,
     assetClassFilter: filter,
-  }
-}
-
-/**
- * Set the retirement filter (to be implemented in reducer cases).
- */
-export function setRetirementFilter(
-  state: AppState,
-  filter: 'All' | 'Retirement' | 'Non-Retirement'
-): AppState {
-  return {
-    ...state,
-    retirementFilter: filter,
   }
 }
 

@@ -24,30 +24,20 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
 }
 
 describe('Nav', () => {
-  it('renders category tabs and not settings tabs when view is dashboard', () => {
-    const props = makeProps({ state: { view: 'dashboard' } as any })
-    render(<Nav {...props} />)
-
-    expect(screen.getByText('All')).toBeTruthy()
-    expect(screen.getByText('Taxable')).toBeTruthy()
-    expect(screen.getByText('Non-Taxable')).toBeTruthy()
-    expect(screen.getByText('Tax-Deferred')).toBeTruthy()
-
-    expect(screen.queryByText('Google Drive')).toBeFalsy()
-    expect(screen.queryByText('Encryption')).toBeFalsy()
-  })
-
-  it('renders settings tabs and not category tabs when view is settings', () => {
+  it('renders settings tabs when view is settings', () => {
     const props = makeProps({ state: { view: 'settings' } as any })
     render(<Nav {...props} />)
 
     expect(screen.getByText('Google Drive')).toBeTruthy()
     expect(screen.getByText('Encryption')).toBeTruthy()
+  })
 
-    expect(screen.queryByText('All')).toBeFalsy()
-    expect(screen.queryByText('Taxable')).toBeFalsy()
-    expect(screen.queryByText('Non-Taxable')).toBeFalsy()
-    expect(screen.queryByText('Tax-Deferred')).toBeFalsy()
+  it('does not render settings tabs when view is dashboard', () => {
+    const props = makeProps({ state: { view: 'dashboard' } as any })
+    render(<Nav {...props} />)
+
+    expect(screen.queryByText('Google Drive')).toBeFalsy()
+    expect(screen.queryByText('Encryption')).toBeFalsy()
   })
 
   it('renders the sync icon button when driveReady is true', () => {

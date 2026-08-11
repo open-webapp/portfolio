@@ -59,9 +59,6 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'SET_ASSET_CLASS_FILTER':
       return StateActions.setAssetClassFilter(state, action.filter)
 
-    case 'SET_RETIREMENT_FILTER':
-      return StateActions.setRetirementFilter(state, action.filter)
-
     case 'SET_POSITIONS_SEARCH':
       return StateActions.setPositionsSearch(state, action.search)
 

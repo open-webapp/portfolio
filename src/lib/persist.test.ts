@@ -139,7 +139,6 @@ function fixtureState(): AppState {
     sortKey: 'symbol',
     sortDir: 'asc',
     assetClassFilter: 'All',
-    retirementFilter: 'All',
     posSearch: 'test search',
     txTypeFilter: 'Buy',
     txSearch: 'tx search',
@@ -236,7 +235,6 @@ describe('IndexedDB persistence', () => {
         sortKey: 'gainLoss',
         sortDir: 'desc',
         assetClassFilter: 'Equities',
-        retirementFilter: 'Retirement',
         posSearch: 'test position',
         txTypeFilter: 'Sell',
         txSearch: 'test transaction',
@@ -253,7 +251,6 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.sortKey).toBe('gainLoss')
       expect(loaded?.sortDir).toBe('desc')
       expect(loaded?.assetClassFilter).toBe('Equities')
-      expect(loaded?.retirementFilter).toBe('Retirement')
       expect(loaded?.posSearch).toBe('test position')
       expect(loaded?.txTypeFilter).toBe('Sell')
       expect(loaded?.txSearch).toBe('test transaction')
@@ -427,7 +424,6 @@ describe('IndexedDB persistence', () => {
         sortKey: 'symbol',
         sortDir: 'asc',
         assetClassFilter: 'All',
-        retirementFilter: 'All',
         posSearch: '',
         txTypeFilter: 'All',
         txSearch: '',

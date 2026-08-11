@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import type { Position } from '../lib/types'
-import { visiblePositions, filteredPortfolioTotal } from '../lib/selectors'
+import { visiblePositions, filteredPortfolioTotal, assetClassOptions } from '../lib/selectors'
 import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
 import { sortBy } from '../lib/sort'
 import { ClosedPositionsTable } from './ClosedPositionsTable'
@@ -125,21 +125,8 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
   const selectedGroup = aggregateRows.find(r => r.key === selectedGroupKey) ?? null;
   const sortedRows = sortBy(aggregateRows, AGGREGATE_SORT_FIELD[state.sortKey] ?? state.sortKey as keyof AggregateRow, state.sortDir);
 
-  // Get unique asset classes for filter tags
-  const assetClassOptions = useMemo(() => {
-    const classes = new Set(state.positions.map((p) => p.assetClassManualOverride || p.assetClass))
-    return Array.from(classes).sort()
-  }, [state.positions])
-
-  const handleAssetClassFilterClick = useCallback(
-    (assetClass: string) => {
-      dispatch({
-        type: 'SET_ASSET_CLASS_FILTER',
-        filter: state.assetClassFilter === assetClass ? 'All' : assetClass,
-      })
-    },
-    [dispatch, state.assetClassFilter]
-  )
+  // Get existing asset classes from selector
+  const existingAssetClasses = assetClassOptions(state)
 
   const handleHeaderClick = useCallback(
     (sortKey: keyof Position) => {
@@ -189,81 +176,42 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
 
   return (
     <div style={{ marginBottom: 'var(--space-6)' }}>
-      {/* Asset class filter tags + search */}
+      {/* Search input */}
       <div
+        className="field"
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 'var(--space-3)',
+          margin: 0,
           marginBottom: 'var(--space-3)',
-          flexWrap: 'wrap',
+          width: '220px',
+          position: 'relative',
         }}
       >
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {/* 'All' filter tag */}
-          <span
-            onClick={() =>
-              dispatch({
-                type: 'SET_ASSET_CLASS_FILTER',
-                filter: 'All',
-              })
-            }
-            className={`tag ${state.assetClassFilter === 'All' ? 'tag-accent' : ''}`}
-            style={{ cursor: 'pointer' }}
-          >
-            All
-          </span>
-
-          {/* Asset class filter tags */}
-          {assetClassOptions.map((assetClass) => (
-            <span
-              key={assetClass}
-              onClick={() => handleAssetClassFilterClick(assetClass)}
-              className={`tag ${state.assetClassFilter === assetClass ? 'tag-accent' : ''}`}
-              style={{ cursor: 'pointer' }}
-            >
-              {assetClass}
-            </span>
-          ))}
-        </div>
-
-        {/* Search input */}
-        <div
-          className="field"
+        <input
+          className="input"
+          placeholder="Search symbol or name"
+          value={state.posSearch}
+          onChange={handlePosSearchChange}
+          style={{ paddingLeft: '30px' }}
+        />
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          width="14"
+          height="14"
           style={{
-            margin: 0,
-            width: '220px',
-            position: 'relative',
+            position: 'absolute',
+            left: '9px',
+            top: '11px',
+            opacity: 0.55,
           }}
         >
-          <input
-            className="input"
-            placeholder="Search symbol or name"
-            value={state.posSearch}
-            onChange={handlePosSearchChange}
-            style={{ paddingLeft: '30px' }}
-          />
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            width="14"
-            height="14"
-            style={{
-              position: 'absolute',
-              left: '9px',
-              top: '11px',
-              opacity: 0.55,
-            }}
-          >
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="m21 21-4.3-4.3"></path>
-          </svg>
-        </div>
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+        </svg>
       </div>
 
       {/* Positions table */}
@@ -363,7 +311,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
           accounts={state.accounts}
           dispatch={dispatch}
           onClose={() => setSelectedGroupKey(null)}
-          existingAssetClasses={assetClassOptions}
+          existingAssetClasses={existingAssetClasses}
           state={state}
         />
       )}

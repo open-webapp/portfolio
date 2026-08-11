@@ -4,7 +4,9 @@ import {
   visibleTransactions,
   summaryCards,
   allocationBars,
-  filteredPortfolioTotal
+  filteredPortfolioTotal,
+  segmentSummaryCards,
+  assetClassOptions
 } from './selectors'
 import { AppState, initialState } from './state'
 import { Account, Position, Transaction, PortfolioSnapshot } from './types'
@@ -297,47 +299,6 @@ describe('selectors', () => {
     expect(visible).toHaveLength(1)
   })
 
-  // Test: Retirement filter
-  it('visiblePositions: respects retirement filter', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 100,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 50,
-        avgCost: 300,
-        price: 400,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions,
-      assetClassFilter: 'All',
-      retirementFilter: 'Retirement' // Only retirement accounts
-    })
-
-    const visible = visiblePositions(state)
-
-    // Should only see MSFT from retirement account
-    expect(visible).toHaveLength(1)
-    expect(visible[0].symbol).toBe('MSFT')
-  })
-
 
   // Test: allocationBars formats correctly
   it('allocationBars: returns formatted allocation data', () => {
@@ -479,144 +440,6 @@ describe('selectors', () => {
     expect(total).toBe(4000)
   })
 
-  // Test 2: filteredPortfolioTotal with Retirement filter only
-  it('filteredPortfolioTotal: filters by retirement status only', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 5,
-        avgCost: 300,
-        price: 400,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions,
-      retirementFilter: 'Retirement' // Only retirement accounts
-    })
-
-    const total = filteredPortfolioTotal(state)
-
-    // Expected: only acc-2 (retirement) = 5 * 400 = 2000
-    expect(total).toBe(2000)
-  })
-
-  // Test 5: filteredPortfolioTotal with Non-Retirement filter only
-  it('filteredPortfolioTotal: filters by non-retirement status only', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 5,
-        avgCost: 300,
-        price: 400,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions,
-      retirementFilter: 'Non-Retirement' // Only non-retirement accounts
-    })
-
-    const total = filteredPortfolioTotal(state)
-
-    // Expected: only acc-1 (non-retirement) = 10 * 200 = 2000
-    expect(total).toBe(2000)
-  })
-
-  // Test 6: filteredPortfolioTotal with combined category + retirement filter
-  it('filteredPortfolioTotal: combines category and retirement filters', () => {
-    // Create 4 positions across 4 different account types
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 5,
-        avgCost: 300,
-        price: 400,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const accounts: Account[] = [
-      {
-        id: 'acc-1',
-        accountNumber: '001',
-        name: 'Taxable Non-Retirement',
-        taxCategory: 'taxable',
-        retirement: false,
-        createdAt: '2026-01-01'
-      },
-      {
-        id: 'acc-2',
-        accountNumber: '002',
-        name: 'Non-Taxable Retirement',
-        taxCategory: 'nonTaxable',
-        retirement: true,
-        createdAt: '2026-01-01'
-      }
-    ]
-
-    const state = createTestState({
-      accounts,
-      positions,
-      category: 'taxable',
-      retirementFilter: 'Non-Retirement'
-    })
-
-    const total = filteredPortfolioTotal(state)
-
-    // Expected: only acc-1 (taxable + non-retirement) = 10 * 200 = 2000
-    expect(total).toBe(2000)
-  })
-
   // Test 7: filteredPortfolioTotal with negative position market value (short position)
   it('filteredPortfolioTotal: includes negative market values in sum', () => {
     const positions: Position[] = [
@@ -720,5 +543,197 @@ describe('selectors', () => {
     // Expected: total of ALL positions, ignoring assetClassFilter
     // (10 * 200) + (5 * 105) = 2000 + 525 = 2525
     expect(total).toBe(2525)
+  })
+
+  // === segmentSummaryCards() tests ===
+
+  // Test 1: segmentSummaryCards includes positions outside category filter if account is retirement
+  it('segmentSummaryCards: includes retirement positions even if outside category filter', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 5,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      category: 'taxable' // Only testAccount1 matches this category
+    })
+
+    const cards = segmentSummaryCards(state, true)
+
+    // Expected: segmentSummaryCards should include MSFT (acc-2, retirement)
+    // even though acc-2 is not in the taxable category
+    // Total Value should be 5 * 400 = 2000
+    expect(cards).toHaveLength(3)
+    expect(cards[0].label).toBe('Total Value')
+    expect(cards[0].value).toBe('$2,000.00')
+  })
+
+  // Test 2: segmentSummaryCards with zero retirement accounts returns zero-value cards
+  it('segmentSummaryCards: returns zero-value cards with no retirement accounts', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 10,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions
+    })
+
+    const cards = segmentSummaryCards(state, true)
+
+    // Expected: all three cards should show $0.00 since no retirement accounts
+    expect(cards).toHaveLength(3)
+    expect(cards[0].label).toBe('Total Value')
+    expect(cards[0].value).toBe('$0.00')
+    expect(cards[1].label).toBe('Total Gain/Loss')
+    expect(cards[1].value).toBe('+$0.00')
+    expect(cards[2].label).toBe('Amount Invested')
+    expect(cards[2].value).toBe('$0.00')
+  })
+
+  // === assetClassOptions() tests ===
+
+  // Test 1: assetClassOptions returns sorted unique list for mixed classes
+  it('assetClassOptions: returns sorted unique list for mixed asset classes', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-1',
+        symbol: 'BND',
+        name: 'Bond ETF',
+        assetClass: 'Fixed Income',
+        shares: 50,
+        avgCost: 100,
+        price: 105,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-3',
+        accountId: 'acc-1',
+        symbol: 'VTI',
+        name: 'Total Market',
+        assetClass: 'Equity',
+        shares: 200,
+        avgCost: 200,
+        price: 250,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions
+    })
+
+    const options = assetClassOptions(state)
+
+    // Should be sorted alphabetically: Equity, Fixed Income
+    expect(options).toEqual(['Equity', 'Fixed Income'])
+  })
+
+  // Test 2: assetClassOptions returns empty array for no positions
+  it('assetClassOptions: returns empty array when no positions exist', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: []
+    })
+
+    const options = assetClassOptions(state)
+
+    expect(options).toEqual([])
+  })
+
+  // Test 3: assetClassOptions dedupes by manual override, not base class
+  it('assetClassOptions: dedupes by manual override, not base assetClass', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        assetClassManualOverride: 'Tech',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        assetClassManualOverride: 'Tech',
+        shares: 50,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-3',
+        accountId: 'acc-1',
+        symbol: 'BND',
+        name: 'Bond ETF',
+        assetClass: 'Fixed Income',
+        shares: 200,
+        avgCost: 100,
+        price: 105,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions
+    })
+
+    const options = assetClassOptions(state)
+
+    // Should dedupe by override: Tech (from AAPL and MSFT overrides) + Fixed Income
+    expect(options).toEqual(['Fixed Income', 'Tech'])
   })
 })

@@ -61,7 +61,6 @@ function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     sortKey: loaded.sortKey ?? defaults.sortKey,
     sortDir: loaded.sortDir ?? defaults.sortDir,
     assetClassFilter: loaded.assetClassFilter ?? defaults.assetClassFilter,
-    retirementFilter: loaded.retirementFilter ?? defaults.retirementFilter,
     posSearch: loaded.posSearch ?? defaults.posSearch,
     txTypeFilter: loaded.txTypeFilter ?? defaults.txTypeFilter,
     txSearch: loaded.txSearch ?? defaults.txSearch,

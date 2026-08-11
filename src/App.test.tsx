@@ -238,54 +238,103 @@ describe('view switching (dashboard vs settings)', () => {
     expect(nonRetirementTexts.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('should render retirement filter .seg-opt labels', async () => {
+  it('should render category tabs .seg-opt labels', async () => {
     await renderUnlockedApp()
 
     // Dashboard should be visible
     expect(screen.getByText('Allocation')).toBeTruthy()
 
-    // Find retirement filter .seg-opt labels by looking for inputs with name="retirementFilter"
-    const retirementFilterLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
-      (label) => label.querySelector('input[name="retirementFilter"]') !== null
+    // Find category tabs .seg-opt labels by looking for inputs with name="category"
+    const categoryLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="category"]') !== null
     )
-    expect(retirementFilterLabels.length).toBe(3) // All, Retirement, Non-Retirement
+    expect(categoryLabels.length).toBe(4) // All, Taxable, Non-Taxable, Tax-Deferred
 
-    // Verify each filter option is present
-    const allLabel = retirementFilterLabels.find((l) => l.textContent?.includes('All'))
-    const retirementLabel = retirementFilterLabels.find((l) => l.textContent?.includes('Retirement') && !l.textContent?.includes('Non'))
-    const nonRetirementLabel = retirementFilterLabels.find((l) => l.textContent?.includes('Non-Retirement'))
+    // Verify each category option is present
+    const allLabel = categoryLabels.find((l) => l.textContent?.includes('All'))
+    const taxableLabel = categoryLabels.find((l) => l.textContent?.includes('Taxable') && !l.textContent?.includes('Non'))
+    const nonTaxableLabel = categoryLabels.find((l) => l.textContent?.includes('Non-Taxable'))
+    const taxDeferredLabel = categoryLabels.find((l) => l.textContent?.includes('Tax-Deferred'))
 
     expect(allLabel).toBeTruthy()
-    expect(retirementLabel).toBeTruthy()
-    expect(nonRetirementLabel).toBeTruthy()
+    expect(taxableLabel).toBeTruthy()
+    expect(nonTaxableLabel).toBeTruthy()
+    expect(taxDeferredLabel).toBeTruthy()
   })
 
 
-  it('should dispatch SET_RETIREMENT_FILTER when a retirement filter .seg-opt is clicked', async () => {
+  it('should dispatch SET_CATEGORY when a category .seg-opt is clicked', async () => {
     await renderUnlockedApp()
 
-    // Find the retirement filter .seg control by looking for radios with name="retirementFilter"
-    const retirementFilterLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
-      (label) => label.querySelector('input[name="retirementFilter"]') !== null
+    // Find the category .seg control by looking for radios with name="category"
+    const categoryLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="category"]') !== null
     )
-    expect(retirementFilterLabels.length).toBe(3) // All, Retirement, Non-Retirement
+    expect(categoryLabels.length).toBe(4) // All, Taxable, Non-Taxable, Tax-Deferred
 
     // Initially "All" should be checked
-    const allLabel = retirementFilterLabels.find((l) => l.textContent?.includes('All'))
+    const allLabel = categoryLabels.find((l) => l.textContent?.includes('All'))
     const allInput = allLabel?.querySelector('input') as HTMLInputElement
     expect(allInput.checked).toBe(true)
 
-    // Click the Retirement option
-    const retirementLabel = retirementFilterLabels.find((l) => l.textContent?.includes('Retirement'))
-    expect(retirementLabel).toBeTruthy()
-    fireEvent.click(retirementLabel!)
+    // Click the Taxable option
+    const taxableLabel = categoryLabels.find((l) => l.textContent?.includes('Taxable') && !l.textContent?.includes('Non'))
+    expect(taxableLabel).toBeTruthy()
+    fireEvent.click(taxableLabel!)
 
-    // After clicking, Retirement should be checked and All should be unchecked
-    const retirementInput = retirementLabel?.querySelector('input') as HTMLInputElement
+    // After clicking, Taxable should be checked and All should be unchecked
+    const taxableInput = taxableLabel?.querySelector('input') as HTMLInputElement
     await waitFor(() => {
-      expect(retirementInput.checked).toBe(true)
+      expect(taxableInput.checked).toBe(true)
       expect(allInput.checked).toBe(false)
     })
+  })
+
+  it('should render asset-class filter .seg-opt labels', async () => {
+    await renderUnlockedApp()
+
+    // Dashboard should be visible
+    expect(screen.getByText('Allocation')).toBeTruthy()
+
+    // Find asset-class filter .seg-opt labels by looking for inputs with name="assetClassFilter"
+    const assetClassLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="assetClassFilter"]') !== null
+    )
+
+    // Should have at least "All" option
+    expect(assetClassLabels.length).toBeGreaterThanOrEqual(1)
+
+    // Verify "All" option is present
+    const allLabel = assetClassLabels.find((l) => l.textContent?.includes('All'))
+    expect(allLabel).toBeTruthy()
+  })
+
+  it('should dispatch SET_ASSET_CLASS_FILTER when an asset-class filter .seg-opt is clicked', async () => {
+    await renderUnlockedApp()
+
+    // Find the asset-class filter .seg control by looking for radios with name="assetClassFilter"
+    const assetClassLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
+      (label) => label.querySelector('input[name="assetClassFilter"]') !== null
+    )
+    expect(assetClassLabels.length).toBeGreaterThanOrEqual(1)
+
+    // Initially "All" should be checked
+    const allLabel = assetClassLabels.find((l) => l.textContent?.includes('All'))
+    const allInput = allLabel?.querySelector('input') as HTMLInputElement
+    expect(allInput.checked).toBe(true)
+
+    // Click a different option if available (second option, or just verify All is checked)
+    if (assetClassLabels.length > 1) {
+      const secondLabel = assetClassLabels[1]
+      fireEvent.click(secondLabel)
+
+      // After clicking, the second option should be checked
+      const secondInput = secondLabel.querySelector('input') as HTMLInputElement
+      await waitFor(() => {
+        expect(secondInput.checked).toBe(true)
+        expect(allInput.checked).toBe(false)
+      })
+    }
   })
 })
 

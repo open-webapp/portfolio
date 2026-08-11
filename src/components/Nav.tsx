@@ -1,9 +1,8 @@
-import { useCallback } from 'react'
 import type { AppState } from '../lib/state'
 
 export interface NavProps {
   state: AppState
-  dispatch: (action: any) => void
+  dispatch?: (action: any) => void
   settingsSection: 'drive' | 'encryption'
   setSettingsSection: (s: 'drive' | 'encryption') => void
   driveReady: boolean
@@ -17,7 +16,6 @@ export interface NavProps {
  */
 export function Nav({
   state,
-  dispatch,
   settingsSection,
   setSettingsSection,
   driveReady,
@@ -25,27 +23,10 @@ export function Nav({
   handleSync,
   onOpenSettings,
 }: NavProps) {
-  const categoryTabs = [
-    { value: 'all', label: 'All' },
-    { value: 'taxable', label: 'Taxable' },
-    { value: 'nonTaxable', label: 'Non-Taxable' },
-    { value: 'taxDeferred', label: 'Tax-Deferred' },
-  ]
-
   const settingsTabs: { value: 'drive' | 'encryption'; label: string }[] = [
     { value: 'drive', label: 'Google Drive' },
     { value: 'encryption', label: 'Encryption' },
   ]
-
-  const handleCategoryChange = useCallback(
-    (category: 'all' | 'taxable' | 'nonTaxable' | 'taxDeferred') => {
-      dispatch({
-        type: 'SET_CATEGORY',
-        category,
-      })
-    },
-    [dispatch]
-  )
 
   return (
     <div
@@ -57,31 +38,6 @@ export function Nav({
       }}
     >
       <div className="nav-brand" style={{ marginRight: 'var(--space-5)' }}>Ledger</div>
-
-      {/* Category tabs (dashboard view) */}
-      {state.view === 'dashboard' && (
-        <div className="seg">
-          {categoryTabs.map((tab) => (
-            <label
-              key={tab.value}
-              className="seg-opt"
-              onClick={() =>
-                handleCategoryChange(
-                  tab.value as 'all' | 'taxable' | 'nonTaxable' | 'taxDeferred'
-                )
-              }
-            >
-              <input
-                type="radio"
-                name="category"
-                checked={state.category === tab.value}
-                readOnly
-              />
-              <span>{tab.label}</span>
-            </label>
-          ))}
-        </div>
-      )}
 
       {/* Settings tabs (settings view) */}
       {state.view === 'settings' && (

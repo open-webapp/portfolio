@@ -14,19 +14,6 @@ export function visiblePositions(state: AppState): Position[] {
     accountsInCategory.some((a) => a.id === p.accountId)
   )
 
-  // Apply retirement filter
-  if (state.retirementFilter === 'Retirement') {
-    results = results.filter((p) => {
-      const account = state.accounts.find((a) => a.id === p.accountId)
-      return account?.retirement === true
-    })
-  } else if (state.retirementFilter === 'Non-Retirement') {
-    results = results.filter((p) => {
-      const account = state.accounts.find((a) => a.id === p.accountId)
-      return account?.retirement === false
-    })
-  }
-
   // Apply asset class filter
   if (state.assetClassFilter !== 'All') {
     results = results.filter((p) => {
@@ -53,9 +40,9 @@ export function visiblePositions(state: AppState): Position[] {
 }
 
 /**
- * Compute total market value of positions filtered by category and retirement status.
+ * Compute total market value of positions filtered by category.
  * This is the denominator for portfolio percentage calculations.
- * Does NOT apply asset-class or search filters — only category and retirement filters.
+ * Does NOT apply asset-class or search filters — only category filter.
  * Returns the sum of all filtered positions' market values (can be zero, negative, or positive).
  */
 export function filteredPortfolioTotal(state: AppState): number {
@@ -64,21 +51,20 @@ export function filteredPortfolioTotal(state: AppState): number {
     accountsInCategory.some((a) => a.id === p.accountId)
   )
 
-  // Apply retirement filter (same logic as visiblePositions)
-  if (state.retirementFilter === 'Retirement') {
-    results = results.filter((p) => {
-      const account = state.accounts.find((a) => a.id === p.accountId)
-      return account?.retirement === true
-    })
-  } else if (state.retirementFilter === 'Non-Retirement') {
-    results = results.filter((p) => {
-      const account = state.accounts.find((a) => a.id === p.accountId)
-      return account?.retirement === false
-    })
-  }
-
   // Sum market values across all filtered positions
   return results.reduce((sum, p) => sum + computePosition(p).marketValue, 0)
+}
+
+/**
+ * Get all distinct asset classes (including manual overrides) from positions, sorted alphabetically.
+ */
+export function assetClassOptions(state: AppState): string[] {
+  const assetClasses = new Set<string>()
+  state.positions.forEach((p) => {
+    const effectiveClass = p.assetClassManualOverride || p.assetClass
+    assetClasses.add(effectiveClass)
+  })
+  return Array.from(assetClasses).sort()
 }
 
 /**
@@ -183,9 +169,9 @@ export function summaryCards(
 }
 
 /**
- * Generate summary cards filtered by category and retirement status.
+ * Generate summary cards filtered by retirement status.
  * Returns the same three cards as valueGlInvestedCards (Total Value, Total Gain/Loss, Amount Invested)
- * but for positions in the selected category that match the retirement filter.
+ * but for positions in accounts matching the provided retirement status.
  */
 export function segmentSummaryCards(
   state: AppState,
@@ -196,17 +182,10 @@ export function segmentSummaryCards(
   sub?: string
   color: string
 }> {
-  const accountsInCategory = getAccountsForCategory(state)
-  let filteredPositions = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
-
-  // Apply retirement filter
-  filteredPositions = filteredPositions.filter((p) => {
+  const filteredPositions = state.positions.filter((p) => {
     const account = state.accounts.find((a) => a.id === p.accountId)
     return account?.retirement === retirement
   })
-
   return valueGlInvestedCards(filteredPositions)
 }
 
