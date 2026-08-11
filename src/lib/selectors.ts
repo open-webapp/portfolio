@@ -142,6 +142,61 @@ export function totalValueSeries(
 }
 
 /**
+ * Private helper: generate card data for Total Value, Total Gain/Loss, and Amount Invested.
+ * Used by summaryCards() and segmentSummaryCards().
+ */
+function valueGlInvestedCards(
+  positions: Position[]
+): Array<{
+  label: string
+  value: string
+  sub?: string
+  color: string
+}> {
+  const GAIN = 'var(--color-accent-700)'
+  const LOSS = '#8a3c2e'
+
+  // Total Value: sum of all open positions' market value
+  const totalValue = positions.reduce((sum, p) => {
+    return sum + p.shares * p.price
+  }, 0)
+
+  // Total Gain/Loss: sum of all positions' gl
+  const totalGL = positions.reduce((sum, p) => {
+    const marketValue = p.shares * p.price
+    const costBasis = p.shares * p.avgCost
+    return sum + (marketValue - costBasis)
+  }, 0)
+
+  // Cost Basis: sum of all positions' costBasis
+  const costBasis = positions.reduce((sum, p) => {
+    return sum + p.shares * p.avgCost
+  }, 0)
+
+  // Total GL percentage (for the sub field)
+  const totalGLPct = costBasis === 0 ? 0 : (totalGL / costBasis) * 100
+
+  return [
+    {
+      label: 'Total Value',
+      value: fmtUSD(totalValue),
+      color: 'var(--color-text)'
+    },
+    {
+      label: 'Total Gain/Loss',
+      value: (totalGL >= 0 ? '+' : '') + fmtUSD(totalGL),
+      sub: fmtPct(totalGLPct),
+      color: totalGL >= 0 ? GAIN : LOSS
+    },
+    {
+      label: 'Amount Invested',
+      value: fmtUSD(costBasis),
+      color: 'var(--color-text)'
+    }
+  ]
+}
+
+/**
  * Generate summary cards for Total Value, Day Change, Total Gain/Loss, and Amount Invested.
  * Returns cards with formatted values, colors, and optional sub-values (percentages).
  */
@@ -156,10 +211,8 @@ export function summaryCards(
   const GAIN = 'var(--color-accent-700)'
   const LOSS = '#8a3c2e'
 
-  // Total Value: sum of all open positions' market value
-  const totalValue = state.positions.reduce((sum, p) => {
-    return sum + p.shares * p.price
-  }, 0)
+  // Get the three main cards (Total Value, Total Gain/Loss, Amount Invested)
+  const mainCards = valueGlInvestedCards(state.positions)
 
   // Day Change: delta between last two totalValueSeries points (as USD value, not percentage)
   const series = totalValueSeries(state)
@@ -175,44 +228,42 @@ export function summaryCards(
     dayChangeStr = 'N/A'
   }
 
-  // Total Gain/Loss: sum of all positions' gl
-  const totalGL = state.positions.reduce((sum, p) => {
-    const marketValue = p.shares * p.price
-    const costBasis = p.shares * p.avgCost
-    return sum + (marketValue - costBasis)
-  }, 0)
+  // Insert Day Change at index 1 (between Total Value and Total Gain/Loss)
+  const dayChangeCard = {
+    label: 'Day Change',
+    value: dayChangeStr,
+    color: dayChange >= 0 ? GAIN : LOSS
+  }
 
-  // Cost Basis: sum of all positions' costBasis
-  const costBasis = state.positions.reduce((sum, p) => {
-    return sum + p.shares * p.avgCost
-  }, 0)
+  return [mainCards[0], dayChangeCard, mainCards[1], mainCards[2]]
+}
 
-  // Total GL percentage (for the sub field)
-  const totalGLPct = costBasis === 0 ? 0 : (totalGL / costBasis) * 100
+/**
+ * Generate summary cards filtered by category and retirement status.
+ * Returns the same three cards as valueGlInvestedCards (Total Value, Total Gain/Loss, Amount Invested)
+ * but for positions in the selected category that match the retirement filter.
+ */
+export function segmentSummaryCards(
+  state: AppState,
+  retirement: boolean
+): Array<{
+  label: string
+  value: string
+  sub?: string
+  color: string
+}> {
+  const accountsInCategory = getAccountsForCategory(state)
+  let filteredPositions = state.positions.filter((p) =>
+    accountsInCategory.some((a) => a.id === p.accountId)
+  )
 
-  return [
-    {
-      label: 'Total Value',
-      value: fmtUSD(totalValue),
-      color: 'var(--color-text)'
-    },
-    {
-      label: 'Day Change',
-      value: dayChangeStr,
-      color: dayChange >= 0 ? GAIN : LOSS
-    },
-    {
-      label: 'Total Gain/Loss',
-      value: (totalGL >= 0 ? '+' : '') + fmtUSD(totalGL),
-      sub: fmtPct(totalGLPct),
-      color: totalGL >= 0 ? GAIN : LOSS
-    },
-    {
-      label: 'Amount Invested',
-      value: fmtUSD(costBasis),
-      color: 'var(--color-text)'
-    }
-  ]
+  // Apply retirement filter
+  filteredPositions = filteredPositions.filter((p) => {
+    const account = state.accounts.find((a) => a.id === p.accountId)
+    return account?.retirement === retirement
+  })
+
+  return valueGlInvestedCards(filteredPositions)
 }
 
 /**

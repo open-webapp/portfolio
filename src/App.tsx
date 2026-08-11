@@ -4,7 +4,7 @@ import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
 import { Nav } from './components/Nav'
 import { SummaryCards } from './components/SummaryCards'
-import { PerformanceChart } from './components/PerformanceChart'
+import { SegmentSummaryCards } from './components/SegmentSummaryCards'
 import { AllocationChart } from './components/AllocationChart'
 import { PositionsTable } from './components/PositionsTable'
 import { TransactionsTable } from './components/TransactionsTable'
@@ -188,67 +188,30 @@ function App() {
 
           {/* Main content area with padding */}
           <div style={{ padding: 'var(--space-6)' }}>
-            {/* Portfolio header: kicker + name on the left, retirement filter tags on the right */}
-            <div
-              style={{
-                marginBottom: 'var(--space-6)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-end',
-                flexWrap: 'wrap',
-                gap: 'var(--space-3)',
-              }}
-            >
-              <div>
-                <div
-                  className="text-muted"
-                  style={{
-                    fontSize: '11px',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Portfolio
-                </div>
-                <h1 style={{ margin: 0 }}>{PORTFOLIO_NAME}</h1>
+            {/* Portfolio header: kicker + name */}
+            <div style={{ marginBottom: 'var(--space-6)' }}>
+              <div
+                className="text-muted"
+                style={{
+                  fontSize: '11px',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Portfolio
               </div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {retirementFilters.map((filter) => (
-                  <span
-                    key={filter.value}
-                    onClick={() =>
-                      dispatch({
-                        type: 'SET_RETIREMENT_FILTER',
-                        filter: filter.value as
-                          | 'All'
-                          | 'Retirement'
-                          | 'Non-Retirement',
-                      })
-                    }
-                    className={`tag ${
-                      state.retirementFilter === filter.value ? 'tag-accent' : ''
-                    }`}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {filter.label}
-                  </span>
-                ))}
-              </div>
+              <h1 style={{ margin: 0 }}>{PORTFOLIO_NAME}</h1>
             </div>
 
             {/* Summary cards row */}
             <SummaryCards state={state} />
 
-            {/* Charts grid: Performance and Allocation */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '2fr 1fr',
-                gap: 'var(--space-6)',
-                marginBottom: 'var(--space-6)',
-              }}
-            >
-              <PerformanceChart state={state} />
+            {/* Segment summary cards: Retirement and Non-Retirement rows */}
+            <SegmentSummaryCards state={state} retirement={true} label="Retirement" />
+            <SegmentSummaryCards state={state} retirement={false} label="Non-Retirement" />
+
+            {/* Allocation chart: full-width row */}
+            <div style={{ marginBottom: 'var(--space-6)' }}>
               <AllocationChart state={state} />
             </div>
 
@@ -292,6 +255,32 @@ function App() {
               {/* Import Dialog - unified, visible on all tabs */}
               <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
             </div>
+
+            {/* Retirement filter tags (Positions tab only) */}
+            {state.tab === 'positions' && (
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+                {retirementFilters.map((filter) => (
+                  <span
+                    key={filter.value}
+                    onClick={() =>
+                      dispatch({
+                        type: 'SET_RETIREMENT_FILTER',
+                        filter: filter.value as
+                          | 'All'
+                          | 'Retirement'
+                          | 'Non-Retirement',
+                      })
+                    }
+                    className={`tag ${
+                      state.retirementFilter === filter.value ? 'tag-accent' : ''
+                    }`}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {filter.label}
+                  </span>
+                ))}
+              </div>
+            )}
 
             {/* Positions tab */}
             {state.tab === 'positions' && <PositionsTable state={state} dispatch={dispatch} />}

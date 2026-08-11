@@ -26,6 +26,7 @@ describe('selectors', () => {
     id: 'acc-1',
     accountNumber: '12345',
     name: 'Brokerage',
+    taxCategory: 'taxable',
     retirement: false,
     createdAt: '2026-01-01'
   }
@@ -34,6 +35,7 @@ describe('selectors', () => {
     id: 'acc-2',
     accountNumber: '67890',
     name: 'Retirement IRA',
+    taxCategory: 'taxDeferred',
     retirement: true,
     createdAt: '2026-01-01'
   }
@@ -800,6 +802,7 @@ describe('selectors', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Taxable Non-Retirement',
+        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2026-01-01'
       },
@@ -807,6 +810,7 @@ describe('selectors', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Non-Taxable Retirement',
+        taxCategory: 'nonTaxable',
         retirement: true,
         createdAt: '2026-01-01'
       }

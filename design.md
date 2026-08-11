@@ -34,7 +34,7 @@ src/
     PasswordGate.tsx           # full-replacement gate screen: set-password (first-run/legacy-migrate) or enter-password (returning encrypted), reset-app escape hatch
     Nav.tsx                    # nav-brand, category seg tabs, range select, settings gear
     SummaryCards.tsx
-    PerformanceChart.tsx        # SVG polyline
+    SegmentSummaryCards.tsx     # 3-card row for portfolio segment (retirement vs. non-retirement)
     AllocationChart.tsx         # bar list
     PositionsTable.tsx
     PositionGroupOverlay.tsx    # dialog for viewing positions in an aggregated group
@@ -103,14 +103,15 @@ App
   [sessionKey set, !isHydrated] — "Loading dashboard..." (brief, between onUnlock and hydration dispatch)
   [view === 'dashboard']
     Nav                       (state, dispatch)  — nav-brand 'Ledger' + category seg tabs + range select + settings gear
-    portfolio header row      (inline in App)    — kicker 'Portfolio' + <h1>Ledger</h1> + retirement .tag pills
-    SummaryCards              (state)            — all cards in one row of 5 equal columns (.card.blueprint.elev-sm), sized to fit
-    charts row                (inline in App)    — grid 2fr 1fr (Performance wider than Allocation)
-      PerformanceChart        (state)
-      AllocationChart         (state)
+    portfolio header row      (inline in App)    — kicker 'Portfolio' + <h1>Ledger</h1>
+    SummaryCards              (state)            — all cards in one row of 4 equal columns (.card.blueprint.elev-sm), sized to fit
+    SegmentSummaryCards       (state, retirement=true, label='Retirement')   — 3-card row for retirement positions
+    SegmentSummaryCards       (state, retirement=false, label='Non-Retirement')  — 3-card row for taxable positions
+    AllocationChart           (state)            — full-width bar list
     tabs row                  (inline in App)    — flex space-between: Positions/Transactions .seg + Import trigger
       ImportDialog            (state, dispatch)  — renders the trigger button; open state is component-local (isOpen)
     [tab === 'positions']
+      retirement .tag pills   (inline in App)    — "Retirement" and "Non-Retirement" tags, styled per label; gated on tab === 'positions'
       PositionsTable          (state, dispatch)  — groups visiblePositions() into aggregate rows (symbol+effectiveAssetClass); selectedGroupKey is component-local useState
         ClosedPositionsTable    (state, dispatch)       — when state.showClosed
       PositionGroupOverlay    (group, accounts, dispatch, onClose)  — when a row is clicked; lists underlying positions sorted by account name. 9-column table: Account (two-line dropdown: line 1 shows institution+name, line 2 shows tax category+retirement), Symbol, Name, Shares, Avg Cost, Current Price, Taxes, Override (asset class), Delete (trash-icon button, `window.confirm` then dispatches `CLOSE_POSITION`, converting the position to a `ClosedPosition` rather than removing it outright). All editable fields use independent inline-edit UI with component-local state: click → input → Enter or blur commits via `UPDATE_POSITION` dispatch, Escape cancels/reverts (no dispatch). Editable cells: Symbol (`<input type="text">`, empty reverts silently), Account (dropdown; selecting one dispatches `UPDATE_POSITION` with `patch: { accountId }`), Shares/AvgCost/Price/Taxes (`<input type="number">`; invalid/empty revert silently except Taxes empty → saves 0). Editing Symbol, Account, or deleting a position changes position's `buildGroupKey()` result or removes the position → position row disappears from currently-open overlay on next render (overlay itself stays open; no special wiring needed, natural re-render side effect).
@@ -156,10 +157,11 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 - `visibleTransactions(state)` — category filter → type filter → search (symbol/date) → always sorted by `date desc` (not user-sortable).
 - `totalValueSeries(state, accountIds?)` — groups `PortfolioSnapshot[]` by `date`, sums `value`; defaults to accounts in the selected category if `accountIds` omitted.
 - `totalValueSeriesInRange(state, range)` — drops series points before a cutoff derived from `range` (`6m`/`1y`/`ytd`/`all`).
-- `summaryCards(state)` — Total Value / Day Change / Total Gain-Loss / Amount Invested / Total Taxes Paid, computed live from `positions` and `totalValueSeries` (no stored placeholder).
+- `summaryCards(state)` — Total Value / Day Change / Total Gain-Loss (with %) / Amount Invested, computed live from `positions` and `totalValueSeries` (no stored placeholder).
+- `segmentSummaryCards(state, retirement)` — Same math as `summaryCards` (Total Value / Total Gain-Loss / Amount Invested), scoped to positions whose account.retirement matches the boolean `retirement` arg, within the current category filter; no Day Change.
 - `allocationBars(state)` — wraps `computations.allocationByAssetClass`, respecting `assetClassManualOverride`.
 - `filteredPortfolioTotal(state)` — Computes sum of market values for positions matching both category and retirement filters; denominator for the portfolio % display.
-- `performanceLinePoints(state, range)` — builds an SVG `points` string from `totalValueSeriesInRange(state, range)`; a single-point series renders centered.
+- `performanceLinePoints(state, range)` — builds an SVG `points` string from `totalValueSeriesInRange(state, range)`; a single-point series renders centered. (currently unused by any component)
 
 ## Key Invariants
 
