@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fixed Table Processor</title>
+    <style>
+        .control-panel {
+            margin-bottom: 15px;
+            font-family: sans-serif;
+        }
+        .paste-zone {
+            width: 100%;
+            height: 120px;
+            border: 2px dashed #3498db;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            color: #333;
+            background-color: #f9f9f9;
+        }
+        .zone-label {
+            font-family: sans-serif;
+            font-weight: bold;
+            margin-bottom: 4px;
+            display: block;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background-color: #f4f4f4; font-weight: bold; }
+        #csv-out {
+            width: 100%;
+            height: 150px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        #issues-line {
+            color: #b45309;
+            font-family: sans-serif;
+            margin-top: 10px;
+        }
+        #copy-csv {
+            margin-top: 10px;
+            padding: 6px 12px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Target Containers for Pasting -->
+<label class="zone-label" for="headers-zone">Paste headers here</label>
+<div id="headers-zone" class="paste-zone" contenteditable="true">
+    Click here and press Ctrl+V (or Cmd+V) to paste header data
+</div>
+
+<label class="zone-label" for="values-zone">Paste values here</label>
+<div id="values-zone" class="paste-zone" contenteditable="true">
+    Click here and press Ctrl+V (or Cmd+V) to paste value data
+</div>
+
+<!-- Destination Container for Clean Table Output -->
+<div id="table-container"></div>
+
+<!-- CSV Output -->
+<textarea id="csv-out" readonly></textarea>
+<div id="issues-line"></div>
+<button id="copy-csv" type="button">Copy CSV</button>
+
+<script src="pastedTable.js"></script>
+<script>
+    const headersZone = document.getElementById('headers-zone');
+    const valuesZone = document.getElementById('values-zone');
+    const tableContainer = document.getElementById('table-container');
+    const csvOut = document.getElementById('csv-out');
+    const issuesLine = document.getElementById('issues-line');
+    const copyCsvButton = document.getElementById('copy-csv');
+
+    let headersClip = {};
+    let valuesClip = {};
+
+    headersZone.addEventListener('paste', function (event) {
+        handlePaste(event, headersZone, 'Click here and press Ctrl+V (or Cmd+V) to paste header data', function (clip) {
+            headersClip = clip;
+        });
+    });
+
+    valuesZone.addEventListener('paste', function (event) {
+        handlePaste(event, valuesZone, 'Click here and press Ctrl+V (or Cmd+V) to paste value data', function (clip) {
+            valuesClip = clip;
+        });
+    });
+
+    function handlePaste(event, zoneEl, placeholderText, storeClip) {
+        event.preventDefault();
+
+        const clipboardData = event.clipboardData || window.clipboardData;
+        const html = clipboardData.getData('text/html');
+        const text = clipboardData.getData('text/plain');
+
+        storeClip({ html: html, text: text });
+
+        // Clear the zone back to its placeholder so pasted markup doesn't
+        // visually clutter the contenteditable itself.
+        zoneEl.textContent = placeholderText;
+
+        render();
+    }
+
+    function render() {
+        tableContainer.innerHTML = '';
+        issuesLine.textContent = '';
+
+        const result = window.PastedTable.tableToCsv(headersClip || {}, valuesClip || {});
+
+        const table = document.createElement('table');
+
+        if (result.headers.length > 0) {
+            const headerRow = document.createElement('tr');
+            result.headers.forEach(function (header) {
+                const th = document.createElement('th');
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+            table.appendChild(headerRow);
+        }
+
+        result.rows.forEach(function (row) {
+            const tr = document.createElement('tr');
+            for (let i = 0; i < result.headers.length; i++) {
+                const td = document.createElement('td');
+                td.textContent = row[result.headers[i]];
+                tr.appendChild(td);
+            }
+            table.appendChild(tr);
+        });
+
+        tableContainer.appendChild(table);
+
+        csvOut.value = result.csv;
+
+        if (result.issues.length > 0) {
+            issuesLine.textContent = result.issues.length + ' row(s) had column-count mismatches — see console';
+            console.warn('Column-count mismatches:', result.issues);
+        }
+    }
+
+    copyCsvButton.addEventListener('click', function () {
+        const csvText = csvOut.value;
+
+        function fallbackCopy() {
+            csvOut.select();
+            document.execCommand('copy');
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(csvText).catch(function () {
+                fallbackCopy();
+            });
+        } else {
+            fallbackCopy();
+        }
+    });
+
+    // Initial render so the CSV/table areas are populated (as empty) before any paste.
+    render();
+</script>
+</body>
+</html>

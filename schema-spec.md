@@ -132,6 +132,27 @@ Optional fields (`name` for positions; `taxes` for both kinds) are never require
 - `validatePreviewRow(dataType, values) → { valid, errors }` — per-row required-missing checks. Positions: `symbol`/`assetClass`/`shares` + ≥1 of `{avgCost, purchaseAmount}` + ≥1 of `{price, marketValue}`. Transactions: all of `TRANSACTIONS_REQUIRED_FIELDS`, no alternative pairs. Blank rows (`isBlankRow`) always return `valid: true` — they never block import and are skipped at commit.
 - `isReviewValid(dataType, fieldMap) → boolean` — all required fields present among `Object.values(fieldMap)`; positions honor the alternative pairs.
 
+## TableToCsvResult (`src/lib/pastedTable.ts`)
+
+Return shape of `tableToCsv(headersClipboard, valuesClipboard)` — a standalone clipboard-paste → CSV utility, not wired into the app. `PastedClipboard = { html?: string, text?: string }` (one clipboard paste); headers paste determines column count `N`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `headers` | `string[]` | Flattened, blank-dropped, uniquified (`_2`, `_3`, ... suffix on collision) header cells from the headers paste. Length is `N`. |
+| `rows` | `Record<string, string>[]` | One object per fitted values row, keyed by `headers`. |
+| `csv` | `string` | RFC 4180 text: `\r\n` row terminators, minimal quoting (only when a field contains `,`/`"`/CR/LF, with `"` doubled), no BOM, no trailing newline. |
+| `issues` | `CsvIssue[]` | **Required, always present** (`[]` when every row's width matched `N` — never omitted). One entry per row whose raw cell count didn't match `N`, describing the pad/truncate that was applied. |
+
+`CsvIssue`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `rowIndex` | `number` | Index into the fitted/original row list (0-based) |
+| `got` | `number` | Raw cell count parsed for that row before fitting |
+| `expected` | `number` | `N`, i.e. `headers.length` |
+
+**Structural superset of `ParsedCsv`**: `TableToCsvResult` is pinned via an exported conditional-type assertion, `PastedTableIsParsedCsv = TableToCsvResult extends ParsedCsv ? true : never`, so `tsc -b` fails the build if `TableToCsvResult` ever stops being assignable to `ParsedCsv` (`{ headers: string[], rows: Record<string,string>[] }`, `src/lib/csv.ts`) — i.e. `headers`/`rows` must keep matching shapes; `csv`/`issues` are pure additions.
+
 ## Action Types
 
 Core state mutations dispatched via `appReducer` in `reducer.ts`:

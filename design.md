@@ -30,6 +30,7 @@ src/
     selectors.ts               # visiblePositions/visibleTransactions/summaryCards/etc.
     importPreview.ts           # applyFieldMap / validatePreviewRow / isBlankRow / isReviewValid
     seed.ts                    # uid(prefix)
+    pastedTable.ts              # tableToCsv(headersClipboard, valuesClipboard): standalone clipboard-paste → CSV/rows/headers parser, not wired into the app
   components/
     PasswordGate.tsx           # full-replacement gate screen: set-password (first-run/legacy-migrate) or enter-password (returning encrypted), reset-app escape hatch
     Nav.tsx                    # nav-brand, Dashboard/Accounts seg tabs, SVG sync/gear icons
@@ -49,6 +50,8 @@ src/
 plans/                        # historical planning docs, superseded by this file
 portfolio-dashboard-design/   # pixel-reference prototype (.dc.html) — not shipped code
 csv/                           # sample/user CSV fixtures for manual testing
+pastedTable.js                 # hand-mirrored classic-script copy of src/lib/pastedTable.ts, no build step, window.PastedTable.tableToCsv, file://-runnable
+test1.html                     # dev harness for pastedTable.js (two paste zones → live table preview + CSV textarea), not shipped UI, file://-runnable
 ```
 
 Each `src/lib/*.ts` has a colocated `*.test.ts` (vitest, one file per module).
@@ -168,3 +171,4 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 - **Natural-key upsert**: `positionsImport.ts` (snapshot) and `transactionsImport.ts` (transaction) both dedup by recomputing a string key and filtering pre-existing entries out before appending, rather than mutating in place.
 - **Session-key lifecycle**: the derived `CryptoKey` + PBKDF2 salt (`sessionKey`/`sessionSalt`) live only as React state in `App.tsx`, set once by `PasswordGate`'s `onUnlock` (or rotated by `SettingsPage`'s `onKeyChange`) and threaded down via props to `SettingsPage` — they are explicitly **not** fields on `AppState` and never flow through the reducer or `__SET_STATE`. They are additionally mirrored into `sessionKeyRef`/`sessionSaltRef` (plain refs, updated on every render) purely so the pagehide/unmount flush-save listener — registered once on mount — can read the latest values without re-registering. Losing this state (refresh, tab close) is by design: it is what makes the password required every session.
 - **Styling**: components use inline `style={{ ... }}` extensively alongside the design-system classes (`.card.blueprint.elev-sm`, `.tag`/`.tag-accent`, `.seg`/`.seg-opt`, `.table`, `.nav`, `.field`/`.input`, `.dialog-backdrop`/`.dialog`) — this is a live deviation from the CLAUDE.md styling rule ("Components consume the existing class vocabulary ... rather than inline styles"); most layout/spacing (flex, gap, padding, modal positioning) is inline today, only the visual vocabulary (colors, card chrome, tags, table borders) comes from `styles.css` classes.
+- **Hand-mirrored dual artifact**: `src/lib/pastedTable.ts` (typed ES module) is paired with a root-level `pastedTable.js` (classic-script, `window.PastedTable` global, no `import`/`export`) — one hand-maintained copy of the same logic per runtime, no build step generates one from the other. `pastedTable.js` sits outside `tsconfig.app.json`'s `include`, so it is never typechecked or bundled; parity between the two is enforced entirely at test time by one shared vitest case table (`src/lib/pastedTable.test.ts`) run against both implementations. Editing one copy without the other does not fail `tsc -b` — it only fails that shared-case test suite, so the two files can silently drift until tests are run.
