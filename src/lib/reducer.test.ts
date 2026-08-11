@@ -57,4 +57,14 @@ describe('appReducer', () => {
       expect(closedFromReducer.closedDate).toBe(closedDirect.closedDate)
     })
   })
+
+  describe('SET_ASSET_CLASS_FILTER', () => {
+    it('sets assetClassFilter from action.assetClass', () => {
+      const state: AppState = { ...initialState() }
+
+      const result = appReducer(state, { type: 'SET_ASSET_CLASS_FILTER', assetClass: 'Equity' })
+
+      expect(result.assetClassFilter).toBe('Equity')
+    })
+  })
 })

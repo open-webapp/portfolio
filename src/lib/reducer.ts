@@ -57,7 +57,7 @@ export function appReducer(state: AppState, action: Action): AppState {
       return StateActions.toggleSort(state, action.sortKey)
 
     case 'SET_ASSET_CLASS_FILTER':
-      return StateActions.setAssetClassFilter(state, action.filter)
+      return StateActions.setAssetClassFilter(state, action.assetClass)
 
     case 'SET_POSITIONS_SEARCH':
       return StateActions.setPositionsSearch(state, action.search)
