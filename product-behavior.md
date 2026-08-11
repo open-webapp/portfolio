@@ -6,16 +6,17 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Top to bottom: `Nav` → `OverviewCard` (3-cluster layout) → zero-height divider → category `.seg` tabs → `AllocationChart` (2-column grid) → divider → asset-class filter `.seg` control + "Import" button row → `PositionsTable`.
+Dashboard view, top to bottom: `Nav` → `OverviewCard` (3-cluster layout) → divider block → category `.seg` tabs (All/Taxable/Non-Taxable/Tax-Deferred) → `AllocationChart` (2-column grid) → divider → asset-class filter `.seg` control + "Import" button row → `PositionsTable`. Accounts view: read-only 3-section account summary table (Taxable/Non-Taxable/Tax-Deferred), see "Accounts page" section below.
 
 ## Nav
 
-Nav renders on both the dashboard view and the settings view.
+Nav renders on all views (dashboard, accounts, settings). Single always-visible `.seg` with two tabs:
 
 - **Brand**: `.nav-brand` "Ledger".
-- **Settings tabs** (radio-style `.seg`, settings view only): "Google Drive" / "Encryption" — switches which card `SettingsPage` shows. Resets to "Google Drive" every time Settings is opened via the gear button, regardless of which tab was last selected.
-- **Sync Now icon button** (refresh icon, `title="Sync now"`): shown only when Drive is connected (`driveReady`); disabled while a sync is in progress (`syncing`). Positioned between the tabs and the settings gear. Triggers the same sync action as the Settings page's own "Sync Now" button.
-- **Settings gear** (SVG icon): navigates to the Settings page, resetting the settings tab selection to "Google Drive" on every open.
+- **Dashboard tab**: labeled "Dashboard", active when `state.view === 'dashboard'`, dispatches `SET_VIEW` on click.
+- **Accounts tab**: labeled "Accounts", active when `state.view === 'accounts'`, dispatches `SET_VIEW` on click. Neither tab is active when viewing Settings.
+- **Sync Now icon button** (refresh icon, `title="Sync now"`): shown only when Drive is connected (`driveReady`); disabled while a sync is in progress (`syncing`). Triggers the same sync action as the Settings page's own "Sync Now" button.
+- **Settings gear** (SVG icon): navigates to the Settings page (resets `settingsSection` to "Google Drive" on every open).
 
 ## Overview card
 
@@ -50,6 +51,18 @@ Rows are **aggregate groups** — each row represents a unique combination of sy
 - Always sorted by date descending — no user-controlled sort.
 - Columns: Date (formatted `MMM D, YYYY`), Symbol, Type (colored tag: Buy=accent, Sell=outline, Dividend=neutral, anything else=neutral), Shares, Cost Basis, Amount Invested, Taxes (formatted USD or `—` if null), Position Link.
 - **Position Link**: shows an "UNMATCHED" outline tag (with a tooltip explaining "likely fully sold or removed") when the transaction's symbol has no corresponding open `Position` among accounts in the current category; otherwise shows plain "Linked" text. This is purely derived per render — no stored flag.
+
+## Accounts page
+
+Read-only summary view accessed via the "Accounts" tab in the Nav. Displays all accounts organized into 3 sections (Taxable / Non-Taxable / Tax-Deferred order), each as a `.card.blueprint.elev-sm` card with corner marks:
+
+- **Section card** (per tax category): `.card-title` shows the category label; 5-column `.table` with headers "Financial Institution" (left-aligned) / "Account" (left-aligned) / "Cash" (right-aligned) / "Investment" (right-aligned) / "Total" (right-aligned).
+  - **Rows**: one per account in that category. Account Name format: `"{name} ({accountNumber})"` (account number included even if empty). Institution column shows the account's institution value (or empty if not set). Cash/Investment/Total display as formatted USD.
+  - **Subtotal row** (`<tfoot>`): "Subtotal" label (uppercase, bold, 12px font) spans Institution and Account columns (`colSpan=2`); Cash/Investment/Total show summed formatted USD; Grand Total colored `var(--color-accent-700)` and bold.
+  - **Cash vs. Investment split**: determined by `position.symbol.toLowerCase() === 'cash'` — positions matching this condition contribute to the Cash column sum; all others contribute to Investment column sum. The sum of Cash + Investment equals the Total.
+  - **Empty-category message** (`.text-muted`, 12px font): "No accounts in this category." displays instead of a table if the section has zero accounts.
+- **Dividers**: a divider (styled as `height: var(--space-6), border-bottom: 1px solid var(--color-divider), margin-bottom: var(--space-5)`) renders between sections 1-2 and 2-3, but not after the last (Deferred) section.
+- **No account creation/editing**: account CRUD operations remain in the CSV import flow (new-account form at import time); this page is read-only display only.
 
 ## CSV import (Positions / Transactions)
 
@@ -86,13 +99,13 @@ Full-replacement gate screen (`PasswordGate`) rendered by `App.tsx` in place of 
 
 ## Settings page
 
-A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Two mutually-exclusive sections, switched via the Nav's settings seg tabs ("Google Drive" / "Encryption") rather than both rendering stacked — only one section's card is visible at a time.
+A dedicated page accessed via the gear button in the Nav. Two mutually-exclusive sections (Google Drive Sync / Change Encryption Password), switched via a `.seg` tab control at the top of the page's content — only one section's card is visible at a time. The tab-seg is followed by a `.hr` divider.
 
-Google Drive Sync (`settingsSection === 'drive'`) or Change Password (`settingsSection === 'encryption'`):
-- **Google Drive Sync**: connection state shown by the button set. Not connected → **Connect Drive** (`.btn.btn-primary`). Connected → **Sync Now** (`.btn.btn-primary`, calls `syncBackup(state, sessionKey, sessionSalt)`), **Restore from Drive** (`.btn.btn-secondary`, native confirm then `restoreBackup(sessionKey)` + dispatches `__SET_STATE` on success), **Disconnect** (`.btn.btn-secondary`, calls `disconnectDrive()` and flips back to not-connected). Buttons show an "-ing" label while busy. When connected AND a backup file exists (found on page load via `getBackupFileId()`, or set by the last successful sync), a **View backup in Google Drive** link appears below the buttons — opens `https://drive.google.com/file/d/{fileId}/view` in a new tab. No link while not connected or before any sync. **Auth-token behavior**: Sync/Restore validate the cached token before any Drive I/O. A still-valid token (not expired, scopes complete) is reused without prompting; only an expired or missing token triggers the interactive Google auth window, and never more than one window at a time (in-flight guard) even if sync/restore is triggered rapidly. `getBackupFileId()` is a passive page-load probe and never opens Google auth — an expired token just hides the backup link until the next successful sync/connect. **Cross-password restore**: if the fetched Drive backup was encrypted under a different password than the current session (`restoreBackup` throws `DriveDecryptError`), a small inline prompt appears below the buttons (not the full gate, not `window.confirm`) asking for that backup's password; submitting re-derives a key against the backup's own salt and decrypts locally (no second Drive round-trip) — on success the app adopts that key as the session-wide key going forward and dispatches `__SET_STATE` with the decrypted data. Wrong password shows an inline "Incorrect password" error; "Cancel" dismisses the prompt with no changes.
-- **Change Password**: "Current Password", "New Password", "Confirm New Password" fields + a "Change Password" button. Verifies the current password by attempting a real decrypt of the stored data; wrong current password shows "Current password is incorrect" and stops. New password follows the same 6-char-minimum/must-match rules as the set-password screen. On success: generates a **fresh salt** (rotated on every change, never reused), re-derives a key, re-encrypts and saves the local IndexedDB copy under the new key+salt, then — only if Google Drive is currently connected — re-syncs the Drive backup under the new key too. If that Drive re-sync fails, a non-blocking inline warning is shown ("Password changed locally, but Drive re-sync failed... Sync manually...") but **the local password change is not rolled back**. On success the app adopts the new key as the session-wide key going forward.
+- **Tab-seg** (top of content): "Google Drive" / "Encryption" tabs, active per `settingsSection`, each dispatches `setSettingsSection` on click. Resets to "Google Drive" every time Settings is opened via the gear button.
+- **Google Drive Sync** (`settingsSection === 'drive'`): connection state shown by the button set. Not connected → **Connect Drive** (`.btn.btn-primary`). Connected → **Sync Now** (`.btn.btn-primary`, calls `syncBackup(state, sessionKey, sessionSalt)`), **Restore from Drive** (`.btn.btn-secondary`, native confirm then `restoreBackup(sessionKey)` + dispatches `__SET_STATE` on success), **Disconnect** (`.btn.btn-secondary`, calls `disconnectDrive()` and flips back to not-connected). Buttons show an "-ing" label while busy. When connected AND a backup file exists (found on page load via `getBackupFileId()`, or set by the last successful sync), a **View backup in Google Drive** link appears below the buttons — opens `https://drive.google.com/file/d/{fileId}/view` in a new tab. No link while not connected or before any sync. **Auth-token behavior**: Sync/Restore validate the cached token before any Drive I/O. A still-valid token (not expired, scopes complete) is reused without prompting; only an expired or missing token triggers the interactive Google auth window, and never more than one window at a time (in-flight guard) even if sync/restore is triggered rapidly. `getBackupFileId()` is a passive page-load probe and never opens Google auth — an expired token just hides the backup link until the next successful sync/connect. **Cross-password restore**: if the fetched Drive backup was encrypted under a different password than the current session (`restoreBackup` throws `DriveDecryptError`), a small inline prompt appears below the buttons (not the full gate, not `window.confirm`) asking for that backup's password; submitting re-derives a key against the backup's own salt and decrypts locally (no second Drive round-trip) — on success the app adopts that key as the session-wide key going forward and dispatches `__SET_STATE` with the decrypted data. Wrong password shows an inline "Incorrect password" error; "Cancel" dismisses the prompt with no changes.
+- **Change Password** (`settingsSection === 'encryption'`): "Current Password", "New Password", "Confirm New Password" fields + a "Change Password" button. Verifies the current password by attempting a real decrypt of the stored data; wrong current password shows "Current password is incorrect" and stops. New password follows the same 6-char-minimum/must-match rules as the set-password screen. On success: generates a **fresh salt** (rotated on every change, never reused), re-derives a key, re-encrypts and saves the local IndexedDB copy under the new key+salt, then — only if Google Drive is currently connected — re-syncs the Drive backup under the new key too. If that Drive re-sync fails, a non-blocking inline warning is shown ("Password changed locally, but Drive re-sync failed... Sync manually...") but **the local password change is not rolled back**. On success the app adopts the new key as the session-wide key going forward.
 
-**Back button**: "Back to Dashboard" (`.btn.btn-secondary`), below a `.hr` divider at the bottom of the page. Returns to the dashboard — same effect as before, though the button now lives at the bottom of the settings page content itself rather than being a separately-positioned page element.
+Navigation back to the dashboard occurs via the Nav's Dashboard tab (no separate Back button or navigation affordance in Settings page content).
 
 ## Formatting conventions
 
