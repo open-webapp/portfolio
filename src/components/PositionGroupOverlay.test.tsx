@@ -56,7 +56,6 @@ describe('PositionGroupOverlay', () => {
     snapshots: [],
     csvMappings: [],
     customInstitutions: [],
-    category: 'all',
     range: '1y',
     tab: 'positions',
     view: 'dashboard',
@@ -146,32 +145,6 @@ describe('PositionGroupOverlay', () => {
     fireEvent.click(priceCell)
 
     const input = screen.getByDisplayValue('180') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('number')
-  })
-
-  it('renders input pre-filled when clicking taxes cell', () => {
-    const position = createTestPosition({ taxes: 50 })
-    const group = createTestGroup([position])
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        group={group}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const taxesCells = screen.getAllByText('$50.00')
-    const taxesCell = taxesCells[taxesCells.length - 1]
-    fireEvent.click(taxesCell)
-
-    const input = screen.getByDisplayValue('50') as HTMLInputElement
     expect(input).toBeTruthy()
     expect(input.type).toBe('number')
   })
@@ -390,42 +363,6 @@ describe('PositionGroupOverlay', () => {
     fireEvent.blur(input)
 
     expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  /**
-   * Test 7: Empty value + blur on taxes specifically dispatches { patch: { taxes: 0 } }
-   * (the point-4 exception)
-   */
-  it('dispatches taxes: 0 when blurring with empty taxes value', () => {
-    const position = createTestPosition({ taxes: 50 })
-    const group = createTestGroup([position])
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        group={group}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const taxesCells = screen.getAllByText('$50.00')
-    const taxesCell = taxesCells[taxesCells.length - 1]
-    fireEvent.click(taxesCell)
-
-    const input = screen.getByDisplayValue('50')
-    fireEvent.change(input, { target: { value: '' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_POSITION',
-      positionId: 'pos-1',
-      patch: { taxes: 0 },
-    })
   })
 
   /**

@@ -1,5 +1,5 @@
 import type { AppState } from './state'
-import type { Position, Transaction, Account } from './types'
+import type { Position, Transaction } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './computations'
 
