@@ -60,19 +60,6 @@ const connectedAuthStatus: driveModule.DriveAuthStatus = {
   tokenValid: true,
 }
 
-async function clickSettingsTab(tabName: 'General') {
-  const span = screen.getByText(tabName)
-  const label = span.closest('label')
-  if (!label) throw new Error(`Could not find tab label: ${tabName}`)
-  fireEvent.click(label)
-  // Wait for the tab to become checked
-  await waitFor(() => {
-    const radio = label.querySelector('input[type="radio"]')
-    if (!radio) throw new Error(`Could not find radio input in tab label: ${tabName}`)
-    expect((radio as HTMLInputElement).checked).toBe(true)
-  })
-}
-
 describe('SettingsPage', () => {
   let sessionSalt: Uint8Array
   let sessionKey: CryptoKey

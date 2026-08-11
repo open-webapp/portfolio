@@ -322,8 +322,8 @@ describe('ImportDialog (2-step wizard)', () => {
 
     expect(document.querySelectorAll('table')).toHaveLength(1)
     const ths = document.querySelectorAll('table thead th')
-    expect(ths).toHaveLength(10)
-    expect(document.querySelectorAll('table thead th select')).toHaveLength(8)
+    expect(ths).toHaveLength(9)
+    expect(document.querySelectorAll('table thead th select')).toHaveLength(7)
     expect(ths[0].querySelector('div')).toBeNull()
 
     const labelTexts = Array.from(ths).map((th) => th.querySelector('div')?.textContent?.trim())
@@ -336,7 +336,6 @@ describe('ImportDialog (2-step wizard)', () => {
       'Price*',
       'Market Value*',
       'Name',
-      'Taxes',
     ])
 
     const expectedOptions = ['— Not mapped —', ...POS_HEADERS]
@@ -608,7 +607,7 @@ describe('ImportDialog (2-step wizard)', () => {
     await advanceToStep2()
 
     const selects = Array.from(document.querySelectorAll('select'))
-    expect(selects).toHaveLength(8)
+    expect(selects).toHaveLength(7)
 
     const expectedOptions = ['— Not mapped —', ...POS_HEADERS]
     const allOptions = Array.from(document.querySelectorAll('table option')).map((o) => o.textContent)
