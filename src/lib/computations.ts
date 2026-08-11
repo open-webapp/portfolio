@@ -33,9 +33,6 @@ export function fmtPortfolioPercent(value: number, total: number): string {
 /**
  * Compute derived fields for a position.
  * Adds: marketValue, costBasis, gl (gain/loss), glPct (return percentage)
- *
- * Note: taxes field is stored on Position but never used in calculations.
- * All formulas use only shares, price, and avgCost. Taxes are display-only.
  */
 export function computePosition(p: Position): Position & {
   marketValue: number
@@ -60,9 +57,6 @@ export function computePosition(p: Position): Position & {
 /**
  * Group positions by asset class and calculate allocation percentages.
  * Returns entries sorted by market value descending.
- *
- * Note: Allocation calculation uses only marketValue (shares * price) and ignores taxes field.
- * Allocation percentages are pure market-based metrics, not tax-adjusted.
  */
 export function allocationByAssetClass(
   positions: Position[]

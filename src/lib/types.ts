@@ -1,5 +1,3 @@
-export type TaxCategory = 'taxable' | 'nonTaxable' | 'taxDeferred'
-
 export type AssetClass =
   | 'Equity' | 'ETF' | 'Mutual Fund' | 'Fixed Income' | 'Crypto' | 'Cash' | 'Other'
 
@@ -8,7 +6,6 @@ export interface Account {
   accountNumber: string
   name: string
   institution: string
-  taxCategory: TaxCategory
   retirement: boolean
   createdAt: string
 }
@@ -31,7 +28,6 @@ export interface Position {
   shares: number
   avgCost: number
   price: number
-  taxes: number | null
   lastImportedAt: string
 }
 
@@ -55,7 +51,6 @@ export interface Transaction {
   shares: number
   price: number
   amount: number
-  taxes: number | null
   importedAt: string
 }
 
@@ -78,7 +73,7 @@ export const POSITIONS_REQUIRED_FIELDS = [
 
 export const AVGCOST_FIELDS = ['avgCost', 'purchaseAmount'] as const
 export const PRICE_FIELDS = ['price', 'marketValue'] as const
-export const POSITIONS_OPTIONAL_FIELDS = ['name', 'taxes'] as const
+export const POSITIONS_OPTIONAL_FIELDS = ['name'] as const
 
 export const TRANSACTIONS_REQUIRED_FIELDS = ['date', 'symbol', 'type', 'shares', 'price', 'amount'] as const
-export const TRANSACTIONS_OPTIONAL_FIELDS = ['taxes'] as const
+export const TRANSACTIONS_OPTIONAL_FIELDS = [] as const

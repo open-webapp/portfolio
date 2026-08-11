@@ -8,8 +8,7 @@ export interface SummaryCardsProps {
 /**
  * Renders all summary cards in a single row of equal columns using design
  * system styling. Each card displays: label + formatted value + optional
- * change indicator. All 5 cards (including Total Taxes Paid) share one row,
- * shrinking to fit (5 × 1fr).
+ * change indicator.
  */
 export function SummaryCards({ state }: SummaryCardsProps) {
   const cards = summaryCards(state)

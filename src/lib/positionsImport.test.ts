@@ -8,14 +8,12 @@ import { uid } from './seed'
 function createTestAccount(
   accountNumber: string,
   name: string,
-  taxCategory: 'taxable' | 'taxDeferred' | 'nonTaxable',
   retirement: boolean
 ): Account {
   return {
     id: uid('acc'),
     accountNumber,
     name,
-    taxCategory,
     retirement,
     createdAt: new Date().toISOString(),
   }
@@ -26,7 +24,7 @@ describe('positionsImport', () => {
   it('Test 1: Re-importing replaces all positions for an account', () => {
     // Setup: Create an account and initial positions
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Add initial positions
@@ -84,7 +82,7 @@ describe('positionsImport', () => {
   // Test 2: Symbol present in old snapshot but absent from new import → ClosedPosition created
   it('Test 2: Missing symbol in new import creates ClosedPosition', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     state.positions = [
@@ -141,7 +139,7 @@ describe('positionsImport', () => {
   // Test 3: Symbol in both old and new → NOT added to closedPositions, assetClassManualOverride survives
   it('Test 3: Symbol in both old and new preserves assetClassManualOverride', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     state.positions = [
@@ -185,7 +183,7 @@ describe('positionsImport', () => {
   // Test 4: Importing for account A on date D upserts exactly one PortfolioSnapshot keyed (A, D)
   it('Test 4: Importing upserts exactly one PortfolioSnapshot for (accountId, date)', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     const newRows = [
@@ -223,7 +221,7 @@ describe('positionsImport', () => {
   // Test 5: Re-importing for account A on SAME date D replaces (not duplicates) snapshot
   it('Test 5: Re-importing same account on same date replaces snapshot', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // First import
@@ -267,8 +265,8 @@ describe('positionsImport', () => {
   // Test 6: Single CSV spanning multiple accounts → two snapshots, one per account, each valued from that account's rows
   it('Test 6: Multiple accounts in one import creates snapshot per account', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
-    state = addAccount(state, createTestAccount('ACC-002', 'Account 2', 'taxDeferred', true))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+    state = addAccount(state, createTestAccount('ACC-002', 'Account 2', true))
 
     const accountId1 = state.accounts.find((a) => a.accountNumber === 'ACC-001')!.id
     const accountId2 = state.accounts.find((a) => a.accountNumber === 'ACC-002')!.id
@@ -319,7 +317,7 @@ describe('positionsImport', () => {
   // Test 7: Importing for account with zero prior positions → zero closed positions, still upserts snapshot
   it('Test 7: Importing to account with no prior positions creates snapshot', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // No prior positions
@@ -350,7 +348,7 @@ describe('positionsImport', () => {
   // Test 8: Realized G/L: matching Sell transaction(s) → realizedGL computed, realizedGLBasis='transactions'
   it('Test 8: Realized G/L computed from Sell transactions', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Add position and sell transaction
@@ -399,7 +397,7 @@ describe('positionsImport', () => {
   // Test 9: Realized G/L: no matching Sell → realizedGL=null, realizedGLBasis='unknown'
   it('Test 9: Realized G/L set to null when no Sell transactions', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Add position (no sell transactions)
@@ -434,7 +432,7 @@ describe('positionsImport', () => {
   // Additional test: Case-insensitive transaction type matching
   it('Correctly matches Sell transactions regardless of case', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     state.positions = [
@@ -477,7 +475,7 @@ describe('positionsImport', () => {
   // Additional test: Multiple Sell transactions for same symbol sum correctly
   it('Realized G/L sums multiple Sell transactions for same symbol', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     state.positions = [
@@ -531,8 +529,8 @@ describe('positionsImport', () => {
   // Additional test: Does not affect other accounts
   it('Importing positions for one account does not affect other accounts', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
-    state = addAccount(state, createTestAccount('ACC-002', 'Account 2', 'taxDeferred', true))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+    state = addAccount(state, createTestAccount('ACC-002', 'Account 2', true))
 
     const accountId1 = state.accounts.find((a) => a.accountNumber === 'ACC-001')!.id
     const accountId2 = state.accounts.find((a) => a.accountNumber === 'ACC-002')!.id
@@ -577,7 +575,7 @@ describe('positionsImport', () => {
   // Test 1: avgCost computed from purchaseAmount when avgCost is missing
   it('Test: avgCost computed from purchaseAmount when avgCost missing', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Import row with purchaseAmount but no avgCost
@@ -603,7 +601,7 @@ describe('positionsImport', () => {
   // Test 2: price computed from marketValue when price is missing
   it('Test: price computed from marketValue when price missing', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Import row with marketValue but no price
@@ -629,7 +627,7 @@ describe('positionsImport', () => {
   // Test 3: avgCost prefers direct value over purchaseAmount
   it('Test: avgCost prefers direct value over purchaseAmount', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Import row with both avgCost and purchaseAmount
@@ -655,7 +653,7 @@ describe('positionsImport', () => {
   // Test 4: price prefers direct value over marketValue
   it('Test: price prefers direct value over marketValue', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Import row with both price and marketValue
@@ -681,7 +679,7 @@ describe('positionsImport', () => {
   // Task 8: Test 1 - Import position with no name column mapped
   it('Test 8.1: Import position with no name column mapped', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Import row without name (undefined)
@@ -703,62 +701,10 @@ describe('positionsImport', () => {
     expect(aapl!.name).toBeNull()
   })
 
-  // Task 8: Test 2 - Import position with taxes column mapped
-  it('Test 8.2: Import position with taxes column mapped', () => {
-    let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
-    const accountId = state.accounts[0].id
-
-    // Import row with taxes mapped
-    const newRows = [
-      {
-        symbol: 'MSFT',
-        name: 'Microsoft Corp.',
-        assetClass: 'Equity',
-        shares: '50',
-        avgCost: '300',
-        price: '400',
-        taxes: '50.25',
-      },
-    ]
-
-    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test18')
-
-    const msft = result.positions.find((p) => p.symbol === 'MSFT')
-    expect(msft).toBeDefined()
-    expect(msft!.taxes).toBe(50.25)
-  })
-
-  // Task 8: Test 3 - Import position with no taxes column mapped
-  it('Test 8.3: Import position with no taxes column mapped', () => {
-    let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
-    const accountId = state.accounts[0].id
-
-    // Import row without taxes (undefined)
-    const newRows = [
-      {
-        symbol: 'GOOGL',
-        name: 'Alphabet Inc.',
-        assetClass: 'Equity',
-        shares: '25',
-        avgCost: '2000',
-        price: '2500',
-        // taxes is not provided
-      },
-    ]
-
-    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test19')
-
-    const googl = result.positions.find((p) => p.symbol === 'GOOGL')
-    expect(googl).toBeDefined()
-    expect(googl!.taxes).toBeNull()
-  })
-
   // Task 8: Test 4 - ClosedPosition inherits null name
   it('Test 8.4: ClosedPosition inherits null name', () => {
     let state = initialState()
-    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', 'taxable', false))
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
     const accountId = state.accounts[0].id
 
     // Add old position with name=null

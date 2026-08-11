@@ -7,32 +7,15 @@ export interface NavProps {
 }
 
 /**
- * Nav component: category tabs and date range select.
+ * Nav component: date range select.
  */
 export function Nav({ state, dispatch }: NavProps) {
-  const categoryTabs = [
-    { value: 'all', label: 'All' },
-    { value: 'taxable', label: 'Taxable' },
-    { value: 'nonTaxable', label: 'Non-Taxable' },
-    { value: 'taxDeferred', label: 'Tax-Deferred' },
-  ]
-
   const rangeOptions = [
     { value: '6m', label: '6 Months' },
     { value: '1y', label: '1 Year' },
     { value: 'ytd', label: 'YTD' },
     { value: 'all', label: 'All' },
   ]
-
-  const handleCategoryChange = useCallback(
-    (category: 'all' | 'taxable' | 'nonTaxable' | 'taxDeferred') => {
-      dispatch({
-        type: 'SET_CATEGORY',
-        category,
-      })
-    },
-    [dispatch]
-  )
 
   const handleRangeChange = useCallback(
     (range: string) => {
@@ -54,29 +37,6 @@ export function Nav({ state, dispatch }: NavProps) {
       }}
     >
       <div className="nav-brand">Ledger</div>
-
-      {/* Category tabs */}
-      <div className="seg">
-        {categoryTabs.map((tab) => (
-          <label
-            key={tab.value}
-            className="seg-opt"
-            onClick={() =>
-              handleCategoryChange(
-                tab.value as 'all' | 'taxable' | 'nonTaxable' | 'taxDeferred'
-              )
-            }
-          >
-            <input
-              type="radio"
-              name="category"
-              checked={state.category === tab.value}
-              readOnly
-            />
-            <span>{tab.label}</span>
-          </label>
-        ))}
-      </div>
 
       {/* Date range select */}
       <select

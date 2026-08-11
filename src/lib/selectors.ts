@@ -9,11 +9,7 @@ import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './compu
  * and sorts by the current sortKey/sortDir.
  */
 export function visiblePositions(state: AppState): Position[] {
-  // Start with all positions for accounts in the selected category
-  const accountsInCategory = getAccountsForCategory(state)
-  let results = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
+  let results = state.positions
 
   // Apply retirement filter
   if (state.retirementFilter === 'Retirement') {
@@ -54,17 +50,13 @@ export function visiblePositions(state: AppState): Position[] {
 }
 
 /**
- * Compute total market value of positions filtered by category and retirement status.
+ * Compute total market value of positions filtered by retirement status.
  * This is the denominator for portfolio percentage calculations.
- * Does NOT apply asset-class or search filters — only category and retirement filters.
+ * Does NOT apply asset-class or search filters — only retirement filters.
  * Returns the sum of all filtered positions' market values (can be zero, negative, or positive).
  */
 export function filteredPortfolioTotal(state: AppState): number {
-  // Start with all positions for accounts in the selected category
-  const accountsInCategory = getAccountsForCategory(state)
-  let results = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
+  let results = state.positions
 
   // Apply retirement filter (same logic as visiblePositions)
   if (state.retirementFilter === 'Retirement') {
@@ -88,11 +80,7 @@ export function filteredPortfolioTotal(state: AppState): number {
  * Applies type filter (or 'All' for everything) and search on symbol/date (case-insensitive).
  */
 export function visibleTransactions(state: AppState): Transaction[] {
-  // Start with all transactions for accounts in the selected category
-  const accountsInCategory = getAccountsForCategory(state)
-  let results = state.transactions.filter((t) =>
-    accountsInCategory.some((a) => a.id === t.accountId)
-  )
+  let results = state.transactions
 
   // Apply type filter
   if (state.txTypeFilter !== 'All') {
@@ -117,7 +105,7 @@ export function visibleTransactions(state: AppState): Transaction[] {
 /**
  * Generate a time series of portfolio values by date.
  * Groups snapshots by date and sums market value across the specified account set.
- * If accountIds not provided, uses all accounts in the selected category.
+ * If accountIds not provided, uses all accounts.
  */
 export function totalValueSeries(
   state: AppState,
@@ -126,7 +114,7 @@ export function totalValueSeries(
   // Determine which accounts to include
   const targetAccountIds = accountIds
     ? new Set(accountIds)
-    : new Set(getAccountsForCategory(state).map((a) => a.id))
+    : new Set(state.accounts.map((a) => a.id))
 
   // Group snapshots by date and sum values
   const byDate: Record<string, number> = {}
@@ -145,20 +133,7 @@ export function totalValueSeries(
 }
 
 /**
- * Compute total taxes paid across all transactions in the current category.
- * Treats null taxes values as 0 in aggregation.
- */
-export function totalTaxesPaid(state: AppState): number {
-  const accountsInCategory = getAccountsForCategory(state)
-  const transactionsInCategory = state.transactions.filter((t) =>
-    accountsInCategory.some((a) => a.id === t.accountId)
-  )
-  return transactionsInCategory.reduce((sum, t) => sum + (t.taxes ?? 0), 0)
-}
-
-/**
- * Generate summary cards for Total Value, Day Change, Total Gain/Loss, Cost Basis, and Total Taxes Paid.
- * All values are for positions in the currently-selected category's accounts.
+ * Generate summary cards for Total Value, Day Change, Total Gain/Loss, and Amount Invested.
  * Returns cards with formatted values, colors, and optional sub-values (percentages).
  */
 export function summaryCards(
@@ -172,13 +147,8 @@ export function summaryCards(
   const GAIN = 'var(--color-accent-700)'
   const LOSS = '#8a3c2e'
 
-  const accountsInCategory = getAccountsForCategory(state)
-  const positionsInCategory = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
-
   // Total Value: sum of all open positions' market value
-  const totalValue = positionsInCategory.reduce((sum, p) => {
+  const totalValue = state.positions.reduce((sum, p) => {
     return sum + p.shares * p.price
   }, 0)
 
@@ -197,24 +167,19 @@ export function summaryCards(
   }
 
   // Total Gain/Loss: sum of all positions' gl
-  // Note: GL calculation uses only shares, price, and avgCost. Taxes field is not included.
-  const totalGL = positionsInCategory.reduce((sum, p) => {
+  const totalGL = state.positions.reduce((sum, p) => {
     const marketValue = p.shares * p.price
     const costBasis = p.shares * p.avgCost
     return sum + (marketValue - costBasis)
   }, 0)
 
   // Cost Basis: sum of all positions' costBasis
-  // Note: Cost basis calculation uses only shares and avgCost. Taxes field is not included.
-  const costBasis = positionsInCategory.reduce((sum, p) => {
+  const costBasis = state.positions.reduce((sum, p) => {
     return sum + p.shares * p.avgCost
   }, 0)
 
   // Total GL percentage (for the sub field)
   const totalGLPct = costBasis === 0 ? 0 : (totalGL / costBasis) * 100
-
-  // Total Taxes Paid: sum of all transaction taxes in the category
-  const totalTaxes = totalTaxesPaid(state)
 
   return [
     {
@@ -237,11 +202,6 @@ export function summaryCards(
       label: 'Amount Invested',
       value: fmtUSD(costBasis),
       color: 'var(--color-text)'
-    },
-    {
-      label: 'Total Taxes Paid',
-      value: fmtUSD(totalTaxes),
-      color: 'var(--color-text)'
     }
   ]
 }
@@ -249,20 +209,13 @@ export function summaryCards(
 /**
  * Generate allocation bars by asset class.
  * Uses the computations.allocationByAssetClass() helper and formats values.
- * Note: Allocation percentages are market-value based and do not include taxes.
  */
 export function allocationBars(
   state: AppState
 ): Array<{ label: string; value: string; pct: string }> {
-  const accountsInCategory = getAccountsForCategory(state)
-  const positionsInCategory = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
-
   // Use the allocationByAssetClass helper (respects manual overrides)
-  // Note: taxes field is not used in allocation calculations
   const allocationData = allocationByAssetClass(
-    positionsInCategory.map((p) => ({
+    state.positions.map((p) => ({
       ...p,
       assetClass: p.assetClassManualOverride || p.assetClass
     }))
@@ -349,13 +302,3 @@ export function performanceLinePoints(state: AppState, range: string): string {
   return points.join(' ')
 }
 
-/**
- * Get all accounts that match the currently-selected category filter.
- * Returns all accounts if category is 'all'.
- */
-function getAccountsForCategory(state: AppState): Account[] {
-  if (state.category === 'all') {
-    return state.accounts
-  }
-  return state.accounts.filter((a) => a.taxCategory === state.category)
-}

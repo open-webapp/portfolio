@@ -44,9 +44,6 @@ export function appReducer(state: AppState, action: Action): AppState {
       return StateActions.deleteClosedPosition(state, action.id)
 
     // Filters
-    case 'SET_CATEGORY':
-      return StateActions.setCategory(state, action.category)
-
     case 'SET_RANGE':
       return StateActions.setRange(state, action.range)
 

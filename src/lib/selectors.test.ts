@@ -7,7 +7,6 @@ import {
   summaryCards,
   allocationBars,
   performanceLinePoints,
-  totalTaxesPaid,
   filteredPortfolioTotal
 } from './selectors'
 import { AppState, initialState } from './state'
@@ -26,8 +25,7 @@ describe('selectors', () => {
   const testAccount1: Account = {
     id: 'acc-1',
     accountNumber: '12345',
-    name: 'Taxable Brokerage',
-    taxCategory: 'taxable',
+    name: 'Brokerage',
     retirement: false,
     createdAt: '2026-01-01'
   }
@@ -36,7 +34,6 @@ describe('selectors', () => {
     id: 'acc-2',
     accountNumber: '67890',
     name: 'Retirement IRA',
-    taxCategory: 'nonTaxable',
     retirement: true,
     createdAt: '2026-01-01'
   }
@@ -72,7 +69,6 @@ describe('selectors', () => {
       accounts: [testAccount1],
       positions,
       assetClassFilter: 'All',
-      category: 'all'
     })
 
     const visible = visiblePositions(state)
@@ -124,7 +120,6 @@ describe('selectors', () => {
       accounts: [testAccount1],
       positions,
       assetClassFilter: 'Equity',
-      category: 'all'
     })
 
     const visible = visiblePositions(state)
@@ -177,7 +172,6 @@ describe('selectors', () => {
       positions,
       assetClassFilter: 'All',
       posSearch: 'micro',
-      category: 'all'
     })
 
     const visible = visiblePositions(state)
@@ -229,7 +223,6 @@ describe('selectors', () => {
       transactions,
       txTypeFilter: 'Buy',
       txSearch: 'aapl',
-      category: 'all'
     })
 
     const visible = visibleTransactions(state)
@@ -265,7 +258,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1, testAccount2],
       snapshots,
-      category: 'all'
     })
 
     const series = totalValueSeries(state)
@@ -310,7 +302,6 @@ describe('selectors', () => {
       accounts: [testAccount1],
       positions,
       snapshots,
-      category: 'all'
     })
 
     const cards = summaryCards(state)
@@ -337,7 +328,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1],
       snapshots,
-      category: 'all'
     })
 
     const points = performanceLinePoints(state, '1y')
@@ -373,7 +363,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1],
       snapshots,
-      category: 'all'
     })
 
     const points = performanceLinePoints(state, '1y')
@@ -407,53 +396,11 @@ describe('selectors', () => {
       accounts: [testAccount1],
       positions,
       assetClassFilter: 'ETF',
-      category: 'all'
     })
 
     const visible = visiblePositions(state)
 
     expect(visible).toHaveLength(1)
-  })
-
-  // Test: Category filtering
-  it('visiblePositions: respects category filter', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 100,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 50,
-        avgCost: 300,
-        price: 400,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions,
-      category: 'taxable', // Only taxable accounts
-      assetClassFilter: 'All'
-    })
-
-    const visible = visiblePositions(state)
-
-    // Should only see AAPL from taxable account
-    expect(visible).toHaveLength(1)
-    expect(visible[0].symbol).toBe('AAPL')
   })
 
   // Test: Retirement filter
@@ -486,7 +433,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1, testAccount2],
       positions,
-      category: 'all',
       assetClassFilter: 'All',
       retirementFilter: 'Retirement' // Only retirement accounts
     })
@@ -518,7 +464,6 @@ describe('selectors', () => {
       accounts: [testAccount1],
       positions,
       snapshots: [],
-      category: 'all'
     })
 
     const cards = summaryCards(state)
@@ -557,7 +502,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1],
       positions,
-      category: 'all'
     })
 
     const bars = allocationBars(state)
@@ -616,7 +560,6 @@ describe('selectors', () => {
       accounts: [testAccount1],
       positions,
       assetClassFilter: 'All',
-      category: 'all',
       sortKey: 'symbol',
       sortDir: 'asc'
     })
@@ -627,150 +570,8 @@ describe('selectors', () => {
     expect(visible[1].symbol).toBe('ZZZA')
   })
 
-  // Test: totalTaxesPaid selector computes correct sum
-  it('totalTaxesPaid: sums all taxes from transactions in category', () => {
-    const transactions: Transaction[] = [
-      {
-        id: 'tx-1',
-        accountId: 'acc-1',
-        date: '2026-08-01',
-        symbol: 'AAPL',
-        type: 'Dividend',
-        shares: 0,
-        price: 0,
-        amount: 100,
-        taxes: 15,
-        importedAt: '2026-08-01'
-      },
-      {
-        id: 'tx-2',
-        accountId: 'acc-1',
-        date: '2026-08-02',
-        symbol: 'MSFT',
-        type: 'Dividend',
-        shares: 0,
-        price: 0,
-        amount: 50,
-        taxes: 7.5,
-        importedAt: '2026-08-02'
-      },
-      {
-        id: 'tx-3',
-        accountId: 'acc-2',
-        date: '2026-08-03',
-        symbol: 'GOOG',
-        type: 'Dividend',
-        shares: 0,
-        price: 0,
-        amount: 200,
-        taxes: 30,
-        importedAt: '2026-08-03'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      transactions,
-      category: 'taxable' // Only taxable accounts
-    })
-
-    const taxes = totalTaxesPaid(state)
-
-    // Should only count taxes from acc-1 (taxable) = 15 + 7.5 = 22.5
-    expect(taxes).toBe(22.5)
-  })
 
   // Test: totalTaxesPaid with null taxes (treated as 0)
-  it('totalTaxesPaid: treats null taxes as 0', () => {
-    const transactions: Transaction[] = [
-      {
-        id: 'tx-1',
-        accountId: 'acc-1',
-        date: '2026-08-01',
-        symbol: 'AAPL',
-        type: 'Buy',
-        shares: 10,
-        price: 150,
-        amount: 1500,
-        taxes: null,
-        importedAt: '2026-08-01'
-      },
-      {
-        id: 'tx-2',
-        accountId: 'acc-1',
-        date: '2026-08-02',
-        symbol: 'MSFT',
-        type: 'Dividend',
-        shares: 0,
-        price: 0,
-        amount: 50,
-        taxes: 10,
-        importedAt: '2026-08-02'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      transactions,
-      category: 'all'
-    })
-
-    const taxes = totalTaxesPaid(state)
-
-    // Should be 0 + 10 = 10
-    expect(taxes).toBe(10)
-  })
-
-  // Test: summaryCards includes Total Taxes Paid card
-  it('summaryCards: includes Total Taxes Paid card', () => {
-    const transactions: Transaction[] = [
-      {
-        id: 'tx-1',
-        accountId: 'acc-1',
-        date: '2026-08-01',
-        symbol: 'AAPL',
-        type: 'Dividend',
-        shares: 0,
-        price: 0,
-        amount: 100,
-        taxes: 20,
-        importedAt: '2026-08-01'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      transactions,
-      category: 'all'
-    })
-
-    const cards = summaryCards(state)
-
-    // Should have 5 cards now (added Total Taxes Paid)
-    expect(cards).toHaveLength(5)
-
-    // Find the Total Taxes Paid card
-    const taxCard = cards.find((c) => c.label === 'Total Taxes Paid')
-    expect(taxCard).toBeDefined()
-    expect(taxCard!.value).toBe('$20.00')
-    expect(taxCard!.color).toBe('var(--color-text)')
-  })
-
-  // Test: summaryCards with zero taxes
-  it('summaryCards: Total Taxes Paid shows $0.00 with no taxes', () => {
-    const state = createTestState({
-      accounts: [testAccount1],
-      transactions: [],
-      category: 'all'
-    })
-
-    const cards = summaryCards(state)
-
-    const taxCard = cards.find((c) => c.label === 'Total Taxes Paid')
-    expect(taxCard).toBeDefined()
-    expect(taxCard!.value).toBe('$0.00')
-  })
-
   // Test: totalValueSeriesInRange 'all' returns the full series unfiltered
   it('totalValueSeriesInRange: "all" returns every snapshot regardless of age', () => {
     const snapshots: PortfolioSnapshot[] = [
@@ -888,85 +689,7 @@ describe('selectors', () => {
     expect(total).toBe(4000)
   })
 
-  // Test 2: filteredPortfolioTotal with Taxable category filter only
-  it('filteredPortfolioTotal: filters by taxable category only', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 5,
-        avgCost: 300,
-        price: 400,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions,
-      category: 'taxable' // Only taxable
-    })
-
-    const total = filteredPortfolioTotal(state)
-
-    // Expected: only acc-1 (taxable) = 10 * 200 = 2000
-    expect(total).toBe(2000)
-  })
-
-  // Test 3: filteredPortfolioTotal with Non-Taxable category filter only
-  it('filteredPortfolioTotal: filters by non-taxable category only', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-2',
-        symbol: 'MSFT',
-        name: 'Microsoft',
-        assetClass: 'Equity',
-        shares: 5,
-        avgCost: 300,
-        price: 400,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions,
-      category: 'nonTaxable' // Only non-taxable
-    })
-
-    const total = filteredPortfolioTotal(state)
-
-    // Expected: only acc-2 (nonTaxable) = 5 * 400 = 2000
-    expect(total).toBe(2000)
-  })
-
-  // Test 4: filteredPortfolioTotal with Retirement filter only
+  // Test 2: filteredPortfolioTotal with Retirement filter only
   it('filteredPortfolioTotal: filters by retirement status only', () => {
     const positions: Position[] = [
       {
@@ -996,7 +719,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1, testAccount2],
       positions,
-      category: 'all',
       retirementFilter: 'Retirement' // Only retirement accounts
     })
 
@@ -1036,7 +758,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1, testAccount2],
       positions,
-      category: 'all',
       retirementFilter: 'Non-Retirement' // Only non-retirement accounts
     })
 
@@ -1106,35 +827,7 @@ describe('selectors', () => {
     expect(total).toBe(2000)
   })
 
-  // Test 7: filteredPortfolioTotal with zero total edge case
-  it('filteredPortfolioTotal: returns zero when no matching positions', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions,
-      category: 'nonTaxable' // No positions in this category
-    })
-
-    const total = filteredPortfolioTotal(state)
-
-    // Expected: 0 (no positions match)
-    expect(total).toBe(0)
-  })
-
-  // Test 8: filteredPortfolioTotal with negative position market value (short position)
+  // Test 7: filteredPortfolioTotal with negative position market value (short position)
   it('filteredPortfolioTotal: includes negative market values in sum', () => {
     const positions: Position[] = [
       {
@@ -1164,7 +857,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1],
       positions,
-      category: 'all'
     })
 
     const total = filteredPortfolioTotal(state)
@@ -1192,7 +884,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1],
       positions,
-      category: 'all'
     })
 
     const total = filteredPortfolioTotal(state)
@@ -1231,7 +922,6 @@ describe('selectors', () => {
     const state = createTestState({
       accounts: [testAccount1],
       positions,
-      category: 'all',
       assetClassFilter: 'Equity' // Filter applied, but should be ignored
     })
 

@@ -72,7 +72,6 @@ export function importPositions(
       shares,
       avgCost,
       price,
-      taxes: row.taxes ? parseCsvNumber(row.taxes) : null,
       lastImportedAt: importDate,
     })
   }

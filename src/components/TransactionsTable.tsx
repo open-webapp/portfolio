@@ -22,20 +22,10 @@ export function TransactionsTable({ state, dispatch }: TransactionsTableProps) {
     return ['All', ...Array.from(types).sort()]
   }, [state.transactions])
 
-  // Build a set of held symbols (symbols in open positions for accounts in selected category)
+  // Build a set of held symbols (symbols in open positions)
   const heldSymbols = useMemo(() => {
-    const accountsInCategory = state.accounts.filter((a) => {
-      if (state.category === 'all') return true
-      return a.taxCategory === state.category
-    })
-    const accountIds = new Set(accountsInCategory.map((a) => a.id))
-
-    return new Set(
-      state.positions
-        .filter((p) => accountIds.has(p.accountId))
-        .map((p) => p.symbol)
-    )
-  }, [state.accounts, state.positions, state.category])
+    return new Set(state.positions.map((p) => p.symbol))
+  }, [state.positions])
 
   const handleTypeFilterClick = useCallback(
     (type: string) => {
@@ -77,7 +67,6 @@ export function TransactionsTable({ state, dispatch }: TransactionsTableProps) {
       sharesStr: tx.shares ? tx.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—',
       priceStr: tx.price ? fmtUSD(tx.price) : '—',
       amountStr: fmtUSD(tx.amount != null ? tx.amount : tx.shares * tx.price),
-      taxesStr: tx.taxes != null ? fmtUSD(tx.taxes) : '—',
       tagClass: txTagClass[tx.type] || 'tag-neutral',
       unmatched: isUnmatched,
     }
@@ -158,7 +147,6 @@ export function TransactionsTable({ state, dispatch }: TransactionsTableProps) {
             <th style={{ textAlign: 'right' }}>Shares</th>
             <th style={{ textAlign: 'right' }}>Cost Basis</th>
             <th style={{ textAlign: 'right' }}>Amount Invested</th>
-            <th style={{ textAlign: 'right' }}>Taxes</th>
             <th style={{ textAlign: 'center' }}>Position Link</th>
           </tr>
         </thead>
@@ -173,7 +161,6 @@ export function TransactionsTable({ state, dispatch }: TransactionsTableProps) {
               <td style={{ textAlign: 'right' }}>{tx.sharesStr}</td>
               <td style={{ textAlign: 'right' }}>{tx.priceStr}</td>
               <td style={{ textAlign: 'right', fontWeight: '600' }}>{tx.amountStr}</td>
-              <td style={{ textAlign: 'right' }}>{tx.taxesStr}</td>
               <td style={{ textAlign: 'center' }}>
                 {tx.unmatched && (
                   <span

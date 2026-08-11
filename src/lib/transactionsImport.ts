@@ -84,7 +84,6 @@ export function importTransactions(
       shares,
       price,
       amount,
-      taxes: row.taxes ? parseCsvNumber(row.taxes) : null,
       importedAt: new Date().toISOString(),
     }
 

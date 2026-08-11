@@ -22,7 +22,7 @@ function EditableCell({
 }: {
   value: number
   positionId: string
-  field: 'shares' | 'avgCost' | 'price' | 'taxes'
+  field: 'shares' | 'avgCost' | 'price'
   dispatch: (action: any) => void
 }) {
   const [isEditing, setIsEditing] = useState(false)
@@ -39,16 +39,6 @@ function EditableCell({
   }
 
   const commit = () => {
-    if (field === 'taxes' && draft.trim() === '') {
-      dispatch({
-        type: 'UPDATE_POSITION',
-        positionId,
-        patch: { taxes: 0 },
-      })
-      setIsEditing(false)
-      return
-    }
-
     const parsed = parseNonNegative(draft)
     if (parsed === null) {
       setIsEditing(false)
@@ -183,31 +173,15 @@ function AccountDropdown({
 
   const currentAccount = accounts.find((a) => a.id === position.accountId)
 
-  // Helper to format tax category label
-  const getTaxCategoryLabel = (taxCategory: string): string => {
-    switch (taxCategory) {
-      case 'taxable':
-        return 'Taxable'
-      case 'nonTaxable':
-        return 'Non-Taxable'
-      case 'taxDeferred':
-        return 'Tax-Deferred'
-      default:
-        return ''
-    }
-  }
-
-  // Helper to format retirement label
   const getRetirementLabel = (retirement: boolean): string => {
     return retirement ? 'Retirement' : 'Non-Retirement'
   }
 
-  // Render two-line account display
   const renderAccountDisplay = (account: Account) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
       <div>{account.institution} — {account.name}</div>
       <div style={{ fontSize: '0.875em', color: 'var(--text-muted)' }}>
-        {getTaxCategoryLabel(account.taxCategory)} • {getRetirementLabel(account.retirement)}
+        {getRetirementLabel(account.retirement)}
       </div>
     </div>
   )
@@ -348,7 +322,6 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
       avgCostStr: fmtUSD(computed.avgCost),
       costBasisStr: fmtUSD(computed.costBasis),
       priceStr: fmtUSD(computed.price),
-      taxesStr: fmtUSD(computed.taxes ?? 0),
       marketValueStr: fmtUSD(computed.marketValue),
       accountName:
         accounts.find((ac) => ac.id === p.accountId)?.name?.trim() ||
@@ -430,7 +403,6 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                 <th style={{ textAlign: 'right' }}>Avg Cost</th>
                 <th style={{ textAlign: 'right' }}>Current Price</th>
                 <th style={{ textAlign: 'right' }}>% of Portfolio</th>
-                <th style={{ textAlign: 'right' }}>Taxes</th>
                 <th style={{ textAlign: 'center' }}>Override</th>
                 <th style={{ textAlign: 'center' }}></th>
               </tr>
@@ -486,14 +458,6 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     {fmtPortfolioPercent(computePosition(p).marketValue, portfolioTotal)}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <EditableCell
-                      value={p.taxes ?? 0}
-                      positionId={p.id}
-                      field="taxes"
-                      dispatch={dispatch}
-                    />
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <AssetClassOverrideSelect position={p} dispatch={dispatch} existingAssetClasses={existingAssetClasses} />

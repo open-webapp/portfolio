@@ -11,7 +11,6 @@ describe('transactionsImport', () => {
       id: accountId,
       accountNumber,
       name: `Account ${accountNumber}`,
-      taxCategory: 'taxable',
       retirement: false,
       createdAt: new Date().toISOString(),
     }
@@ -579,62 +578,6 @@ describe('transactionsImport', () => {
     expect(tx.importedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     expect(new Date(tx.importedAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeImport).getTime())
     expect(new Date(tx.importedAt).getTime()).toBeLessThanOrEqual(new Date(afterImport).getTime())
-  })
-
-  // Task 8: Test 1 - Import transaction with no taxes column mapped
-  it('Task 8.1: Import transaction with no taxes column mapped', () => {
-    let state = initialState()
-
-    const accountId = 'acc-task8-1'
-    const account = createTestAccount(accountId, 'ACC-TASK8-1')
-    state = { ...state, accounts: [account] }
-
-    // Import row without taxes (undefined)
-    const mappedRows = [
-      {
-        date: '2024-01-15',
-        symbol: 'AAPL',
-        type: 'Buy',
-        shares: '10',
-        price: '150.5',
-        amount: '1505',
-        // taxes is not provided
-      },
-    ]
-
-    const newState = importTransactions(state, accountId, mappedRows, 'import-no-taxes')
-
-    expect(newState.transactions).toHaveLength(1)
-    const tx = newState.transactions[0]
-    expect(tx.taxes).toBeNull()
-  })
-
-  // Task 8: Test 2 - Import transaction with taxes column mapped
-  it('Task 8.2: Import transaction with taxes column mapped', () => {
-    let state = initialState()
-
-    const accountId = 'acc-task8-2'
-    const account = createTestAccount(accountId, 'ACC-TASK8-2')
-    state = { ...state, accounts: [account] }
-
-    // Import row with taxes mapped
-    const mappedRows = [
-      {
-        date: '2024-01-15',
-        symbol: 'MSFT',
-        type: 'Sell',
-        shares: '5',
-        price: '300.0',
-        amount: '1500',
-        taxes: '25.10',
-      },
-    ]
-
-    const newState = importTransactions(state, accountId, mappedRows, 'import-with-taxes')
-
-    expect(newState.transactions).toHaveLength(1)
-    const tx = newState.transactions[0]
-    expect(tx.taxes).toBe(25.10)
   })
 
   // Regression: a CSV row with blank cells for required fields (e.g. missing
