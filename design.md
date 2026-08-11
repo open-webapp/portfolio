@@ -32,7 +32,7 @@ src/
     seed.ts                    # uid(prefix)
   components/
     PasswordGate.tsx           # full-replacement gate screen: set-password (first-run/legacy-migrate) or enter-password (returning encrypted), reset-app escape hatch
-    Nav.tsx                    # nav-brand, category seg tabs, SVG gear icon for settings
+    Nav.tsx                    # nav-brand, settings seg tabs, SVG gear icon for settings
     OverviewCard.tsx           # 3-cluster single-card layout (Total Value / Total Gain-Loss / Amount Invested)
     AllocationChart.tsx         # bar list
     PositionsTable.tsx
@@ -74,7 +74,6 @@ interface AppState {
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   assetClassFilter: string
-  retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'
   posSearch: string
   txTypeFilter: string
   txSearch: string
@@ -82,13 +81,13 @@ interface AppState {
 }
 ```
 
-- `src/lib/state.ts` — `AppState` interface (6 data collections + 11 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `closePosition`, `deleteClosedPosition`, `setCategory`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setRetirementFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `upsertCsvMapping`).
+- `src/lib/state.ts` — `AppState` interface (6 data collections + 10 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `closePosition`, `deleteClosedPosition`, `setCategory`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `upsertCsvMapping`).
 - `src/lib/reducer.ts` — `appReducer(state, action)` switches on `action.type` (string) and calls the matching `state.ts` helper, or the import logic in `positionsImport.ts`/`transactionsImport.ts`. `default: return state`. Special case `__SET_STATE` replaces the whole state (used by hydration).
 - Components never mutate state directly; they `dispatch({ type: '...', ...payload })`.
 
 ### Action types (reducer.ts)
 
-`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `CLOSE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `UPSERT_CSV_MAPPING`, `SET_VIEW`.
+`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `CLOSE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `UPSERT_CSV_MAPPING`, `SET_VIEW`.
 
 ## Component tree
 
@@ -98,13 +97,14 @@ App
   [sessionKey === null]
     PasswordGate               (shape, onUnlock, onReset) — replaces the entire tree below until unlocked
   [sessionKey set, !isHydrated] — "Loading dashboard..." (brief, between onUnlock and hydration dispatch)
-  Nav                         (state, dispatch, settingsSection, setSettingsSection, driveReady, syncing, handleSync, onOpenSettings)  — renders on both dashboard and settings views. nav-brand 'Ledger' + [dashboard view] category seg tabs / [settings view] settings seg tabs 'Google Drive'|'Encryption' (mutually exclusive, driven by `settingsSection` state owned by `App.tsx`) + conditional sync-icon button (refresh icon, `title="Sync now"`, shown only when `driveReady`, disabled while `syncing`, calls `handleSync`) positioned between the tabs and the gear + SVG gear icon that calls `onOpenSettings` (resets `settingsSection` to `'drive'` and dispatches the view change to settings, every open — a stale 'encryption' selection never persists across opens)
+  Nav                         (state, dispatch, settingsSection, setSettingsSection, driveReady, syncing, handleSync, onOpenSettings)  — renders on both dashboard and settings views. nav-brand 'Ledger' + [settings view] settings seg tabs 'Google Drive'|'Encryption' (mutually exclusive, driven by `settingsSection` state owned by `App.tsx`) + conditional sync-icon button (refresh icon, `title="Sync now"`, shown only when `driveReady`, disabled while `syncing`, calls `handleSync`) positioned between the tabs and the gear + SVG gear icon that calls `onOpenSettings` (resets `settingsSection` to `'drive'` and dispatches the view change to settings, every open — a stale 'encryption' selection never persists across opens)
   [view === 'dashboard']
     OverviewCard              (state)            — 3-cluster single-card layout (Total Value / Total Gain-Loss / Amount Invested), no Day Change
+    category .seg             (inline in App)    — category filter tabs
     AllocationChart           (state)            — full-width bar list
-    filter & import row       (inline in App)    — flex space-between: left-aligned retirement .seg control + right-aligned Import button
+    filter & import row       (inline in App)    — flex space-between: left-aligned asset-class .seg control + right-aligned Import button
       ImportDialog            (state, dispatch)  — renders the Import button trigger; open state is component-local (isOpen)
-    PositionsTable            (state, dispatch)  — groups visiblePositions() into aggregate rows (symbol+effectiveAssetClass), filtered by retirement filter; selectedGroupKey is component-local useState
+    PositionsTable            (state, dispatch)  — groups visiblePositions() into aggregate rows (symbol+effectiveAssetClass), reads asset-class filter for its own filtering (category handled upstream via selector); selectedGroupKey is component-local useState
       ClosedPositionsTable      (state, dispatch)       — when state.showClosed
       PositionGroupOverlay    (group, accounts, dispatch, onClose)  — when a row is clicked; lists underlying positions sorted by account name. 9-column table: Account (two-line dropdown: line 1 shows institution+name, line 2 shows tax category+retirement), Symbol, Name, Shares, Avg Cost, Current Price, Taxes, Override (asset class), Delete (trash-icon button, `window.confirm` then dispatches `CLOSE_POSITION`, converting the position to a `ClosedPosition` rather than removing it outright). All editable fields use independent inline-edit UI with component-local state: click → input → Enter or blur commits via `UPDATE_POSITION` dispatch, Escape cancels/reverts (no dispatch). Editable cells: Symbol (`<input type="text">`, empty reverts silently), Account (dropdown; selecting one dispatches `UPDATE_POSITION` with `patch: { accountId }`), Shares/AvgCost/Price/Taxes (`<input type="number">`; invalid/empty revert silently except Taxes empty → saves 0). Editing Symbol, Account, or deleting a position changes position's `buildGroupKey()` result or removes the position → position row disappears from currently-open overlay on next render (overlay itself stays open; no special wiring needed, natural re-render side effect).
         AssetClassOverrideSelect (position, dispatch)  — per underlying position, inside the overlay
@@ -143,13 +143,14 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 **Password change** (`SettingsPage.handleChangePassword`): verifies the typed current password by deriving a key against `sessionSalt` and attempting `loadPersistedApp(candidateKey)` (a real decrypt, not a stored-hash check); on success generates a brand-new salt (`generateSalt()`, never reuses the old one), derives a new key, and calls `savePersistedApp(state, newKey, newSalt)`. If Drive is connected (`getDriveAuthStatus().connected`), also calls `syncBackup(state, newKey, newSalt)` — a failure here is caught and shown as a non-blocking warning; it does not undo the already-completed local `savePersistedApp`. On success calls `onKeyChange(newKey, newSalt)` to update `App.tsx`'s session state.
 
 **Selectors** (`selectors.ts`) are the only place that reads+filters+sorts raw `AppState` collections for display; components call them instead of re-deriving:
-- `visiblePositions(state)` — category → retirement filter → asset-class filter → search (symbol/name, case-insensitive) → `sortBy(state.sortKey, state.sortDir)`. (`PositionsTable` then groups its output client-side into aggregate rows by symbol+effectiveAssetClass and sorts those aggregate rows by `state.sortKey`/`sortDir`; grouping/sorting-of-aggregates is component-level, not in selectors.)
+- `visiblePositions(state)` — category → asset-class filter → search (symbol/name, case-insensitive) → `sortBy(state.sortKey, state.sortDir)`. (`PositionsTable` then groups its output client-side into aggregate rows by symbol+effectiveAssetClass and sorts those aggregate rows by `state.sortKey`/`sortDir`; grouping/sorting-of-aggregates is component-level, not in selectors.)
 - `visibleTransactions(state)` — category filter → type filter → search (symbol/date) → always sorted by `date desc` (not user-sortable).
 - `totalValueSeries(state, accountIds?)` — groups `PortfolioSnapshot[]` by `date`, sums `value`; defaults to accounts in the selected category if `accountIds` omitted.
 - `summaryCards(state)` — Total Value / Total Gain-Loss (with %) / Amount Invested, computed live from `positions` and `totalValueSeries` (no stored placeholder, no Day Change).
-- `segmentSummaryCards(state, retirement)` — Same math as `summaryCards` (Total Value / Total Gain-Loss / Amount Invested), scoped to positions whose account.retirement matches the boolean `retirement` arg, within the current category filter.
+- `segmentSummaryCards(state, retirement)` — Same math as `summaryCards` (Total Value / Total Gain-Loss / Amount Invested), scoped to positions whose account.retirement matches the boolean `retirement` arg (no category scoping).
 - `allocationBars(state)` — wraps `computations.allocationByAssetClass`, respecting `assetClassManualOverride`.
-- `filteredPortfolioTotal(state)` — Computes sum of market values for positions matching both category and retirement filters; denominator for the portfolio % display.
+- `assetClassOptions(state)` — Deduplicates and sorts effective asset classes (manual override or original) across all positions.
+- `filteredPortfolioTotal(state)` — Computes sum of market values for positions matching category and asset-class filters; denominator for the portfolio % display.
 
 ## Key Invariants
 

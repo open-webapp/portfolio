@@ -6,14 +6,13 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Top to bottom: `Nav` → `OverviewCard` (3-cluster layout) → `AllocationChart` (2-column grid) → divider → retirement filter `.seg` control + "Import" button row → `PositionsTable`.
+Top to bottom: `Nav` → `OverviewCard` (3-cluster layout) → zero-height divider → category `.seg` tabs → `AllocationChart` (2-column grid) → divider → asset-class filter `.seg` control + "Import" button row → `PositionsTable`.
 
 ## Nav
 
 Nav renders on both the dashboard view and the settings view.
 
 - **Brand**: `.nav-brand` "Ledger".
-- **Category tabs** (radio-style `.seg`, dashboard view only): All / Taxable / Non-Taxable / Tax-Deferred. Filters accounts by `Account.taxCategory`; "All" includes every account. Drives every downstream selector (positions, transactions, overview card, allocation).
 - **Settings tabs** (radio-style `.seg`, settings view only): "Google Drive" / "Encryption" — switches which card `SettingsPage` shows. Resets to "Google Drive" every time Settings is opened via the gear button, regardless of which tab was last selected.
 - **Sync Now icon button** (refresh icon, `title="Sync now"`): shown only when Drive is connected (`driveReady`); disabled while a sync is in progress (`syncing`). Positioned between the tabs and the settings gear. Triggers the same sync action as the Settings page's own "Sync Now" button.
 - **Settings gear** (SVG icon): navigates to the Settings page, resetting the settings tab selection to "Google Drive" on every open.
@@ -26,7 +25,7 @@ Single `.card.blueprint.elev-sm` card with corner marks, containing three metric
 - **Total Gain/Loss** — sum of `marketValue - costBasis` across selected positions, signed with `+`/`-` prefix; a `sub` line shows % (`gl / costBasis * 100`, `0` if cost basis is 0). Colored green/red by sign.
 - **Amount Invested** — sum of `shares * avgCost` across selected positions.
 
-No Day Change metric. Card reflects the current category filter only; retirement-segment metrics are derived separately for the positions table's retirement filter display.
+No Day Change metric. The `All Together` cluster reflects the current category filter only. The `Retirement` and `Non-Retirement` segment clusters ignore the category filter entirely and show retirement-only positions computed separately; they partition all positions by `Account.retirement` and are not scoped to the current category.
 
 ## Allocation chart
 
@@ -34,29 +33,27 @@ No Day Change metric. Card reflects the current category filter only; retirement
 
 ## Positions table
 
-**Retirement filter** (`.seg` radio control): Three options ("All" / "Retirement" / "Non-Retirement") filter positions by the owning `Account.retirement` boolean.
+Rows are **aggregate groups** — each row represents a unique combination of symbol + effective asset class only. Tax category and retirement status no longer partition groups; positions with the same symbol and asset class merge regardless of account tax/retirement status. Every group, including size-1, renders as one row. Groups aggregate shares, cost basis, and market value across all underlying positions; price is derived as summed value / summed shares. **% of Portfolio** reflects positions matching the current category filter only.
 
-Rows are **aggregate groups** — each row represents a unique combination of symbol + effective asset class only. Tax category and retirement status no longer partition groups; positions with the same symbol and asset class merge regardless of account tax/retirement status. Every group, including size-1, renders as one row. Groups aggregate shares, cost basis, and market value across all underlying positions; price is derived as summed value / summed shares. **% of Portfolio** reflects positions matching both the current category filter and retirement filter.
-
-- **Filters**: asset-class tags (computed from all positions currently in state — not category-scoped — sorted alphabetically) + free-text search (matches symbol or name, case-insensitive substring) + category + retirement filter (.seg control above) all compose.
+- **Filters**: asset-class filter (`.seg` radio control, computed from all positions currently in state — not category-scoped — sorted alphabetically; control lives in the header row above the table in `App.tsx`) + free-text search (matches symbol or name, case-insensitive substring) + category filter all compose.
 - **Columns**: Symbol (symbol + name), Asset Class (effective), Shares, Cost Basis (labeled "Avg Cost"), Current Price, Amount Invested, Market Value, G/L (signed, colored), G/L %, % of Portfolio (unsigned, one decimal, shows percentage of filtered portfolio total), Row-count badge (right-aligned, `.tag.tag-neutral`, showing count of underlying position rows merged into the aggregate group; column header is blank, still the last column).
 - **Sorting**: Clicking a sortable column header (Symbol/Asset Class/Shares/Cost Basis/Current Price) toggles asc/desc via `TOGGLE_SORT`; clicking the currently-sorted column flips direction, clicking a different column resets to `asc`. Arrow (`↑`/`↓`) marks the active sort column. Sorting orders by aggregate/derived group values (e.g., summed Market Value, derived Price = summed value / summed shares), computed client-side in `PositionsTable` after grouping. Amount Invested/Market Value/G/L/G/L % columns are display-only, not sortable.
 - **Row click → overlay**: Clicking any row (cursor pointer) opens `PositionGroupOverlay`, a dialog (`.dialog-backdrop`/`.dialog`, closable via Escape/backdrop-click/X button). Title: `` `Symbol — Name — Asset Class` ``. Lists underlying positions sorted by account.institution ascending, then account.name ascending, fallback account.accountNumber. **Overlay columns** (9): Account, Symbol, Name, Shares, Avg Cost, Current Price, Taxes, Override, Delete. **Account display (two-line)**: line 1 shows institution—name (or name only if no institution); line 2 shows muted tax category and retirement labels (e.g., "Taxable • Retirement"). **Editable cells**: Account (dropdown button listing all accounts; selecting one dispatches `UPDATE_POSITION` with `patch: { accountId }`), Symbol (`<input type="text">`, click-to-edit, empty/whitespace-only reverts silently, trimmed non-empty value commits), Name (new column, `EditableTextCell`, click-to-edit via `<input type="text">`, empty/whitespace-only reverts silently, trimmed non-empty value commits), Shares/AvgCost/Price/Taxes (`<input type="number">`, click-to-edit, no hover affordance). For numeric fields: valid non-negative number commits via `UPDATE_POSITION`, invalid/empty reverts silently (no error UI), **except** empty Taxes saves as `0`. All fields: Enter or blur commits; Escape reverts (no dispatch). **Side effect**: editing Symbol or Account changes a position's group key (`symbol` + `effectiveAssetClass`), so the position's row disappears from the overlay on the next render (overlay itself stays open; natural re-render consequence). **Delete column**: blank header, trash-icon button per row; clicking prompts `window.confirm('Delete this position? It will be moved to Closed Positions.')`; on confirm, dispatches `CLOSE_POSITION` which converts the position into a `ClosedPosition` (`realizedGL: null`, `realizedGLBasis: 'unknown'`, `closedDate` = today) rather than hard-deleting it — the row then disappears from the overlay on next render as a natural consequence of no longer being in `state.positions` (same side-effect pattern as editing Symbol/Account). Override column contains `AssetClassOverrideSelect` control.
-- **Closed Positions** toggle: a clickable row showing "Show/Hide Closed Positions" + a badge with `state.closedPositions.length` (unfiltered — the badge is not scoped to the current category/retirement filter, even though the table itself, when shown, still lists all closed positions with no filter applied either).
+- **Closed Positions** toggle: a clickable row showing "Show/Hide Closed Positions" + a badge with `state.closedPositions.length` (unfiltered — the badge is not scoped to the current category filter, even though the table itself, when shown, still lists all closed positions with no filter applied either).
 - `ClosedPositionsTable` (shown when toggled): Security / Closed date / Realized G/L / Delete columns. Realized G/L renders `"unknown"` when `realizedGLBasis === 'unknown'`, otherwise a signed formatted USD amount; never a fabricated number. Delete column (centered): a trash-icon `.btn-icon` button per row; clicking it opens a native browser dialog (`Delete this closed position? This permanently discards its realized G/L history.`) — accepting removes the closed position permanently (unrecoverable).
 
 ## Transactions table
 
 (Not rendered in Dashboard; kept for data-model and future-surface reasons.)
 
-- Type filter tags (`All` + every distinct `Transaction.type` currently in state, alphabetical) + free-text search (symbol or date substring, case-insensitive) + category filter (from Nav; transactions are **not** affected by the retirement filter).
+- Type filter tags (`All` + every distinct `Transaction.type` currently in state, alphabetical) + free-text search (symbol or date substring, case-insensitive) + category filter (from Nav).
 - Always sorted by date descending — no user-controlled sort.
 - Columns: Date (formatted `MMM D, YYYY`), Symbol, Type (colored tag: Buy=accent, Sell=outline, Dividend=neutral, anything else=neutral), Shares, Cost Basis, Amount Invested, Taxes (formatted USD or `—` if null), Position Link.
 - **Position Link**: shows an "UNMATCHED" outline tag (with a tooltip explaining "likely fully sold or removed") when the transaction's symbol has no corresponding open `Position` among accounts in the current category; otherwise shows plain "Linked" text. This is purely derived per render — no stored flag.
 
 ## CSV import (Positions / Transactions)
 
-A single **Import** button (`.btn.btn-secondary.blueprint` + 4 corner marks + upload SVG, `aria-label="Import"`) sits right-aligned in the retirement filter + Import row. It opens a 2-step `ImportDialog`:
+A single **Import** button (`.btn.btn-secondary.blueprint` + 4 corner marks + upload SVG, `aria-label="Import"`) sits right-aligned in the asset-class filter + Import button row. It opens a 2-step `ImportDialog`:
 
 Dialog chrome: `.dialog.blueprint` + four corner marks; width `min(96vw, 1400px)`, `max-width: 96vw`, `max-height: 88vh`, `overflow: auto`. Header row (space-between): title "Import" + ✕ close button (`aria-label="Close"`). Step indicator `[Setup, Review]` as numbered tags: active = `tag-accent`, completed = `tag-neutral`, future = `tag-outline` + muted label. Footer `.dialog-actions`: Continue / Back / primary import button.
 
