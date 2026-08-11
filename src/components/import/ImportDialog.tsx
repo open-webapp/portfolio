@@ -11,6 +11,7 @@ import {
 import { applyFieldMap, validatePreviewRow, isReviewValid, isBlankRow } from '../../lib/importPreview'
 import { uid } from '../../lib/seed'
 import { Trash } from 'lucide-react'
+import { tableToCsv, type PastedClipboard, type CsvIssue } from '../../lib/pastedTable'
 
 export interface ImportDialogProps {
   state: AppState
@@ -63,7 +64,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
 
   // Step 1 state
   const [dataType, setDataType] = useState<'positions' | 'transactions'>('positions')
-  const [entryMode, setEntryMode] = useState<'upload' | 'manual'>('upload')
+  const [entryMode, setEntryMode] = useState<'upload' | 'paste' | 'manual'>('upload')
   const [importAccountKey, setImportAccountKey] = useState<string>('')
   const [formInstitution, setFormInstitution] = useState<string>('')
   const [formName, setFormName] = useState<string>('')
@@ -78,6 +79,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const [fileError, setFileError] = useState<string>('')
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([])
+  const [pasteHeaderClipboard, setPasteHeaderClipboard] = useState<PastedClipboard>({})
+  const [pasteValuesClipboard, setPasteValuesClipboard] = useState<PastedClipboard>({})
+  const [pasteIssues, setPasteIssues] = useState<CsvIssue[]>([])
+  void pasteIssues // Keep TypeScript happy; will be used to display paste issues in future tasks
 
   // Step 2 state - column mapping, editable preview, import completion
   const [fieldMap, setFieldMap] = useState<Record<string, string>>({})
@@ -110,6 +115,9 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setFileError('')
     setCsvHeaders([])
     setCsvRows([])
+    setPasteHeaderClipboard({})
+    setPasteValuesClipboard({})
+    setPasteIssues([])
     setFieldMap({})
     setImportEdits({})
     setImportDone(false)
@@ -251,10 +259,51 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     event.stopPropagation()
   }, [])
 
+  const resetPasteState = useCallback(() => {
+    setPasteHeaderClipboard({})
+    setPasteValuesClipboard({})
+    setPasteIssues([])
+    setCsvHeaders([])
+    setCsvRows([])
+  }, [])
+
+  const handlePasteHeaders = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      const clip: PastedClipboard = {
+        html: e.clipboardData.getData('text/html'),
+        text: e.clipboardData.getData('text/plain'),
+      }
+      setPasteHeaderClipboard(clip)
+      const result = tableToCsv(clip, pasteValuesClipboard)
+      setCsvHeaders(result.headers)
+      setCsvRows(result.rows)
+      setPasteIssues(result.issues)
+    },
+    [pasteValuesClipboard]
+  )
+
+  const handlePasteValues = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      const clip: PastedClipboard = {
+        html: e.clipboardData.getData('text/html'),
+        text: e.clipboardData.getData('text/plain'),
+      }
+      setPasteValuesClipboard(clip)
+      const result = tableToCsv(pasteHeaderClipboard, clip)
+      setCsvHeaders(result.headers)
+      setCsvRows(result.rows)
+      setPasteIssues(result.issues)
+    },
+    [pasteHeaderClipboard]
+  )
+
+
   const isStep1Complete = (): boolean => {
     const isExisting = importAccountKey !== '' && importAccountKey !== '__new__'
     const accountResolved = isExisting ? true : formName.trim() !== '' && formNumber.trim() !== ''
-    const fileSelected = entryMode === 'manual' || (file !== null && csvRows.length > 0)
+    const fileSelected = entryMode === 'manual' || csvRows.length > 0
     return accountResolved && fileSelected
   }
 
@@ -795,6 +844,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                         name="importDataType"
                         checked={dataType === 'transactions'}
                         onChange={() => {
+                          resetPasteState()
                           setDataType('transactions')
                           setEntryMode('upload')
                         }}
@@ -819,14 +869,17 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                     <label>How will you add the data?</label>
                     <div
                       className="seg"
-                      style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%' }}
+                      style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', width: '100%' }}
                     >
                       <label className="seg-opt">
                         <input
                           type="radio"
                           name="importEntryMode"
                           checked={entryMode === 'upload'}
-                          onChange={() => setEntryMode('upload')}
+                          onChange={() => {
+                            resetPasteState()
+                            setEntryMode('upload')
+                          }}
                         />
                         <span>Upload CSV file</span>
                       </label>
@@ -834,8 +887,23 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                         <input
                           type="radio"
                           name="importEntryMode"
+                          checked={entryMode === 'paste'}
+                          onChange={() => {
+                            resetPasteState()
+                            setEntryMode('paste')
+                          }}
+                        />
+                        <span>Copy-Paste</span>
+                      </label>
+                      <label className="seg-opt">
+                        <input
+                          type="radio"
+                          name="importEntryMode"
                           checked={entryMode === 'manual'}
-                          onChange={() => setEntryMode('manual')}
+                          onChange={() => {
+                            resetPasteState()
+                            setEntryMode('manual')
+                          }}
                         />
                         <span>Enter manually</span>
                       </label>
@@ -903,6 +971,78 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                       </div>
                     )}
                   </div>
+                )}
+
+                {/* Paste zones */}
+                {entryMode === 'paste' && (
+                  <>
+                    <div className="field" style={{ marginBottom: 'var(--space-4)' }}>
+                      <label>Headers</label>
+                      <div
+                        tabIndex={0}
+                        onPaste={handlePasteHeaders}
+                        onClick={(e) => e.currentTarget.focus()}
+                        data-testid="paste-headers-zone"
+                        style={{
+                          border: '2px dashed var(--color-divider)',
+                          borderRadius: '4px',
+                          background: 'var(--color-surface)',
+                          padding: 'var(--space-4)',
+                          minHeight: '90px',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div>
+                          {csvHeaders.length > 0
+                            ? `${csvHeaders.length} columns pasted — click to replace`
+                            : 'Click here and press Ctrl+V / ⌘V'}
+                        </div>
+                        <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
+                          Paste the single row of column names
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="field">
+                      <label>Values</label>
+                      <div
+                        tabIndex={0}
+                        onPaste={handlePasteValues}
+                        onClick={(e) => e.currentTarget.focus()}
+                        data-testid="paste-values-zone"
+                        style={{
+                          border: '2px dashed var(--color-divider)',
+                          borderRadius: '4px',
+                          background: 'var(--color-surface)',
+                          padding: 'var(--space-4)',
+                          minHeight: '140px',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div>
+                          {csvRows.length > 0
+                            ? `${csvRows.length} rows pasted — click to replace`
+                            : 'Click here and press Ctrl+V / ⌘V'}
+                        </div>
+                        <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
+                          Paste the data rows (no header row)
+                        </div>
+                      </div>
+                      {pasteIssues.length > 0 && (
+                        <div
+                          style={{
+                            color: '#8a3c2e',
+                            fontSize: '12px',
+                            marginTop: '6px',
+                          }}
+                        >
+                          {pasteIssues.length} row(s) had an unexpected number of columns and were adjusted
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {/* Manual entry hint */}

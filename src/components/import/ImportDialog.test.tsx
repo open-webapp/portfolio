@@ -989,16 +989,18 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(selectForField('Amount').value).toBe('')
   })
 
-  it('31. manual toggle appears only for positions; transactions does not render it', () => {
+  it('31. entry-mode seg: 3 radios render for positions only (Upload CSV file, Copy-Paste, Enter manually); transactions hides them', () => {
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
     openDialog()
 
     expect(screen.getByRole('radio', { name: 'Upload CSV file' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Copy-Paste' })).toBeTruthy()
     expect(screen.getByRole('radio', { name: 'Enter manually' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('radio', { name: 'Transactions' }))
 
     expect(screen.queryByRole('radio', { name: 'Upload CSV file' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Copy-Paste' })).toBeNull()
     expect(screen.queryByRole('radio', { name: 'Enter manually' })).toBeNull()
   })
 
@@ -1026,9 +1028,29 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Positions / Holdings' }))
 
     const upload = screen.getByRole('radio', { name: 'Upload CSV file' }) as HTMLInputElement
+    const paste = screen.getByRole('radio', { name: 'Copy-Paste' }) as HTMLInputElement
     const manual = screen.getByRole('radio', { name: 'Enter manually' }) as HTMLInputElement
     expect(upload.checked).toBe(true)
+    expect(paste.checked).toBe(false)
     expect(manual.checked).toBe(false)
+  })
+
+  it('33b. clicking Copy-Paste after uploading clears csvRows and disables Continue', async () => {
+    await mockCsv(POS_HEADERS, POS_ROWS)
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+
+    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(false)
+
+    // Click Copy-Paste radio to switch modes
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    // Continue should now be disabled because csvRows is cleared
+    expect((screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('34. manual continue seeds 10 blank rows in Step 2 and renders no column-mapping selects', async () => {
@@ -1100,5 +1122,126 @@ describe('ImportDialog (2-step wizard)', () => {
 
     openDialog()
     expect(container.querySelector('.dialog-title')?.textContent).toBe('Import')
+  })
+
+  // Paste-zone tests
+
+  it('39. paste-mode setup: selecting Copy-Paste shows both headers and values zones with initial prompts', () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const headersZone = screen.getByTestId('paste-headers-zone')
+    const valuesZone = screen.getByTestId('paste-values-zone')
+
+    expect(headersZone).toBeTruthy()
+    expect(valuesZone).toBeTruthy()
+    expect(headersZone.textContent).toContain('Click here and press Ctrl+V / ⌘V')
+    expect(headersZone.textContent).toContain('Paste the single row of column names')
+    expect(valuesZone.textContent).toContain('Click here and press Ctrl+V / ⌘V')
+    expect(valuesZone.textContent).toContain('Paste the data rows (no header row)')
+  })
+
+  it('40. paste-headers: pasting tab-separated values into headers zone updates prompt', () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+
+    // Create a mock paste event with clipboard data
+    const mockEvent = new Event('paste', { bubbles: true }) as any
+    mockEvent.clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? 'a\tb' : ''),
+    }
+    mockEvent.preventDefault = vi.fn()
+
+    fireEvent(headersZone, mockEvent)
+
+    expect(headersZone.textContent).toContain('2 columns pasted — click to replace')
+  })
+
+  it('41. paste-values: pasting data rows after headers updates values prompt', () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+
+    // First paste headers
+    const headerEvent = new Event('paste', { bubbles: true }) as any
+    headerEvent.clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? 'a\tb' : ''),
+    }
+    headerEvent.preventDefault = vi.fn()
+    fireEvent(headersZone, headerEvent)
+
+    // Then paste values (one row with two columns)
+    const valuesEvent = new Event('paste', { bubbles: true }) as any
+    valuesEvent.clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? '1\t2' : ''),
+    }
+    valuesEvent.preventDefault = vi.fn()
+    fireEvent(valuesZone, valuesEvent)
+
+    expect(valuesZone.textContent).toContain('1 rows pasted — click to replace')
+  })
+
+  it('42. paste-edge: pasting into values before headers are populated stays empty and does not crash', () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+
+    // Paste into values zone without first pasting headers
+    const valuesEvent = new Event('paste', { bubbles: true }) as any
+    valuesEvent.clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? '1\t2' : ''),
+    }
+    valuesEvent.preventDefault = vi.fn()
+    fireEvent(valuesZone, valuesEvent)
+
+    // Zone should still show initial prompt (no change)
+    expect(valuesZone.textContent).toContain('Click here and press Ctrl+V / ⌘V')
+    // No crash, dialog still renders
+    expect(screen.getByText('Setup')).toBeTruthy()
+  })
+
+  it('43. paste-issues: pasting ragged rows displays issues warning with correct count', () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+
+    // Paste headers (3 columns)
+    const headerEvent = new Event('paste', { bubbles: true }) as any
+    headerEvent.clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? 'a\tb\tc' : ''),
+    }
+    headerEvent.preventDefault = vi.fn()
+    fireEvent(headersZone, headerEvent)
+
+    // Paste values with ragged rows (2nd row has only 2 columns instead of 3)
+    const valuesEvent = new Event('paste', { bubbles: true }) as any
+    valuesEvent.clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? '1\t2\t3\n4\t5' : ''),
+    }
+    valuesEvent.preventDefault = vi.fn()
+    fireEvent(valuesZone, valuesEvent)
+
+    expect(screen.getByText(/1 row\(s\) had an unexpected number of columns and were adjusted/)).toBeTruthy()
   })
 })
