@@ -19,6 +19,18 @@ export function fmtPct(n: number): string {
 }
 
 /**
+ * Format a value as a percentage of total portfolio.
+ * If total <= 0, returns "—"; otherwise returns percentage with 1 decimal place.
+ * Examples: 12.3%, 0.5%, -5.2%, —
+ */
+export function fmtPortfolioPercent(value: number, total: number): string {
+  if (total <= 0) {
+    return '—'
+  }
+  return ((value / total) * 100).toFixed(1) + '%'
+}
+
+/**
  * Compute derived fields for a position.
  * Adds: marketValue, costBasis, gl (gain/loss), glPct (return percentage)
  *

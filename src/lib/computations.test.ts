@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePosition, allocationByAssetClass, fmtUSD, fmtPct } from './computations'
+import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent } from './computations'
 import { Position } from './types'
 
 describe('computations', () => {
@@ -150,6 +150,17 @@ describe('computations', () => {
     expect(fmtPct(0)).toBe('+0.00%')
     expect(fmtPct(33.333)).toBe('+33.33%')
     expect(fmtPct(-25)).toBe('-25.00%')
+  })
+
+  it('fmtPortfolioPercent: formats value as percentage of total with 1 decimal', () => {
+    expect(fmtPortfolioPercent(12.345, 100)).toBe('12.3%')
+    expect(fmtPortfolioPercent(-5, 100)).toBe('-5.0%')
+    expect(fmtPortfolioPercent(0.5, 100)).toBe('0.5%')
+  })
+
+  it('fmtPortfolioPercent: returns dash for zero or negative total', () => {
+    expect(fmtPortfolioPercent(50, 0)).toBe('—')
+    expect(fmtPortfolioPercent(50, -10)).toBe('—')
   })
 
   // Additional validation: allocationByAssetClass with zero-value positions

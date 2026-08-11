@@ -1,7 +1,7 @@
 import type { AppState } from './state'
 import type { Position, Transaction, Account } from './types'
 import { sortBy } from './sort'
-import { allocationByAssetClass, fmtUSD, fmtPct } from './computations'
+import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './computations'
 
 /**
  * Filter positions by asset class, search text, and sort according to state.
@@ -51,6 +51,36 @@ export function visiblePositions(state: AppState): Position[] {
   results = sortBy(results, state.sortKey, state.sortDir)
 
   return results
+}
+
+/**
+ * Compute total market value of positions filtered by category and retirement status.
+ * This is the denominator for portfolio percentage calculations.
+ * Does NOT apply asset-class or search filters — only category and retirement filters.
+ * Returns the sum of all filtered positions' market values (can be zero, negative, or positive).
+ */
+export function filteredPortfolioTotal(state: AppState): number {
+  // Start with all positions for accounts in the selected category
+  const accountsInCategory = getAccountsForCategory(state)
+  let results = state.positions.filter((p) =>
+    accountsInCategory.some((a) => a.id === p.accountId)
+  )
+
+  // Apply retirement filter (same logic as visiblePositions)
+  if (state.retirementFilter === 'Retirement') {
+    results = results.filter((p) => {
+      const account = state.accounts.find((a) => a.id === p.accountId)
+      return account?.retirement === true
+    })
+  } else if (state.retirementFilter === 'Non-Retirement') {
+    results = results.filter((p) => {
+      const account = state.accounts.find((a) => a.id === p.accountId)
+      return account?.retirement === false
+    })
+  }
+
+  // Sum market values across all filtered positions
+  return results.reduce((sum, p) => sum + computePosition(p).marketValue, 0)
 }
 
 /**
