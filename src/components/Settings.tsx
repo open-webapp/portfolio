@@ -1,12 +1,9 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import {
-  getBackupFileId,
-  connectDrive,
-  disconnectDrive,
-  syncBackup,
   restoreBackup,
   getDriveAuthStatus,
+  syncBackup,
   DriveDecryptError,
 } from '../lib/drive'
 import { deriveKey, decryptState, generateSalt } from '../lib/crypto'
@@ -18,17 +15,36 @@ export interface SettingsPageProps {
   sessionKey: CryptoKey
   sessionSalt: Uint8Array
   onKeyChange: (newKey: CryptoKey, newSalt: Uint8Array) => void
+  driveReady: boolean
+  driveEmail: string | null
+  backupFileId: string | null
+  syncing: boolean
+  setSyncing: (v: boolean) => void
+  handleConnect: () => void
+  handleDisconnect: () => void
+  handleSync: () => void
+  settingsSection: 'drive' | 'encryption'
 }
 
 /**
  * SettingsPage: Full-page settings view with Drive sync options.
  */
-export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyChange }: SettingsPageProps) {
-  const [syncing, setSyncing] = useState(false)
-  const [driveReady, setDriveReady] = useState(false)
-  const [driveEmail, setDriveEmail] = useState<string | null>(null)
-  const [backupFileId, setBackupFileId] = useState<string | null>(null)
-
+export function SettingsPage({
+  state,
+  dispatch,
+  sessionKey,
+  sessionSalt,
+  onKeyChange,
+  driveReady,
+  driveEmail,
+  backupFileId,
+  syncing,
+  setSyncing,
+  handleConnect,
+  handleDisconnect,
+  handleSync,
+  settingsSection,
+}: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
   const [newPasswordInput, setNewPasswordInput] = useState('')
@@ -46,38 +62,6 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
   const [backupPasswordInput, setBackupPasswordInput] = useState('')
   const [crossPasswordError, setCrossPasswordError] = useState<string | null>(null)
   const [restoringWithBackupPassword, setRestoringWithBackupPassword] = useState(false)
-
-  // Check Drive connection status on mount (never opens a Google auth window)
-  useEffect(() => {
-    const checkDrive = async () => {
-      try {
-        const authStatus = await getDriveAuthStatus()
-        setDriveReady(authStatus.connected)
-        setDriveEmail(authStatus.email)
-        if (authStatus.connected) {
-          const fileId = await getBackupFileId()
-          setBackupFileId(fileId)
-        }
-      } catch (error) {
-        console.error('Failed to check Drive connection:', error)
-      }
-    }
-    checkDrive()
-  }, [])
-
-  const handleSync = useCallback(async () => {
-    setSyncing(true)
-    try {
-      const fileId = await syncBackup(state, sessionKey, sessionSalt)
-      setBackupFileId(fileId)
-      alert('Synced to Drive')
-    } catch (error) {
-      console.error('Sync failed:', error)
-      alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setSyncing(false)
-    }
-  }, [state, sessionKey, sessionSalt])
 
   const handleRestore = useCallback(async () => {
     if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
@@ -103,7 +87,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
     } finally {
       setSyncing(false)
     }
-  }, [dispatch, sessionKey])
+  }, [dispatch, sessionKey, setSyncing])
 
   const handleCrossPasswordSubmit = useCallback(async () => {
     if (!crossPasswordPrompt) return
@@ -124,40 +108,7 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
       setRestoringWithBackupPassword(false)
       setSyncing(false)
     }
-  }, [crossPasswordPrompt, backupPasswordInput, dispatch, onKeyChange])
-
-  const handleConnect = useCallback(async () => {
-    setSyncing(true)
-    try {
-      const connection = await connectDrive()
-      setDriveReady(true)
-      setDriveEmail(connection.email)
-      const fileId = await getBackupFileId()
-      setBackupFileId(fileId)
-      alert('Connected to Drive')
-    } catch (error) {
-      console.error('Drive connect failed:', error)
-      alert(`Connect failed: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setSyncing(false)
-    }
-  }, [])
-
-  const handleDisconnect = useCallback(async () => {
-    setSyncing(true)
-    try {
-      await disconnectDrive()
-      setDriveReady(false)
-      setDriveEmail(null)
-      setBackupFileId(null)
-      alert('Disconnected from Drive')
-    } catch (error) {
-      console.error('Drive disconnect failed:', error)
-      alert(`Disconnect failed: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setSyncing(false)
-    }
-  }, [])
+  }, [crossPasswordPrompt, backupPasswordInput, dispatch, onKeyChange, setSyncing])
 
   const handleChangePassword = useCallback(async () => {
     setPasswordError(null)
@@ -218,26 +169,29 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
   return (
     <div>
       {/* Google Drive Sync section */}
+      {settingsSection === 'drive' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <h2 style={{ textAlign: 'left' }}>Google Drive Sync</h2>
+        <div className="card-title">Google Drive Sync</div>
 
         <div style={{ maxWidth: '460px' }}>
           {/* Google Account subsection */}
           <div style={{ marginBottom: '16px' }}>
-            <h3 style={{
+            <div className="text-muted" style={{
               fontSize: '11px',
               fontWeight: 600,
               letterSpacing: '0.06em',
-              color: 'color-mix(in srgb, var(--color-text) 60%, transparent)',
               textTransform: 'uppercase',
-              marginBottom: '8px',
-              marginTop: 0
+              marginBottom: '8px'
             }}>
               Google Account
-            </h3>
+            </div>
 
             {!driveReady ? (
-              <button className="btn btn-primary" onClick={handleConnect} disabled={syncing}>
+              <button className="btn btn-primary blueprint" onClick={handleConnect} disabled={syncing}>
+                <i className="corner tl"></i>
+                <i className="corner tr"></i>
+                <i className="corner bl"></i>
+                <i className="corner br"></i>
                 {syncing ? 'Connecting...' : 'Connect Google Account'}
               </button>
             ) : (
@@ -283,7 +237,11 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
           {driveReady && (
             <>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="btn btn-primary" onClick={handleSync} disabled={syncing}>
+                <button className="btn btn-primary blueprint" onClick={handleSync} disabled={syncing}>
+                  <i className="corner tl"></i>
+                  <i className="corner tr"></i>
+                  <i className="corner bl"></i>
+                  <i className="corner br"></i>
                   {syncing ? 'Syncing...' : 'Sync Now'}
                 </button>
                 <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
@@ -319,10 +277,14 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
-                className="btn btn-primary"
+                className="btn btn-primary blueprint"
                 onClick={handleCrossPasswordSubmit}
                 disabled={restoringWithBackupPassword}
               >
+                <i className="corner tl"></i>
+                <i className="corner tr"></i>
+                <i className="corner bl"></i>
+                <i className="corner br"></i>
                 {restoringWithBackupPassword ? 'Restoring...' : 'Restore with this password'}
               </button>
               <button
@@ -343,10 +305,12 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
           </div>
         )}
       </section>
+      )}
 
       {/* Change Encryption Password section */}
+      {settingsSection === 'encryption' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <h2 style={{ textAlign: 'left' }}>Change Encryption Password</h2>
+        <div className="card-title">Change Encryption Password</div>
         <div style={{ maxWidth: '460px' }}>
           <div className="field">
             <label>Current Encryption Password</label>
@@ -379,10 +343,14 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
             />
           </div>
           <button
-            className="btn btn-primary"
+            className="btn btn-primary blueprint"
             onClick={handleChangePassword}
             disabled={changingPassword}
           >
+            <i className="corner tl"></i>
+            <i className="corner tr"></i>
+            <i className="corner bl"></i>
+            <i className="corner br"></i>
             {changingPassword ? 'Changing Encryption Password...' : 'Change Encryption Password'}
           </button>
           {passwordError && (
@@ -396,6 +364,10 @@ export function SettingsPage({ state, dispatch, sessionKey, sessionSalt, onKeyCh
           )}
         </div>
       </section>
+      )}
+
+      <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
+      <button type="button" className="btn btn-secondary" onClick={() => dispatch({ type: 'SET_VIEW', view: 'dashboard' })}>Back to Dashboard</button>
     </div>
   )
 }
