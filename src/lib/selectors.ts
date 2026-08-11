@@ -1,7 +1,16 @@
 import type { AppState } from './state'
-import type { Position, Transaction, Account } from './types'
+import type { Position, Transaction, Account, TaxCategory } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './computations'
+
+/**
+ * Map tax category keys to display labels.
+ */
+export const CATEGORY_LABEL: Record<TaxCategory, string> = {
+  taxable: 'Taxable',
+  nonTaxable: 'Non-Taxable',
+  taxDeferred: 'Tax-Deferred'
+}
 
 /**
  * Filter positions by asset class, search text, and sort according to state.
@@ -216,6 +225,94 @@ export function allocationBars(
     value: fmtUSD(item.value),
     pct: fmtPct(item.pct)
   }))
+}
+
+/**
+ * Compute cash and investment totals for a specific account.
+ * Cash is positions with symbol 'cash' (case-insensitive), investment is everything else.
+ * Returns { cash, investment } as numeric values.
+ */
+export function computeCashInvestment(
+  state: AppState,
+  accountId: string
+): { cash: number; investment: number } {
+  const accountPositions = state.positions.filter((p) => p.accountId === accountId)
+  let cash = 0
+  let investment = 0
+
+  accountPositions.forEach((p) => {
+    const value = p.shares * p.price
+    if ((p.symbol || '').toLowerCase() === 'cash') {
+      cash += value
+    } else {
+      investment += value
+    }
+  })
+
+  return { cash, investment }
+}
+
+/**
+ * Generate sections grouped by tax category for the accounts view.
+ * Each section contains rows for accounts in that category with cash/investment/total values.
+ * Returns array of sections with labels, rows, and aggregate totals.
+ */
+export function accountsSections(
+  state: AppState
+): Array<{
+  label: string
+  rows: Array<{
+    institution: string
+    accountName: string
+    cashStr: string
+    investmentStr: string
+    totalStr: string
+  }>
+  hasRows: boolean
+  noRows: boolean
+  cashTotalStr: string
+  investmentTotalStr: string
+  grandTotalStr: string
+  showDivider: boolean
+}> {
+  const catKeys = ['taxable', 'nonTaxable', 'taxDeferred'] as const
+
+  return catKeys.map((catKey, idx) => {
+    const label = CATEGORY_LABEL[catKey as TaxCategory]
+    const accountsInCategory = state.accounts.filter((a) => a.taxCategory === catKey)
+
+    let cashTotal = 0
+    let investmentTotal = 0
+
+    const rows = accountsInCategory.map((account) => {
+      const { cash, investment } = computeCashInvestment(state, account.id)
+      cashTotal += cash
+      investmentTotal += investment
+
+      const total = cash + investment
+
+      return {
+        institution: account.institution || '',
+        accountName: `${account.name} (${account.accountNumber})`,
+        cashStr: fmtUSD(cash),
+        investmentStr: fmtUSD(investment),
+        totalStr: fmtUSD(total)
+      }
+    })
+
+    const grandTotal = cashTotal + investmentTotal
+
+    return {
+      label,
+      rows,
+      hasRows: rows.length > 0,
+      noRows: rows.length === 0,
+      cashTotalStr: fmtUSD(cashTotal),
+      investmentTotalStr: fmtUSD(investmentTotal),
+      grandTotalStr: fmtUSD(grandTotal),
+      showDivider: idx < catKeys.length - 1
+    }
+  })
 }
 
 /**

@@ -22,7 +22,7 @@ export interface AppState {
   // UI state
   category: TaxCategory | 'all'
   tab: 'positions' | 'transactions'
-  view: 'dashboard' | 'settings'
+  view: 'dashboard' | 'settings' | 'accounts'
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   assetClassFilter: string // 'All' or specific class
@@ -295,7 +295,7 @@ export function addCustomInstitution(state: AppState, name: string): AppState {
 /**
  * Set the current view (to be implemented in reducer cases).
  */
-export function setView(state: AppState, view: 'dashboard' | 'settings'): AppState {
+export function setView(state: AppState, view: 'dashboard' | 'settings' | 'accounts'): AppState {
   return {
     ...state,
     view,

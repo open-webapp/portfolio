@@ -47,6 +47,7 @@ const mockSetSyncing = vi.fn()
 const mockHandleConnect = vi.fn()
 const mockHandleDisconnect = vi.fn()
 const mockHandleSync = vi.fn()
+const mockSetSettingsSection = vi.fn()
 
 const notConnectedAuthStatus: driveModule.DriveAuthStatus = {
   connected: false,
@@ -99,6 +100,7 @@ describe('SettingsPage', () => {
       handleDisconnect: mockHandleDisconnect,
       handleSync: mockHandleSync,
       settingsSection: 'drive',
+      setSettingsSection: mockSetSettingsSection,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -336,18 +338,39 @@ describe('SettingsPage', () => {
     })
   })
 
-  describe('Back to Dashboard', () => {
-    it('renders and dispatches SET_VIEW to dashboard when clicked', () => {
+  describe('Settings tab-seg', () => {
+    it('renders tab-seg with "Google Drive" and "Encryption" options', () => {
       renderSettings({ settingsSection: 'drive' })
 
-      const backButton = screen.getByRole('button', { name: 'Back to Dashboard' })
-      expect(backButton.className).toContain('btn btn-secondary')
-      expect(backButton.className).not.toContain('blueprint')
-      expect(backButton.querySelectorAll('i.corner').length).toBe(0)
+      expect(screen.getByLabelText('Google Drive')).toBeTruthy()
+      expect(screen.getByLabelText('Encryption')).toBeTruthy()
+    })
 
-      fireEvent.click(backButton)
+    it('clicking Google Drive tab calls setSettingsSection with "drive"', () => {
+      renderSettings({ settingsSection: 'encryption' })
 
-      expect(mockDispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'dashboard' })
+      const googleDriveInput = screen.getByLabelText('Google Drive') as HTMLInputElement
+      fireEvent.click(googleDriveInput)
+
+      expect(mockSetSettingsSection).toHaveBeenCalledWith('drive')
+    })
+
+    it('clicking Encryption tab calls setSettingsSection with "encryption"', () => {
+      renderSettings({ settingsSection: 'drive' })
+
+      const encryptionInput = screen.getByLabelText('Encryption') as HTMLInputElement
+      fireEvent.click(encryptionInput)
+
+      expect(mockSetSettingsSection).toHaveBeenCalledWith('encryption')
+    })
+
+    it('renders .hr divider immediately after the tab-seg', () => {
+      const { container } = renderSettings({ settingsSection: 'drive' })
+
+      const segDiv = container.querySelector('.seg')
+      expect(segDiv).toBeTruthy()
+      const hrDivider = segDiv?.nextElementSibling
+      expect(hrDivider?.className).toContain('hr')
     })
   })
 

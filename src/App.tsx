@@ -2,12 +2,13 @@ import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
-import { assetClassOptions } from './lib/selectors'
+import { assetClassOptions, CATEGORY_LABEL } from './lib/selectors'
 import { Nav } from './components/Nav'
 import { OverviewCard } from './components/OverviewCard'
 import { AllocationChart } from './components/AllocationChart'
 import { PositionsTable } from './components/PositionsTable'
 import { SettingsPage } from './components/Settings'
+import { AccountsPage } from './components/AccountsPage'
 import { ImportDialog } from './components/import/ImportDialog'
 import { PasswordGate } from './components/PasswordGate'
 import { drive, getDriveAuthStatus, getBackupFileId, connectDrive, disconnectDrive, syncBackup } from './lib/drive'
@@ -15,9 +16,7 @@ import './App.css'
 
 const categoryTabs = [
   { value: 'all', label: 'All' },
-  { value: 'taxable', label: 'Taxable' },
-  { value: 'nonTaxable', label: 'Non-Taxable' },
-  { value: 'taxDeferred', label: 'Tax-Deferred' },
+  ...Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label })),
 ]
 
 
@@ -250,12 +249,10 @@ function App() {
   return (
     <div>
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        {/* Navigation: category tabs (dashboard) / settings tabs (settings), sync + settings buttons */}
+        {/* Navigation: Dashboard/Accounts tabs, sync + settings buttons */}
         <Nav
           state={state}
           dispatch={dispatch}
-          settingsSection={settingsSection}
-          setSettingsSection={setSettingsSection}
           driveReady={driveReady}
           syncing={syncing}
           handleSync={handleSync}
@@ -311,6 +308,11 @@ function App() {
             {/* Positions table */}
             <PositionsTable state={state} dispatch={dispatch} />
           </div>
+        ) : state.view === 'accounts' ? (
+          /* Accounts page view */
+          <div style={{ padding: 'var(--space-6)' }}>
+            <AccountsPage state={state} />
+          </div>
         ) : (
           /* Settings page view */
           <div style={{ padding: 'var(--space-6)' }}>
@@ -332,6 +334,7 @@ function App() {
               handleDisconnect={handleDisconnect}
               handleSync={handleSync}
               settingsSection={settingsSection}
+              setSettingsSection={setSettingsSection}
             />
           </div>
         )}

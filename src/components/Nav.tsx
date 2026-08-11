@@ -2,9 +2,7 @@ import type { AppState } from '../lib/state'
 
 export interface NavProps {
   state: AppState
-  dispatch?: (action: any) => void
-  settingsSection: 'drive' | 'encryption'
-  setSettingsSection: (s: 'drive' | 'encryption') => void
+  dispatch: (action: any) => void
   driveReady: boolean
   syncing: boolean
   handleSync: () => void
@@ -12,20 +10,19 @@ export interface NavProps {
 }
 
 /**
- * Nav component: category tabs (dashboard) / settings tabs (settings), sync + settings buttons.
+ * Nav component: Dashboard/Accounts tabs, sync + settings buttons.
  */
 export function Nav({
   state,
-  settingsSection,
-  setSettingsSection,
+  dispatch,
   driveReady,
   syncing,
   handleSync,
   onOpenSettings,
 }: NavProps) {
-  const settingsTabs: { value: 'drive' | 'encryption'; label: string }[] = [
-    { value: 'drive', label: 'Google Drive' },
-    { value: 'encryption', label: 'Encryption' },
+  const mainNavTabs = [
+    { value: 'dashboard', label: 'Dashboard' },
+    { value: 'accounts', label: 'Accounts' },
   ]
 
   return (
@@ -39,26 +36,24 @@ export function Nav({
     >
       <div className="nav-brand" style={{ marginRight: 'var(--space-5)' }}>Ledger</div>
 
-      {/* Settings tabs (settings view) */}
-      {state.view === 'settings' && (
-        <div className="seg">
-          {settingsTabs.map((tab) => (
-            <label
-              key={tab.value}
-              className="seg-opt"
-              onClick={() => setSettingsSection(tab.value)}
-            >
-              <input
-                type="radio"
-                name="settingsSection"
-                checked={settingsSection === tab.value}
-                readOnly
-              />
-              <span>{tab.label}</span>
-            </label>
-          ))}
-        </div>
-      )}
+      {/* Main navigation tabs (Dashboard / Accounts) */}
+      <div className="seg">
+        {mainNavTabs.map((tab) => (
+          <label
+            key={tab.value}
+            className="seg-opt"
+            onClick={() => dispatch({ type: 'SET_VIEW', view: tab.value })}
+          >
+            <input
+              type="radio"
+              name="mainView"
+              checked={state.view === tab.value}
+              readOnly
+            />
+            <span>{tab.label}</span>
+          </label>
+        ))}
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
         {driveReady && (

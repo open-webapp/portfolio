@@ -13,8 +13,6 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
   return {
     state,
     dispatch: vi.fn(),
-    settingsSection: 'drive' as const,
-    setSettingsSection: vi.fn(),
     driveReady: false,
     syncing: false,
     handleSync: vi.fn(),
@@ -24,37 +22,78 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
 }
 
 describe('Nav', () => {
-  it('renders settings tabs when view is settings', () => {
-    const props = makeProps({ state: { view: 'settings' } as any })
-    render(<Nav {...props} />)
-
-    expect(screen.getByText('Google Drive')).toBeTruthy()
-    expect(screen.getByText('Encryption')).toBeTruthy()
-  })
-
-  it('does not render settings tabs when view is dashboard', () => {
+  // Test case 1: state.view = 'dashboard'
+  it('state.view = "dashboard" → Dashboard tab is checked, Accounts tab is not', () => {
     const props = makeProps({ state: { view: 'dashboard' } as any })
     render(<Nav {...props} />)
 
-    expect(screen.queryByText('Google Drive')).toBeFalsy()
-    expect(screen.queryByText('Encryption')).toBeFalsy()
+    const dashboardRadio = screen.getByRole('radio', { name: /Dashboard/i }) as HTMLInputElement
+    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
+
+    expect(dashboardRadio.checked).toBe(true)
+    expect(accountsRadio.checked).toBe(false)
   })
 
-  it('renders the sync icon button when driveReady is true', () => {
+  // Test case 2: state.view = 'accounts'
+  it('state.view = "accounts" → Accounts tab is checked, Dashboard tab is not', () => {
+    const props = makeProps({ state: { view: 'accounts' } as any })
+    render(<Nav {...props} />)
+
+    const dashboardRadio = screen.getByRole('radio', { name: /Dashboard/i }) as HTMLInputElement
+    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
+
+    expect(accountsRadio.checked).toBe(true)
+    expect(dashboardRadio.checked).toBe(false)
+  })
+
+  // Test case 3: state.view = 'settings'
+  it('state.view = "settings" → neither Dashboard nor Accounts tab is checked', () => {
+    const props = makeProps({ state: { view: 'settings' } as any })
+    render(<Nav {...props} />)
+
+    const dashboardRadio = screen.getByRole('radio', { name: /Dashboard/i }) as HTMLInputElement
+    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
+
+    expect(dashboardRadio.checked).toBe(false)
+    expect(accountsRadio.checked).toBe(false)
+  })
+
+  // Test case 4: Clicking Dashboard tab
+  it('clicking Dashboard tab dispatches { type: "SET_VIEW", view: "dashboard" }', () => {
+    const props = makeProps({ state: { view: 'accounts' } as any })
+    render(<Nav {...props} />)
+
+    fireEvent.click(screen.getByLabelText('Dashboard'))
+    expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'dashboard' })
+  })
+
+  // Test case 5: Clicking Accounts tab
+  it('clicking Accounts tab dispatches { type: "SET_VIEW", view: "accounts" }', () => {
+    const props = makeProps({ state: { view: 'dashboard' } as any })
+    render(<Nav {...props} />)
+
+    fireEvent.click(screen.getByLabelText('Accounts'))
+    expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'accounts' })
+  })
+
+  // Test case 6a: driveReady = true → sync icon renders
+  it('driveReady = true → sync icon renders with title="Sync now"', () => {
     const props = makeProps({ driveReady: true })
     render(<Nav {...props} />)
 
     expect(screen.getByTitle('Sync now')).toBeTruthy()
   })
 
-  it('does not render the sync icon button when driveReady is false', () => {
+  // Test case 6b: driveReady = false → sync icon does not render
+  it('driveReady = false → sync icon does not render', () => {
     const props = makeProps({ driveReady: false })
     render(<Nav {...props} />)
 
     expect(screen.queryByTitle('Sync now')).toBeFalsy()
   })
 
-  it('disables the sync icon button when syncing is true', () => {
+  // Test case 7: driveReady = true, syncing = true → sync icon is disabled
+  it('driveReady = true, syncing = true → sync icon is disabled', () => {
     const props = makeProps({ driveReady: true, syncing: true })
     render(<Nav {...props} />)
 
@@ -62,7 +101,8 @@ describe('Nav', () => {
     expect(syncButton.disabled).toBe(true)
   })
 
-  it('calls handleSync when the sync icon is clicked', () => {
+  // Test case 8: Clicking sync icon calls handleSync
+  it('clicking sync icon calls handleSync mock', () => {
     const props = makeProps({ driveReady: true })
     render(<Nav {...props} />)
 
@@ -70,22 +110,12 @@ describe('Nav', () => {
     expect(props.handleSync).toHaveBeenCalledTimes(1)
   })
 
-  it('calls onOpenSettings when the gear icon is clicked', () => {
+  // Test case 9: Clicking gear icon calls onOpenSettings
+  it('clicking gear icon calls onOpenSettings mock', () => {
     const props = makeProps()
     render(<Nav {...props} />)
 
     fireEvent.click(screen.getByTitle('Settings'))
     expect(props.onOpenSettings).toHaveBeenCalledTimes(1)
-  })
-
-  it('calls setSettingsSection with the right value when a settings tab is clicked', () => {
-    const props = makeProps({ state: { view: 'settings' } as any })
-    render(<Nav {...props} />)
-
-    fireEvent.click(screen.getByText('Google Drive'))
-    expect(props.setSettingsSection).toHaveBeenCalledWith('drive')
-
-    fireEvent.click(screen.getByText('Encryption'))
-    expect(props.setSettingsSection).toHaveBeenCalledWith('encryption')
   })
 })

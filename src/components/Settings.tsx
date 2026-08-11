@@ -24,6 +24,7 @@ export interface SettingsPageProps {
   handleDisconnect: () => void
   handleSync: () => void
   settingsSection: 'drive' | 'encryption'
+  setSettingsSection: (s: 'drive' | 'encryption') => void
 }
 
 /**
@@ -44,6 +45,7 @@ export function SettingsPage({
   handleDisconnect,
   handleSync,
   settingsSection,
+  setSettingsSection,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -168,6 +170,31 @@ export function SettingsPage({
 
   return (
     <div>
+      {/* Settings tab-seg */}
+      <div className="seg" style={{ marginBottom: 'var(--space-5)' }}>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="settingsSection"
+            checked={settingsSection === 'drive'}
+            readOnly
+            onClick={() => setSettingsSection('drive')}
+          />
+          Google Drive
+        </label>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="settingsSection"
+            checked={settingsSection === 'encryption'}
+            readOnly
+            onClick={() => setSettingsSection('encryption')}
+          />
+          Encryption
+        </label>
+      </div>
+      <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
+
       {/* Google Drive Sync section */}
       {settingsSection === 'drive' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
@@ -365,9 +392,6 @@ export function SettingsPage({
         </div>
       </section>
       )}
-
-      <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
-      <button type="button" className="btn btn-secondary" onClick={() => dispatch({ type: 'SET_VIEW', view: 'dashboard' })}>Back to Dashboard</button>
     </div>
   )
 }
