@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
-import { SettingsPage } from './Settings'
+import { SettingsPage, type SettingsPageProps } from './Settings'
 import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
 import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
 
-// Mock the drive module
+// Mock the drive module. Settings.tsx only imports restoreBackup,
+// getDriveAuthStatus, syncBackup, and DriveDecryptError directly now —
+// connectDrive/disconnectDrive/getBackupFileId were lifted to App.tsx and
+// are surfaced to SettingsPage as props (driveReady/driveEmail/backupFileId/
+// handleConnect/handleDisconnect/handleSync).
 vi.mock('../lib/drive', () => {
   class DriveDecryptError extends Error {
     salt: Uint8Array
@@ -19,13 +23,9 @@ vi.mock('../lib/drive', () => {
     }
   }
   return {
-    getDriveConnection: vi.fn(),
-    getBackupFileId: vi.fn(),
-    connectDrive: vi.fn(),
-    disconnectDrive: vi.fn(),
-    syncBackup: vi.fn(),
     restoreBackup: vi.fn(),
     getDriveAuthStatus: vi.fn(),
+    syncBackup: vi.fn(),
     DriveDecryptError,
   }
 })
@@ -43,6 +43,10 @@ global.confirm = vi.fn()
 
 const mockDispatch = vi.fn()
 const mockOnKeyChange = vi.fn()
+const mockSetSyncing = vi.fn()
+const mockHandleConnect = vi.fn()
+const mockHandleDisconnect = vi.fn()
+const mockHandleSync = vi.fn()
 
 const notConnectedAuthStatus: driveModule.DriveAuthStatus = {
   connected: false,
@@ -60,6 +64,11 @@ const connectedAuthStatus: driveModule.DriveAuthStatus = {
   tokenValid: true,
 }
 
+function expectCornersInOrder(button: HTMLElement) {
+  const corners = Array.from(button.querySelectorAll('i.corner'))
+  expect(corners.map((c) => c.className)).toEqual(['corner tl', 'corner tr', 'corner bl', 'corner br'])
+}
+
 describe('SettingsPage', () => {
   let sessionSalt: Uint8Array
   let sessionKey: CryptoKey
@@ -74,24 +83,31 @@ describe('SettingsPage', () => {
     cleanup()
   })
 
+  function renderSettings(overrides: Partial<SettingsPageProps> = {}) {
+    const defaultProps: SettingsPageProps = {
+      state: initialState(),
+      dispatch: mockDispatch,
+      sessionKey,
+      sessionSalt,
+      onKeyChange: mockOnKeyChange,
+      driveReady: false,
+      driveEmail: null,
+      backupFileId: null,
+      syncing: false,
+      setSyncing: mockSetSyncing,
+      handleConnect: mockHandleConnect,
+      handleDisconnect: mockHandleDisconnect,
+      handleSync: mockHandleSync,
+      settingsSection: 'drive',
+    }
+    return render(<SettingsPage {...defaultProps} {...overrides} />)
+  }
+
   describe('Not connected state', () => {
-    beforeEach(() => {
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
-    })
+    it('renders "Not connected" state initially with Connect button', () => {
+      renderSettings({ driveReady: false })
 
-    it('renders "Not connected" state initially with Connect button', async () => {
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      await waitFor(() => {
-        const heading = screen.getByRole('heading', { name: 'Google Drive Sync' })
-        expect(heading).toBeTruthy()
-      })
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
 
       const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
       expect(connectButton).toBeTruthy()
@@ -99,241 +115,98 @@ describe('SettingsPage', () => {
       // Should not show Sync, Restore, or Disconnect buttons
       expect(screen.queryByRole('button', { name: /Sync Now/ })).toBeFalsy()
       expect(screen.queryByRole('button', { name: /Restore from Drive/ })).toBeFalsy()
-      expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeFalsy()
+      expect(screen.queryByText('Disconnect')).toBeFalsy()
     })
 
-    it('Connect Drive button has btn btn-primary classes', async () => {
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+    it('Connect button has btn btn-primary blueprint classes and 4 ordered corner marks', () => {
+      renderSettings({ driveReady: false })
 
-
-      const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
+      const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
       expect(connectButton.className).toContain('btn btn-primary')
+      expect(connectButton.className).toContain('blueprint')
+      expectCornersInOrder(connectButton)
     })
 
-    it('clicking Connect button calls connectDrive and shows alert', async () => {
-      vi.mocked(driveModule.connectDrive).mockResolvedValue({ email: 'test@example.com' } as any)
-      const state = initialState()
+    it('clicking Connect button calls the handleConnect prop', () => {
+      renderSettings({ driveReady: false })
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
+      const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
       fireEvent.click(connectButton)
 
-      await waitFor(() => {
-        expect(driveModule.connectDrive).toHaveBeenCalled()
-        expect(global.alert).toHaveBeenCalledWith('Connected to Drive')
-      })
+      expect(mockHandleConnect).toHaveBeenCalledTimes(1)
     })
 
-    it('Connect button shows connecting state while syncing', async () => {
-      vi.mocked(driveModule.connectDrive).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ email: 'test@example.com' } as any), 100))
-      )
-      const state = initialState()
+    it('shows "Connecting..." text and disables the Connect button when syncing prop is true', () => {
+      renderSettings({ driveReady: false, syncing: true })
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
-      fireEvent.click(connectButton)
-
-      expect(screen.getByRole('button', { name: 'Connecting...' })).toBeTruthy()
-
-      await waitFor(() => {
-        expect(screen.queryByRole('button', { name: 'Connecting...' })).toBeFalsy()
-      })
-    })
-
-    it('shows error alert if Connect fails', async () => {
-      const error = new Error('Connect error')
-      vi.mocked(driveModule.connectDrive).mockRejectedValue(error)
-      const state = initialState()
-
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const connectButton = await screen.findByRole('button', { name: 'Connect Google Account' })
-      fireEvent.click(connectButton)
-
-      await waitFor(() => {
-        expect(global.alert).toHaveBeenCalledWith('Connect failed: Connect error')
-      })
+      const connectButton = screen.getByRole('button', { name: 'Connecting...' })
+      expect(connectButton).toBeTruthy()
+      expect((connectButton as HTMLButtonElement).disabled).toBe(true)
     })
   })
 
   describe('Connected state', () => {
-    beforeEach(() => {
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
-      vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
-    })
+    it('renders connected state with Sync Now, Restore from Drive, and Disconnect buttons', () => {
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-    it('renders connected state with Sync Now, Restore from Drive, and Disconnect buttons', async () => {
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Sync Now' })).toBeTruthy()
-        expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
-      })
+      expect(screen.getByRole('button', { name: 'Sync Now' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
 
       // Should show connected email and disconnect link
       expect(screen.getByText('test@example.com')).toBeTruthy()
       expect(screen.getByText('Disconnect')).toBeTruthy()
-      
+
       // Should not show Connect button
       expect(screen.queryByRole('button', { name: 'Connect Google Account' })).toBeFalsy()
     })
 
-    it('connected buttons use correct btn classes', async () => {
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+    it('connected buttons use correct btn classes (Sync Now blueprint, Restore secondary)', () => {
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
+      const syncButton = screen.getByRole('button', { name: 'Sync Now' })
       expect(syncButton.className).toContain('btn btn-primary')
-      expect(screen.getByRole('button', { name: 'Restore from Drive' }).className).toContain(
-        'btn btn-secondary'
-      )
+      expect(syncButton.className).toContain('blueprint')
+      expectCornersInOrder(syncButton)
+
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
+      expect(restoreButton.className).toContain('btn btn-secondary')
+      expect(restoreButton.className).not.toContain('blueprint')
+      expect(restoreButton.querySelectorAll('i.corner').length).toBe(0)
     })
 
-    it('does not show Drive link when connected but no backup file exists', async () => {
-      vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      await screen.findByRole('button', { name: 'Sync Now' })
+    it('does not show Drive link when connected but no backup file exists', () => {
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com', backupFileId: null })
 
       expect(screen.queryByRole('link', { name: 'View backup in Google Drive' })).toBeFalsy()
     })
 
-    it('shows Drive link to existing backup file when connected and synced', async () => {
-      vi.mocked(driveModule.getBackupFileId).mockResolvedValue('file-id-123')
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+    it('shows Drive link to existing backup file when connected and synced', () => {
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com', backupFileId: 'file-id-123' })
 
-
-      const link = await screen.findByRole('link', { name: 'View backup in Google Drive' })
+      const link = screen.getByRole('link', { name: 'View backup in Google Drive' })
       expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-123/view')
       expect(link.getAttribute('target')).toBe('_blank')
     })
 
-    it('shows Drive link to the newly synced file after clicking Sync Now', async () => {
-      vi.mocked(driveModule.syncBackup).mockResolvedValue('file-id-456')
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+    it('clicking Sync Now calls the handleSync prop', () => {
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
+      const syncButton = screen.getByRole('button', { name: 'Sync Now' })
       fireEvent.click(syncButton)
 
-      await waitFor(() => {
-        const link = screen.queryByRole('link', { name: 'View backup in Google Drive' })
-        expect(link).toBeTruthy()
-        expect(link?.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-456/view')
-      })
+      expect(mockHandleSync).toHaveBeenCalledTimes(1)
     })
 
-    it('clicking Sync Now calls syncBackup with state', async () => {
-      vi.mocked(driveModule.syncBackup).mockResolvedValue()
-      const state = initialState()
+    it('shows "Syncing..." text and disables Sync Now / Restore when syncing prop is true', () => {
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com', syncing: true })
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+      const syncButton = screen.getByRole('button', { name: 'Syncing...' })
+      expect(syncButton).toBeTruthy()
+      expect((syncButton as HTMLButtonElement).disabled).toBe(true)
 
-
-      const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
-      fireEvent.click(syncButton)
-
-      await waitFor(() => {
-        expect(driveModule.syncBackup).toHaveBeenCalledWith(state, sessionKey, sessionSalt)
-        expect(global.alert).toHaveBeenCalledWith('Synced to Drive')
-      })
-    })
-
-    it('Sync Now button shows syncing state', async () => {
-      vi.mocked(driveModule.syncBackup).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(), 100))
-      )
-      const state = initialState()
-
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
-      fireEvent.click(syncButton)
-
-      expect(screen.getByRole('button', { name: 'Syncing...' })).toBeTruthy()
-
-      await waitFor(() => {
-        expect(screen.queryByRole('button', { name: 'Syncing...' })).toBeFalsy()
-      })
-    })
-
-    it('shows error alert if Sync fails', async () => {
-      const error = new Error('Sync error')
-      vi.mocked(driveModule.syncBackup).mockRejectedValue(error)
-      const state = initialState()
-
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const syncButton = await screen.findByRole('button', { name: 'Sync Now' })
-      fireEvent.click(syncButton)
-
-      await waitFor(() => {
-        expect(global.alert).toHaveBeenCalledWith('Sync failed: Sync error')
-      })
+      const restoreButton = screen.getByRole('button', { name: 'Restoring...' })
+      expect(restoreButton).toBeTruthy()
+      expect((restoreButton as HTMLButtonElement).disabled).toBe(true)
     })
 
     it('Restore from Drive calls restoreBackup and dispatches __SET_STATE', async () => {
@@ -350,16 +223,10 @@ describe('SettingsPage', () => {
 
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(restoredState)
       vi.mocked(global.confirm).mockReturnValue(true)
-      const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
@@ -377,16 +244,10 @@ describe('SettingsPage', () => {
 
     it('Restore is cancelled if confirm is false', async () => {
       vi.mocked(global.confirm).mockReturnValue(false)
-      const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
@@ -399,16 +260,10 @@ describe('SettingsPage', () => {
     it('shows "No backup found" alert if restore returns null', async () => {
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
       vi.mocked(global.confirm).mockReturnValue(true)
-      const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
@@ -416,28 +271,23 @@ describe('SettingsPage', () => {
       })
     })
 
-    it('Restore button shows restoring state', async () => {
+    it('calls setSyncing(true) then setSyncing(false) around a restore', async () => {
       const restoredState = initialState()
       vi.mocked(driveModule.restoreBackup).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(restoredState), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve(restoredState), 20))
       )
       vi.mocked(global.confirm).mockReturnValue(true)
-      const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      expect(screen.getByRole('button', { name: 'Restoring...' })).toBeTruthy()
-
       await waitFor(() => {
-        expect(screen.queryByRole('button', { name: 'Restoring...' })).toBeFalsy()
+        expect(mockSetSyncing).toHaveBeenCalledWith(true)
+      })
+      await waitFor(() => {
+        expect(mockSetSyncing).toHaveBeenCalledWith(false)
       })
     })
 
@@ -445,16 +295,10 @@ describe('SettingsPage', () => {
       const error = new Error('Restore error')
       vi.mocked(driveModule.restoreBackup).mockRejectedValue(error)
       vi.mocked(global.confirm).mockReturnValue(true)
-      const state = initialState()
 
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
@@ -464,111 +308,50 @@ describe('SettingsPage', () => {
   })
 
   describe('Disconnect functionality', () => {
-    beforeEach(() => {
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
-      vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
-    })
+    it('clicking Disconnect calls the handleDisconnect prop', () => {
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-    it('clicking Disconnect calls disconnectDrive and flips UI back to "not connected"', async () => {
-      vi.mocked(driveModule.disconnectDrive).mockResolvedValue()
-      const state = initialState()
-
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const disconnectLink = await screen.findByText('Disconnect')
+      const disconnectLink = screen.getByText('Disconnect')
       fireEvent.click(disconnectLink)
 
-      await waitFor(() => {
-        expect(driveModule.disconnectDrive).toHaveBeenCalled()
-        expect(global.alert).toHaveBeenCalledWith('Disconnected from Drive')
-      })
-
-      // After disconnect, should show Connect button again
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
-      })
-
-      // Should not show Sync, Restore buttons
-      expect(screen.queryByRole('button', { name: /Sync Now/ })).toBeFalsy()
-      expect(screen.queryByRole('button', { name: /Restore from Drive/ })).toBeFalsy()
-    })
-
-    it('Disconnect link shows disconnecting state', async () => {
-      vi.mocked(driveModule.disconnectDrive).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(), 100))
-      )
-      const state = initialState()
-
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const disconnectLink = await screen.findByText('Disconnect')
-      fireEvent.click(disconnectLink)
-
-      // During disconnect, the connected account display should still be visible
-      // but the disconnect link might be disabled/changed (implementation detail)
-      await waitFor(() => {
-        expect(driveModule.disconnectDrive).toHaveBeenCalled()
-      })
-    })
-
-    it('shows error alert if Disconnect fails', async () => {
-      const error = new Error('Disconnect error')
-      vi.mocked(driveModule.disconnectDrive).mockRejectedValue(error)
-      const state = initialState()
-
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
-
-
-      const disconnectLink = await screen.findByText('Disconnect')
-      fireEvent.click(disconnectLink)
-
-      await waitFor(() => {
-        expect(global.alert).toHaveBeenCalledWith('Disconnect failed: Disconnect error')
-      })
+      expect(mockHandleDisconnect).toHaveBeenCalledTimes(1)
     })
   })
 
-  describe('Tab navigation', () => {
-    beforeEach(() => {
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
+  describe('Section rendering', () => {
+    it('settingsSection="drive" shows the Drive card only', () => {
+      renderSettings({ settingsSection: 'drive' })
+
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+      expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
     })
 
-    it('renders General tab by default', () => {
-      const state = initialState()
-      render(<SettingsPage state={state} dispatch={mockDispatch}
-        sessionKey={sessionKey}
-        sessionSalt={sessionSalt}
-        onKeyChange={mockOnKeyChange}
-      />)
+    it('settingsSection="encryption" shows the Encryption card only', () => {
+      renderSettings({ settingsSection: 'encryption' })
 
-      // By default, the "General" tab is shown with Google Drive Sync section
-      expect(screen.getByRole('heading', { name: 'Google Drive Sync' })).toBeTruthy()
-      // Import Sessions should not be visible until its tab is clicked
-      expect(screen.queryByRole('heading', { name: 'Import Sessions' })).toBeFalsy()
+      expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
+      // "Change Encryption Password" is both the card title and the submit
+      // button text - just assert at least one exists.
+      expect(screen.getAllByText('Change Encryption Password').length).toBeGreaterThan(0)
     })
+  })
 
+  describe('Back to Dashboard', () => {
+    it('renders and dispatches SET_VIEW to dashboard when clicked', () => {
+      renderSettings({ settingsSection: 'drive' })
+
+      const backButton = screen.getByRole('button', { name: 'Back to Dashboard' })
+      expect(backButton.className).toContain('btn btn-secondary')
+      expect(backButton.className).not.toContain('blueprint')
+      expect(backButton.querySelectorAll('i.corner').length).toBe(0)
+
+      fireEvent.click(backButton)
+
+      expect(mockDispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'dashboard' })
+    })
   })
 
   describe('Change Encryption Password', () => {
-    beforeEach(() => {
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(null)
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
-    })
-
     function fillAndSubmitChangePassword(
       container: HTMLElement,
       fields: { current: string; next: string; confirm: string }
@@ -581,21 +364,24 @@ describe('SettingsPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Change Encryption Password' }))
     }
 
+    beforeEach(() => {
+      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
+    })
+
+    it('Change Password button has btn btn-primary blueprint classes and 4 ordered corner marks', () => {
+      renderSettings({ settingsSection: 'encryption' })
+      const button = screen.getByRole('button', { name: 'Change Encryption Password' })
+      expect(button.className).toContain('btn btn-primary')
+      expect(button.className).toContain('blueprint')
+      expectCornersInOrder(button)
+    })
+
     it('happy path: saves locally, calls onKeyChange, shows success, clears fields, no Drive sync when not connected', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
       vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
       const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
-
+      const { container } = renderSettings({ state, settingsSection: 'encryption' })
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -632,18 +418,8 @@ describe('SettingsPage', () => {
 
     it('shows "Current password is incorrect" and does not save when current password verification fails', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockRejectedValue(new Error('decrypt failed'))
-      const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
-
+      const { container } = renderSettings({ settingsSection: 'encryption' })
 
       fillAndSubmitChangePassword(container, {
         current: 'wrong-password',
@@ -661,18 +437,8 @@ describe('SettingsPage', () => {
 
     it('shows "Password must be at least 6 characters" and does not save when the new password is too short', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
-      const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
-
+      const { container } = renderSettings({ settingsSection: 'encryption' })
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -690,18 +456,8 @@ describe('SettingsPage', () => {
 
     it('shows "Passwords do not match" and does not save when new/confirm differ', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
-      const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
-
+      const { container } = renderSettings({ settingsSection: 'encryption' })
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -724,16 +480,7 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.syncBackup).mockResolvedValue('file-id')
       const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
-
+      const { container } = renderSettings({ state, settingsSection: 'encryption' })
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -762,18 +509,8 @@ describe('SettingsPage', () => {
       vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
       vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
       vi.mocked(driveModule.syncBackup).mockRejectedValue(new Error('network down'))
-      const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
-
+      const { container } = renderSettings({ settingsSection: 'encryption' })
 
       fillAndSubmitChangePassword(container, {
         current: 'test-password',
@@ -797,8 +534,6 @@ describe('SettingsPage', () => {
 
   describe('Cross-password Drive restore', () => {
     beforeEach(() => {
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
-      vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
       vi.mocked(global.confirm).mockReturnValue(true)
     })
 
@@ -809,20 +544,10 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.restoreBackup).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
-      const state = initialState()
 
-      render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
@@ -834,6 +559,30 @@ describe('SettingsPage', () => {
       // Only the initial "Restore will replace..." confirm ran to trigger the
       // restore; the decrypt-mismatch path itself does not prompt again.
       expect(global.confirm).toHaveBeenCalledTimes(1)
+    })
+
+    it('"Restore with this password" button has btn btn-primary blueprint classes and 4 ordered corner marks; Cancel stays plain secondary', async () => {
+      const backupSalt = generateSalt()
+      const backupState = initialState()
+      const envelope = await encryptState(backupState, sessionKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      const submitButton = await screen.findByRole('button', { name: 'Restore with this password' })
+      expect(submitButton.className).toContain('btn btn-primary')
+      expect(submitButton.className).toContain('blueprint')
+      expectCornersInOrder(submitButton)
+
+      const cancelButton = screen.getByRole('button', { name: 'Cancel' })
+      expect(cancelButton.className).toContain('btn btn-secondary')
+      expect(cancelButton.className).not.toContain('blueprint')
+      expect(cancelButton.querySelectorAll('i.corner').length).toBe(0)
     })
 
     it('retries decryption locally against the carried envelope (no second restoreBackup call) on the correct backup password', async () => {
@@ -854,20 +603,10 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.restoreBackup).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
-      const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
+      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
@@ -898,20 +637,10 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.restoreBackup).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
-      const state = initialState()
 
-      const { container } = render(
-        <SettingsPage
-          state={state}
-          dispatch={mockDispatch}
-          sessionKey={sessionKey}
-          sessionSalt={sessionSalt}
-          onKeyChange={mockOnKeyChange}
-        />
-      )
+      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-
-      const restoreButton = await screen.findByRole('button', { name: 'Restore from Drive' })
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
       await waitFor(() => {

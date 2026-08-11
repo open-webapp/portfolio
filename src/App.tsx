@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useRef, useState } from 'react'
+import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
@@ -9,7 +9,7 @@ import { PositionsTable } from './components/PositionsTable'
 import { SettingsPage } from './components/Settings'
 import { ImportDialog } from './components/import/ImportDialog'
 import { PasswordGate } from './components/PasswordGate'
-import { drive } from './lib/drive'
+import { drive, getDriveAuthStatus, getBackupFileId, connectDrive, disconnectDrive, syncBackup } from './lib/drive'
 import './App.css'
 
 const retirementFilters = [
@@ -37,6 +37,15 @@ function App() {
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null)
   const [sessionSalt, setSessionSalt] = useState<Uint8Array | null>(null)
   const [gateShape, setGateShape] = useState<'absent' | 'legacy-plaintext' | 'encrypted' | null>(null)
+
+  // Drive-sync state (lifted from Settings.tsx so it survives Settings unmounting/remounting)
+  const [syncing, setSyncing] = useState(false)
+  const [driveReady, setDriveReady] = useState(false)
+  const [driveEmail, setDriveEmail] = useState<string | null>(null)
+  const [backupFileId, setBackupFileId] = useState<string | null>(null)
+
+  // Which section of the Settings page is active
+  const [settingsSection, setSettingsSection] = useState<'drive' | 'encryption'>('drive')
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -74,6 +83,71 @@ function App() {
       isHydratedRef.current = true
     }
   }, [isHydrated])
+
+  // Check Drive connection status on mount (never opens a Google auth window)
+  useEffect(() => {
+    const checkDrive = async () => {
+      try {
+        const authStatus = await getDriveAuthStatus()
+        setDriveReady(authStatus.connected)
+        setDriveEmail(authStatus.email)
+        if (authStatus.connected) {
+          const fileId = await getBackupFileId()
+          setBackupFileId(fileId)
+        }
+      } catch (error) {
+        console.error('Failed to check Drive connection:', error)
+      }
+    }
+    checkDrive()
+  }, [])
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true)
+    try {
+      const fileId = await syncBackup(state, sessionKey!, sessionSalt!)
+      setBackupFileId(fileId)
+      alert('Synced to Drive')
+    } catch (error) {
+      console.error('Sync failed:', error)
+      alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSyncing(false)
+    }
+  }, [state, sessionKey, sessionSalt])
+
+  const handleConnect = useCallback(async () => {
+    setSyncing(true)
+    try {
+      const connection = await connectDrive()
+      setDriveReady(true)
+      setDriveEmail(connection.email)
+      const fileId = await getBackupFileId()
+      setBackupFileId(fileId)
+      alert('Connected to Drive')
+    } catch (error) {
+      console.error('Drive connect failed:', error)
+      alert(`Connect failed: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSyncing(false)
+    }
+  }, [])
+
+  const handleDisconnect = useCallback(async () => {
+    setSyncing(true)
+    try {
+      await disconnectDrive()
+      setDriveReady(false)
+      setDriveEmail(null)
+      setBackupFileId(null)
+      alert('Disconnected from Drive')
+    } catch (error) {
+      console.error('Drive disconnect failed:', error)
+      alert(`Disconnect failed: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSyncing(false)
+    }
+  }, [])
 
   // Flush the pending save on page unload/hide so a refresh within the debounce
   // window doesn't lose the latest state (e.g. a just-finished import).
@@ -173,12 +247,24 @@ function App() {
 
   return (
     <div>
-      {state.view === 'dashboard' ? (
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          {/* Navigation: category tabs, retirement filter, date range */}
-          <Nav state={state} dispatch={dispatch} />
+      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+        {/* Navigation: category tabs (dashboard) / settings tabs (settings), sync + settings buttons */}
+        <Nav
+          state={state}
+          dispatch={dispatch}
+          settingsSection={settingsSection}
+          setSettingsSection={setSettingsSection}
+          driveReady={driveReady}
+          syncing={syncing}
+          handleSync={handleSync}
+          onOpenSettings={() => {
+            setSettingsSection('drive')
+            dispatch({ type: 'SET_VIEW', view: 'settings' })
+          }}
+        />
 
-          {/* Main content area with padding */}
+        {state.view === 'dashboard' ? (
+          /* Main content area with padding */
           <div style={{ padding: 'var(--space-6)' }}>
             {/* Overview card: 3-column layout with All Together, Retirement, Non-Retirement */}
             <OverviewCard state={state} />
@@ -224,10 +310,8 @@ function App() {
             {/* Positions table */}
             <PositionsTable state={state} dispatch={dispatch} />
           </div>
-        </div>
-      ) : (
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-          {/* Settings page view */}
+        ) : (
+          /* Settings page view */
           <div style={{ padding: 'var(--space-6)' }}>
             <SettingsPage
               state={state}
@@ -238,25 +322,19 @@ function App() {
                 setSessionKey(newKey)
                 setSessionSalt(newSalt)
               }}
+              driveReady={driveReady}
+              driveEmail={driveEmail}
+              backupFileId={backupFileId}
+              syncing={syncing}
+              setSyncing={setSyncing}
+              handleConnect={handleConnect}
+              handleDisconnect={handleDisconnect}
+              handleSync={handleSync}
+              settingsSection={settingsSection}
             />
-            <button
-              onClick={() => dispatch({ type: 'SET_VIEW', view: 'dashboard' })}
-              style={{
-                padding: '8px 16px',
-                marginTop: 'var(--space-4)',
-                background: 'var(--color-accent)',
-                color: 'var(--color-bg)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: '600',
-              }}
-            >
-              Back to Dashboard
-            </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

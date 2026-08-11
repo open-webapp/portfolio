@@ -18,6 +18,17 @@ const { mockSessionKey, mockSessionSalt } = vi.hoisted(() => ({
 
 vi.mock('./lib/drive', () => ({
   drive: { activate: vi.fn(() => vi.fn()) },
+  getDriveAuthStatus: vi.fn().mockResolvedValue({
+    connected: false,
+    email: null,
+    expiresAt: null,
+    needsReauth: false,
+    tokenValid: false,
+  }),
+  getBackupFileId: vi.fn().mockResolvedValue(null),
+  connectDrive: vi.fn(),
+  disconnectDrive: vi.fn(),
+  syncBackup: vi.fn(),
 }))
 
 vi.mock('./lib/persist', () => ({

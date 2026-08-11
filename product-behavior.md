@@ -10,9 +10,13 @@ Top to bottom: `Nav` → `OverviewCard` (3-cluster layout) → `AllocationChart`
 
 ## Nav
 
+Nav renders on both the dashboard view and the settings view.
+
 - **Brand**: `.nav-brand` "Ledger".
-- **Category tabs** (radio-style `.seg`): All / Taxable / Non-Taxable / Tax-Deferred. Filters accounts by `Account.taxCategory`; "All" includes every account. Drives every downstream selector (positions, transactions, overview card, allocation).
-- **Settings gear** (SVG icon): navigates to the Settings page.
+- **Category tabs** (radio-style `.seg`, dashboard view only): All / Taxable / Non-Taxable / Tax-Deferred. Filters accounts by `Account.taxCategory`; "All" includes every account. Drives every downstream selector (positions, transactions, overview card, allocation).
+- **Settings tabs** (radio-style `.seg`, settings view only): "Google Drive" / "Encryption" — switches which card `SettingsPage` shows. Resets to "Google Drive" every time Settings is opened via the gear button, regardless of which tab was last selected.
+- **Sync Now icon button** (refresh icon, `title="Sync now"`): shown only when Drive is connected (`driveReady`); disabled while a sync is in progress (`syncing`). Positioned between the tabs and the settings gear. Triggers the same sync action as the Settings page's own "Sync Now" button.
+- **Settings gear** (SVG icon): navigates to the Settings page, resetting the settings tab selection to "Google Drive" on every open.
 
 ## Overview card
 
@@ -85,13 +89,13 @@ Full-replacement gate screen (`PasswordGate`) rendered by `App.tsx` in place of 
 
 ## Settings page
 
-A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Single unconditional page with no tabs.
+A dedicated page (not a modal or dropdown) accessed via a gear button in the Nav. Two mutually-exclusive sections, switched via the Nav's settings seg tabs ("Google Drive" / "Encryption") rather than both rendering stacked — only one section's card is visible at a time.
 
-Google Drive Sync, then Change Password:
+Google Drive Sync (`settingsSection === 'drive'`) or Change Password (`settingsSection === 'encryption'`):
 - **Google Drive Sync**: connection state shown by the button set. Not connected → **Connect Drive** (`.btn.btn-primary`). Connected → **Sync Now** (`.btn.btn-primary`, calls `syncBackup(state, sessionKey, sessionSalt)`), **Restore from Drive** (`.btn.btn-secondary`, native confirm then `restoreBackup(sessionKey)` + dispatches `__SET_STATE` on success), **Disconnect** (`.btn.btn-secondary`, calls `disconnectDrive()` and flips back to not-connected). Buttons show an "-ing" label while busy. When connected AND a backup file exists (found on page load via `getBackupFileId()`, or set by the last successful sync), a **View backup in Google Drive** link appears below the buttons — opens `https://drive.google.com/file/d/{fileId}/view` in a new tab. No link while not connected or before any sync. **Auth-token behavior**: Sync/Restore validate the cached token before any Drive I/O. A still-valid token (not expired, scopes complete) is reused without prompting; only an expired or missing token triggers the interactive Google auth window, and never more than one window at a time (in-flight guard) even if sync/restore is triggered rapidly. `getBackupFileId()` is a passive page-load probe and never opens Google auth — an expired token just hides the backup link until the next successful sync/connect. **Cross-password restore**: if the fetched Drive backup was encrypted under a different password than the current session (`restoreBackup` throws `DriveDecryptError`), a small inline prompt appears below the buttons (not the full gate, not `window.confirm`) asking for that backup's password; submitting re-derives a key against the backup's own salt and decrypts locally (no second Drive round-trip) — on success the app adopts that key as the session-wide key going forward and dispatches `__SET_STATE` with the decrypted data. Wrong password shows an inline "Incorrect password" error; "Cancel" dismisses the prompt with no changes.
 - **Change Password**: "Current Password", "New Password", "Confirm New Password" fields + a "Change Password" button. Verifies the current password by attempting a real decrypt of the stored data; wrong current password shows "Current password is incorrect" and stops. New password follows the same 6-char-minimum/must-match rules as the set-password screen. On success: generates a **fresh salt** (rotated on every change, never reused), re-derives a key, re-encrypts and saves the local IndexedDB copy under the new key+salt, then — only if Google Drive is currently connected — re-syncs the Drive backup under the new key too. If that Drive re-sync fails, a non-blocking inline warning is shown ("Password changed locally, but Drive re-sync failed... Sync manually...") but **the local password change is not rolled back**. On success the app adopts the new key as the session-wide key going forward.
 
-**Back button**: Returns to the dashboard.
+**Back button**: "Back to Dashboard" (`.btn.btn-secondary`), below a `.hr` divider at the bottom of the page. Returns to the dashboard — same effect as before, though the button now lives at the bottom of the settings page content itself rather than being a separately-positioned page element.
 
 ## Formatting conventions
 
