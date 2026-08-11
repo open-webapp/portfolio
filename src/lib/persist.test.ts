@@ -134,7 +134,6 @@ function fixtureState(): AppState {
 
     // UI state
     category: 'all',
-    range: '1y',
     tab: 'positions',
     view: 'dashboard',
     sortKey: 'symbol',
@@ -233,7 +232,6 @@ describe('IndexedDB persistence', () => {
       const stateWithUIChanges: AppState = {
         ...initialState(),
         category: 'long-term',
-        range: '5y',
         tab: 'transactions',
         sortKey: 'gainLoss',
         sortDir: 'desc',
@@ -251,7 +249,6 @@ describe('IndexedDB persistence', () => {
       const loaded = await loadPersistedApp(key)
 
       expect(loaded?.category).toBe('long-term')
-      expect(loaded?.range).toBe('5y')
       expect(loaded?.tab).toBe('transactions')
       expect(loaded?.sortKey).toBe('gainLoss')
       expect(loaded?.sortDir).toBe('desc')
@@ -389,7 +386,6 @@ describe('IndexedDB persistence', () => {
         positions: [],
         // Missing other collections
         category: 'all',
-        range: '6m',
         tab: 'transactions',
       }
 
@@ -405,7 +401,6 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.snapshots).toEqual([]) // Should default to []
       expect(legacyKey in loaded!).toBe(false) // Not part of AppState anymore
       expect(loaded?.category).toBe('all')
-      expect(loaded?.range).toBe('6m')
       expect(loaded?.tab).toBe('transactions')
     })
 
@@ -427,7 +422,6 @@ describe('IndexedDB persistence', () => {
           },
         ],
         category: 'all',
-        range: '1y',
         tab: 'positions',
         view: 'dashboard',
         sortKey: 'symbol',
@@ -475,7 +469,6 @@ describe('IndexedDB persistence', () => {
         accounts: [],
         positions: [],
         category: 'all',
-        range: '1y',
         tab: 'positions',
         // Missing view
       }
@@ -496,7 +489,6 @@ describe('IndexedDB persistence', () => {
         transactions: [],
         snapshots: [],
         category: 'all',
-        range: '1y',
         tab: 'positions',
         view: 'dashboard',
         // Missing csvMappings
@@ -545,7 +537,6 @@ describe('IndexedDB persistence', () => {
         accounts: [],
         positions: [],
         category: 'all',
-        range: '6m',
         tab: 'transactions',
       }
 

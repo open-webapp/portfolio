@@ -276,7 +276,6 @@ describe('drive.ts Drive-sync wiring', () => {
         },
       ],
       category: 'all',
-      range: '1y',
       tab: 'positions',
       sortKey: 'symbol',
       sortDir: 'asc',

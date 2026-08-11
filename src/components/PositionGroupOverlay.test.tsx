@@ -56,7 +56,6 @@ describe('PositionGroupOverlay', () => {
     snapshots: [],
     csvMappings: [],
     customInstitutions: [],
-    range: '1y',
     tab: 'positions',
     view: 'dashboard',
     sortKey: 'symbol',

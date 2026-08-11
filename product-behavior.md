@@ -6,51 +6,35 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Top to bottom: `Nav` → portfolio header row (kicker + title only, no tags) → 4-column `SummaryCards` grid → "Retirement" `SegmentSummaryCards` row → "Non-Retirement" `SegmentSummaryCards` row → full-width `AllocationChart` → tabs row (Positions/Transactions `.seg` selector + right-aligned "Import" button) → retirement filter tags (Positions tab only) → active tab's table.
+Top to bottom: `Nav` → `OverviewCard` (3-cluster layout) → `AllocationChart` (2-column grid) → divider → retirement filter `.seg` control + "Import" button row → `PositionsTable`.
 
 ## Nav
 
 - **Brand**: `.nav-brand` "Ledger".
-- **Category tabs** (radio-style `.seg`): All / Taxable / Non-Taxable / Tax-Deferred. Filters accounts by `Account.taxCategory`; "All" includes every account. Drives every downstream selector (positions, transactions, summary cards, allocation, performance series).
-- **Date range select**: 6 Months / 1 Year / YTD / All. Filters the Performance chart's plotted snapshots to those on/after a cutoff computed from today (`6m`/`1y` roll back that many months/years, `ytd` cuts off at Jan 1 of the current year, `all` shows everything). Does **not** affect summary cards, allocation, or the tables — those are category/retirement-filtered only.
-- **Settings gear**: navigates to the Settings page.
+- **Category tabs** (radio-style `.seg`): All / Taxable / Non-Taxable / Tax-Deferred. Filters accounts by `Account.taxCategory`; "All" includes every account. Drives every downstream selector (positions, transactions, overview card, allocation).
+- **Settings gear** (SVG icon): navigates to the Settings page.
 
-## Portfolio header
+## Overview card
 
-In the dashboard content area, below `Nav`: kicker "Portfolio" + `<h1>Ledger</h1>`. No filtering controls at this location.
+Single `.card.blueprint.elev-sm` card with corner marks, containing three metric clusters (Total Value / Total Gain-Loss / Amount Invested), computed live via `summaryCards()` and `segmentSummaryCards()`:
 
-## Summary cards
+- **Total Value** — sum of `shares * price` across positions in the selected category.
+- **Total Gain/Loss** — sum of `marketValue - costBasis` across selected positions, signed with `+`/`-` prefix; a `sub` line shows % (`gl / costBasis * 100`, `0` if cost basis is 0). Colored green/red by sign.
+- **Amount Invested** — sum of `shares * avgCost` across selected positions.
 
-Rendered as `.card.blueprint.elev-sm` cards with corner marks, in a single row of 4 equal columns (grid gap `var(--space-4)`), shrinking each card to fit. Cards are, in order:
-
-1. **Total Value** — sum of `shares * price` across positions in the selected category. Always neutral-colored.
-2. **Day Change** — `lastSnapshotSeriesValue - previousSnapshotSeriesValue` across *all* accounts (not filtered by category), as a signed USD delta. Renders `N/A` when fewer than 2 distinct snapshot dates exist across the whole portfolio. Green (`--color-accent-700`) when ≥ 0, red (`#8a3c2e`) when negative.
-3. **Total Gain/Loss** — sum of `marketValue - costBasis` across positions in the selected category, signed with `+`/`-` prefix, with a `sub` line showing the % (`gl / costBasis * 100`, `0` if cost basis is 0). Colored green/red by sign.
-4. **Amount Invested** — sum of `shares * avgCost` across positions in the selected category. Neutral-colored.
-
-## Segment summary card rows
-
-Two rows rendering portfolio data by retirement status ("Retirement" and "Non-Retirement"), appearing below the main `SummaryCards`. Each row is a `.card.blueprint.elev-sm` with corner marks, containing:
-
-- **Kicker label** (uppercase, muted): `"Retirement"` or `"Non-Retirement"`
-- **3-column grid** (gap `var(--space-4)`):
-  1. **Total Value** — sum of `shares * price` across positions in the selected category filtered by retirement status.
-  2. **Total Gain/Loss** — sum of `marketValue - costBasis` across filtered positions, signed with `+`/`-` prefix, with a `sub` line showing the % (`gl / costBasis * 100`). Colored green/red by sign.
-  3. **Amount Invested** — sum of `shares * avgCost` across filtered positions.
-
-Both cards are computed via `segmentSummaryCards(state, retirement)` and reflect the current category tab's filter but *never* include a Day Change card.
+No Day Change metric. Card reflects the current category filter only; retirement-segment metrics are derived separately for the positions table's retirement filter display.
 
 ## Allocation chart
 
-Full-width bar list grouped by *effective* asset class (`assetClassManualOverride || assetClass`) for positions in the selected category (not retirement-filtered). Each row shows the class label, its USD value, its % of category total, and a horizontal bar sized to that %. Empty positions list → empty bar list, no crash. Rendered below both segment summary card rows.
+2-column grid grouped by *effective* asset class (`assetClassManualOverride || assetClass`) for positions in the selected category (not retirement-filtered). Each cell shows the class label and USD value inline, with a compact horizontal bar (height 6px) sized to percentage of category total. Empty positions list → empty grid, no crash.
 
 ## Positions table
 
-**Retirement filter tags**: Three clickable `.tag` pills ("All" / "Retirement" / "Non-Retirement") render directly above the table, filtering positions by the owning `Account.retirement` boolean. Only shown on the Positions tab; not applicable to Transactions.
+**Retirement filter** (`.seg` radio control): Three options ("All" / "Retirement" / "Non-Retirement") filter positions by the owning `Account.retirement` boolean.
 
 Rows are **aggregate groups** — each row represents a unique combination of symbol + effective asset class only. Tax category and retirement status no longer partition groups; positions with the same symbol and asset class merge regardless of account tax/retirement status. Every group, including size-1, renders as one row. Groups aggregate shares, cost basis, and market value across all underlying positions; price is derived as summed value / summed shares. **% of Portfolio** reflects positions matching both the current category filter and retirement filter.
 
-- **Filters**: asset-class tags (computed from all positions currently in state — not category-scoped — sorted alphabetically) + free-text search (matches symbol or name, case-insensitive substring) + category + retirement filter (from the tags above) all compose.
+- **Filters**: asset-class tags (computed from all positions currently in state — not category-scoped — sorted alphabetically) + free-text search (matches symbol or name, case-insensitive substring) + category + retirement filter (.seg control above) all compose.
 - **Columns**: Symbol (symbol + name), Asset Class (effective), Shares, Cost Basis (labeled "Avg Cost"), Current Price, Amount Invested, Market Value, G/L (signed, colored), G/L %, % of Portfolio (unsigned, one decimal, shows percentage of filtered portfolio total), Row-count badge (right-aligned, `.tag.tag-neutral`, showing count of underlying position rows merged into the aggregate group; column header is blank, still the last column).
 - **Sorting**: Clicking a sortable column header (Symbol/Asset Class/Shares/Cost Basis/Current Price) toggles asc/desc via `TOGGLE_SORT`; clicking the currently-sorted column flips direction, clicking a different column resets to `asc`. Arrow (`↑`/`↓`) marks the active sort column. Sorting orders by aggregate/derived group values (e.g., summed Market Value, derived Price = summed value / summed shares), computed client-side in `PositionsTable` after grouping. Amount Invested/Market Value/G/L/G/L % columns are display-only, not sortable.
 - **Row click → overlay**: Clicking any row (cursor pointer) opens `PositionGroupOverlay`, a dialog (`.dialog-backdrop`/`.dialog`, closable via Escape/backdrop-click/X button). Title: `` `Symbol — Name — Asset Class` ``. Lists underlying positions sorted by account.institution ascending, then account.name ascending, fallback account.accountNumber. **Overlay columns** (9): Account, Symbol, Name, Shares, Avg Cost, Current Price, Taxes, Override, Delete. **Account display (two-line)**: line 1 shows institution—name (or name only if no institution); line 2 shows muted tax category and retirement labels (e.g., "Taxable • Retirement"). **Editable cells**: Account (dropdown button listing all accounts; selecting one dispatches `UPDATE_POSITION` with `patch: { accountId }`), Symbol (`<input type="text">`, click-to-edit, empty/whitespace-only reverts silently, trimmed non-empty value commits), Name (new column, `EditableTextCell`, click-to-edit via `<input type="text">`, empty/whitespace-only reverts silently, trimmed non-empty value commits), Shares/AvgCost/Price/Taxes (`<input type="number">`, click-to-edit, no hover affordance). For numeric fields: valid non-negative number commits via `UPDATE_POSITION`, invalid/empty reverts silently (no error UI), **except** empty Taxes saves as `0`. All fields: Enter or blur commits; Escape reverts (no dispatch). **Side effect**: editing Symbol or Account changes a position's group key (`symbol` + `effectiveAssetClass`), so the position's row disappears from the overlay on the next render (overlay itself stays open; natural re-render consequence). **Delete column**: blank header, trash-icon button per row; clicking prompts `window.confirm('Delete this position? It will be moved to Closed Positions.')`; on confirm, dispatches `CLOSE_POSITION` which converts the position into a `ClosedPosition` (`realizedGL: null`, `realizedGLBasis: 'unknown'`, `closedDate` = today) rather than hard-deleting it — the row then disappears from the overlay on next render as a natural consequence of no longer being in `state.positions` (same side-effect pattern as editing Symbol/Account). Override column contains `AssetClassOverrideSelect` control.
@@ -59,6 +43,8 @@ Rows are **aggregate groups** — each row represents a unique combination of sy
 
 ## Transactions table
 
+(Not rendered in Dashboard; kept for data-model and future-surface reasons.)
+
 - Type filter tags (`All` + every distinct `Transaction.type` currently in state, alphabetical) + free-text search (symbol or date substring, case-insensitive) + category filter (from Nav; transactions are **not** affected by the retirement filter).
 - Always sorted by date descending — no user-controlled sort.
 - Columns: Date (formatted `MMM D, YYYY`), Symbol, Type (colored tag: Buy=accent, Sell=outline, Dividend=neutral, anything else=neutral), Shares, Cost Basis, Amount Invested, Taxes (formatted USD or `—` if null), Position Link.
@@ -66,7 +52,7 @@ Rows are **aggregate groups** — each row represents a unique combination of sy
 
 ## CSV import (Positions / Transactions)
 
-A single **Import** button (`.btn.btn-secondary.blueprint` + 4 corner marks + upload SVG, `aria-label="Import"`) sits right-aligned in the tabs row, visible on both Positions and Transactions tabs. It opens a 2-step `ImportDialog`:
+A single **Import** button (`.btn.btn-secondary.blueprint` + 4 corner marks + upload SVG, `aria-label="Import"`) sits right-aligned in the retirement filter + Import row. It opens a 2-step `ImportDialog`:
 
 Dialog chrome: `.dialog.blueprint` + four corner marks; width `min(96vw, 1400px)`, `max-width: 96vw`, `max-height: 88vh`, `overflow: auto`. Header row (space-between): title "Import" + ✕ close button (`aria-label="Close"`). Step indicator `[Setup, Review]` as numbered tags: active = `tag-accent`, completed = `tag-neutral`, future = `tag-outline` + muted label. Footer `.dialog-actions`: Continue / Back / primary import button.
 
@@ -112,4 +98,4 @@ Google Drive Sync, then Change Password:
 - USD: `fmtUSD(n)` → `"$1,234.56"` / `"-$1,234.56"` (no leading `+` on positives; callers that want a `+` prepend it themselves for G/L-style fields).
 - Percent: `fmtPct(n)` → always signed, `"+1.20%"` / `"-1.20%"` / `"+0.00%"`.
 - Shares: `toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})`.
-- Dates in Transactions table: `Date.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})` (e.g. "Jan 5, 2026"). Dates elsewhere (Performance chart labels, Closed Positions "Closed" column) are shown as raw ISO strings.
+- Dates in Transactions table: `Date.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})` (e.g. "Jan 5, 2026"). Dates in Closed Positions "Closed" column are shown as raw ISO strings.
