@@ -25,7 +25,6 @@ describe('PositionsTable', () => {
         accountNumber: '001',
         name: 'Brokerage A',
         institution: 'Test Institution',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -34,7 +33,6 @@ describe('PositionsTable', () => {
         accountNumber: '002',
         name: 'Brokerage B',
         institution: 'Test Institution',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -50,7 +48,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 180,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -62,7 +59,6 @@ describe('PositionsTable', () => {
         shares: 15,
         avgCost: 155,
         price: 180,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -138,7 +134,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Taxable',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -146,7 +141,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Non-Taxable',
-        taxCategory: 'nonTaxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -162,7 +156,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 100,
         price: 120,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -174,7 +167,6 @@ describe('PositionsTable', () => {
         shares: 15,
         avgCost: 105,
         price: 120,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -239,7 +231,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Non-Retirement',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -247,7 +238,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Retirement',
-        taxCategory: 'taxable',
         retirement: true,
         createdAt: '2024-01-01',
       },
@@ -263,7 +253,6 @@ describe('PositionsTable', () => {
         shares: 5,
         avgCost: 120,
         price: 140,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -275,7 +264,6 @@ describe('PositionsTable', () => {
         shares: 8,
         avgCost: 125,
         price: 140,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -335,7 +323,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -351,7 +338,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 400,
         price: 450,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -364,7 +350,6 @@ describe('PositionsTable', () => {
         shares: 5,
         avgCost: 410,
         price: 450,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -406,7 +391,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'My Brokerage',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -422,7 +406,6 @@ describe('PositionsTable', () => {
         shares: 3,
         avgCost: 200,
         price: 250,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -475,7 +458,6 @@ describe('PositionsTable', () => {
         accountNumber: 'Z001',
         name: 'Zebra Account',
         institution: 'Test',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -484,7 +466,6 @@ describe('PositionsTable', () => {
         accountNumber: 'A001',
         name: 'Apple Account',
         institution: 'Test',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -500,7 +481,6 @@ describe('PositionsTable', () => {
         shares: 5,
         avgCost: 150,
         price: 180,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -512,7 +492,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 160,
         price: 180,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -568,7 +547,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -576,7 +554,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Account 2',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -592,7 +569,6 @@ describe('PositionsTable', () => {
         shares: 5,
         avgCost: 100,
         price: 120,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -604,7 +580,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 105,
         price: 120,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -657,7 +632,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -665,7 +639,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Account 2',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -681,7 +654,6 @@ describe('PositionsTable', () => {
         shares: 2,
         avgCost: 300,
         price: 350,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -693,7 +665,6 @@ describe('PositionsTable', () => {
         shares: 3,
         avgCost: 310,
         price: 350,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -746,7 +717,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -754,7 +724,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Account 2',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -770,7 +739,6 @@ describe('PositionsTable', () => {
         shares: 1,
         avgCost: 3000,
         price: 3500,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -782,7 +750,6 @@ describe('PositionsTable', () => {
         shares: 2,
         avgCost: 3100,
         price: 3500,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -838,7 +805,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -854,7 +820,6 @@ describe('PositionsTable', () => {
         shares: 100, // marketValue = 100 * 10 = 1000
         avgCost: 5,
         price: 10,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -866,7 +831,6 @@ describe('PositionsTable', () => {
         shares: 10, // marketValue = 10 * 100 = 1000
         avgCost: 50,
         price: 100,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -922,7 +886,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -930,7 +893,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Account 2',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -946,7 +908,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 50,
         price: 60,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -958,7 +919,6 @@ describe('PositionsTable', () => {
         shares: 5,
         avgCost: 52,
         price: 60,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -970,7 +930,6 @@ describe('PositionsTable', () => {
         shares: 8,
         avgCost: 55,
         price: 60,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1017,7 +976,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1025,7 +983,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Account 2',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1033,7 +990,6 @@ describe('PositionsTable', () => {
         id: 'acc-3',
         accountNumber: '003',
         name: 'Account 3',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1049,7 +1005,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 50,
         price: 60,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1061,7 +1016,6 @@ describe('PositionsTable', () => {
         shares: 5,
         avgCost: 52,
         price: 60,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1073,7 +1027,6 @@ describe('PositionsTable', () => {
         shares: 20,
         avgCost: 30,
         price: 40,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1129,7 +1082,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1145,7 +1097,6 @@ describe('PositionsTable', () => {
         shares: 1,
         avgCost: 100,
         price: 100,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1157,7 +1108,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 180,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1230,7 +1180,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1246,7 +1195,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 180,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1295,7 +1243,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1311,7 +1258,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 100,
         price: 120,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1365,7 +1311,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Valid Account',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1381,7 +1326,6 @@ describe('PositionsTable', () => {
         shares: 5,
         avgCost: 100,
         price: 120,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1393,7 +1337,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 105,
         price: 120,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1404,7 +1347,6 @@ describe('PositionsTable', () => {
       closedPositions: [],
       transactions: [],
       snapshots: [],
-      category: 'all',
       range: '1y',
       tab: 'positions',
       sortKey: 'symbol',
@@ -1436,7 +1378,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1452,7 +1393,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 180,
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1496,7 +1436,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1512,7 +1451,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 200, // marketValue = 2000
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1524,7 +1462,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 300, // marketValue = 3000
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1567,7 +1504,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Non-Retirement',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1575,7 +1511,6 @@ describe('PositionsTable', () => {
         id: 'acc-2',
         accountNumber: '002',
         name: 'Retirement',
-        taxCategory: 'taxable',
         retirement: true,
         createdAt: '2024-01-01',
       },
@@ -1591,7 +1526,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 200, // marketValue = 2000
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1603,7 +1537,6 @@ describe('PositionsTable', () => {
         shares: 10,
         avgCost: 150,
         price: 300, // marketValue = 3000
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]
@@ -1657,7 +1590,6 @@ describe('PositionsTable', () => {
         id: 'acc-1',
         accountNumber: '001',
         name: 'Account 1',
-        taxCategory: 'taxable',
         retirement: false,
         createdAt: '2024-01-01',
       },
@@ -1673,7 +1605,6 @@ describe('PositionsTable', () => {
         shares: 33,
         avgCost: 100,
         price: 100, // marketValue = 3300
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1685,7 +1616,6 @@ describe('PositionsTable', () => {
         shares: 33,
         avgCost: 100,
         price: 100, // marketValue = 3300
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
       {
@@ -1697,7 +1627,6 @@ describe('PositionsTable', () => {
         shares: 34,
         avgCost: 100,
         price: 100, // marketValue = 3400
-        taxes: null,
         lastImportedAt: '2024-01-01',
       },
     ]

@@ -23,7 +23,6 @@ describe('PositionGroupOverlay', () => {
     shares: 100,
     avgCost: 150,
     price: 180,
-    taxes: 50,
     lastImportedAt: '2024-01-01',
     ...overrides,
   })
@@ -33,7 +32,6 @@ describe('PositionGroupOverlay', () => {
     accountNumber: '001',
     name: 'Brokerage A',
     institution: 'Test Institution',
-    taxCategory: 'taxable',
     retirement: false,
     createdAt: '2024-01-01',
     ...overrides,
@@ -706,7 +704,6 @@ describe('PositionGroupOverlay', () => {
     const account = createTestAccount({
       institution: 'Fidelity',
       name: 'Brokerage',
-      taxCategory: 'taxable',
       retirement: false,
     })
 
@@ -733,7 +730,6 @@ describe('PositionGroupOverlay', () => {
     const account = createTestAccount({
       institution: 'Vanguard',
       name: 'IRA',
-      taxCategory: 'taxable',
       retirement: true,
     })
 
@@ -760,7 +756,6 @@ describe('PositionGroupOverlay', () => {
     const account = createTestAccount({
       institution: 'Charles Schwab',
       name: 'HSA',
-      taxCategory: 'nonTaxable',
       retirement: false,
     })
 
@@ -787,7 +782,6 @@ describe('PositionGroupOverlay', () => {
     const account = createTestAccount({
       institution: 'Fidelity',
       name: 'Roth IRA',
-      taxCategory: 'nonTaxable',
       retirement: true,
     })
 
@@ -814,7 +808,6 @@ describe('PositionGroupOverlay', () => {
     const account = createTestAccount({
       institution: 'E*TRADE',
       name: 'SEP IRA',
-      taxCategory: 'taxDeferred',
       retirement: false,
     })
 
@@ -841,7 +834,6 @@ describe('PositionGroupOverlay', () => {
     const account = createTestAccount({
       institution: 'Schwab',
       name: '401(k)',
-      taxCategory: 'taxDeferred',
       retirement: true,
     })
 
@@ -1092,7 +1084,6 @@ describe('PositionGroupOverlay', () => {
       id: 'acc-fid-taxable',
       institution: 'Fidelity',
       name: 'Brokerage',
-      taxCategory: 'taxable',
       retirement: false,
     })
 
@@ -1100,7 +1091,6 @@ describe('PositionGroupOverlay', () => {
       id: 'acc-schwab-taxable',
       institution: 'Charles Schwab',
       name: 'Brokerage',
-      taxCategory: 'taxable',
       retirement: false,
     })
 
@@ -1108,7 +1098,6 @@ describe('PositionGroupOverlay', () => {
       id: 'acc-fid-deferred',
       institution: 'Fidelity',
       name: 'IRA',
-      taxCategory: 'taxDeferred',
       retirement: true,
     })
 
