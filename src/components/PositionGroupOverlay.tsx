@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Account, Position } from '../lib/types'
 import type { AppState } from '../lib/state'
-import type { AggregateRow } from './PositionsTable'
 import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
 import { filteredPortfolioTotal } from '../lib/selectors'
 import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
@@ -275,12 +274,14 @@ function AccountDropdown({
 }
 
 export interface PositionGroupOverlayProps {
-  group: AggregateRow
+  positions: Position[]
+  title: string
   accounts: Account[]
   dispatch: (action: any) => void
   onClose: () => void
   existingAssetClasses: string[]
   state: AppState
+  sortPositions?: (a: Position, b: Position, accounts: Account[]) => number
 }
 
 /**
@@ -288,12 +289,14 @@ export interface PositionGroupOverlayProps {
  * Shows a table of underlying positions sorted by account name.
  */
 export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
-  group,
+  positions,
+  title,
   accounts,
   dispatch,
   onClose,
   existingAssetClasses,
   state,
+  sortPositions,
 }) => {
   // Escape key listener
   useEffect(() => {
@@ -310,7 +313,10 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
   // Sort positions by account institution ascending, then account name ascending (fallback to accountNumber)
   const sortedPositions = useMemo(() => {
     const accountMap = new Map(accounts.map(a => [a.id, a]))
-    return [...group.positions].sort((a, b) => {
+    return [...positions].sort((a, b) => {
+      if (sortPositions) {
+        return sortPositions(a, b, accounts)
+      }
       const accA = accountMap.get(a.accountId)
       const accB = accountMap.get(b.accountId)
       if (!accA || !accB) return 0
@@ -321,7 +327,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
       )
       return nameComp
     })
-  }, [group.positions, accounts])
+  }, [positions, accounts, sortPositions])
 
   // Compute derived fields for each position
   const computedPositions = sortedPositions.map((p) => {
@@ -376,7 +382,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="dialog-title">
-            {group.symbol} — {group.displayName} — {group.effectiveAssetClass}
+            {title}
           </div>
           <button
             type="button"
