@@ -23,7 +23,7 @@ src/
     drive.ts                 # drive-sync singleton + syncBackup/restoreBackup/getBackupFileId, DriveDecryptError
     csv.ts                    # Papa.parse wrapper: parseCsvFile, parseCsvNumber
     accounts.ts               # empty stub retained for future use
-    positionsImport.ts        # replace + closed-position diff + snapshot upsert
+    positionsImport.ts        # replace/merge mode + closed-position diff + snapshot upsert
     transactionsImport.ts     # dedup-by-natural-key insert
     computations.ts           # computePosition, allocationByAssetClass, fmtUSD, fmtPct
     sort.ts                   # generic sortBy<T>
@@ -132,7 +132,7 @@ Props convention: most components take `{ state: AppState, dispatch }`; narrower
    - `applyFieldMap(row, fieldMap)` + `importEdits[rowIdx]` produce editable rows; `validatePreviewRow` handles required-field validation (with avgCost/purchaseAmount and price/marketValue alternatives). Fully-empty rows are valid and excluded at commit via `isBlankRow`.
    - Primary button gating: upload mode includes `isReviewValid(dataType, fieldMap)`; manual mode bypasses `isReviewValid` and additionally requires at least one valid non-blank row.
    - Row delete (`handleDeleteRow`) removes row + re-keys row-indexed edits/touched state.
-3. **Commit**: primary button dispatches `ADD_ACCOUNT` first when new-account mode (capturing the new account id), then `IMPORT_POSITIONS` or `IMPORT_TRANSACTIONS` with `accountId`, valid non-blank edited rows, and fresh mapping profile saved. `UPSERT_CSV_MAPPING` runs only in upload mode. "Import complete" renders in the same step-2 slot; "Done" closes and resets local state.
+3. **Commit**: primary button dispatches `ADD_ACCOUNT` first when new-account mode (capturing the new account id), then `IMPORT_POSITIONS` or `IMPORT_TRANSACTIONS` with `accountId`, valid non-blank edited rows, and fresh mapping profile saved. For positions, `IMPORT_POSITIONS` also carries `mode: entryMode === 'upload' ? 'replace' : 'merge'` (see `importPositions` below). `UPSERT_CSV_MAPPING` runs only in upload mode. "Import complete" renders in the same step-2 slot; "Done" closes and resets local state.
 
 All steps are **synchronous**; no async queue beyond the debounce-save to IndexedDB.
 
@@ -161,6 +161,7 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 ## Key Invariants
 
 - **Account cascade delete**: Deleting an `Account` cascade-deletes all its `Position`s, `ClosedPosition`s, `Transaction`s, `PortfolioSnapshot`s, and `SavedCsvMapping`s.
+- **importPositions replace vs merge mode**: `importPositions(state, accountId, mappedRows, importDate, mode)` (`mode: 'replace' | 'merge'`, default `'replace'`). `'replace'` (CSV-upload, a full broker export) replaces the account's entire position list; symbols missing from the new rows become `ClosedPosition`s. `'merge'` (manual entry / Copy-Paste, inherently partial batches) upserts new rows by symbol into the account's existing positions — untouched symbols are left alone and nothing is closed. `ImportDialog` dispatches `mode: entryMode === 'upload' ? 'replace' : 'merge'`.
 - **Position delete = close, not hard delete**: deleting a position from `PositionGroupOverlay` (`CLOSE_POSITION` action) converts it to a `ClosedPosition` with `realizedGL: null`, `realizedGLBasis: 'unknown'` (never transaction-matched, unlike the reimport-driven auto-close path in `positionsImport.ts`) — same target shape, different trigger and always-unknown basis.
 
 ## Design patterns

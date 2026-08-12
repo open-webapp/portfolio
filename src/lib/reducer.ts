@@ -76,7 +76,13 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     // Import flow
     case 'IMPORT_POSITIONS':
-      return importPositions(state, action.accountId, action.mappedRows, action.importDate)
+      return importPositions(
+        state,
+        action.accountId,
+        action.mappedRows,
+        action.importDate,
+        action.mode
+      )
 
     case 'IMPORT_TRANSACTIONS':
       return importTransactions(state, action.accountId, action.mappedRows)

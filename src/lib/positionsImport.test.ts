@@ -797,4 +797,61 @@ describe('positionsImport', () => {
     expect(result.positions[0].price).toBe(12.47)
   })
 
+  // Regression: manual entry / Copy-Paste import a single new row at a time, not a full
+  // re-export of the account. 'merge' mode must upsert by symbol and leave everything
+  // else in the account untouched, unlike the default 'replace' mode (Test 1/2).
+  it("Test: 'merge' mode upserts by symbol and leaves other existing positions untouched", () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-004', 'Account 4', false))
+    const accountId = state.accounts[0].id
+
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-01-01',
+      },
+      {
+        id: 'pos-2',
+        accountId,
+        symbol: 'MSFT',
+        name: 'Microsoft Corp.',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 300,
+        price: 400,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Add a single new position (GOOG) without re-supplying AAPL/MSFT.
+    const newRows = [
+      { symbol: 'GOOG', name: 'Alphabet Inc.', assetClass: 'Equity', shares: '10', avgCost: '100', price: '150' },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'merge')
+
+    const acctPositions = result.positions.filter((p) => p.accountId === accountId)
+    expect(acctPositions.map((p) => p.symbol).sort()).toEqual(['AAPL', 'GOOG', 'MSFT'])
+    // AAPL/MSFT untouched, not closed
+    expect(result.closedPositions.filter((cp) => cp.accountId === accountId)).toHaveLength(0)
+    expect(result.positions.find((p) => p.symbol === 'AAPL')!.shares).toBe(100)
+    expect(result.positions.find((p) => p.symbol === 'MSFT')!.shares).toBe(50)
+
+    // Merging the same symbol again updates it in place rather than duplicating.
+    const updateRows = [
+      { symbol: 'GOOG', name: 'Alphabet Inc.', assetClass: 'Equity', shares: '20', avgCost: '100', price: '150' },
+    ]
+    const result2 = importPositions(result, accountId, updateRows, '2026-08-09', 'merge')
+    const goog = result2.positions.filter((p) => p.accountId === accountId && p.symbol === 'GOOG')
+    expect(goog).toHaveLength(1)
+    expect(goog[0].shares).toBe(20)
+  })
+
 })

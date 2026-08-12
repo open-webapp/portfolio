@@ -4,23 +4,29 @@ import { uid } from './seed'
 import { parseCsvNumber } from './csv'
 
 /**
- * Import positions for an account:
- * (a) Replace all positions for accountId with new rows
+ * Import positions for an account. Two modes:
+ * - 'replace' (default; CSV-upload of a full broker export): replace all positions for
+ *   accountId with the new rows; symbols missing from the new rows become ClosedPositions.
+ * - 'merge' (manual entry / Copy-Paste, which are inherently partial): upsert new rows by
+ *   symbol into the account's existing positions, leaving untouched symbols alone and never
+ *   closing anything.
+ * (a) Replace or merge positions for accountId with new rows
  *     - Matching by symbol to preserve assetClassManualOverride
  *     - Generate fresh uid('pos') for each new position
- * (b) Create ClosedPosition[] for symbols that disappeared
+ * (b) Create ClosedPosition[] for symbols that disappeared (replace mode only)
  *     - Symbols that disappeared: add to closedPositions
  *     - Realized G/L: computed from matching Sell transaction(s) if exist, else realizedGL: null / realizedGLBasis: 'unknown'
  * (c) Upsert ONE PortfolioSnapshot for (accountId, importDate)
  *     - Natural key: (accountId, date)
  *     - Dedup-by-key means second import same account same date replaces prior snapshot
- *     - Value: sum of marketValue across new positions for that account
+ *     - Value: sum of marketValue across the account's resulting positions
  */
 export function importPositions(
   state: AppState,
   accountId: string,
   mappedRows: Record<string, string>[],
-  importDate: string
+  importDate: string,
+  mode: 'replace' | 'merge' = 'replace'
 ): AppState {
   // Get old positions for this account
   const oldPositions = state.positions.filter((p) => p.accountId === accountId)
@@ -76,15 +82,23 @@ export function importPositions(
     })
   }
 
-  // Replace positions: remove old for this account, add new
+  // (a) Replace mode: new rows are the account's entire position list.
+  // Merge mode: upsert new rows by symbol, leaving other existing positions untouched.
+  const newSymbols = new Set(newPositions.map((p) => p.symbol))
+  const finalAccountPositions =
+    mode === 'merge'
+      ? [...oldPositions.filter((p) => !newSymbols.has(p.symbol)), ...newPositions]
+      : newPositions
+
   const replacedPositions = [
     ...state.positions.filter((p) => p.accountId !== accountId),
-    ...newPositions,
+    ...finalAccountPositions,
   ]
 
-  // (b) Diff old vs new symbols to create ClosedPosition[]
-  const newSymbols = new Set(newPositions.map((p) => p.symbol))
-  const closedSymbols = Array.from(oldSymbols).filter((s) => !newSymbols.has(s))
+  // (b) Diff old vs new symbols to create ClosedPosition[] (replace mode only —
+  // merge mode is inherently partial, so a symbol's absence doesn't mean it closed)
+  const closedSymbols =
+    mode === 'merge' ? [] : Array.from(oldSymbols).filter((s) => !newSymbols.has(s))
 
   const newClosedPositions: ClosedPosition[] = closedSymbols.map((symbol) => {
     const oldPosition = oldPositions.find((p) => p.symbol === symbol)!
@@ -128,7 +142,7 @@ export function importPositions(
   ]
 
   // (c) Upsert PortfolioSnapshot for (accountId, importDate)
-  const snapshotValue = newPositions.reduce((sum, p) => {
+  const snapshotValue = finalAccountPositions.reduce((sum, p) => {
     return sum + p.shares * p.price
   }, 0)
 

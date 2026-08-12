@@ -1096,6 +1096,47 @@ describe('ImportDialog (2-step wizard)', () => {
     ])
   })
 
+  // Regression: manual entry and Copy-Paste are inherently partial batches (adding one
+  // position, not re-supplying the whole account) so they must dispatch mode: 'merge'
+  // (upsert by symbol) rather than the CSV-upload default of replacing the whole account.
+  it("35b. manual import dispatches IMPORT_POSITIONS with mode: 'merge'", async () => {
+    await advanceToStep2Manual(dispatch)
+
+    setAssetClassHeaderValue('Equity')
+    const firstRowInputs = document.querySelectorAll('tbody tr:first-child input') as NodeListOf<HTMLInputElement>
+    fireEvent.change(firstRowInputs[0], { target: { value: 'AAPL' } })
+    fireEvent.change(firstRowInputs[2], { target: { value: '100' } })
+    fireEvent.change(firstRowInputs[3], { target: { value: '150' } })
+    fireEvent.change(firstRowInputs[5], { target: { value: '180' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    expect(calls.find((a) => a.type === 'IMPORT_POSITIONS')!.mode).toBe('merge')
+  })
+
+  it("13d. CSV-upload import dispatches IMPORT_POSITIONS with mode: 'replace'", async () => {
+    await mockCsv(POS_HEADERS, POS_ROWS)
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+    uploadCsvFile()
+    await continueEnabled()
+    clickContinue()
+
+    mapField('Symbol', 'Symbol')
+    mapField('Shares', 'Shares')
+    mapField('Cost Basis', 'Cost Basis')
+    mapField('Price', 'Price')
+    setAssetClassHeaderValue('Equity')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    expect(calls.find((a) => a.type === 'IMPORT_POSITIONS')!.mode).toBe('replace')
+  })
+
   it('36. manual Import stays disabled while all rows are blank and enables once one valid row exists', async () => {
     await advanceToStep2Manual()
 

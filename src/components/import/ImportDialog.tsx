@@ -441,6 +441,11 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         mappedRows: finalRows,
         importDate: new Date().toISOString(),
         fileName,
+        // Manual entry and Copy-Paste are inherently partial batches (the user isn't
+        // re-supplying their whole account), so upsert by symbol instead of replacing
+        // the account's entire position list. Upload keeps replace semantics (a CSV
+        // export is expected to be the full, authoritative snapshot).
+        mode: entryMode === 'upload' ? 'replace' : 'merge',
       })
     } else {
       dispatch({
