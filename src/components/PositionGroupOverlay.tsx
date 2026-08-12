@@ -430,6 +430,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                 <th style={{ textAlign: 'right' }}>Shares</th>
                 <th style={{ textAlign: 'right' }}>Avg Cost</th>
                 <th style={{ textAlign: 'right' }}>Current Price</th>
+                <th style={{ textAlign: 'right' }}>Market Value</th>
                 <th style={{ textAlign: 'right' }}>% of Portfolio</th>
                 <th style={{ textAlign: 'center' }}>Override</th>
                 <th style={{ textAlign: 'center' }}></th>
@@ -483,6 +484,9 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                       field="price"
                       dispatch={dispatch}
                     />
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {p.marketValueStr}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     {fmtPortfolioPercent(computePosition(p).marketValue, portfolioTotal)}

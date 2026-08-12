@@ -915,7 +915,7 @@ describe('PositionGroupOverlay', () => {
     expect(screen.queryByText('Amount Invested')).toBeNull()
   })
 
-  it('does not render Market Value header', () => {
+  it('renders Market Value header', () => {
     const position = createTestPosition()
     const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
@@ -933,7 +933,7 @@ describe('PositionGroupOverlay', () => {
       />
     )
 
-    expect(screen.queryByText('Market Value')).toBeNull()
+    screen.getByText('Market Value')
   })
 
   it('does not render G/L header', () => {
