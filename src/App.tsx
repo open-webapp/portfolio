@@ -311,7 +311,7 @@ function App() {
         ) : state.view === 'accounts' ? (
           /* Accounts page view */
           <div style={{ padding: 'var(--space-6)' }}>
-            <AccountsPage state={state} />
+            <AccountsPage state={state} dispatch={dispatch} />
           </div>
         ) : (
           /* Settings page view */

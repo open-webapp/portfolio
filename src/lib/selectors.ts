@@ -262,6 +262,7 @@ export function accountsSections(
 ): Array<{
   label: string
   rows: Array<{
+    accountId: string
     institution: string
     accountName: string
     cashStr: string
@@ -292,6 +293,7 @@ export function accountsSections(
       const total = cash + investment
 
       return {
+        accountId: account.id,
         institution: account.institution || '',
         accountName: `${account.name} (${account.accountNumber})`,
         cashStr: fmtUSD(cash),

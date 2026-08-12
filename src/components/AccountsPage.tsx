@@ -1,9 +1,12 @@
-import React from 'react'
+import React, { useState } from 'react'
 import type { AppState } from '../lib/state'
-import { accountsSections } from '../lib/selectors'
+import type { Position } from '../lib/types'
+import { accountsSections, assetClassOptions } from '../lib/selectors'
+import { PositionGroupOverlay } from './PositionGroupOverlay'
 
 export interface AccountsPageProps {
   state: AppState
+  dispatch: (action: any) => void
 }
 
 /**
@@ -11,7 +14,8 @@ export interface AccountsPageProps {
  * Displays cash/investment/total values for each account, with subtotals per category.
  * Three sections: Taxable, Non-Taxable, Tax-Deferred (in that order).
  */
-export function AccountsPage({ state }: AccountsPageProps) {
+export function AccountsPage({ state, dispatch }: AccountsPageProps) {
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const sections = accountsSections(state)
 
   return (
@@ -52,7 +56,7 @@ export function AccountsPage({ state }: AccountsPageProps) {
                 </thead>
                 <tbody>
                   {sec.rows.map((r, idx) => (
-                    <tr key={idx}>
+                    <tr key={idx} onClick={() => setSelectedAccountId(r.accountId)} style={{ cursor: 'pointer' }}>
                       <td>{r.institution}</td>
                       <td>{r.accountName}</td>
                       <td style={{ textAlign: 'right' }}>{r.cashStr}</td>
@@ -107,6 +111,25 @@ export function AccountsPage({ state }: AccountsPageProps) {
           )}
         </React.Fragment>
       ))}
+      {selectedAccountId && (() => {
+        const account = state.accounts.find(a => a.id === selectedAccountId)
+        if (!account) return null
+        const positions = state.positions.filter(p => p.accountId === selectedAccountId)
+        const accountLabel = `${account.name} (${account.accountNumber})`
+        const title = account.institution ? `${account.institution} — ${accountLabel}` : accountLabel
+        return (
+          <PositionGroupOverlay
+            positions={positions}
+            title={title}
+            accounts={state.accounts}
+            dispatch={dispatch}
+            onClose={() => setSelectedAccountId(null)}
+            existingAssetClasses={assetClassOptions(state)}
+            state={state}
+            sortPositions={(a: Position, b: Position) => a.symbol.localeCompare(b.symbol)}
+          />
+        )
+      })()}
     </div>
   )
 }

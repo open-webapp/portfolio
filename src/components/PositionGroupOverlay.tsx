@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Account, Position } from '../lib/types'
 import type { AppState } from '../lib/state'
+import type { AggregateRow } from './PositionsTable'
 import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
 import { filteredPortfolioTotal } from '../lib/selectors'
 import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
@@ -274,8 +275,9 @@ function AccountDropdown({
 }
 
 export interface PositionGroupOverlayProps {
-  positions: Position[]
-  title: string
+  group?: AggregateRow
+  positions?: Position[]
+  title?: string
   accounts: Account[]
   dispatch: (action: any) => void
   onClose: () => void
@@ -289,8 +291,9 @@ export interface PositionGroupOverlayProps {
  * Shows a table of underlying positions sorted by account name.
  */
 export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
-  positions,
-  title,
+  group,
+  positions: positionsParam,
+  title: titleParam,
   accounts,
   dispatch,
   onClose,
@@ -298,6 +301,9 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
   state,
   sortPositions,
 }) => {
+  // Support both APIs: group OR positions+title
+  const positions = group?.positions || positionsParam || []
+  const title = group ? `${group.symbol} — ${group.displayName} — ${group.effectiveAssetClass}` : (titleParam || '')
   // Escape key listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

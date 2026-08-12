@@ -3,7 +3,6 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
 import type { Position, Account } from '../lib/types'
 import type { AppState } from '../lib/state'
-import type { AggregateRow } from './PositionsTable'
 
 afterEach(cleanup)
 
@@ -37,16 +36,36 @@ describe('PositionGroupOverlay', () => {
     ...overrides,
   })
 
-  const createTestGroup = (positions: Position[]): AggregateRow => ({
-    symbol: 'AAPL',
-    displayName: 'Apple Inc',
-    effectiveAssetClass: 'Equity',
-    positions,
-    totalShares: positions.reduce((sum, p) => sum + p.shares, 0),
-    totalCostBasis: positions.reduce((sum, p) => sum + p.shares * p.avgCost, 0),
-    totalMarketValue: positions.reduce((sum, p) => sum + p.shares * p.price, 0),
-    totalGL: 0,
-  })
+
+  const buildOverlayTitle = (symbol: string, displayName: string, assetClass: string): string => {
+    return `${symbol} — ${displayName} — ${assetClass}`
+  }
+
+  const createTestGroup = (positions: Position[]): AggregateRow => {
+    const shares = positions.reduce((sum, p) => sum + p.shares, 0)
+    const costBasis = positions.reduce((sum, p) => sum + p.shares * p.avgCost, 0)
+    const marketValue = positions.reduce((sum, p) => sum + p.shares * p.price, 0)
+    const avgCost = shares > 0 ? costBasis / shares : 0
+    const price = positions[0]?.price || 0
+    const gl = marketValue - costBasis
+    const glPct = costBasis > 0 ? (gl / costBasis) * 100 : 0
+
+    return {
+      key: 'AAPL',
+      symbol: 'AAPL',
+      displayName: 'Apple Inc',
+      effectiveAssetClass: 'Equity',
+      shares,
+      costBasis,
+      marketValue,
+      price,
+      avgCost,
+      gl,
+      glPct,
+      rowCount: positions.length,
+      positions,
+    }
+  }
 
   const createTestState = (positions: Position[] = [], accounts: Account[] = []): AppState => ({
     accounts,
@@ -72,13 +91,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('renders input pre-filled when clicking shares cell', () => {
     const position = createTestPosition({ shares: 100 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
     const testState = createTestState([position], [account])
 
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -97,13 +117,14 @@ describe('PositionGroupOverlay', () => {
 
   it('renders input pre-filled when clicking avgCost cell', () => {
     const position = createTestPosition({ avgCost: 150 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -123,13 +144,14 @@ describe('PositionGroupOverlay', () => {
 
   it('renders input pre-filled when clicking price cell', () => {
     const position = createTestPosition({ price: 180 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -152,13 +174,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('dispatches UPDATE_POSITION when pressing Enter with valid shares value', () => {
     const position = createTestPosition({ shares: 100 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -186,13 +209,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('dispatches UPDATE_POSITION when blurring with valid avgCost value', () => {
     const position = createTestPosition({ avgCost: 150 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -220,13 +244,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('reverts to previous value on Escape without dispatching', () => {
     const position = createTestPosition({ shares: 100 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -253,13 +278,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('reverts silently on negative shares value', () => {
     const position = createTestPosition({ shares: 100 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -280,13 +306,14 @@ describe('PositionGroupOverlay', () => {
 
   it('reverts silently on negative price value', () => {
     const position = createTestPosition({ price: 180 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -311,13 +338,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('reverts silently on empty shares value', () => {
     const position = createTestPosition({ shares: 100 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -338,13 +366,14 @@ describe('PositionGroupOverlay', () => {
 
   it('reverts silently on empty avgCost value', () => {
     const position = createTestPosition({ avgCost: 150 })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -368,13 +397,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('renders text input pre-filled when clicking symbol cell', () => {
     const position = createTestPosition({ symbol: 'TSLA' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -393,13 +423,14 @@ describe('PositionGroupOverlay', () => {
 
   it('dispatches UPDATE_POSITION with new symbol on Enter', () => {
     const position = createTestPosition({ symbol: 'AAPL' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -424,13 +455,14 @@ describe('PositionGroupOverlay', () => {
 
   it('reverts symbol on Escape without dispatching', () => {
     const position = createTestPosition({ symbol: 'AAPL' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -456,14 +488,15 @@ describe('PositionGroupOverlay', () => {
    */
   it('Account dropdown opens on click and lists all accounts', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account1 = createTestAccount({ id: 'acc-1', name: 'Brokerage A' })
     const account2 = createTestAccount({ id: 'acc-2', name: 'Brokerage B', accountNumber: '002' })
 
     const testState = createTestState([position], [account1, account2])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account1, account2]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -485,14 +518,15 @@ describe('PositionGroupOverlay', () => {
 
   it('Account dropdown selection dispatches UPDATE_POSITION', () => {
     const position = createTestPosition({ accountId: 'acc-1' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account1 = createTestAccount({ id: 'acc-1', name: 'Brokerage A' })
     const account2 = createTestAccount({ id: 'acc-2', name: 'Brokerage B' })
 
     const testState = createTestState([position], [account1, account2])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account1, account2]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -524,13 +558,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('preserves Override select element', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -550,13 +585,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('renders Name column cell with initial value', () => {
     const position = createTestPosition({ name: 'Tech Holdings' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -570,13 +606,14 @@ describe('PositionGroupOverlay', () => {
 
   it('Name column: clicking cell enters edit mode', () => {
     const position = createTestPosition({ name: 'Tech Holdings' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -595,13 +632,14 @@ describe('PositionGroupOverlay', () => {
 
   it('Name column: pressing Enter commits non-empty value', () => {
     const position = createTestPosition({ name: 'Tech Holdings' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -626,13 +664,14 @@ describe('PositionGroupOverlay', () => {
 
   it('Name column: blurring with non-empty value commits', () => {
     const position = createTestPosition({ name: 'Tech Holdings' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -657,13 +696,14 @@ describe('PositionGroupOverlay', () => {
 
   it('Name column: blurring with empty value reverts silently', () => {
     const position = createTestPosition({ name: 'Tech Holdings' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -684,13 +724,14 @@ describe('PositionGroupOverlay', () => {
 
   it('Name column: pressing Escape reverts without dispatching', () => {
     const position = createTestPosition({ name: 'Tech Holdings' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -713,13 +754,14 @@ describe('PositionGroupOverlay', () => {
 
   it('Name column: empty name shows placeholder and is editable', () => {
     const position = createTestPosition({ name: '' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -738,13 +780,14 @@ describe('PositionGroupOverlay', () => {
 
   it('Name column: null name shows placeholder and is editable', () => {
     const position = createTestPosition({ name: null as any })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -792,12 +835,13 @@ describe('PositionGroupOverlay', () => {
     })
 
     // Render with positions in random order to test sorting
-    const group = createTestGroup([pos2, pos1, pos3])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
 
     const testState = createTestState([pos1, pos2, pos3], [accFidTaxable, accSchwabTaxable, accFidDeferred])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[pos1,pos2,pos3]}
+        title={title}
         accounts={[accFidTaxable, accSchwabTaxable, accFidDeferred]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -831,13 +875,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('does not render Cost Basis header', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -851,13 +896,14 @@ describe('PositionGroupOverlay', () => {
 
   it('does not render Amount Invested header', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -871,13 +917,14 @@ describe('PositionGroupOverlay', () => {
 
   it('does not render Market Value header', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -891,13 +938,14 @@ describe('PositionGroupOverlay', () => {
 
   it('does not render G/L header', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -911,13 +959,14 @@ describe('PositionGroupOverlay', () => {
 
   it('does not render G/L% header', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -935,13 +984,14 @@ describe('PositionGroupOverlay', () => {
   it('renders a trash-icon delete button in each row', () => {
     const pos1 = createTestPosition({ id: 'pos-1' })
     const pos2 = createTestPosition({ id: 'pos-2' })
-    const group = createTestGroup([pos1, pos2])
     const account = createTestAccount()
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
 
     const testState = createTestState([pos1, pos2], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[pos1, pos2]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -959,13 +1009,14 @@ describe('PositionGroupOverlay', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const position = createTestPosition({ id: 'pos-123' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -988,13 +1039,14 @@ describe('PositionGroupOverlay', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
 
     const position = createTestPosition({ id: 'pos-456' })
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -1014,13 +1066,14 @@ describe('PositionGroupOverlay', () => {
 
     const pos1 = createTestPosition({ id: 'pos-first' })
     const pos2 = createTestPosition({ id: 'pos-second' })
-    const group = createTestGroup([pos1, pos2])
     const account = createTestAccount()
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
 
     const testState = createTestState([pos1, pos2], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[pos1, pos2]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -1043,13 +1096,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('renders "% of Portfolio" column header in overlay table', () => {
     const position = createTestPosition()
-    const group = createTestGroup([position])
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
     const account = createTestAccount()
 
     const testState = createTestState([position], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[position]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -1073,13 +1127,14 @@ describe('PositionGroupOverlay', () => {
     // Create two positions with different market values
     const pos1 = createTestPosition({ id: 'pos-1', shares: 10, price: 200 }) // marketValue = 2000
     const pos2 = createTestPosition({ id: 'pos-2', symbol: 'MSFT', shares: 15, price: 200 }) // marketValue = 3000
-    const group = createTestGroup([pos1, pos2])
     const account = createTestAccount()
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
 
     const testState = createTestState([pos1, pos2], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[pos1, pos2]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -1101,13 +1156,14 @@ describe('PositionGroupOverlay', () => {
   it('negative position market value shows negative percentage', () => {
     const pos1 = createTestPosition({ id: 'pos-1', shares: 10, price: 200 }) // marketValue = 2000
     const pos2 = createTestPosition({ id: 'pos-2', symbol: 'SHORT', shares: -5, price: 200 }) // marketValue = -1000
-    const group = createTestGroup([pos1, pos2])
     const account = createTestAccount()
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
 
     const testState = createTestState([pos1, pos2], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[pos1, pos2]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -1131,13 +1187,14 @@ describe('PositionGroupOverlay', () => {
     // match what would be computed from filteredPortfolioTotal selector
     const pos1 = createTestPosition({ id: 'pos-1', shares: 5, avgCost: 100, price: 100 }) // marketValue = 500
     const pos2 = createTestPosition({ id: 'pos-2', symbol: 'AAPL2', shares: 10, avgCost: 150, price: 200 }) // marketValue = 2000
-    const group = createTestGroup([pos1, pos2])
     const account = createTestAccount()
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
 
     const testState = createTestState([pos1, pos2], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[pos1, pos2]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}
@@ -1158,13 +1215,14 @@ describe('PositionGroupOverlay', () => {
    */
   it('overlay shows dash for percentage when portfolio total is zero', () => {
     const pos1 = createTestPosition({ id: 'pos-1', shares: 0, price: 0 }) // marketValue = 0
-    const group = createTestGroup([pos1])
     const account = createTestAccount()
+    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
 
     const testState = createTestState([pos1], [account])
     render(
       <PositionGroupOverlay
-        group={group}
+        positions={[pos1]}
+        title={title}
         accounts={[account]}
         dispatch={mockDispatch}
         onClose={() => {}}

@@ -305,16 +305,20 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
       )}
 
       {/* Position group overlay */}
-      {selectedGroup && (
-        <PositionGroupOverlay
-          group={selectedGroup}
-          accounts={state.accounts}
-          dispatch={dispatch}
-          onClose={() => setSelectedGroupKey(null)}
-          existingAssetClasses={existingAssetClasses}
-          state={state}
-        />
-      )}
+      {selectedGroup && (() => {
+        const title = `${selectedGroup.symbol} — ${selectedGroup.displayName} — ${selectedGroup.effectiveAssetClass}`
+        return (
+          <PositionGroupOverlay
+            positions={selectedGroup.positions}
+            title={title}
+            accounts={state.accounts}
+            dispatch={dispatch}
+            onClose={() => setSelectedGroupKey(null)}
+            existingAssetClasses={existingAssetClasses}
+            state={state}
+          />
+        )
+      })()}
     </div>
   )
 }
