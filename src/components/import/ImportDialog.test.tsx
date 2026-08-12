@@ -1609,4 +1609,95 @@ describe('ImportDialog (2-step wizard)', () => {
     // Verify component accepts the callback prop without error
     expect(screen.getByRole('button', { name: 'Accounts & Import' })).toBeTruthy()
   })
+
+  // T8: Undo mode fieldMap prefill tests
+  it('54. T8 undo mode: handleOpenForUndo prefills fieldMap from saved mapping', async () => {
+    const closedPos = {
+      id: 'closed-1',
+      accountId: 'acc-1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      closedDate: '2024-08-01',
+      assetClass: 'Equity',
+      realizedGL: 500,
+      realizedGLBasis: 'known' as const,
+    }
+
+    const savedMapping = {
+      id: 'map-1',
+      accountId: 'acc-1',
+      kind: 'positions' as const,
+      fieldMap: {
+        Symbol: 'symbol',
+        Name: 'name',
+        'Asset Class': 'assetClass',
+        Shares: 'shares',
+        'Cost Basis': 'avgCost',
+        Price: 'price',
+      },
+      updatedAt: new Date().toISOString(),
+    }
+
+    const stateWithMapping = createState({ csvMappings: [savedMapping] })
+    const importDialogRef = { current: null as any }
+    const dispatchSpy = vi.fn()
+
+    render(
+      <ImportDialog
+        ref={importDialogRef}
+        state={stateWithMapping}
+        dispatch={dispatchSpy}
+        onClose={vi.fn()}
+        onUndoClosedPosition={vi.fn()}
+      />
+    )
+
+    importDialogRef.current.undoClosedPosition(closedPos)
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+    const importBtn = screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement
+    expect(importBtn.disabled).toBe(false)
+    fireEvent.click(importBtn)
+    const calls = dispatchSpy.mock.calls.map((c) => c[0])
+    const importCall = calls.find((c) => c.type === 'IMPORT_POSITIONS')
+    expect(importCall).toBeTruthy()
+    expect(importCall.mappedRows[0]).toEqual({
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      assetClass: 'Equity',
+      shares: '0',
+      avgCost: '0',
+      price: '0',
+    })
+  })
+
+  it('55. T8 undo mode: no saved mapping leaves fieldMap empty', async () => {
+    const closedPos = {
+      id: 'closed-1',
+      accountId: 'acc-1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      closedDate: '2024-08-01',
+      assetClass: 'Equity',
+      realizedGL: null,
+      realizedGLBasis: 'unknown' as const,
+    }
+
+    const stateWithoutMapping = createState({ csvMappings: [] })
+    const importDialogRef = { current: null as any }
+
+    render(
+      <ImportDialog
+        ref={importDialogRef}
+        state={stateWithoutMapping}
+        dispatch={vi.fn()}
+        onClose={vi.fn()}
+        onUndoClosedPosition={vi.fn()}
+      />
+    )
+
+    importDialogRef.current.undoClosedPosition(closedPos)
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+    const importBtn = screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement
+    expect(importBtn.disabled).toBe(true)
+  })
 })

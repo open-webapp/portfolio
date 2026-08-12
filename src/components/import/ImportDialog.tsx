@@ -128,8 +128,12 @@ export const ImportDialog = forwardRef<
         Object.entries(saved.fieldMap).filter(([csvCol]) => headers.includes(csvCol))
       )
       setFieldMap(prefill)
+      // Set assetClassHeaderValue when we have saved mapping
+      setAssetClassHeaderValue(closedPos.assetClass)
     } else {
       setFieldMap({})
+      // Leave assetClassHeaderValue empty so user must manually map fields
+      setAssetClassHeaderValue('')
     }
 
     setImportAccountKey(closedPos.accountId)
