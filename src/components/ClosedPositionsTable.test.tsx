@@ -243,4 +243,143 @@ describe('ClosedPositionsTable', () => {
       id: 'cp-second',
     })
   })
+
+  it('renders an undo button per row when onUndoClick is provided', () => {
+    const mockUndoClick = vi.fn()
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        closedDate: '2024-01-15',
+        assetClass: 'Equity',
+        realizedGL: 1500,
+        realizedGLBasis: 'transactions',
+      },
+      {
+        id: 'cp-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft Corp',
+        closedDate: '2024-02-20',
+        assetClass: 'Equity',
+        realizedGL: -500,
+        realizedGLBasis: 'transactions',
+      },
+    ]
+
+    const state: AppState = {
+      accounts: [],
+      positions: [],
+      closedPositions,
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+    }
+
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} onUndoClick={mockUndoClick} />)
+
+    // Should have 2 undo buttons (one per row)
+    const undoButtons = screen.getAllByTitle('Reopen this position as an import')
+    expect(undoButtons).toHaveLength(2)
+  })
+
+  it('calls onUndoClick with the correct closed position when undo button is clicked', () => {
+    const mockUndoClick = vi.fn()
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        closedDate: '2024-01-15',
+        assetClass: 'Equity',
+        realizedGL: 1500,
+        realizedGLBasis: 'transactions',
+      },
+    ]
+
+    const state: AppState = {
+      accounts: [],
+      positions: [],
+      closedPositions,
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+    }
+
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} onUndoClick={mockUndoClick} />)
+
+    const undoButton = screen.getByTitle('Reopen this position as an import')
+    fireEvent.click(undoButton)
+
+    expect(mockUndoClick).toHaveBeenCalledWith(closedPositions[0])
+  })
+
+  it('calls onUndoClick with the correct closed position for specific row when undo is clicked', () => {
+    const mockUndoClick = vi.fn()
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-first',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        closedDate: '2024-01-15',
+        assetClass: 'Equity',
+        realizedGL: 1500,
+        realizedGLBasis: 'transactions',
+      },
+      {
+        id: 'cp-second',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft Corp',
+        closedDate: '2024-02-20',
+        assetClass: 'Equity',
+        realizedGL: -500,
+        realizedGLBasis: 'transactions',
+      },
+    ]
+
+    const state: AppState = {
+      accounts: [],
+      positions: [],
+      closedPositions,
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+    }
+
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} onUndoClick={mockUndoClick} />)
+
+    const undoButtons = screen.getAllByTitle('Reopen this position as an import')
+    fireEvent.click(undoButtons[1]) // Click the second undo button
+
+    expect(mockUndoClick).toHaveBeenCalledWith(closedPositions[1])
+  })
 })

@@ -1,17 +1,19 @@
 import type { AppState } from '../lib/state'
+import type { ClosedPosition } from '../lib/types'
 import { fmtUSD } from '../lib/computations'
-import { Trash } from 'lucide-react'
+import { Trash, RotateCcw } from 'lucide-react'
 
 export interface ClosedPositionsTableProps {
   state: AppState
   dispatch: (action: any) => void
+  onUndoClick?: (closedPosition: ClosedPosition) => void
 }
 
 /**
  * ClosedPositionsTable component: displays closed positions with symbol, name, closed date, and realized G/L.
  * Per .dc.html lines 190-205.
  */
-export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTableProps) {
+export function ClosedPositionsTable({ state, dispatch, onUndoClick }: ClosedPositionsTableProps) {
   const handleDeleteClosedPosition = (id: string) => {
     const confirmed = window.confirm(
       'Delete this closed position? This permanently discards its realized G/L history.'
@@ -52,7 +54,27 @@ export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTablePr
               </td>
               <td className="text-muted">{cp.closedDate}</td>
               <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
-              <td style={{ textAlign: 'center' }}>
+              <td style={{ textAlign: 'center', display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                <button
+                  onClick={() => onUndoClick?.(cp)}
+                  className="btn-icon"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-text-secondary)',
+                    transition: 'color 0.2s',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-accent-700)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+                  title="Reopen this position as an import"
+                >
+                  <RotateCcw size={16} />
+                </button>
                 <button
                   onClick={() => handleDeleteClosedPosition(cp.id)}
                   className="btn-icon"

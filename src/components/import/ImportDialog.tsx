@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, forwardRef, useImperativeHandle } from 'react'
 import type { AppState } from '../../lib/state'
 import { parseCsvFile } from '../../lib/csv'
-import type { TaxCategory, Account } from '../../lib/types'
+import type { TaxCategory, Account, ClosedPosition } from '../../lib/types'
 import {
   POSITIONS_REQUIRED_FIELDS,
   POSITIONS_OPTIONAL_FIELDS,
@@ -17,6 +17,7 @@ export interface ImportDialogProps {
   state: AppState
   dispatch: (action: any) => void
   onClose: () => void
+  onUndoClosedPosition?: (closedPosition: ClosedPosition, callback: (success: boolean) => void) => void
 }
 
 const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
@@ -55,7 +56,10 @@ type DialogStep = 1 | 2
  * Step 1: Setup - choose data type, destination account (existing or new), select file
  * Step 2: Review - map CSV columns to fields, edit preview rows, import
  */
-export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
+export const ImportDialog = forwardRef<
+  { undoClosedPosition: (closedPos: ClosedPosition) => void },
+  ImportDialogProps
+>(function ImportDialog({ state, dispatch, onClose, onUndoClosedPosition }, ref) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Dialog state
@@ -64,7 +68,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
 
   // Step 1 state
   const [dataType, setDataType] = useState<'positions' | 'transactions'>('positions')
-  const [entryMode, setEntryMode] = useState<'upload' | 'paste' | 'manual'>('upload')
+  const [entryMode, setEntryMode] = useState<'upload' | 'paste' | 'manual' | 'undo'>('upload')
+  const [undoClosedPosition, setUndoClosedPosition] = useState<ClosedPosition | null>(null)
+  const [_undoStep, setUndoStep] = useState<DialogStep | null>(null)
+  void _undoStep // Will be used in T4 for conditional rendering
   const [importAccountKey, setImportAccountKey] = useState<string>('')
   const [formInstitution, setFormInstitution] = useState<string>('')
   const [formName, setFormName] = useState<string>('')
@@ -96,6 +103,48 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setIsOpen(true)
   }, [])
 
+  const handleOpenForUndo = useCallback((closedPos: ClosedPosition) => {
+    // Create undo row with default columns, using capitalized names to match typical CSV imports
+    const undoRow: Record<string, string> = {
+      Symbol: closedPos.symbol,
+      Name: closedPos.name || '',
+      'Asset Class': closedPos.assetClass,
+      Shares: '0',
+      'Cost Basis': '0',
+      Price: '0',
+    }
+
+    const headers = Object.keys(undoRow)
+    setCsvHeaders(headers)
+    setCsvRows([undoRow])
+
+    // Try to prefill fieldMap from account's saved mapping
+    const saved = state.csvMappings.find(
+      (m) => m.accountId === closedPos.accountId && m.kind === 'positions'
+    )
+    if (saved) {
+      // Filter saved fieldMap to only columns present in our seeded headers
+      const prefill = Object.fromEntries(
+        Object.entries(saved.fieldMap).filter(([csvCol]) => headers.includes(csvCol))
+      )
+      setFieldMap(prefill)
+    } else {
+      setFieldMap({})
+    }
+
+    setImportAccountKey(closedPos.accountId)
+    setIsOpen(true)
+    setUndoClosedPosition(closedPos)
+    setUndoStep(2)
+    setStep(2)
+    setDataType('positions')
+    setEntryMode('undo')
+  }, [state.csvMappings])
+
+  useImperativeHandle(ref, () => ({
+    undoClosedPosition: handleOpenForUndo,
+  }), [handleOpenForUndo])
+
   const handleCloseDialog = useCallback(() => {
     setIsOpen(false)
     setStep(1)
@@ -124,6 +173,8 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setImportedRowCount(0)
     setAssetClassHeaderValue('')
     setTouchedAssetClassRows(new Set())
+    setUndoClosedPosition(null)
+    setUndoStep(null)
     onClose()
   }, [onClose])
 
@@ -464,6 +515,17 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     // Show completion state
     setImportDone(true)
     setImportedRowCount(finalRows.length)
+
+    // Wire up undo callback if this import was triggered by undo mode
+    if (undoClosedPosition !== null) {
+      onUndoClosedPosition?.(undoClosedPosition, (success) => {
+        if (success) {
+          // Callback completed; reset undo state so subsequent opens don't re-trigger
+          setUndoClosedPosition(null)
+          setUndoStep(null)
+        }
+      })
+    }
   }, [
     csvRows,
     fieldMap,
@@ -478,6 +540,8 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     formRetirement,
     dispatch,
     fileName,
+    undoClosedPosition,
+    onUndoClosedPosition,
   ])
 
   const handlePrimary = useCallback(() => {
@@ -1353,4 +1417,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       </div>
     </>
   )
-}
+})
+
+ImportDialog.displayName = 'ImportDialog'
+export default ImportDialog
