@@ -303,7 +303,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const isStep1Complete = (): boolean => {
     const isExisting = importAccountKey !== '' && importAccountKey !== '__new__'
     const accountResolved = isExisting ? true : formName.trim() !== '' && formNumber.trim() !== ''
-    const fileSelected = entryMode === 'manual' || csvRows.length > 0
+    const fileSelected =
+      entryMode === 'manual' ||
+      (entryMode === 'upload' && file !== null && csvRows.length > 0) ||
+      (entryMode === 'paste' && csvHeaders.length > 0 && csvRows.length > 0)
     return accountResolved && fileSelected
   }
 

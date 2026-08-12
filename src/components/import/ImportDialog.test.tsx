@@ -102,6 +102,19 @@ function mapTransactions() {
   mapField('Amount', 'Amount')
 }
 
+/**
+ * Helper: simulate pasting text into a drop zone (for paste-mode tests).
+ * Creates a paste event with clipboard data and fires it.
+ */
+function pasteInto(zone: HTMLElement, text: string) {
+  const event = new Event('paste', { bubbles: true }) as any
+  event.clipboardData = {
+    getData: (type: string) => (type === 'text/plain' ? text : ''),
+  }
+  event.preventDefault = vi.fn()
+  fireEvent(zone, event)
+}
+
 async function advanceToStep2(
   dispatch: (action: any) => void = vi.fn(),
   dataType: 'positions' | 'transactions' = 'positions'
@@ -1124,7 +1137,14 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(container.querySelector('.dialog-title')?.textContent).toBe('Import')
   })
 
-  // Paste-zone tests
+  // ============================================================================
+  // PASTE-MODE TESTS (T3-T7: Tests 39-52)
+  // ============================================================================
+  // Verify the copy-paste entry mode for positions import.
+  // Covers: zone rendering, paste event handling, gating (both zones required),
+  // ragged-row detection, Continue button state, prefill from saved mappings,
+  // and parity with upload-mode Step 2 flow.
+  // Helper: pasteInto(zone, text) simulates clipboard paste into a drop zone.
 
   it('39. paste-mode setup: selecting Copy-Paste shows both headers and values zones with initial prompts', () => {
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
@@ -1151,15 +1171,7 @@ describe('ImportDialog (2-step wizard)', () => {
     fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
 
     const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
-
-    // Create a mock paste event with clipboard data
-    const mockEvent = new Event('paste', { bubbles: true }) as any
-    mockEvent.clipboardData = {
-      getData: (type: string) => (type === 'text/plain' ? 'a\tb' : ''),
-    }
-    mockEvent.preventDefault = vi.fn()
-
-    fireEvent(headersZone, mockEvent)
+    pasteInto(headersZone, 'a\tb')
 
     expect(headersZone.textContent).toContain('2 columns pasted — click to replace')
   })
@@ -1174,21 +1186,8 @@ describe('ImportDialog (2-step wizard)', () => {
     const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
     const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
 
-    // First paste headers
-    const headerEvent = new Event('paste', { bubbles: true }) as any
-    headerEvent.clipboardData = {
-      getData: (type: string) => (type === 'text/plain' ? 'a\tb' : ''),
-    }
-    headerEvent.preventDefault = vi.fn()
-    fireEvent(headersZone, headerEvent)
-
-    // Then paste values (one row with two columns)
-    const valuesEvent = new Event('paste', { bubbles: true }) as any
-    valuesEvent.clipboardData = {
-      getData: (type: string) => (type === 'text/plain' ? '1\t2' : ''),
-    }
-    valuesEvent.preventDefault = vi.fn()
-    fireEvent(valuesZone, valuesEvent)
+    pasteInto(headersZone, 'a\tb')
+    pasteInto(valuesZone, '1\t2')
 
     expect(valuesZone.textContent).toContain('1 rows pasted — click to replace')
   })
@@ -1203,12 +1202,7 @@ describe('ImportDialog (2-step wizard)', () => {
     const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
 
     // Paste into values zone without first pasting headers
-    const valuesEvent = new Event('paste', { bubbles: true }) as any
-    valuesEvent.clipboardData = {
-      getData: (type: string) => (type === 'text/plain' ? '1\t2' : ''),
-    }
-    valuesEvent.preventDefault = vi.fn()
-    fireEvent(valuesZone, valuesEvent)
+    pasteInto(valuesZone, '1\t2')
 
     // Zone should still show initial prompt (no change)
     expect(valuesZone.textContent).toContain('Click here and press Ctrl+V / ⌘V')
@@ -1226,22 +1220,275 @@ describe('ImportDialog (2-step wizard)', () => {
     const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
     const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
 
-    // Paste headers (3 columns)
-    const headerEvent = new Event('paste', { bubbles: true }) as any
-    headerEvent.clipboardData = {
-      getData: (type: string) => (type === 'text/plain' ? 'a\tb\tc' : ''),
-    }
-    headerEvent.preventDefault = vi.fn()
-    fireEvent(headersZone, headerEvent)
-
-    // Paste values with ragged rows (2nd row has only 2 columns instead of 3)
-    const valuesEvent = new Event('paste', { bubbles: true }) as any
-    valuesEvent.clipboardData = {
-      getData: (type: string) => (type === 'text/plain' ? '1\t2\t3\n4\t5' : ''),
-    }
-    valuesEvent.preventDefault = vi.fn()
-    fireEvent(valuesZone, valuesEvent)
+    pasteInto(headersZone, 'a\tb\tc')
+    pasteInto(valuesZone, '1\t2\t3\n4\t5')
 
     expect(screen.getByText(/1 row\(s\) had an unexpected number of columns and were adjusted/)).toBeTruthy()
+  })
+
+  // Paste mode gating tests (T5)
+
+  it('44. paste mode gating: account selected, paste valid headers + valid rows → Continue enabled', async () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    // Select account
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    // Switch to paste mode
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+    const continueBtn = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+
+    pasteInto(headersZone, 'Symbol\tShares\tPrice')
+
+    // Continue should still be disabled (no rows yet)
+    expect(continueBtn.disabled).toBe(true)
+
+    pasteInto(valuesZone, 'AAPL\t100\t150')
+
+    // Continue should now be enabled (headers and rows present)
+    await continueEnabled()
+  })
+
+  it('45. paste mode gating: account selected, only headers pasted (no values) → Continue stays disabled', async () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    // Select account
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    // Switch to paste mode
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const continueBtn = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+
+    pasteInto(headersZone, 'Symbol\tShares\tPrice')
+
+    // Continue should stay disabled (no rows)
+    expect(continueBtn.disabled).toBe(true)
+  })
+
+  it('46. paste mode gating: account selected, only values pasted (no headers) → Continue stays disabled', async () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    // Select account
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    // Switch to paste mode
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+    const continueBtn = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+
+    pasteInto(valuesZone, 'AAPL\t100\t150')
+
+    // Continue should stay disabled (no headers, so csvRows stays empty)
+    expect(continueBtn.disabled).toBe(true)
+  })
+
+  it('47. paste mode gating: switch from paste back to upload after successful paste → Continue disabled until file picked', async () => {
+    await mockCsv(POS_HEADERS, POS_ROWS)
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    // Select account
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+
+    // Switch to paste mode
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+    const continueBtn = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+
+    pasteInto(headersZone, 'Symbol\tShares\tPrice')
+    pasteInto(valuesZone, 'AAPL\t100\t150')
+
+    // Continue should be enabled
+    await continueEnabled()
+
+    // Switch back to upload mode
+    fireEvent.click(screen.getByRole('radio', { name: 'Upload CSV file' }))
+
+    // Continue should now be disabled (paste state is reset, no file uploaded)
+    expect(continueBtn.disabled).toBe(true)
+
+    // Upload a file
+    uploadCsvFile()
+
+    // Continue should be enabled again
+    await continueEnabled()
+  })
+
+  it('48. paste-mode prefill: saved mapping is loaded and field selects are pre-selected for matching pasted headers', async () => {
+    const savedMapping = {
+      id: 'map-1',
+      accountId: 'acc-1',
+      kind: 'positions' as const,
+      fieldMap: {
+        Symbol: 'symbol',
+        'Asset Class': 'assetClass',
+        Shares: 'shares',
+        'Cost Basis': 'avgCost',
+        Price: 'price',
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    const stateWithMapping = createState({ csvMappings: [savedMapping] })
+
+    render(<ImportDialog state={stateWithMapping} dispatch={vi.fn()} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+
+    pasteInto(headersZone, POS_HEADERS.join('\t'))
+    pasteInto(valuesZone, POS_ROWS.map((row) => Object.values(row).join('\t')).join('\n'))
+
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    // Verify the selects are pre-selected from saved mapping
+    expect(selectForField('Symbol').value).toBe('Symbol')
+    expect(selectForField('Shares').value).toBe('Shares')
+    expect(selectForField('Cost Basis').value).toBe('Cost Basis')
+    expect(selectForField('Price').value).toBe('Price')
+  })
+
+  it('49. paste-mode header-mismatch: saved mapping with non-existent pasted column stays unmapped; other columns still prefill', async () => {
+    const savedMapping = {
+      id: 'map-1',
+      accountId: 'acc-1',
+      kind: 'positions' as const,
+      fieldMap: {
+        Symbol: 'symbol',
+        'Asset Class': 'assetClass',
+        Shares: 'shares',
+        'Old Column Name': 'avgCost', // This column doesn't exist in the pasted data
+        Price: 'price',
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    const stateWithMapping = createState({ csvMappings: [savedMapping] })
+
+    // Pasted headers are missing 'Old Column Name' but have 'Cost Basis' instead
+    const pastedHeaders = ['Symbol', 'Asset Class', 'Shares', 'Cost Basis', 'Price']
+    const pastedValues = 'AAPL\tEquity\t100\t150\t180'
+
+    render(<ImportDialog state={stateWithMapping} dispatch={vi.fn()} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+
+    pasteInto(headersZone, pastedHeaders.join('\t'))
+    pasteInto(valuesZone, pastedValues)
+
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    // Verify that existing columns are prefilled
+    expect(selectForField('Symbol').value).toBe('Symbol')
+    expect(selectForField('Shares').value).toBe('Shares')
+    expect(selectForField('Price').value).toBe('Price')
+
+    // Cost Basis should not be mapped (because 'Old Column Name' doesn't exist in the pasted data, and Cost Basis is a new column not in the saved mapping)
+    expect(selectForField('Cost Basis').value).toBe('')
+  })
+
+  // T7: Step 2 parity check - paste mode should work identically to upload mode through Step 2
+
+  async function advanceToStep2Paste(dispatch: (action: any) => void = vi.fn()) {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+    fireEvent.change(document.querySelector('select') as HTMLSelectElement, { target: { value: 'acc-1' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Copy-Paste' }))
+
+    const headersZone = screen.getByTestId('paste-headers-zone') as HTMLDivElement
+    const valuesZone = screen.getByTestId('paste-values-zone') as HTMLDivElement
+
+    pasteInto(headersZone, POS_HEADERS.join('\t'))
+    pasteInto(valuesZone, POS_ROWS.map((row) => Object.values(row).join('\t')).join('\n'))
+
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+  }
+
+  // T7 Parity: Tests 50-52 verify paste-mode Step 2 behaves identically to upload-mode.
+  // Each test mirrors its upload-mode equivalent (tests 12, 12 edit variant, and 13).
+
+  it('50. T7 parity: paste → Step 2 → map all fields → Import dispatches IMPORT_POSITIONS with correct mappedRows (identical to upload path)', async () => {
+    await advanceToStep2Paste(dispatch)
+
+    // Map all required fields (same as test 12)
+    mapPositions()
+
+    // Verify that Import is now enabled
+    const importBtn = screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement
+    expect(importBtn.disabled).toBe(false)
+
+    // Click Import and verify dispatch payload
+    fireEvent.click(importBtn)
+    const importCall = dispatch.mock.calls.find((c) => c[0].type === 'IMPORT_POSITIONS')
+    expect(importCall).toBeTruthy()
+
+    // Verify mappedRows shape matches upload path (test 12) exactly
+    expect(importCall![0].mappedRows).toEqual([
+      { symbol: 'AAPL', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' },
+    ])
+  })
+
+  it('51. T7 parity: paste → Step 2 → edit preview cell → Import uses edited value (same as test 12)', async () => {
+    await advanceToStep2Paste(dispatch)
+    mapPositions()
+
+    // Edit the symbol preview cell (same as test 12)
+    const symbolInput = document.querySelector('tbody tr input') as HTMLInputElement
+    fireEvent.change(symbolInput, { target: { value: 'MSFT' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    const importCall = dispatch.mock.calls.find((c) => c[0].type === 'IMPORT_POSITIONS')
+    expect(importCall).toBeTruthy()
+
+    // Verify the edited value is what gets imported (same as test 12)
+    expect(importCall![0].mappedRows).toEqual([
+      { symbol: 'MSFT', assetClass: 'Equity', shares: '100', avgCost: '150', price: '180' },
+    ])
+  })
+
+  it('52. T7 parity: paste → Step 2 → unmapped required fields disable Import button (same as test 13)', async () => {
+    await advanceToStep2Paste(dispatch)
+
+    // Initially, Import button should be disabled (no fields mapped)
+    const importBtn = screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement
+    expect(importBtn.disabled).toBe(true)
+
+    // Map some fields but not all required ones
+    mapField('Symbol', 'Symbol')
+    setAssetClassHeaderValue('Equity')
+    mapField('Shares', 'Shares')
+    mapField('Price', 'Price')
+
+    // Should still be disabled (avgCost/purchaseAmount not mapped)
+    expect(importBtn.disabled).toBe(true)
+    expect(screen.getByText(/1 row\(s\) need fixing before you can continue/)).toBeTruthy()
+
+    // Map the missing field
+    mapField('Cost Basis', 'Cost Basis')
+
+    // Now Import should be enabled
+    expect(importBtn.disabled).toBe(false)
   })
 })

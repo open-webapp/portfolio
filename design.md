@@ -30,7 +30,7 @@ src/
     selectors.ts               # visiblePositions/visibleTransactions/summaryCards/etc.
     importPreview.ts           # applyFieldMap / validatePreviewRow / isBlankRow / isReviewValid
     seed.ts                    # uid(prefix)
-    pastedTable.ts              # tableToCsv(headersClipboard, valuesClipboard): standalone clipboard-paste → CSV/rows/headers parser, not wired into the app
+    pastedTable.ts              # tableToCsv(headersClipboard, valuesClipboard): clipboard-paste → CSV/rows/headers parser, used by ImportDialog's Copy-Paste entry mode
   components/
     PasswordGate.tsx           # full-replacement gate screen: set-password (first-run/legacy-migrate) or enter-password (returning encrypted), reset-app escape hatch
     Nav.tsx                    # nav-brand, Dashboard/Accounts seg tabs, SVG sync/gear icons
@@ -45,7 +45,7 @@ src/
     InstitutionSelect.tsx                       # { value: string, accounts: Account[], onChange: (value: string) => void } — seeded list ∪ in-use values with free-type "Add X" affordance
     Settings.tsx                  # single page, no tabs: Google Drive Sync + cross-password restore prompt, Change Password
     import/
-      ImportDialog.tsx          # 2-step positions/transactions import wizard (Setup → Review)
+      ImportDialog.tsx          # 2-step positions/transactions import wizard (Setup → Review); 3 entry modes for positions: upload/paste/manual
       index.ts
 plans/                        # historical planning docs, superseded by this file
 portfolio-dashboard-design/   # pixel-reference prototype (.dc.html) — not shipped code
@@ -122,8 +122,8 @@ Props convention: most components take `{ state: AppState, dispatch }`; narrower
 
 ## Data flow
 
-**CSV import** — synchronous 2-step wizard inside `ImportDialog` (positions or transactions). Dialog-open state is component-local (`isOpen`), not in `AppState`.
-1. **Setup** (`step === 1`): pick data type (`.seg`: Transactions / Positions — default Positions), destination account (existing `<select>` or new-account form: name, number, category, retirement checkbox), and entry mode for positions (`upload`/`manual`, default `upload`). Upload mode uses `.csv` file parsing (`parseCsvFile` from `csv.ts` -> `{ headers, rows }`). Continue requires account resolution; upload mode additionally requires ≥1 parsed row, manual mode does not.
+**CSV import** — synchronous 2-step wizard inside `ImportDialog` (positions or transactions). Dialog-open state is component-local (`isOpen`), not in `AppState`. Paste mode maintains additional component-local state: `pasteHeaderClipboard`, `pasteValuesClipboard`, `pasteIssues`.
+1. **Setup** (`step === 1`): pick data type (`.seg`: Transactions / Positions — default Positions), destination account (existing `<select>` or new-account form: name, number, category, retirement checkbox), and entry mode for positions (`upload`/`paste`/`manual`, default `upload`). Upload mode uses `.csv` file parsing (`parseCsvFile` from `csv.ts` -> `{ headers, rows }`). Paste mode feeds two clipboard paste zones (headers + values) into `tableToCsv()` (`pastedTable.ts`) to produce the same `csvHeaders`/`csvRows` state as upload, then shares Step 2's mapping/prefill/commit logic with no changes. Manual mode enters Step 2 with blank rows (no CSV parsing). Continue requires account resolution; upload and paste modes additionally require ≥1 parsed row, manual mode does not.
 2. **Review** (`step === 2`):
    - Upload mode: `headers` drive one mapping `<select>` per non-asset-class field (`{ csvColumn: targetField }`, required then optional).
    - Manual positions mode: entering Step 2 seeds exactly 10 blank rows and renders no mapping selects for non-asset-class fields.
