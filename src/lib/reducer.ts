@@ -3,16 +3,39 @@ import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
 
-export interface Action {
-  type: string
-  [key: string]: any
-}
+export type AppAction =
+  | { type: '__SET_STATE'; newState: AppState }
+  | { type: 'ADD_ACCOUNT'; account: any }
+  | { type: 'UPDATE_ACCOUNT'; accountId: string; patch: any }
+  | { type: 'DELETE_ACCOUNT'; accountId: string }
+  | { type: 'UPDATE_POSITION'; positionId: string; patch: any }
+  | { type: 'SET_ASSET_CLASS_OVERRIDE'; positionId: string; override?: any }
+  | { type: 'CLOSE_POSITION'; positionId: string }
+  | { type: 'DELETE_CLOSED_POSITION'; id: string }
+  | { type: 'SET_CATEGORY'; category: any }
+  | { type: 'SET_TAB'; tab: any }
+  | { type: 'SET_SORT'; sortKey: any; sortDir: any }
+  | { type: 'TOGGLE_SORT'; sortKey: any }
+  | { type: 'SET_ASSET_CLASS_FILTER'; assetClass: string }
+  | { type: 'SET_POSITIONS_SEARCH'; search: string }
+  | { type: 'SET_TRANSACTIONS_SEARCH'; search: string }
+  | { type: 'SET_TRANSACTION_TYPE_FILTER'; filter: string }
+  | { type: 'TOGGLE_SHOW_CLOSED' }
+  | { type: 'SET_VIEW'; view: any }
+  | { type: 'IMPORT_POSITIONS'; accountId: string; mappedRows: any; importDate: any; mode: any }
+  | { type: 'IMPORT_TRANSACTIONS'; accountId: string; mappedRows: any }
+  | { type: 'UPSERT_CSV_MAPPING'; accountId: string; kind: any; fieldMap: any }
+  | { type: 'ADD_CUSTOM_INSTITUTION'; name: string }
+  | { type: 'SELECT_ACCOUNT'; accountId: string }
+  | { type: 'TOGGLE_CATEGORY_EXPANDED'; categoryKey: string }
+  | { type: 'SET_ACCT_ASSET_CLASS_FILTER'; filter: string }
+  | { type: 'SET_ACCT_POS_SEARCH'; search: string }
 
 /**
  * Reducer function that handles all state mutations.
  * Converts action objects to state transformations.
  */
-export function appReducer(state: AppState, action: Action): AppState {
+export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     // Direct state replacement (for AppState objects passed to dispatch)
     case '__SET_STATE':
@@ -92,6 +115,18 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'ADD_CUSTOM_INSTITUTION':
       return StateActions.addCustomInstitution(state, action.name)
+
+    case 'SELECT_ACCOUNT':
+      return StateActions.selectAccount(state, action.accountId)
+
+    case 'TOGGLE_CATEGORY_EXPANDED':
+      return StateActions.toggleCategoryExpanded(state, action.categoryKey)
+
+    case 'SET_ACCT_ASSET_CLASS_FILTER':
+      return StateActions.setAcctAssetClassFilter(state, action.filter)
+
+    case 'SET_ACCT_POS_SEARCH':
+      return StateActions.setAcctPosSearch(state, action.search)
 
     default:
       return state

@@ -1,7 +1,7 @@
 import type { AppState } from './state'
 import type { Position, Transaction, Account, TaxCategory } from './types'
 import { sortBy } from './sort'
-import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './computations'
+import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, glColor } from './computations'
 
 /**
  * Map tax category keys to display labels.
@@ -107,95 +107,70 @@ export function visibleTransactions(state: AppState): Transaction[] {
 }
 
 
-/**
- * Private helper: generate card data for Total Value, Total Gain/Loss, and Amount Invested.
- * Used by summaryCards() and segmentSummaryCards().
- */
-function valueGlInvestedCards(
-  positions: Position[]
-): Array<{
-  label: string
-  value: string
-  sub?: string
-  color: string
-}> {
-  const GAIN = 'var(--color-accent-700)'
-  const LOSS = '#8a3c2e'
 
+/**
+ * Private helper: compute total value and formatted GL string for a set of positions.
+ * Returns { totalValueStr, glStr, glColor } for use in segment card display.
+ */
+function valueGlSummary(positions: Position[]): {
+  totalValueStr: string
+  glStr: string
+  glColor: string
+} {
   // Total Value: sum of all open positions' market value
   const totalValue = positions.reduce((sum, p) => {
-    return sum + p.shares * p.price
+    return sum + computePosition(p).marketValue
   }, 0)
 
   // Total Gain/Loss: sum of all positions' gl
   const totalGL = positions.reduce((sum, p) => {
-    const marketValue = p.shares * p.price
-    const costBasis = p.shares * p.avgCost
-    return sum + (marketValue - costBasis)
+    return sum + computePosition(p).gl
   }, 0)
 
   // Cost Basis: sum of all positions' costBasis
   const costBasis = positions.reduce((sum, p) => {
-    return sum + p.shares * p.avgCost
+    return sum + computePosition(p).costBasis
   }, 0)
 
-  // Total GL percentage (for the sub field)
+  // Total GL percentage
   const totalGLPct = costBasis === 0 ? 0 : (totalGL / costBasis) * 100
 
-  return [
-    {
-      label: 'Total Value',
-      value: fmtUSD(totalValue),
-      color: 'var(--color-text)'
-    },
-    {
-      label: 'Total Gain/Loss',
-      value: (totalGL >= 0 ? '+' : '') + fmtUSD(totalGL),
-      sub: fmtPct(totalGLPct),
-      color: totalGL >= 0 ? GAIN : LOSS
-    },
-    {
-      label: 'Amount Invested',
-      value: fmtUSD(costBasis),
-      color: 'var(--color-text)'
-    }
-  ]
+  return {
+    totalValueStr: fmtUSD(totalValue),
+    glStr: (totalGL >= 0 ? '+' : '') + fmtUSD(totalGL) + ' (' + fmtPct(totalGLPct) + ')',
+    glColor: glColor(totalGL)
+  }
 }
 
 /**
- * Generate summary cards for Total Value, Total Gain/Loss, and Amount Invested.
- * Returns cards with formatted values, colors, and optional sub-values (percentages).
+ * Generate segment card data (total value and GL) filtered by retirement status.
+ * Returns { totalValueStr, glStr, glColor } for display in segment cards.
  */
-export function summaryCards(
-  state: AppState
-): Array<{
-  label: string
-  value: string
-  sub?: string
-  color: string
-}> {
-  return valueGlInvestedCards(state.positions)
-}
-
-/**
- * Generate summary cards filtered by retirement status.
- * Returns the same three cards as valueGlInvestedCards (Total Value, Total Gain/Loss, Amount Invested)
- * but for positions in accounts matching the provided retirement status.
- */
-export function segmentSummaryCards(
+export function segmentCards(
   state: AppState,
   retirement: boolean
-): Array<{
-  label: string
-  value: string
-  sub?: string
-  color: string
-}> {
+): {
+  totalValueStr: string
+  glStr: string
+  glColor: string
+} {
   const filteredPositions = state.positions.filter((p) => {
     const account = state.accounts.find((a) => a.id === p.accountId)
     return account?.retirement === retirement
   })
-  return valueGlInvestedCards(filteredPositions)
+  return valueGlSummary(filteredPositions)
+}
+
+/**
+ * Get all positions scoped to the currently-selected category filter.
+ * Returns all positions if category is 'all', otherwise only positions
+ * from accounts in the selected tax category.
+ */
+export function positionsForCategory(state: AppState): Position[] {
+  const accountsInCategory = getAccountsForCategory(state)
+  return state.positions.filter((p) =>
+    accountsInCategory.some((a) => a.id === p.accountId)
+  )
 }
 
 /**
@@ -204,17 +179,12 @@ export function segmentSummaryCards(
  * Note: Allocation percentages are market-value based and do not include taxes.
  */
 export function allocationBars(
-  state: AppState
-): Array<{ label: string; value: string; pct: string }> {
-  const accountsInCategory = getAccountsForCategory(state)
-  const positionsInCategory = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
-
+  positions: Position[]
+): Array<{ label: string; value: string; pct: string; pctNum: number }> {
   // Use the allocationByAssetClass helper (respects manual overrides)
   // Note: taxes field is not used in allocation calculations
   const allocationData = allocationByAssetClass(
-    positionsInCategory.map((p) => ({
+    positions.map((p) => ({
       ...p,
       assetClass: p.assetClassManualOverride || p.assetClass
     }))
@@ -223,7 +193,8 @@ export function allocationBars(
   return allocationData.map((item) => ({
     label: item.label,
     value: fmtUSD(item.value),
-    pct: fmtPct(item.pct)
+    pct: fmtPct(item.pct),
+    pctNum: item.pct
   }))
 }
 

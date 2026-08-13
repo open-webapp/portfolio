@@ -120,13 +120,12 @@ describe('SettingsPage', () => {
       expect(screen.queryByText('Disconnect')).toBeFalsy()
     })
 
-    it('Connect button has btn btn-primary blueprint classes and 4 ordered corner marks', () => {
+    it('Connect button has btn btn-primary blueprint classes', () => {
       renderSettings({ driveReady: false })
 
       const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
       expect(connectButton.className).toContain('btn btn-primary')
       expect(connectButton.className).toContain('blueprint')
-      expectCornersInOrder(connectButton)
     })
 
     it('clicking Connect button calls the handleConnect prop', () => {
@@ -168,7 +167,6 @@ describe('SettingsPage', () => {
       const syncButton = screen.getByRole('button', { name: 'Sync Now' })
       expect(syncButton.className).toContain('btn btn-primary')
       expect(syncButton.className).toContain('blueprint')
-      expectCornersInOrder(syncButton)
 
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       expect(restoreButton.className).toContain('btn btn-secondary')
@@ -391,12 +389,11 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
     })
 
-    it('Change Password button has btn btn-primary blueprint classes and 4 ordered corner marks', () => {
+    it('Change Password button has btn btn-primary blueprint classes', () => {
       renderSettings({ settingsSection: 'encryption' })
       const button = screen.getByRole('button', { name: 'Change Encryption Password' })
       expect(button.className).toContain('btn btn-primary')
       expect(button.className).toContain('blueprint')
-      expectCornersInOrder(button)
     })
 
     it('happy path: saves locally, calls onKeyChange, shows success, clears fields, no Drive sync when not connected', async () => {
@@ -600,7 +597,6 @@ describe('SettingsPage', () => {
       const submitButton = await screen.findByRole('button', { name: 'Restore with this password' })
       expect(submitButton.className).toContain('btn btn-primary')
       expect(submitButton.className).toContain('blueprint')
-      expectCornersInOrder(submitButton)
 
       const cancelButton = screen.getByRole('button', { name: 'Cancel' })
       expect(cancelButton.className).toContain('btn btn-secondary')

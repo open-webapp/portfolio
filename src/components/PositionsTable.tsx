@@ -2,8 +2,9 @@ import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import type { Position, ClosedPosition } from '../lib/types'
 import { visiblePositions, filteredPortfolioTotal, assetClassOptions } from '../lib/selectors'
-import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
+import { fmtUSD, fmtPct, fmtPortfolioPercent, glColor } from '../lib/computations'
 import { sortBy } from '../lib/sort'
+import { buildAggregateRows, AGGREGATE_SORT_FIELD, type AggregateRow } from '../lib/aggregateRows'
 import { ClosedPositionsTable } from './ClosedPositionsTable'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
 
@@ -11,106 +12,6 @@ export interface PositionsTableProps {
   state: AppState
   dispatch: (action: any) => void
   onUndoClick?: (closedPosition: ClosedPosition) => void
-}
-
-/**
- * Build a grouping key from a position and accounts array.
- * Key format: `${symbol}|${effectiveAssetClass}`
- *
- * Tax category and retirement status are ignored in grouping.
- */
-function buildGroupKey(position: Position): string {
-  const effectiveAssetClass = position.assetClassManualOverride || position.assetClass
-  return `${position.symbol}|${effectiveAssetClass}`
-}
-
-/**
- * Aggregated position row: multiple positions grouped by symbol, asset class, and account attributes.
- */
-export interface AggregateRow {
-  key: string
-  symbol: string
-  displayName: string
-  effectiveAssetClass: string
-  shares: number
-  costBasis: number
-  marketValue: number
-  price: number
-  avgCost: number
-  gl: number
-  glPct: number
-  rowCount: number
-  positions: Position[]
-}
-
-/**
- * Mapping from Position column keys to AggregateRow sort fields.
- * Used when sorting aggregate rows to translate the position key to the corresponding aggregate field.
- * Example: assetClass (Position key) maps to effectiveAssetClass (AggregateRow field).
- */
-const AGGREGATE_SORT_FIELD: Record<string, keyof AggregateRow> = {
-  assetClass: 'effectiveAssetClass',
-  // All other sortable keys (symbol, shares, avgCost, price) have identity mapping
-}
-
-/**
- * Group positions by their aggregation key and compute aggregate values.
- * Returns sorted list of AggregateRow objects.
- */
-function buildAggregateRows(positions: Position[]): AggregateRow[] {
-  // Group positions by key
-  const groups: Record<string, Position[]> = {}
-
-  positions.forEach((p) => {
-    const key = buildGroupKey(p)
-    if (!groups[key]) {
-      groups[key] = []
-    }
-    groups[key].push(p)
-  })
-
-  // Convert groups to AggregateRow objects
-  return Object.entries(groups).map(([key, groupPositions]) => {
-    // Compute each position and sum values
-    let totalShares = 0
-    let totalCostBasis = 0
-    let totalMarketValue = 0
-
-    groupPositions.forEach((p) => {
-      const computed = computePosition(p)
-      totalShares += computed.shares
-      totalCostBasis += computed.costBasis
-      totalMarketValue += computed.marketValue
-    })
-
-    // Derive aggregate values
-    const price = totalShares === 0 ? 0 : totalMarketValue / totalShares
-    const avgCost = totalShares === 0 ? 0 : totalCostBasis / totalShares
-    const gl = totalMarketValue - totalCostBasis
-    const glPct = totalCostBasis === 0 ? 0 : (gl / totalCostBasis) * 100
-
-    // Get displayName from first position
-    const displayName = groupPositions[0].name ?? groupPositions[0].symbol
-
-    // Count total positions in group
-    const rowCount = groupPositions.length
-
-    return {
-      key,
-      symbol: groupPositions[0].symbol,
-      displayName,
-      effectiveAssetClass: groupPositions[0].assetClassManualOverride || groupPositions[0].assetClass,
-      shares: totalShares,
-      costBasis: totalCostBasis,
-      marketValue: totalMarketValue,
-      price,
-      avgCost,
-      gl,
-      glPct,
-      rowCount,
-      positions: groupPositions,
-    }
-  })
 }
 
 /**
@@ -243,7 +144,7 @@ export function PositionsTable({ state, dispatch, onUndoClick }: PositionsTableP
         </thead>
         <tbody>
           {sortedRows.map((row) => {
-            const glColor = row.gl >= 0 ? 'var(--color-accent-700)' : '#8a3c2e'
+            const glColorVal = glColor(row.gl)
             const glStr = (row.gl >= 0 ? '+' : '') + fmtUSD(row.gl)
             const glPctStr = fmtPct(row.glPct)
             const sharesStr = row.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -265,8 +166,8 @@ export function PositionsTable({ state, dispatch, onUndoClick }: PositionsTableP
                 <td style={{ textAlign: 'right' }}>{fmtUSD(row.costBasis)}</td>
                 <td style={{ textAlign: 'right', fontWeight: '600' }}>{fmtUSD(row.marketValue)}</td>
                 <td style={{ textAlign: 'right' }}>{fmtPortfolioPercent(row.marketValue, portfolioTotal)}</td>
-                <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
-                <td style={{ textAlign: 'right', color: glColor }}>{glPctStr}</td>
+                <td style={{ textAlign: 'right', color: glColorVal, fontWeight: '600' }}>{glStr}</td>
+                <td style={{ textAlign: 'right', color: glColorVal }}>{glPctStr}</td>
                 <td style={{ textAlign: 'right' }}>
                   <span className="tag tag-neutral">{row.rowCount}</span>
                 </td>

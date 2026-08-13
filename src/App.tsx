@@ -2,7 +2,7 @@ import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
-import { assetClassOptions, CATEGORY_LABEL } from './lib/selectors'
+import { assetClassOptions, CATEGORY_LABEL, positionsForCategory } from './lib/selectors'
 import type { ClosedPosition } from './lib/types'
 import { Nav } from './components/Nav'
 import { OverviewCard } from './components/OverviewCard'
@@ -302,7 +302,7 @@ function App() {
 
             {/* Allocation chart: full-width row */}
             <div style={{ marginBottom: 'var(--space-6)' }}>
-              <AllocationChart state={state} />
+              <AllocationChart positions={positionsForCategory(state)} />
             </div>
 
             {/* Divider */}

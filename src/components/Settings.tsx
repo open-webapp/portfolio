@@ -215,10 +215,6 @@ export function SettingsPage({
 
             {!driveReady ? (
               <button className="btn btn-primary blueprint" onClick={handleConnect} disabled={syncing}>
-                <i className="corner tl"></i>
-                <i className="corner tr"></i>
-                <i className="corner bl"></i>
-                <i className="corner br"></i>
                 {syncing ? 'Connecting...' : 'Connect Google Account'}
               </button>
             ) : (
@@ -265,10 +261,6 @@ export function SettingsPage({
             <>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button className="btn btn-primary blueprint" onClick={handleSync} disabled={syncing}>
-                  <i className="corner tl"></i>
-                  <i className="corner tr"></i>
-                  <i className="corner bl"></i>
-                  <i className="corner br"></i>
                   {syncing ? 'Syncing...' : 'Sync Now'}
                 </button>
                 <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
@@ -308,10 +300,6 @@ export function SettingsPage({
                 onClick={handleCrossPasswordSubmit}
                 disabled={restoringWithBackupPassword}
               >
-                <i className="corner tl"></i>
-                <i className="corner tr"></i>
-                <i className="corner bl"></i>
-                <i className="corner br"></i>
                 {restoringWithBackupPassword ? 'Restoring...' : 'Restore with this password'}
               </button>
               <button
@@ -374,10 +362,6 @@ export function SettingsPage({
             onClick={handleChangePassword}
             disabled={changingPassword}
           >
-            <i className="corner tl"></i>
-            <i className="corner tr"></i>
-            <i className="corner bl"></i>
-            <i className="corner br"></i>
             {changingPassword ? 'Changing Encryption Password...' : 'Change Encryption Password'}
           </button>
           {passwordError && (

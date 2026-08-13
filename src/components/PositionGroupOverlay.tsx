@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Account, Position } from '../lib/types'
 import type { AppState } from '../lib/state'
-import type { AggregateRow } from './PositionsTable'
-import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
+import type { AggregateRow } from '../lib/aggregateRows'
+import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent, glColor } from '../lib/computations'
 import { filteredPortfolioTotal } from '../lib/selectors'
 import { AssetClassOverrideSelect } from './AssetClassOverrideSelect'
 import { Trash } from 'lucide-react'
@@ -340,7 +340,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
     const computed = computePosition(p)
     return {
       ...computed,
-      glColor: computed.gl >= 0 ? 'var(--color-accent-700)' : '#8a3c2e',
+      glColor: glColor(computed.gl),
       glStr: (computed.gl >= 0 ? '+' : '') + fmtUSD(computed.gl),
       glPctStr: fmtPct(computed.glPct),
       sharesStr: computed.shares.toLocaleString('en-US', {
@@ -381,11 +381,6 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
           boxShadow: 'var(--shadow-lg)',
         }}
       >
-        <i className="corner tl"></i>
-        <i className="corner tr"></i>
-        <i className="corner bl"></i>
-        <i className="corner br"></i>
-
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="dialog-title">
             {title}

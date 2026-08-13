@@ -5,6 +5,10 @@ import {
   upsertCsvMapping,
   setView,
   closePosition,
+  selectAccount,
+  toggleCategoryExpanded,
+  setAcctAssetClassFilter,
+  setAcctPosSearch,
 } from './state'
 import type { AppState } from './types'
 
@@ -373,6 +377,110 @@ describe('state helpers', () => {
       expect(updated).toEqual(state)
       expect(updated.positions).toHaveLength(1)
       expect(updated.closedPositions).toHaveLength(0)
+    })
+  })
+
+  describe('selectAccount', () => {
+    it('happy path: sets selectedAccountId when new id is provided', () => {
+      const state = initialState()
+      expect(state.selectedAccountId).toBeNull()
+
+      const updated = selectAccount(state, 'acc1')
+      expect(updated.selectedAccountId).toBe('acc1')
+    })
+
+    it('toggle: selecting already-selected id sets it to null', () => {
+      const state = {
+        ...initialState(),
+        selectedAccountId: 'acc1',
+      }
+
+      const updated = selectAccount(state, 'acc1')
+      expect(updated.selectedAccountId).toBeNull()
+    })
+
+    it('other fields remain reference-equal when selecting a different account', () => {
+      const state = initialState()
+      const originalAccounts = state.accounts
+      const originalPositions = state.positions
+
+      const updated = selectAccount(state, 'acc1')
+
+      expect(updated.accounts).toBe(originalAccounts)
+      expect(updated.positions).toBe(originalPositions)
+    })
+  })
+
+  describe('toggleCategoryExpanded', () => {
+    it('happy path: toggles false→true for new key', () => {
+      const state = initialState()
+      expect(state.expandedCategories['cat1']).toBeUndefined()
+
+      const updated = toggleCategoryExpanded(state, 'cat1')
+      expect(updated.expandedCategories['cat1']).toBe(true)
+    })
+
+    it('toggling twice returns to false', () => {
+      let state = initialState()
+      state = toggleCategoryExpanded(state, 'cat1')
+      expect(state.expandedCategories['cat1']).toBe(true)
+
+      state = toggleCategoryExpanded(state, 'cat1')
+      expect(state.expandedCategories['cat1']).toBe(false)
+    })
+
+    it('other category keys remain untouched', () => {
+      let state = {
+        ...initialState(),
+        expandedCategories: { 'cat1': true, 'cat2': false },
+      }
+
+      state = toggleCategoryExpanded(state, 'cat1')
+      expect(state.expandedCategories['cat1']).toBe(false)
+      expect(state.expandedCategories['cat2']).toBe(false)
+
+      state = toggleCategoryExpanded(state, 'cat3')
+      expect(state.expandedCategories['cat1']).toBe(false)
+      expect(state.expandedCategories['cat2']).toBe(false)
+      expect(state.expandedCategories['cat3']).toBe(true)
+    })
+  })
+
+  describe('setAcctAssetClassFilter', () => {
+    it('happy path: sets filter field', () => {
+      const state = initialState()
+      expect(state.acctAssetClassFilter).toBe('All')
+
+      const updated = setAcctAssetClassFilter(state, 'Equity')
+      expect(updated.acctAssetClassFilter).toBe('Equity')
+    })
+
+    it('empty string and "All" round-trip correctly', () => {
+      let state = initialState()
+      state = setAcctAssetClassFilter(state, '')
+      expect(state.acctAssetClassFilter).toBe('')
+
+      state = setAcctAssetClassFilter(state, 'All')
+      expect(state.acctAssetClassFilter).toBe('All')
+    })
+  })
+
+  describe('setAcctPosSearch', () => {
+    it('happy path: sets search field', () => {
+      const state = initialState()
+      expect(state.acctPosSearch).toBe('')
+
+      const updated = setAcctPosSearch(state, 'AAPL')
+      expect(updated.acctPosSearch).toBe('AAPL')
+    })
+
+    it('empty string round-trip', () => {
+      let state = initialState()
+      state = setAcctPosSearch(state, 'MSFT')
+      expect(state.acctPosSearch).toBe('MSFT')
+
+      state = setAcctPosSearch(state, '')
+      expect(state.acctPosSearch).toBe('')
     })
   })
 })

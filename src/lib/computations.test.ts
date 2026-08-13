@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent } from './computations'
+import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent, glColor, GAIN_COLOR, LOSS_COLOR } from './computations'
 import { Position } from './types'
 
 describe('computations', () => {
@@ -207,5 +207,21 @@ describe('computations', () => {
     // ETF: 30000 (42.86%), Fixed Income: 20000 (28.57%), Commodity: 20000 (28.57%)
     const percentSum = result.reduce((acc, r) => acc + r.pct, 0)
     expect(percentSum).toBeCloseTo(100, 5)
+  })
+
+  describe('glColor', () => {
+    it('returns GAIN_COLOR for positive gains', () => {
+      expect(glColor(100)).toBe(GAIN_COLOR)
+      expect(glColor(0.01)).toBe(GAIN_COLOR)
+    })
+
+    it('returns LOSS_COLOR for negative losses', () => {
+      expect(glColor(-1)).toBe(LOSS_COLOR)
+      expect(glColor(-1000)).toBe(LOSS_COLOR)
+    })
+
+    it('returns GAIN_COLOR for zero (>= 0 tie-break)', () => {
+      expect(glColor(0)).toBe(GAIN_COLOR)
+    })
   })
 })

@@ -143,6 +143,10 @@ function fixtureState(): AppState {
     txTypeFilter: 'Buy',
     txSearch: 'tx search',
     showClosed: true,
+    selectedAccountId: 'acc-1',
+    expandedCategories: { taxable: true },
+    acctAssetClassFilter: 'Equities',
+    acctPosSearch: 'aapl',
   }
 }
 
@@ -227,6 +231,51 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.transactions).toEqual([])
     })
 
+    it('backfills missing new UI state fields with defaults via legacy plaintext path (selectedAccountId, expandedCategories, acctAssetClassFilter, acctPosSearch)', async () => {
+      // Simulate old plaintext saved blob without the 4 new fields
+      const oldBlob: any = {
+        // Data collections
+        accounts: [
+          {
+            id: 'acc1',
+            number: '12345',
+            name: 'Test',
+            institution: 'Bank',
+            accountType: 'brokerage',
+            isRetirement: false,
+          },
+        ],
+        positions: [],
+        closedPositions: [],
+        transactions: [],
+        snapshots: [],
+        csvMappings: [],
+        customInstitutions: [],
+        // UI state (omitting the 4 new fields)
+        category: 'all',
+        tab: 'positions',
+        view: 'dashboard',
+        sortKey: 'symbol',
+        sortDir: 'asc',
+        assetClassFilter: 'All',
+        posSearch: '',
+        txTypeFilter: 'All',
+        txSearch: '',
+        showClosed: false,
+        // selectedAccountId, expandedCategories, acctAssetClassFilter, acctPosSearch are missing
+      }
+
+      await putRaw(oldBlob)
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      // Verify the missing fields are backfilled to defaults
+      expect(loaded?.selectedAccountId).toBe(null)
+      expect(loaded?.expandedCategories).toEqual({})
+      expect(loaded?.acctAssetClassFilter).toBe('All')
+      expect(loaded?.acctPosSearch).toBe('')
+    })
+
     it('preserves UI state accurately', async () => {
       const stateWithUIChanges: AppState = {
         ...initialState(),
@@ -239,6 +288,10 @@ describe('IndexedDB persistence', () => {
         txTypeFilter: 'Sell',
         txSearch: 'test transaction',
         showClosed: true,
+        selectedAccountId: 'acc-1',
+        expandedCategories: { taxable: true },
+        acctAssetClassFilter: 'Equities',
+        acctPosSearch: 'aapl',
       }
       const salt = generateSalt()
       const key = await deriveKey('pw', salt)
@@ -255,6 +308,10 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.txTypeFilter).toBe('Sell')
       expect(loaded?.txSearch).toBe('test transaction')
       expect(loaded?.showClosed).toBe(true)
+      expect(loaded?.selectedAccountId).toBe('acc-1')
+      expect(loaded?.expandedCategories).toEqual({ taxable: true })
+      expect(loaded?.acctAssetClassFilter).toBe('Equities')
+      expect(loaded?.acctPosSearch).toBe('aapl')
     })
 
     it('round-trips non-default view', async () => {
@@ -428,6 +485,7 @@ describe('IndexedDB persistence', () => {
         txTypeFilter: 'All',
         txSearch: '',
         showClosed: false,
+        // Omitting the 4 new fields to test backward compat
       }
 
       await putRaw(preMigrationState)
@@ -436,6 +494,11 @@ describe('IndexedDB persistence', () => {
 
       expect(loaded).not.toBeNull()
       expect(legacyKey in loaded!).toBe(false)
+      // Verify the missing fields are backfilled to defaults
+      expect(loaded?.selectedAccountId).toBe(null)
+      expect(loaded?.expandedCategories).toEqual({})
+      expect(loaded?.acctAssetClassFilter).toBe('All')
+      expect(loaded?.acctPosSearch).toBe('')
     })
 
     it('backfills the institution field on accounts missing it', async () => {
@@ -534,6 +597,7 @@ describe('IndexedDB persistence', () => {
         positions: [],
         category: 'all',
         tab: 'transactions',
+        // Omitting the 4 new UI state fields to test backward compat
       }
 
       await putRaw(minimalState)
@@ -541,6 +605,11 @@ describe('IndexedDB persistence', () => {
       expect(legacyLoaded?.closedPositions).toEqual([])
       expect(legacyLoaded?.transactions).toEqual([])
       expect(legacyLoaded?.snapshots).toEqual([])
+      // Verify the missing fields are backfilled to defaults
+      expect(legacyLoaded?.selectedAccountId).toBe(null)
+      expect(legacyLoaded?.expandedCategories).toEqual({})
+      expect(legacyLoaded?.acctAssetClassFilter).toBe('All')
+      expect(legacyLoaded?.acctPosSearch).toBe('')
 
       await clearDatabase()
 
@@ -551,6 +620,11 @@ describe('IndexedDB persistence', () => {
       expect(encryptedLoaded?.closedPositions).toEqual([])
       expect(encryptedLoaded?.transactions).toEqual([])
       expect(encryptedLoaded?.snapshots).toEqual([])
+      // Verify the missing fields are backfilled to defaults via encrypted path too
+      expect(encryptedLoaded?.selectedAccountId).toBe(null)
+      expect(encryptedLoaded?.expandedCategories).toEqual({})
+      expect(encryptedLoaded?.acctAssetClassFilter).toBe('All')
+      expect(encryptedLoaded?.acctPosSearch).toBe('')
     })
   })
 

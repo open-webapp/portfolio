@@ -65,6 +65,10 @@ function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     txTypeFilter: loaded.txTypeFilter ?? defaults.txTypeFilter,
     txSearch: loaded.txSearch ?? defaults.txSearch,
     showClosed: loaded.showClosed ?? defaults.showClosed,
+    selectedAccountId: loaded.selectedAccountId ?? defaults.selectedAccountId,
+    expandedCategories: loaded.expandedCategories ?? defaults.expandedCategories,
+    acctAssetClassFilter: loaded.acctAssetClassFilter ?? defaults.acctAssetClassFilter,
+    acctPosSearch: loaded.acctPosSearch ?? defaults.acctPosSearch,
   }
 }
 

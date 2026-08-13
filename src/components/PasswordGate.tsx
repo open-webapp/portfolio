@@ -85,11 +85,6 @@ function GateShell({
         </div>
 
         <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
-          <i className="corner tl"></i>
-          <i className="corner tr"></i>
-          <i className="corner bl"></i>
-          <i className="corner br"></i>
-
           {children}
         </div>
 
@@ -121,10 +116,6 @@ function GateShell({
       {resetConfirmOpen && (
         <div className="dialog-backdrop" style={{ zIndex: 1000 }}>
           <div className="dialog blueprint" style={{ width: 'min(92vw, 420px)', background: 'var(--color-bg)', boxShadow: 'var(--shadow-lg)' }}>
-            <i className="corner tl"></i>
-            <i className="corner tr"></i>
-            <i className="corner bl"></i>
-            <i className="corner br"></i>
             <div className="dialog-title" style={{ color: '#8a3c2e' }}>
               Reset app and erase all data?
             </div>
@@ -152,10 +143,6 @@ function GateShell({
                   setResetConfirmText('')
                 }}
               >
-                <i className="corner tl"></i>
-                <i className="corner tr"></i>
-                <i className="corner bl"></i>
-                <i className="corner br"></i>
                 Cancel
               </button>
               <button
@@ -165,10 +152,6 @@ function GateShell({
                 onClick={handleConfirmReset}
                 style={{ background: '#8a3c2e', borderColor: '#8a3c2e', color: '#fff' }}
               >
-                <i className="corner tl"></i>
-                <i className="corner tr"></i>
-                <i className="corner bl"></i>
-                <i className="corner br"></i>
                 {resetting ? 'Erasing...' : 'Erase Everything'}
               </button>
             </div>
@@ -282,10 +265,6 @@ function SetPasswordScreen({
         )}
 
         <button type="submit" className="btn btn-primary btn-block blueprint" disabled={submitting}>
-          <i className="corner tl"></i>
-          <i className="corner tr"></i>
-          <i className="corner bl"></i>
-          <i className="corner br"></i>
           {submitting ? 'Setting password...' : 'Set password'}
         </button>
       </form>
@@ -360,10 +339,6 @@ function EnterPasswordScreen({
           className="btn btn-primary btn-block blueprint"
           disabled={submitting}
         >
-          <i className="corner tl"></i>
-          <i className="corner tr"></i>
-          <i className="corner bl"></i>
-          <i className="corner br"></i>
           {submitting ? 'Unlocking...' : 'Unlock'}
         </button>
       </form>

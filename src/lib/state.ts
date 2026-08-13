@@ -30,6 +30,10 @@ export interface AppState {
   txTypeFilter: string // 'All' or specific type like 'Buy'
   txSearch: string // search text for transactions
   showClosed: boolean // toggle closed positions table
+  selectedAccountId: string | null // selected account on AccountsPage
+  expandedCategories: Record<string, boolean> // category expansion state
+  acctAssetClassFilter: string // asset class filter on AccountsPage
+  acctPosSearch: string // position search text on AccountsPage
   pendingImport?: {
     kind: 'positions' | 'transactions'
     profileId: string
@@ -63,6 +67,10 @@ export function initialState(): AppState {
     txTypeFilter: 'All',
     txSearch: '',
     showClosed: false,
+    selectedAccountId: null,
+    expandedCategories: {},
+    acctAssetClassFilter: 'All',
+    acctPosSearch: '',
   }
 }
 
@@ -252,6 +260,49 @@ export function toggleShowClosed(state: AppState): AppState {
   return {
     ...state,
     showClosed: !state.showClosed,
+  }
+}
+
+/**
+ * Select an account on AccountsPage (toggle if already selected).
+ */
+export function selectAccount(state: AppState, accountId: string): AppState {
+  return {
+    ...state,
+    selectedAccountId: state.selectedAccountId === accountId ? null : accountId,
+  }
+}
+
+/**
+ * Toggle category expansion state on AccountsPage.
+ */
+export function toggleCategoryExpanded(state: AppState, categoryKey: string): AppState {
+  return {
+    ...state,
+    expandedCategories: {
+      ...state.expandedCategories,
+      [categoryKey]: !state.expandedCategories[categoryKey],
+    },
+  }
+}
+
+/**
+ * Set the asset class filter on AccountsPage.
+ */
+export function setAcctAssetClassFilter(state: AppState, filter: string): AppState {
+  return {
+    ...state,
+    acctAssetClassFilter: filter,
+  }
+}
+
+/**
+ * Set the position search text on AccountsPage.
+ */
+export function setAcctPosSearch(state: AppState, search: string): AppState {
+  return {
+    ...state,
+    acctPosSearch: search,
   }
 }
 
