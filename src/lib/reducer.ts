@@ -12,6 +12,7 @@ export type AppAction =
   | { type: 'SET_ASSET_CLASS_OVERRIDE'; positionId: string; override?: any }
   | { type: 'CLOSE_POSITION'; positionId: string }
   | { type: 'DELETE_CLOSED_POSITION'; id: string }
+  | { type: 'RESTORE_CLOSED_POSITION'; closedPositionId: string; replaceExistingPositionId?: string }
   | { type: 'SET_CATEGORY'; category: any }
   | { type: 'SET_TAB'; tab: any }
   | { type: 'SET_SORT'; sortKey: any; sortDir: any }
