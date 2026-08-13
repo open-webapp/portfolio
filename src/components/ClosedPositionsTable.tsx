@@ -1,7 +1,7 @@
 import type { AppState } from '../lib/state'
 import { findMatchingOpenPosition, isExactLotMatch } from '../lib/state'
 import type { ClosedPosition } from '../lib/types'
-import { fmtUSD } from '../lib/computations'
+import { fmtUSD, glColor, LOSS_COLOR } from '../lib/computations'
 import { Trash, RotateCcw } from 'lucide-react'
 
 export interface ClosedPositionsTableProps {
@@ -56,7 +56,7 @@ export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTablePr
       </thead>
       <tbody>
         {state.closedPositions.map((cp) => {
-          const glColor = cp.realizedGL !== null && cp.realizedGL >= 0 ? 'var(--color-accent-700)' : '#8a3c2e'
+          const glColorVal = cp.realizedGL !== null ? glColor(cp.realizedGL) : LOSS_COLOR
           const glStr =
             cp.realizedGL === null
               ? cp.realizedGLBasis === 'unknown'
@@ -74,7 +74,7 @@ export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTablePr
                 </div>
               </td>
               <td className="text-muted">{cp.closedDate}</td>
-              <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
+              <td style={{ textAlign: 'right', color: glColorVal, fontWeight: '600' }}>{glStr}</td>
               <td style={{ textAlign: 'center', display: 'flex', gap: '8px', justifyContent: 'center' }}>
                 <button
                   onClick={() => handleUndoClosedPosition(cp)}

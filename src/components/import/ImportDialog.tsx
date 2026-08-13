@@ -492,10 +492,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   if (!isOpen) {
     return (
       <button type="button" className="btn btn-secondary blueprint" onClick={handleOpenDialog} aria-label="Accounts & Import">
-        <i className="corner tl"></i>
-        <i className="corner tr"></i>
-        <i className="corner bl"></i>
-        <i className="corner br"></i>
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -592,11 +588,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
             boxShadow: 'var(--shadow-lg)',
           }}
         >
-          <i className="corner tl"></i>
-          <i className="corner tr"></i>
-          <i className="corner bl"></i>
-          <i className="corner br"></i>
-
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="dialog-title">Import</div>
             <button
@@ -720,10 +711,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                             setNewInstitutionName('')
                           }}
                         >
-                          <i className="corner tl"></i>
-                          <i className="corner tr"></i>
-                          <i className="corner bl"></i>
-                          <i className="corner br"></i>
                           Add
                         </button>
                         <button
@@ -734,10 +721,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                             setNewInstitutionName('')
                           }}
                         >
-                          <i className="corner tl"></i>
-                          <i className="corner tr"></i>
-                          <i className="corner bl"></i>
-                          <i className="corner br"></i>
                           Cancel
                         </button>
                       </div>
@@ -1072,10 +1055,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                   disabled={saveDisabled}
                   onClick={handleSaveAccountChanges}
                 >
-                  <i className="corner tl"></i>
-                  <i className="corner tr"></i>
-                  <i className="corner bl"></i>
-                  <i className="corner br"></i>
                   {importSaved ? 'Saved' : 'Save'}
                 </button>
               )}
@@ -1085,10 +1064,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                 onClick={handleContinue}
                 disabled={!isStep1Complete()}
               >
-                <i className="corner tl"></i>
-                <i className="corner tr"></i>
-                <i className="corner bl"></i>
-                <i className="corner br"></i>
                 Continue
               </button>
             </div>
@@ -1324,10 +1299,6 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
             <div className="dialog-actions">
               {!importDone && (
                 <button type="button" className="btn btn-secondary blueprint" onClick={handleBack}>
-                  <i className="corner tl"></i>
-                  <i className="corner tr"></i>
-                  <i className="corner bl"></i>
-                  <i className="corner br"></i>
                   Back
                 </button>
               )}

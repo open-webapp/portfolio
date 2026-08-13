@@ -1,6 +1,21 @@
 import type { Position } from './types'
 
 /**
+ * Shared color constants for gain/loss display.
+ * v11 theme: GAIN='#1fa971' (green), LOSS='#e2574c' (red)
+ */
+export const GAIN_COLOR = '#1fa971'
+export const LOSS_COLOR = '#e2574c'
+
+/**
+ * Returns the appropriate gain/loss color based on GL value.
+ * Positive (>= 0) returns green, negative returns red.
+ */
+export function glColor(gl: number): string {
+  return gl >= 0 ? GAIN_COLOR : LOSS_COLOR
+}
+
+/**
  * Format a number as USD currency.
  * Examples: -$5.00, $1,234.56
  */

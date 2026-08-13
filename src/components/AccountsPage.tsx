@@ -28,11 +28,6 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
               marginBottom: 'var(--space-5)'
             }}
           >
-            <i className="corner tl"></i>
-            <i className="corner tr"></i>
-            <i className="corner bl"></i>
-            <i className="corner br"></i>
-
             <div
               className="card-title"
               style={{

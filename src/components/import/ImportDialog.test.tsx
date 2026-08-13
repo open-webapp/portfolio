@@ -198,7 +198,6 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(buttons).toHaveLength(1)
     const button = buttons[0]
     expect(button.className).toContain('btn btn-secondary blueprint')
-    expect(container.querySelectorAll('i.corner')).toHaveLength(4)
     expect(container.querySelector('.dialog-backdrop')).toBeNull()
   })
 
@@ -208,7 +207,6 @@ describe('ImportDialog (2-step wizard)', () => {
 
     expect(container.querySelector('.dialog-backdrop')).toBeTruthy()
     expect(container.querySelector('.dialog.blueprint')).toBeTruthy()
-    expect(container.querySelector('.dialog.blueprint > i.corner.tl')).toBeTruthy()
     expect(container.querySelector('.dialog-title')?.textContent).toBe('Import')
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
 

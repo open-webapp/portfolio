@@ -169,8 +169,13 @@ describe('view switching (dashboard vs settings)', () => {
   it('should render dashboard view by default with OverviewCard and AllocationChart', async () => {
     await renderUnlockedApp()
 
-    // OverviewCard with its 3 clusters should be visible
-    expect(screen.getByText('All Together')).toBeTruthy()
+    // OverviewCard with 2-segment layout should be visible
+    // Both segment row labels should be visible (there will be multiple instances from segment rows + filter tags)
+    const retirementTexts = screen.getAllByText('Retirement')
+    expect(retirementTexts.length).toBeGreaterThanOrEqual(1)
+
+    const nonRetirementTexts = screen.getAllByText('Non-Retirement')
+    expect(nonRetirementTexts.length).toBeGreaterThanOrEqual(1)
 
     // Performance chart should NOT render (removed in T5)
     expect(screen.queryByText('Performance')).toBeFalsy()
@@ -226,7 +231,11 @@ describe('view switching (dashboard vs settings)', () => {
     // Dashboard should be visible again
     await waitFor(() => {
       expect(screen.getByText('Allocation')).toBeTruthy()
-      expect(screen.getByText('All Together')).toBeTruthy()
+      // 2-segment OverviewCard layout: both Retirement and Non-Retirement should be visible
+      const retirementTexts = screen.getAllByText('Retirement')
+      expect(retirementTexts.length).toBeGreaterThanOrEqual(1)
+      const nonRetirementTexts = screen.getAllByText('Non-Retirement')
+      expect(nonRetirementTexts.length).toBeGreaterThanOrEqual(1)
     })
 
     // Settings page should not be visible

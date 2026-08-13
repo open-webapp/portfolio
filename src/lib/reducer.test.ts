@@ -160,4 +160,64 @@ describe('appReducer', () => {
       expect(result.assetClassFilter).toBe('Equity')
     })
   })
+
+  describe('SELECT_ACCOUNT', () => {
+    it('sets selectedAccountId from action.accountId', () => {
+      const state: AppState = { ...initialState(), selectedAccountId: null }
+
+      const result = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acc1' })
+
+      expect(result.selectedAccountId).toBe('acc1')
+    })
+
+    it('toggles to null when selecting the same account twice', () => {
+      const state: AppState = { ...initialState(), selectedAccountId: 'acc1' }
+
+      const result = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acc1' })
+
+      expect(result.selectedAccountId).toBeNull()
+    })
+  })
+
+  describe('TOGGLE_CATEGORY_EXPANDED', () => {
+    it('toggles category expansion for named key', () => {
+      const state: AppState = { ...initialState(), expandedCategories: { categoryA: false } }
+
+      const result = appReducer(state, { type: 'TOGGLE_CATEGORY_EXPANDED', categoryKey: 'categoryA' })
+
+      expect(result.expandedCategories.categoryA).toBe(true)
+    })
+
+    it('leaves unrelated keys untouched', () => {
+      const state: AppState = {
+        ...initialState(),
+        expandedCategories: { categoryA: true, categoryB: false },
+      }
+
+      const result = appReducer(state, { type: 'TOGGLE_CATEGORY_EXPANDED', categoryKey: 'categoryA' })
+
+      expect(result.expandedCategories.categoryA).toBe(false)
+      expect(result.expandedCategories.categoryB).toBe(false)
+    })
+  })
+
+  describe('SET_ACCT_ASSET_CLASS_FILTER', () => {
+    it('sets acctAssetClassFilter from action.filter', () => {
+      const state: AppState = { ...initialState(), acctAssetClassFilter: 'All' }
+
+      const result = appReducer(state, { type: 'SET_ACCT_ASSET_CLASS_FILTER', filter: 'Bond' })
+
+      expect(result.acctAssetClassFilter).toBe('Bond')
+    })
+  })
+
+  describe('SET_ACCT_POS_SEARCH', () => {
+    it('sets acctPosSearch from action.search', () => {
+      const state: AppState = { ...initialState(), acctPosSearch: '' }
+
+      const result = appReducer(state, { type: 'SET_ACCT_POS_SEARCH', search: 'AAPL' })
+
+      expect(result.acctPosSearch).toBe('AAPL')
+    })
+  })
 })
