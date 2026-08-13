@@ -3,6 +3,7 @@ import { allocationBars } from '../lib/selectors'
 
 export interface AllocationChartProps {
   positions: Position[]
+  title: string
 }
 
 /**
@@ -10,13 +11,13 @@ export interface AllocationChartProps {
  * Each bar shows: label (asset class) + USD value + percentage + visual indicator.
  * Structure matches .dc.html lines 80-94.
  */
-export function AllocationChart({ positions }: AllocationChartProps) {
+export function AllocationChart({ positions, title }: AllocationChartProps) {
   const bars = allocationBars(positions)
 
   return (
     <div className="card blueprint elev-sm">
       <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
-        Allocation
+        {title}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-3) var(--space-6)' }}>

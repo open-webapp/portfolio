@@ -6,7 +6,7 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Dashboard view, top to bottom: `Nav` → `OverviewCard` (3-cluster layout) → divider block → category `.seg` tabs (All/Taxable/Non-Taxable/Tax-Deferred) → `AllocationChart` (2-column grid) → divider → asset-class filter `.seg` control + "Import" button row → `PositionsTable`. Accounts view: read-only 3-section account summary table (Taxable/Non-Taxable/Tax-Deferred), see "Accounts page" section below.
+Dashboard view, top to bottom: `Nav` → `OverviewCard` (2-segment layout) → divider block → category `.seg` tabs (All/Taxable/Non-Taxable/Tax-Deferred) → `AllocationChart` (2-column grid) → divider → asset-class filter `.seg` control + "Import" button row → `PositionsTable`. Accounts view: 2-column layout with collapsible category cards (left, 360px) and flexible right panel with allocation chart, asset-class filter, and aggregate positions table, see "Accounts page" section below.
 
 ## Nav
 
@@ -20,17 +20,22 @@ Nav renders on all views (dashboard, accounts, settings). Single always-visible 
 
 ## Overview card
 
-Single `.card.blueprint.elev-sm` card with corner marks, containing three metric clusters (Total Value / Total Gain-Loss / Amount Invested), computed live via `summaryCards()` and `segmentSummaryCards()`:
+Two-segment grid layout (`.card` elements side-by-side), computed live via `segmentCards(state, true/false)`:
 
-- **Total Value** — sum of `shares * price` across positions in the selected category.
-- **Total Gain/Loss** — sum of `marketValue - costBasis` across selected positions, signed with `+`/`-` prefix; a `sub` line shows % (`gl / costBasis * 100`, `0` if cost basis is 0). Colored green/red by sign.
-- **Amount Invested** — sum of `shares * avgCost` across selected positions.
+- **Retirement segment** — left card, labeled "Retirement" (muted, uppercase, 10px).
+  - **Total Value** — heading (font-family heading, 15px, weight 600) showing sum of `shares * price` across all positions in `state.accounts` where `account.retirement === true`.
+  - **G/L tag** — colored `.tag` below, showing combined signed gain-loss as `+$X.XX (+Y.YY%)` format (G/L amount + percentage), colored green/red by sign. Percentage computed as `gl / costBasis * 100`, treating 0 cost basis as `0%`.
+- **Non-Retirement segment** — right card, same structure, filtered by `account.retirement === false`.
 
-No Day Change metric. The `All Together` cluster reflects the current category filter only. The `Retirement` and `Non-Retirement` segment clusters ignore the category filter entirely and show retirement-only positions computed separately; they partition all positions by `Account.retirement` and are not scoped to the current category.
+Both segments ignore the current category filter (they are global, not scoped to selected category). "All Together" and "Amount Invested" clusters are no longer shown.
 
 ## Allocation chart
 
-2-column grid grouped by *effective* asset class (`assetClassManualOverride || assetClass`) for positions in the selected category (not retirement-filtered). Each cell shows the class label and USD value inline, with a compact horizontal bar (height 6px) sized to percentage of category total. Empty positions list → empty grid, no crash.
+Reusable `.card.blueprint.elev-sm` component taking `positions: Position[]` and `title: string` props. Renders a 2-column grid grouped by *effective* asset class (`assetClassManualOverride || assetClass`), computed via `allocationBars(positions)`. Each cell shows: class label + USD value inline (12px font), percentage right-aligned (muted), and a compact horizontal bar (height 6px, accent color fill) sized to percentage of total portfolio value.
+
+- **Dashboard usage** — called with category-filtered positions (via `positionsForCategory(state)`) and title "Allocation".
+- **Accounts page usage** — called with selection-scoped positions (all accounts, or single account) and title `"Allocation — All Accounts"` or `"Allocation — {account.name}"` per selection state.
+- Empty positions list → empty grid with no crash.
 
 ## Positions table
 
@@ -54,16 +59,23 @@ Rows are **aggregate groups** — each row represents a unique combination of sy
 
 ## Accounts page
 
-Read-only summary view accessed via the "Accounts" tab in the Nav. Displays all accounts organized into 3 sections (Taxable / Non-Taxable / Tax-Deferred order), each as a `.card.blueprint.elev-sm` card with corner marks:
+2-column layout accessed via the "Accounts" tab in the Nav. Left panel (360px fixed width) shows collapsible category cards; right panel (flexible) shows allocation chart, filter controls, and aggregate positions table.
 
-- **Section card** (per tax category): `.card-title` shows the category label; 5-column `.table` with headers "Financial Institution" (left-aligned) / "Account" (left-aligned) / "Cash" (right-aligned) / "Investment" (right-aligned) / "Total" (right-aligned).
-  - **Rows**: one per account in that category. Account Name format: `"{name} ({accountNumber})"` (account number included even if empty). Institution column shows the account's institution value (or empty if not set). Cash/Investment/Total display as formatted USD.
-  - **Subtotal row** (`<tfoot>`): "Subtotal" label (uppercase, bold, 12px font) spans Institution and Account columns (`colSpan=2`); Cash/Investment/Total show summed formatted USD; Grand Total colored `var(--color-accent-700)` and bold.
-  - **Cash vs. Investment split**: determined by `position.symbol.toLowerCase() === 'cash'` — positions matching this condition contribute to the Cash column sum; all others contribute to Investment column sum. The sum of Cash + Investment equals the Total.
-  - **Empty-category message** (`.text-muted`, 12px font): "No accounts in this category." displays instead of a table if the section has zero accounts.
-- **Dividers**: a divider (styled as `height: var(--space-6), border-bottom: 1px solid var(--color-divider), margin-bottom: var(--space-5)`) renders between sections 1-2 and 2-3, but not after the last (Deferred) section.
-- **Row click → overlay** (excluding Subtotal row): Clicking any account row opens `PositionGroupOverlay`, displaying all positions for that account including cash, sorted by symbol ascending. Title format: `` `{institution} — {name} ({accountNumber})` `` with institution and separator omitted when institution is empty. % of Portfolio remains whole-portfolio scoped (not account-scoped). **Side effect**: reassigning a position's account from this overlay removes it from the currently-open list on next render (natural re-render consequence of the filter `state.positions.filter(p => p.accountId === selectedAccountId)` no longer matching).
-- **No account creation/editing**: account CRUD operations remain in the CSV import flow (new-account form at import time); this page is read-only display only.
+**Left panel — Category cards** (Taxable / Non-Taxable / Tax-Deferred order):
+- **Card header** (click to toggle expanded state): category label + account-count badge (`.tag.tag-neutral`, unfiltered count).
+- **Collapsed state** (default): shows only the header with badge.
+- **Expanded state**: lists account rows, each clickable (cursor pointer), styled with:
+  - Institution and account name on line 1 (or name only if institution is empty), using institution—name format.
+  - Tags on line 2: total value (formatted USD), account number, updated date (ISO format).
+  - Click to select: dispatches `state.selectedAccountId` or toggles if already selected (toggle semantics). Global selection state persists across category expansions.
+
+**Right panel** (flexible width):
+- **Allocation chart** — top: `AllocationChart` component with positions from current selection (all accounts or single account) and title `"Allocation — All Accounts"` or `"Allocation — {account.name}"`.
+- **Filter row** — asset-class `.seg` radio control (computed from all positions, not selection-scoped, sorted alphabetically) + "Import" button (same as Dashboard). Free-text search field for symbol/name filtering.
+- **Aggregate Positions table** — sorted by column selection (global sort state shared with Dashboard via `state.sortBy`/`TOGGLE_SORT`). **Columns**: Symbol, Asset Class, Shares, Avg Cost, Current Price, Amount Invested, Market Value, G/L, G/L %, **% of Selection** (percentage of selection total, not whole portfolio), Row-count badge. **% of Selection** reflects only positions in the current selection (account or all). Rows are aggregate groups (symbol + asset class merge). Same interaction pattern as Dashboard PositionsTable: row click → `PositionGroupOverlay`, sortable headers with `↑`/`↓` indicators, etc.
+- **Empty state**: "No positions to show." when selection has no positions.
+
+**No longer shown**: "Subtotal row", "Cash/Investment/Total" column split, 3-section (Taxable/Non-Taxable/Tax-Deferred) table layout, dividers between sections. **Account CRUD**: remains in CSV import flow only (new-account form at import time).
 
 ## CSV import (Positions / Transactions)
 

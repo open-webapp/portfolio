@@ -199,93 +199,125 @@ export function allocationBars(
 }
 
 /**
- * Compute cash and investment totals for a specific account.
- * Cash is positions with symbol 'cash' (case-insensitive), investment is everything else.
- * Returns { cash, investment } as numeric values.
+ * Generate category-card data for the Accounts page's left column.
+ * One card per tax category (Taxable, Non-Taxable, Tax-Deferred, in that order),
+ * each listing its accounts with per-account totals, expand/collapse state, and selection state.
  */
-export function computeCashInvestment(
-  state: AppState,
-  accountId: string
-): { cash: number; investment: number } {
-  const accountPositions = state.positions.filter((p) => p.accountId === accountId)
-  let cash = 0
-  let investment = 0
-
-  accountPositions.forEach((p) => {
-    const value = p.shares * p.price
-    if ((p.symbol || '').toLowerCase() === 'cash') {
-      cash += value
-    } else {
-      investment += value
-    }
-  })
-
-  return { cash, investment }
-}
-
-/**
- * Generate sections grouped by tax category for the accounts view.
- * Each section contains rows for accounts in that category with cash/investment/total values.
- * Returns array of sections with labels, rows, and aggregate totals.
- */
-export function accountsSections(
-  state: AppState
-): Array<{
+export function categoryCards(state: AppState): Array<{
+  key: TaxCategory
   label: string
-  rows: Array<{
-    accountId: string
+  totalStr: string
+  accountCount: number
+  expanded: boolean
+  accounts: Array<{
+    id: string
     institution: string
-    accountName: string
-    cashStr: string
-    investmentStr: string
+    name: string
+    accountNumber: string
+    updatedStr: string
     totalStr: string
+    selected: boolean
   }>
-  hasRows: boolean
-  noRows: boolean
-  cashTotalStr: string
-  investmentTotalStr: string
-  grandTotalStr: string
-  showDivider: boolean
+  hasAccounts: boolean
+  noAccounts: boolean
 }> {
-  const catKeys = ['taxable', 'nonTaxable', 'taxDeferred'] as const
+  const catKeys = Object.keys(CATEGORY_LABEL) as TaxCategory[]
 
-  return catKeys.map((catKey, idx) => {
-    const label = CATEGORY_LABEL[catKey as TaxCategory]
+  return catKeys.map((catKey) => {
     const accountsInCategory = state.accounts.filter((a) => a.taxCategory === catKey)
 
-    let cashTotal = 0
-    let investmentTotal = 0
-
-    const rows = accountsInCategory.map((account) => {
-      const { cash, investment } = computeCashInvestment(state, account.id)
-      cashTotal += cash
-      investmentTotal += investment
-
-      const total = cash + investment
+    let categoryTotal = 0
+    const accounts = accountsInCategory.map((account) => {
+      const accountPositions = state.positions.filter((p) => p.accountId === account.id)
+      const total = accountPositions.reduce((sum, p) => sum + p.shares * p.price, 0)
+      categoryTotal += total
+      const updatedStr =
+        accountPositions.length === 0
+          ? '—'
+          : new Date(
+              Math.max(...accountPositions.map((p) => new Date(p.lastImportedAt).getTime()))
+            ).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
       return {
-        accountId: account.id,
+        id: account.id,
         institution: account.institution || '',
-        accountName: `${account.name} (${account.accountNumber})`,
-        cashStr: fmtUSD(cash),
-        investmentStr: fmtUSD(investment),
-        totalStr: fmtUSD(total)
+        name: account.name,
+        accountNumber: account.accountNumber,
+        updatedStr,
+        totalStr: fmtUSD(total),
+        selected: state.selectedAccountId === account.id
       }
     })
 
-    const grandTotal = cashTotal + investmentTotal
-
     return {
-      label,
-      rows,
-      hasRows: rows.length > 0,
-      noRows: rows.length === 0,
-      cashTotalStr: fmtUSD(cashTotal),
-      investmentTotalStr: fmtUSD(investmentTotal),
-      grandTotalStr: fmtUSD(grandTotal),
-      showDivider: idx < catKeys.length - 1
+      key: catKey,
+      label: CATEGORY_LABEL[catKey],
+      totalStr: fmtUSD(categoryTotal),
+      accountCount: accounts.length,
+      expanded: !!state.expandedCategories[catKey],
+      accounts,
+      hasAccounts: accounts.length > 0,
+      noAccounts: accounts.length === 0
     }
   })
+}
+
+/**
+ * Positions scoped to the currently-selected account on the Accounts page,
+ * or all positions when no account is selected.
+ */
+export function acctScopedPositions(state: AppState): Position[] {
+  if (state.selectedAccountId) {
+    return state.positions.filter((p) => p.accountId === state.selectedAccountId)
+  }
+  return state.positions
+}
+
+/**
+ * Distinct effective asset classes among the given positions, sorted alphabetically.
+ */
+export function acctAssetClassOptions(positions: Position[]): string[] {
+  const assetClasses = new Set<string>()
+  positions.forEach((p) => {
+    assetClasses.add(p.assetClassManualOverride || p.assetClass)
+  })
+  return Array.from(assetClasses).sort()
+}
+
+/**
+ * Accounts page positions further filtered by acctAssetClassFilter and acctPosSearch.
+ */
+export function acctFilteredPositions(state: AppState): Position[] {
+  let results = acctScopedPositions(state)
+
+  if (state.acctAssetClassFilter !== 'All') {
+    results = results.filter((p) => {
+      const effectiveClass = p.assetClassManualOverride || p.assetClass
+      return effectiveClass === state.acctAssetClassFilter
+    })
+  }
+
+  if (state.acctPosSearch.trim()) {
+    const searchLower = state.acctPosSearch.toLowerCase()
+    results = results.filter(
+      (p) =>
+        p.symbol.toLowerCase().includes(searchLower) ||
+        (p.name?.toLowerCase().includes(searchLower) ?? false)
+    )
+  }
+
+  return results
+}
+
+/**
+ * Title for the Accounts page's allocation card, reflecting the current account selection.
+ */
+export function acctAllocationTitle(state: AppState): string {
+  if (state.selectedAccountId) {
+    const account = state.accounts.find((a) => a.id === state.selectedAccountId)
+    return `Allocation — ${account?.name ?? ''}`
+  }
+  return 'Allocation — All Accounts'
 }
 
 /**

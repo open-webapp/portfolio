@@ -197,10 +197,10 @@ export function SettingsPage({
 
       {/* Google Drive Sync section */}
       {settingsSection === 'drive' && (
-      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <div className="card-title">Google Drive Sync</div>
+      <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Google Drive Sync</div>
 
-        <div style={{ maxWidth: '460px' }}>
+        <div>
           {/* Google Account subsection */}
           <div style={{ marginBottom: '16px' }}>
             <div className="text-muted" style={{
@@ -224,7 +224,6 @@ export function SettingsPage({
                 justifyContent: 'space-between',
                 padding: '10px 12px',
                 border: '1px solid var(--color-divider)',
-                borderRadius: 'var(--radius-md)',
                 backgroundColor: 'var(--color-surface)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -245,9 +244,8 @@ export function SettingsPage({
                   onClick={handleDisconnect}
                   style={{
                     fontSize: '12px',
-                    color: 'var(--color-accent)',
-                    cursor: 'pointer',
-                    textDecoration: 'none'
+                    color: 'var(--color-accent-700)',
+                    cursor: 'pointer'
                   }}
                 >
                   Disconnect
@@ -282,7 +280,7 @@ export function SettingsPage({
           )}
         </div>
         {crossPasswordPrompt && (
-          <div style={{ marginTop: '16px', maxWidth: '460px' }}>
+          <div style={{ marginTop: '16px' }}>
             <p>This backup was saved with a different encryption password. Enter that password to restore:</p>
             <div className="field">
               <label>Backup Encryption Password</label>
@@ -324,9 +322,9 @@ export function SettingsPage({
 
       {/* Change Encryption Password section */}
       {settingsSection === 'encryption' && (
-      <section className="card blueprint elev-sm" style={{ marginBottom: '24px' }}>
-        <div className="card-title">Change Encryption Password</div>
-        <div style={{ maxWidth: '460px' }}>
+      <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Change Encryption Password</div>
+        <div>
           <div className="field">
             <label>Current Encryption Password</label>
             <input

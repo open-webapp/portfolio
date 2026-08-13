@@ -5,13 +5,16 @@ import {
   allocationBars,
   filteredPortfolioTotal,
   assetClassOptions,
-  accountsSections,
-  computeCashInvestment,
+  categoryCards,
+  acctScopedPositions,
+  acctAssetClassOptions,
+  acctFilteredPositions,
+  acctAllocationTitle,
   segmentCards,
   positionsForCategory
 } from './selectors'
 import { AppState, initialState } from './state'
-import { Account, Position, Transaction, PortfolioSnapshot } from './types'
+import { Account, Position, Transaction } from './types'
 
 describe('selectors', () => {
   // Helper to create a test state
@@ -629,10 +632,9 @@ describe('selectors', () => {
     expect(options).toEqual(['Fixed Income', 'Tech'])
   })
 
-  // === computeCashInvestment() tests ===
+  // === categoryCards() tests ===
 
-  // Test 1: computeCashInvestment with multiple accounts in one category (sum math)
-  it('accountsSections: multiple accounts in one category - subtotal math correct', () => {
+  it('categoryCards: multiple accounts in one category - totals and order correct', () => {
     const testAccount3: Account = {
       id: 'acc-3',
       accountNumber: '11111',
@@ -644,7 +646,6 @@ describe('selectors', () => {
     }
 
     const positions: Position[] = [
-      // Account 1: $1000 investment + $500 cash = $1500
       {
         id: 'pos-1',
         accountId: 'acc-1',
@@ -658,18 +659,6 @@ describe('selectors', () => {
       },
       {
         id: 'pos-2',
-        accountId: 'acc-1',
-        symbol: 'cash',
-        name: 'Cash',
-        assetClass: 'Cash',
-        shares: 500,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
-      },
-      // Account 3: $2000 investment + $300 cash = $2300
-      {
-        id: 'pos-3',
         accountId: 'acc-3',
         symbol: 'MSFT',
         name: 'Microsoft',
@@ -678,304 +667,139 @@ describe('selectors', () => {
         avgCost: 150,
         price: 400,
         lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-4',
-        accountId: 'acc-3',
-        symbol: 'cash',
-        name: 'Cash',
-        assetClass: 'Cash',
-        shares: 300,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
       }
     ]
 
     const state = createTestState({
-      accounts: [testAccount1, testAccount3],
+      accounts: [testAccount2, testAccount1, testAccount3],
       positions
     })
 
-    const sections = accountsSections(state)
-    const taxableSection = sections[0]
+    const cards = categoryCards(state)
 
-    // Taxable section should have 2 accounts
-    expect(taxableSection.rows).toHaveLength(2)
-    // Total cash: 500 + 300 = 800
-    expect(taxableSection.cashTotalStr).toBe('$800.00')
-    // Total investment: 1000 + 2000 = 3000
-    expect(taxableSection.investmentTotalStr).toBe('$3,000.00')
-    // Grand total: 3800
-    expect(taxableSection.grandTotalStr).toBe('$3,800.00')
+    // Order is always Taxable, Non-Taxable, Tax-Deferred
+    expect(cards.map((c) => c.label)).toEqual(['Taxable', 'Non-Taxable', 'Tax-Deferred'])
+
+    const taxable = cards[0]
+    expect(taxable.accountCount).toBe(2)
+    // Account 1: 10*100=1000, Account 3: 5*400=2000, total 3000
+    expect(taxable.totalStr).toBe('$3,000.00')
+    expect(taxable.accounts.find((a) => a.id === 'acc-1')?.totalStr).toBe('$1,000.00')
+    expect(taxable.accounts.find((a) => a.id === 'acc-3')?.totalStr).toBe('$2,000.00')
   })
 
-  // Test 2: Zero accounts in a category
-  it('accountsSections: zero accounts in a category - hasRows/noRows and zero totals', () => {
+  it('categoryCards: zero accounts in a category - hasAccounts/noAccounts and zero total', () => {
     const state = createTestState({
-      accounts: [testAccount1], // Only taxable account
+      accounts: [testAccount1], // taxable only
       positions: []
     })
 
-    const sections = accountsSections(state)
-    const nonTaxableSection = sections[1]
-    const taxDeferredSection = sections[2]
+    const cards = categoryCards(state)
+    const nonTaxable = cards[1]
 
-    // Non-Taxable section should be empty
-    expect(nonTaxableSection.hasRows).toBe(false)
-    expect(nonTaxableSection.noRows).toBe(true)
-    expect(nonTaxableSection.rows).toHaveLength(0)
-    expect(nonTaxableSection.cashTotalStr).toBe('$0.00')
-    expect(nonTaxableSection.investmentTotalStr).toBe('$0.00')
-    expect(nonTaxableSection.grandTotalStr).toBe('$0.00')
-
-    // Tax-Deferred section should be empty
-    expect(taxDeferredSection.hasRows).toBe(false)
-    expect(taxDeferredSection.noRows).toBe(true)
-    expect(taxDeferredSection.rows).toHaveLength(0)
-    expect(taxDeferredSection.cashTotalStr).toBe('$0.00')
-    expect(taxDeferredSection.investmentTotalStr).toBe('$0.00')
-    expect(taxDeferredSection.grandTotalStr).toBe('$0.00')
+    expect(nonTaxable.hasAccounts).toBe(false)
+    expect(nonTaxable.noAccounts).toBe(true)
+    expect(nonTaxable.accounts).toEqual([])
+    expect(nonTaxable.totalStr).toBe('$0.00')
   })
 
-  // Test 3: Account with only cash positions
-  it('computeCashInvestment: account with only cash positions', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'cash',
-        name: 'Cash',
-        assetClass: 'Cash',
-        shares: 100,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-1',
-        symbol: 'CASH',
-        name: 'More Cash',
-        assetClass: 'Cash',
-        shares: 200,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
+  it('categoryCards: account with zero positions shows updatedStr "—"', () => {
     const state = createTestState({
       accounts: [testAccount1],
-      positions
-    })
-
-    const result = computeCashInvestment(state, 'acc-1')
-
-    // Total cash: 100 + 200 = 300
-    expect(result.cash).toBe(300)
-    // No investment positions
-    expect(result.investment).toBe(0)
-  })
-
-  // Test 4: Account with only non-cash positions
-  it('computeCashInvestment: account with only non-cash positions', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-1',
-        symbol: 'BND',
-        name: 'Bond ETF',
-        assetClass: 'Fixed Income',
-        shares: 50,
-        avgCost: 100,
-        price: 105,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      positions
-    })
-
-    const result = computeCashInvestment(state, 'acc-1')
-
-    // No cash positions
-    expect(result.cash).toBe(0)
-    // Total investment: (10 * 200) + (50 * 105) = 2000 + 5250 = 7250
-    expect(result.investment).toBe(7250)
-  })
-
-  // Test 5: Account with both cash and non-cash positions
-  it('computeCashInvestment: account with both cash and non-cash positions', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-1',
-        symbol: 'cash',
-        name: 'Cash',
-        assetClass: 'Cash',
-        shares: 1500,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      positions
-    })
-
-    const result = computeCashInvestment(state, 'acc-1')
-
-    // Cash: 1500
-    expect(result.cash).toBe(1500)
-    // Investment: 10 * 200 = 2000
-    expect(result.investment).toBe(2000)
-  })
-
-  // Test 6: Case-insensitivity of cash symbol
-  it('computeCashInvestment: cash symbol is case-insensitive', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'cash',
-        name: 'Lowercase',
-        assetClass: 'Cash',
-        shares: 100,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-2',
-        accountId: 'acc-1',
-        symbol: 'CASH',
-        name: 'Uppercase',
-        assetClass: 'Cash',
-        shares: 200,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
-      },
-      {
-        id: 'pos-3',
-        accountId: 'acc-1',
-        symbol: 'Cash',
-        name: 'Mixed Case',
-        assetClass: 'Cash',
-        shares: 150,
-        avgCost: 1,
-        price: 1,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
-    const state = createTestState({
-      accounts: [testAccount1],
-      positions
-    })
-
-    const result = computeCashInvestment(state, 'acc-1')
-
-    // All variants should be treated as cash: 100 + 200 + 150 = 450
-    expect(result.cash).toBe(450)
-    expect(result.investment).toBe(0)
-  })
-
-  // Test 7: Section ordering is always Taxable, Non-Taxable, Tax-Deferred
-  it('accountsSections: section ordering is always Taxable, Non-Taxable, Tax-Deferred', () => {
-    const testAccountNonTaxable: Account = {
-      id: 'acc-nt',
-      accountNumber: '99999',
-      name: 'Non-Taxable Account',
-      institution: 'Vanguard',
-      taxCategory: 'nonTaxable',
-      retirement: false,
-      createdAt: '2026-01-01'
-    }
-
-    const state = createTestState({
-      // Insert accounts in reverse order: taxDeferred, taxable, nonTaxable
-      accounts: [testAccount2, testAccount1, testAccountNonTaxable],
       positions: []
     })
 
-    const sections = accountsSections(state)
-
-    // Verify order is always: Taxable (0), Non-Taxable (1), Tax-Deferred (2)
-    expect(sections[0].label).toBe('Taxable')
-    expect(sections[1].label).toBe('Non-Taxable')
-    expect(sections[2].label).toBe('Tax-Deferred')
+    const cards = categoryCards(state)
+    expect(cards[0].accounts[0].updatedStr).toBe('—')
   })
 
-  // Test 8: showDivider is true for sections 0 and 1, false for section 2
-  it('accountsSections: showDivider is correct (true for 0,1 false for 2)', () => {
-    const state = createTestState({
-      accounts: [testAccount1, testAccount2],
-      positions: []
-    })
-
-    const sections = accountsSections(state)
-
-    // Sections 0 and 1 should have divider
-    expect(sections[0].showDivider).toBe(true)
-    expect(sections[1].showDivider).toBe(true)
-    // Section 2 (last) should not have divider
-    expect(sections[2].showDivider).toBe(false)
-  })
-
-  // Test 9: accountName format is "{name} ({accountNumber})"
-  it('accountsSections: accountName format is "{name} ({accountNumber})"', () => {
-    const positions: Position[] = [
-      {
-        id: 'pos-1',
-        accountId: 'acc-1',
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        assetClass: 'Equity',
-        shares: 10,
-        avgCost: 150,
-        price: 200,
-        lastImportedAt: '2026-08-08'
-      }
-    ]
-
+  it('categoryCards: expanded reflects state.expandedCategories, defaults to false', () => {
     const state = createTestState({
       accounts: [testAccount1],
-      positions
+      expandedCategories: { taxable: true }
     })
 
-    const sections = accountsSections(state)
-    const taxableSection = sections[0]
+    const cards = categoryCards(state)
+    expect(cards.find((c) => c.key === 'taxable')?.expanded).toBe(true)
+    expect(cards.find((c) => c.key === 'nonTaxable')?.expanded).toBe(false)
+  })
 
-    // Account 1 has name: 'Brokerage', accountNumber: '12345'
-    expect(taxableSection.rows[0].accountName).toBe('Brokerage (12345)')
+  it('categoryCards: selected reflects state.selectedAccountId', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      selectedAccountId: 'acc-1'
+    })
+
+    const cards = categoryCards(state)
+    expect(cards[0].accounts[0].selected).toBe(true)
+  })
+
+  // === acctScopedPositions() / acctAssetClassOptions() / acctFilteredPositions() / acctAllocationTitle() tests ===
+
+  it('acctScopedPositions: selected account returns only its positions', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' },
+      { id: 'pos-2', accountId: 'acc-2', symbol: 'BND', name: 'Bond', assetClass: 'Fixed Income', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1, testAccount2], positions, selectedAccountId: 'acc-1' })
+    expect(acctScopedPositions(state)).toEqual([positions[0]])
+  })
+
+  it('acctScopedPositions: no selection returns all positions', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions, selectedAccountId: null })
+    expect(acctScopedPositions(state)).toEqual(positions)
+  })
+
+  it('acctAssetClassOptions: dedupes and sorts', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' },
+      { id: 'pos-2', accountId: 'acc-1', symbol: 'BND', name: 'Bond', assetClass: 'Bonds', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' },
+      { id: 'pos-3', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    expect(acctAssetClassOptions(positions)).toEqual(['Bonds', 'Tech'])
+  })
+
+  it('acctAssetClassOptions: empty positions returns empty array', () => {
+    expect(acctAssetClassOptions([])).toEqual([])
+  })
+
+  it('acctFilteredPositions: composes asset-class filter and search', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' },
+      { id: 'pos-2', accountId: 'acc-1', symbol: 'BND', name: 'Bond ETF', assetClass: 'Bonds', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions, acctAssetClassFilter: 'Tech', acctPosSearch: '' })
+    expect(acctFilteredPositions(state)).toEqual([positions[0]])
+  })
+
+  it('acctFilteredPositions: All filter + empty search matches acctScopedPositions', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions })
+    expect(acctFilteredPositions(state)).toEqual(acctScopedPositions(state))
+  })
+
+  it('acctFilteredPositions: search matches name case-insensitively', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' },
+      { id: 'pos-2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions, acctPosSearch: 'apple' })
+    expect(acctFilteredPositions(state)).toEqual([positions[0]])
+  })
+
+  it('acctAllocationTitle: selected account uses account name', () => {
+    const state = createTestState({ accounts: [testAccount1], selectedAccountId: 'acc-1' })
+    expect(acctAllocationTitle(state)).toBe('Allocation — Brokerage')
+  })
+
+  it('acctAllocationTitle: no selection returns "Allocation — All Accounts"', () => {
+    const state = createTestState({ accounts: [testAccount1], selectedAccountId: null })
+    expect(acctAllocationTitle(state)).toBe('Allocation — All Accounts')
   })
 
   // === segmentCards() tests ===
