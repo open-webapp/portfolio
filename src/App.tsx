@@ -3,7 +3,6 @@ import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
 import { assetClassOptions, CATEGORY_LABEL } from './lib/selectors'
-import type { ClosedPosition } from './lib/types'
 import { Nav } from './components/Nav'
 import { OverviewCard } from './components/OverviewCard'
 import { AllocationChart } from './components/AllocationChart'
@@ -48,9 +47,6 @@ function App() {
 
   // Which section of the Settings page is active
   const [settingsSection, setSettingsSection] = useState<'drive' | 'encryption'>('drive')
-
-  // Ref for ImportDialog to support imperative undo operations
-  const importDialogRef = useRef<{ undoClosedPosition: (closedPos: ClosedPosition) => void }>(null)
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -153,21 +149,6 @@ function App() {
       setSyncing(false)
     }
   }, [])
-
-  // Handle undo closed position: call ImportDialog's undoClosedPosition method via ref
-  const handleUndoClosedPosition = useCallback((closedPos: ClosedPosition) => {
-    importDialogRef.current?.undoClosedPosition(closedPos)
-  }, [])
-
-  // Handle successful undo import: dispatch DELETE_CLOSED_POSITION after import completes
-  const handleOnUndoClosedPosition = useCallback(
-    (closedPos: ClosedPosition, callback: (success: boolean) => void) => {
-      // After successful import, delete the closed position from state
-      dispatch({ type: 'DELETE_CLOSED_POSITION', id: closedPos.id })
-      callback(true)
-    },
-    [dispatch]
-  )
 
   // Flush the pending save on page unload/hide so a refresh within the debounce
   // window doesn't lose the latest state (e.g. a just-finished import).
@@ -322,16 +303,14 @@ function App() {
 
               {/* Right: Import Dialog */}
               <ImportDialog
-                ref={importDialogRef}
                 state={state}
                 dispatch={dispatch}
                 onClose={() => {}}
-                onUndoClosedPosition={handleOnUndoClosedPosition}
               />
             </div>
 
             {/* Positions table */}
-            <PositionsTable state={state} dispatch={dispatch} onUndoClick={handleUndoClosedPosition} />
+            <PositionsTable state={state} dispatch={dispatch} />
           </div>
         ) : state.view === 'accounts' ? (
           /* Accounts page view */

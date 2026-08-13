@@ -5,8 +5,11 @@ import {
   upsertCsvMapping,
   setView,
   closePosition,
+  findMatchingOpenPosition,
+  isExactLotMatch,
+  restoreClosedPosition,
 } from './state'
-import type { AppState } from './types'
+import type { AppState, ClosedPosition, Position } from './types'
 
 describe('state helpers', () => {
   describe('deleteAccount', () => {
@@ -339,6 +342,81 @@ describe('state helpers', () => {
       expect(updated.closedPositions[1].symbol).toBe('AAPL')
     })
 
+    it('snapshot fields: copies shares, avgCost, price, assetClassManualOverride, lastImportedAt from position', () => {
+      const state: AppState = {
+        ...initialState(),
+        accounts: [
+          {
+            id: 'acc1',
+            accountNumber: '123456',
+            name: 'Test Account',
+            institution: 'Test Bank',
+            retirement: false,
+            createdAt: '2024-01-01T10:00:00Z',
+          },
+        ],
+        positions: [
+          {
+            id: 'pos1',
+            accountId: 'acc1',
+            symbol: 'AAPL',
+            name: 'Apple Inc.',
+            assetClass: 'Equity',
+            assetClassManualOverride: 'Equity',
+            shares: 10,
+            avgCost: 5,
+            price: 7,
+            lastImportedAt: '2026-01-01',
+          },
+        ],
+      }
+
+      const updated = closePosition(state, 'pos1')
+
+      expect(updated.closedPositions).toHaveLength(1)
+      const closed = updated.closedPositions[0]
+      expect(closed.shares).toBe(10)
+      expect(closed.avgCost).toBe(5)
+      expect(closed.price).toBe(7)
+      expect(closed.assetClassManualOverride).toBe('Equity')
+      expect(closed.lastImportedAt).toBe('2026-01-01')
+    })
+
+    it('snapshot fields: assetClassManualOverride is undefined when position has none', () => {
+      const state: AppState = {
+        ...initialState(),
+        accounts: [
+          {
+            id: 'acc1',
+            accountNumber: '123456',
+            name: 'Test Account',
+            institution: 'Test Bank',
+            retirement: false,
+            createdAt: '2024-01-01T10:00:00Z',
+          },
+        ],
+        positions: [
+          {
+            id: 'pos1',
+            accountId: 'acc1',
+            symbol: 'AAPL',
+            name: 'Apple Inc.',
+            assetClass: 'Equity',
+            shares: 100,
+            avgCost: 150,
+            price: 180,
+            lastImportedAt: '2024-01-01T10:00:00Z',
+          },
+        ],
+      }
+
+      const updated = closePosition(state, 'pos1')
+
+      expect(updated.closedPositions).toHaveLength(1)
+      const closed = updated.closedPositions[0]
+      expect(closed.assetClassManualOverride).toBeUndefined()
+    })
+
     it('missing id case: returns state unchanged', () => {
       const state: AppState = {
         ...initialState(),
@@ -373,6 +451,225 @@ describe('state helpers', () => {
       expect(updated).toEqual(state)
       expect(updated.positions).toHaveLength(1)
       expect(updated.closedPositions).toHaveLength(0)
+    })
+  })
+
+  describe('findMatchingOpenPosition', () => {
+    const makePosition = (overrides: Partial<Position> = {}): Position => ({
+      id: 'pos1',
+      accountId: 'acc1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      assetClass: 'Equity',
+      shares: 100,
+      avgCost: 150,
+      price: 180,
+      lastImportedAt: '2024-01-01T10:00:00Z',
+      ...overrides,
+    })
+
+    const makeClosed = (overrides: Partial<ClosedPosition> = {}): ClosedPosition => ({
+      id: 'closed1',
+      accountId: 'acc1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      closedDate: '2024-01-02',
+      assetClass: 'Equity',
+      shares: 100,
+      avgCost: 150,
+      price: 180,
+      lastImportedAt: '2024-01-01T10:00:00Z',
+      realizedGL: null,
+      realizedGLBasis: 'unknown',
+      ...overrides,
+    })
+
+    it('returns the matching position when accountId+symbol match', () => {
+      const state: AppState = {
+        ...initialState(),
+        positions: [makePosition()],
+      }
+
+      const match = findMatchingOpenPosition(state, makeClosed())
+
+      expect(match).not.toBeNull()
+      expect(match?.id).toBe('pos1')
+    })
+
+    it('returns null when same symbol exists but in a different account', () => {
+      const state: AppState = {
+        ...initialState(),
+        positions: [makePosition({ accountId: 'acc2' })],
+      }
+
+      const match = findMatchingOpenPosition(state, makeClosed({ accountId: 'acc1' }))
+
+      expect(match).toBeNull()
+    })
+  })
+
+  describe('isExactLotMatch', () => {
+    const makePosition = (overrides: Partial<Position> = {}): Position => ({
+      id: 'pos1',
+      accountId: 'acc1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      assetClass: 'Equity',
+      shares: 100,
+      avgCost: 150,
+      price: 180,
+      lastImportedAt: '2024-01-01T10:00:00Z',
+      ...overrides,
+    })
+
+    const makeClosed = (overrides: Partial<ClosedPosition> = {}): ClosedPosition => ({
+      id: 'closed1',
+      accountId: 'acc1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      closedDate: '2024-01-02',
+      assetClass: 'Equity',
+      shares: 100,
+      avgCost: 150,
+      price: 180,
+      lastImportedAt: '2024-01-01T10:00:00Z',
+      realizedGL: null,
+      realizedGLBasis: 'unknown',
+      ...overrides,
+    })
+
+    it('true when shares/avgCost/assetClass all equal', () => {
+      expect(isExactLotMatch(makePosition(), makeClosed())).toBe(true)
+    })
+
+    it('false when shares differs', () => {
+      expect(isExactLotMatch(makePosition({ shares: 50 }), makeClosed())).toBe(false)
+    })
+
+    it('false when avgCost differs', () => {
+      expect(isExactLotMatch(makePosition({ avgCost: 200 }), makeClosed())).toBe(false)
+    })
+
+    it('false when assetClass differs', () => {
+      expect(isExactLotMatch(makePosition({ assetClass: 'Bond' }), makeClosed())).toBe(false)
+    })
+
+    it('ignores assetClassManualOverride/price differences', () => {
+      const position = makePosition({ assetClassManualOverride: 'Bond', price: 999 })
+      const closed = makeClosed({ assetClassManualOverride: 'Cash', price: 1 })
+
+      expect(isExactLotMatch(position, closed)).toBe(true)
+    })
+  })
+
+  describe('restoreClosedPosition', () => {
+    const makeClosed = (overrides: Partial<ClosedPosition> = {}): ClosedPosition => ({
+      id: 'closed1',
+      accountId: 'acc1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      closedDate: '2024-01-02',
+      assetClass: 'Equity',
+      shares: 100,
+      avgCost: 150,
+      price: 180,
+      assetClassManualOverride: 'Bond',
+      lastImportedAt: '2024-01-01T10:00:00Z',
+      realizedGL: null,
+      realizedGLBasis: 'unknown',
+      ...overrides,
+    })
+
+    const makePosition = (overrides: Partial<Position> = {}): Position => ({
+      id: 'pos1',
+      accountId: 'acc1',
+      symbol: 'AAPL',
+      name: 'Apple Inc.',
+      assetClass: 'Equity',
+      shares: 100,
+      avgCost: 150,
+      price: 180,
+      lastImportedAt: '2024-01-01T10:00:00Z',
+      ...overrides,
+    })
+
+    it('adds a restored position matching the closed snapshot and removes the closed entry', () => {
+      const closed = makeClosed()
+      const state: AppState = {
+        ...initialState(),
+        positions: [],
+        closedPositions: [closed],
+      }
+
+      const updated = restoreClosedPosition(state, 'closed1')
+
+      expect(updated.closedPositions).toHaveLength(0)
+      expect(updated.positions).toHaveLength(1)
+      const restored = updated.positions[0]
+      expect(restored.symbol).toBe(closed.symbol)
+      expect(restored.name).toBe(closed.name)
+      expect(restored.assetClass).toBe(closed.assetClass)
+      expect(restored.assetClassManualOverride).toBe(closed.assetClassManualOverride)
+      expect(restored.shares).toBe(closed.shares)
+      expect(restored.avgCost).toBe(closed.avgCost)
+      expect(restored.price).toBe(closed.price)
+      expect(restored.lastImportedAt).toBe(closed.lastImportedAt)
+    })
+
+    it('assigns a fresh id, distinct from the original closed/position ids', () => {
+      const closed = makeClosed()
+      const state: AppState = {
+        ...initialState(),
+        positions: [],
+        closedPositions: [closed],
+      }
+
+      const updated = restoreClosedPosition(state, 'closed1')
+      const restored = updated.positions[0]
+
+      expect(restored.id).not.toBe('pos1')
+      expect(restored.id).not.toBe('closed1')
+    })
+
+    it('preserves lastImportedAt from the closed snapshot rather than generating a fresh timestamp', () => {
+      const closed = makeClosed({ lastImportedAt: '2023-05-15T08:30:00Z' })
+      const state: AppState = {
+        ...initialState(),
+        positions: [],
+        closedPositions: [closed],
+      }
+
+      const updated = restoreClosedPosition(state, 'closed1')
+
+      expect(updated.positions[0].lastImportedAt).toBe('2023-05-15T08:30:00Z')
+    })
+
+    it('removes the replaced existing position when replaceExistingPositionId is given', () => {
+      const closed = makeClosed()
+      const existing = makePosition({ id: 'existing1' })
+      const state: AppState = {
+        ...initialState(),
+        positions: [existing],
+        closedPositions: [closed],
+      }
+
+      const updated = restoreClosedPosition(state, 'closed1', 'existing1')
+
+      expect(updated.positions.some((p) => p.id === 'existing1')).toBe(false)
+      expect(updated.positions).toHaveLength(1)
+      expect(updated.closedPositions).toHaveLength(0)
+    })
+
+    it('returns state unchanged when closedPositionId is not found', () => {
+      const state: AppState = {
+        ...initialState(),
+        positions: [makePosition()],
+        closedPositions: [],
+      }
+
+      const updated = restoreClosedPosition(state, 'nonexistent-id')
+
+      expect(updated).toEqual(state)
     })
   })
 })

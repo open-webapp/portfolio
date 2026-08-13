@@ -734,6 +734,76 @@ describe('positionsImport', () => {
     expect(closedTsla!.name).toBeNull()
   })
 
+  // T3: ClosedPosition snapshot captures shares/avgCost/price/lastImportedAt from
+  // the disappearing Position at close time.
+  it('ClosedPosition captures shares/avgCost/price/lastImportedAt from the pre-reimport Position', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+    const accountId = state.accounts[0].id
+
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'TSLA',
+        name: 'Tesla Inc.',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 250,
+        price: 300,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Reimport without TSLA to auto-close it
+    const newRows: Record<string, string>[] = []
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-t3')
+
+    const closedTsla = result.closedPositions.find(
+      (cp) => cp.symbol === 'TSLA' && cp.accountId === accountId
+    )
+    expect(closedTsla).toBeDefined()
+    expect(closedTsla!.shares).toBe(50)
+    expect(closedTsla!.avgCost).toBe(250)
+    expect(closedTsla!.price).toBe(300)
+    expect(closedTsla!.lastImportedAt).toBe('2026-01-01')
+  })
+
+  // T3 edge: assetClassManualOverride set before the symbol disappeared is preserved
+  // on the closed snapshot.
+  it('ClosedPosition preserves assetClassManualOverride from the pre-reimport Position', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+    const accountId = state.accounts[0].id
+
+    state.positions = [
+      {
+        id: 'pos-1',
+        accountId,
+        symbol: 'TSLA',
+        name: 'Tesla Inc.',
+        assetClass: 'Equity',
+        assetClassManualOverride: 'Growth',
+        shares: 50,
+        avgCost: 250,
+        price: 300,
+        lastImportedAt: '2026-01-01',
+      },
+    ]
+
+    // Reimport without TSLA to auto-close it
+    const newRows: Record<string, string>[] = []
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-t3b')
+
+    const closedTsla = result.closedPositions.find(
+      (cp) => cp.symbol === 'TSLA' && cp.accountId === accountId
+    )
+    expect(closedTsla).toBeDefined()
+    expect(closedTsla!.assetClassManualOverride).toBe('Growth')
+  })
+
   // Regression: a CSV row with blank cells for required fields (e.g. missing
   // shares/price) used to still be imported, producing a Position with NaN
   // numeric fields instead of being skipped.

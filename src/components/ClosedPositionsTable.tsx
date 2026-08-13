@@ -1,4 +1,5 @@
 import type { AppState } from '../lib/state'
+import { findMatchingOpenPosition, isExactLotMatch } from '../lib/state'
 import type { ClosedPosition } from '../lib/types'
 import { fmtUSD } from '../lib/computations'
 import { Trash, RotateCcw } from 'lucide-react'
@@ -6,14 +7,13 @@ import { Trash, RotateCcw } from 'lucide-react'
 export interface ClosedPositionsTableProps {
   state: AppState
   dispatch: (action: any) => void
-  onUndoClick?: (closedPosition: ClosedPosition) => void
 }
 
 /**
  * ClosedPositionsTable component: displays closed positions with symbol, name, closed date, and realized G/L.
  * Per .dc.html lines 190-205.
  */
-export function ClosedPositionsTable({ state, dispatch, onUndoClick }: ClosedPositionsTableProps) {
+export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTableProps) {
   const handleDeleteClosedPosition = (id: string) => {
     const confirmed = window.confirm(
       'Delete this closed position? This permanently discards its realized G/L history.'
@@ -21,6 +21,27 @@ export function ClosedPositionsTable({ state, dispatch, onUndoClick }: ClosedPos
     if (confirmed) {
       dispatch({ type: 'DELETE_CLOSED_POSITION', id })
     }
+  }
+
+  const handleUndoClosedPosition = (cp: ClosedPosition) => {
+    const match = findMatchingOpenPosition(state, cp)
+    if (!match) {
+      dispatch({ type: 'RESTORE_CLOSED_POSITION', closedPositionId: cp.id })
+      return
+    }
+    if (isExactLotMatch(match, cp)) {
+      const confirmed = window.confirm(
+        `An open position already exists for ${cp.symbol} with the same shares and cost basis. Restore this closed position and replace the existing one?`
+      )
+      if (!confirmed) return
+      dispatch({
+        type: 'RESTORE_CLOSED_POSITION',
+        closedPositionId: cp.id,
+        replaceExistingPositionId: match.id,
+      })
+      return
+    }
+    dispatch({ type: 'RESTORE_CLOSED_POSITION', closedPositionId: cp.id })
   }
 
   return (
@@ -56,7 +77,7 @@ export function ClosedPositionsTable({ state, dispatch, onUndoClick }: ClosedPos
               <td style={{ textAlign: 'right', color: glColor, fontWeight: '600' }}>{glStr}</td>
               <td style={{ textAlign: 'center', display: 'flex', gap: '8px', justifyContent: 'center' }}>
                 <button
-                  onClick={() => onUndoClick?.(cp)}
+                  onClick={() => handleUndoClosedPosition(cp)}
                   className="btn-icon"
                   style={{
                     background: 'none',

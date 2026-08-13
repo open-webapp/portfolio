@@ -43,6 +43,9 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'DELETE_CLOSED_POSITION':
       return StateActions.deleteClosedPosition(state, action.id)
 
+    case 'RESTORE_CLOSED_POSITION':
+      return StateActions.restoreClosedPosition(state, action.closedPositionId, action.replaceExistingPositionId)
+
     // Filters
     case 'SET_CATEGORY':
       return StateActions.setCategory(state, action.category)

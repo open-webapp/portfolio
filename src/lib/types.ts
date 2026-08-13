@@ -41,6 +41,11 @@ export interface ClosedPosition {
   name: string | null
   closedDate: string
   assetClass: string
+  shares: number
+  avgCost: number
+  price: number
+  assetClassManualOverride?: string
+  lastImportedAt: string
   realizedGL: number | null
   realizedGLBasis: 'transactions' | 'unknown'
 }

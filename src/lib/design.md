@@ -10,4 +10,8 @@ Directory structure, API contract, component tree, state management, data model,
 
 ### Undo Closed Position
 
-ClosedPosition → ImportDialog Step 2 (pre-filled row) → IMPORT_POSITIONS + DELETE_CLOSED_POSITION dispatch
+ClosedPosition → ClosedPositionsTable Undo click → findMatchingOpenPosition/isExactLotMatch dedup check (state.ts) → [window.confirm if exact-lot match] → RESTORE_CLOSED_POSITION dispatch → restoreClosedPosition (state.ts)
+
+- No same-symbol open position in account → silent restore.
+- Same-symbol position, identical shares/avgCost/assetClass (exact-lot match) → confirm dialog; Yes replaces existing position, No is a no-op.
+- Same-symbol position, different shares/avgCost/assetClass → silent restore as separate duplicate-symbol row.

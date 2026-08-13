@@ -130,6 +130,11 @@ export function importPositions(
       assetClass: oldPosition.assetClass,
       realizedGL,
       realizedGLBasis,
+      shares: oldPosition.shares,
+      avgCost: oldPosition.avgCost,
+      price: oldPosition.price,
+      assetClassManualOverride: oldPosition.assetClassManualOverride,
+      lastImportedAt: oldPosition.lastImportedAt,
     }
   })
 

@@ -99,13 +99,16 @@ function fixtureState(): AppState {
         id: 'closed1',
         accountId: 'acc1',
         symbol: 'TSLA',
-        quantity: 50,
-        costBasis: 10000,
-        sellPrice: 12000,
-        realizedGainLoss: 2000,
-        saleDateStr: '2024-01-15',
+        name: 'Tesla Inc',
+        closedDate: '2024-01-15',
         assetClass: 'Equities',
-        taxableAccount: true,
+        shares: 50,
+        avgCost: 200,
+        price: 240,
+        assetClassManualOverride: undefined,
+        lastImportedAt: '2024-01-15T00:00:00.000Z',
+        realizedGL: 2000,
+        realizedGLBasis: 'transactions',
       },
     ],
     transactions: [
@@ -458,6 +461,96 @@ describe('IndexedDB persistence', () => {
       const loaded = await loadLegacyPlaintextApp()
 
       expect(loaded?.accounts[0].institution).toBe('')
+    })
+
+    it('backfills missing shares/avgCost/price/lastImportedAt fields on closedPositions from old-shape data', async () => {
+      const stateWithOldShapeClosedPositions = {
+        ...initialState(),
+        closedPositions: [
+          {
+            id: 'closed1',
+            accountId: 'acc1',
+            symbol: 'TSLA',
+            name: 'Tesla Inc',
+            closedDate: '2024-01-15',
+            assetClass: 'Equities',
+            realizedGL: 2000,
+            realizedGLBasis: 'transactions',
+            // shares, avgCost, price, assetClassManualOverride, lastImportedAt intentionally omitted
+          },
+        ],
+      }
+
+      await putRaw(stateWithOldShapeClosedPositions)
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded).not.toBeNull()
+      expect(loaded?.closedPositions[0]).toMatchObject({
+        id: 'closed1',
+        shares: 0,
+        avgCost: 0,
+        price: 0,
+        assetClassManualOverride: undefined,
+        lastImportedAt: '',
+      })
+    })
+
+    it('preserves real values on new-shape closedPositions while defaulting old-shape ones in the same array', async () => {
+      const stateWithMixedShapeClosedPositions = {
+        ...initialState(),
+        closedPositions: [
+          {
+            id: 'old1',
+            accountId: 'acc1',
+            symbol: 'TSLA',
+            name: 'Tesla Inc',
+            closedDate: '2024-01-15',
+            assetClass: 'Equities',
+            realizedGL: 2000,
+            realizedGLBasis: 'transactions',
+            // old shape: shares/avgCost/price/lastImportedAt omitted
+          },
+          {
+            id: 'new1',
+            accountId: 'acc1',
+            symbol: 'MSFT',
+            name: 'Microsoft Corp',
+            closedDate: '2024-02-01',
+            assetClass: 'Equities',
+            shares: 25,
+            avgCost: 100,
+            price: 150,
+            assetClassManualOverride: 'Bonds',
+            lastImportedAt: '2024-02-01T00:00:00.000Z',
+            realizedGL: 1250,
+            realizedGLBasis: 'transactions',
+          },
+        ],
+      }
+
+      await putRaw(stateWithMixedShapeClosedPositions)
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded).not.toBeNull()
+      expect(loaded?.closedPositions).toHaveLength(2)
+      expect(loaded?.closedPositions[0]).toMatchObject({
+        id: 'old1',
+        shares: 0,
+        avgCost: 0,
+        price: 0,
+        assetClassManualOverride: undefined,
+        lastImportedAt: '',
+      })
+      expect(loaded?.closedPositions[1]).toMatchObject({
+        id: 'new1',
+        shares: 25,
+        avgCost: 100,
+        price: 150,
+        assetClassManualOverride: 'Bonds',
+        lastImportedAt: '2024-02-01T00:00:00.000Z',
+      })
     })
 
     it('loads missing view with default', async () => {

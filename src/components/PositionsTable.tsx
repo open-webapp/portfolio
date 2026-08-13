@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
-import type { Position, ClosedPosition } from '../lib/types'
+import type { Position } from '../lib/types'
 import { visiblePositions, filteredPortfolioTotal, assetClassOptions } from '../lib/selectors'
 import { computePosition, fmtUSD, fmtPct, fmtPortfolioPercent } from '../lib/computations'
 import { sortBy } from '../lib/sort'
@@ -10,7 +10,6 @@ import { PositionGroupOverlay } from './PositionGroupOverlay'
 export interface PositionsTableProps {
   state: AppState
   dispatch: (action: any) => void
-  onUndoClick?: (closedPosition: ClosedPosition) => void
 }
 
 /**
@@ -117,7 +116,7 @@ function buildAggregateRows(positions: Position[]): AggregateRow[] {
  * PositionsTable component: displays sortable positions with filters, search, and closed-positions toggle.
  * Per .dc.html lines 133-206.
  */
-export function PositionsTable({ state, dispatch, onUndoClick }: PositionsTableProps) {
+export function PositionsTable({ state, dispatch }: PositionsTableProps) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
 
   const positions = visiblePositions(state);
@@ -302,7 +301,7 @@ export function PositionsTable({ state, dispatch, onUndoClick }: PositionsTableP
 
       {/* Closed positions table */}
       {state.showClosed && (
-        <ClosedPositionsTable state={state} dispatch={dispatch} onUndoClick={onUndoClick} />
+        <ClosedPositionsTable state={state} dispatch={dispatch} />
       )}
 
       {/* Position group overlay */}

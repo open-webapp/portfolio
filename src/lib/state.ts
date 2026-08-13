@@ -148,11 +148,75 @@ export function closePosition(state: AppState, positionId: string): AppState {
     assetClass: position.assetClassManualOverride || position.assetClass,
     realizedGL: null,
     realizedGLBasis: 'unknown',
+    shares: position.shares,
+    avgCost: position.avgCost,
+    price: position.price,
+    assetClassManualOverride: position.assetClassManualOverride,
+    lastImportedAt: position.lastImportedAt,
   }
   return {
     ...state,
     positions: state.positions.filter((p) => p.id !== positionId),
     closedPositions: [...state.closedPositions, closed],
+  }
+}
+
+/**
+ * Find an existing OPEN position in the same account with the same symbol as
+ * a ClosedPosition snapshot, for restore-time dedup decisions.
+ * Returns null if no same-symbol position exists in that account.
+ */
+export function findMatchingOpenPosition(state: AppState, closed: ClosedPosition): Position | null {
+  return state.positions.find(
+    (p) => p.accountId === closed.accountId && p.symbol === closed.symbol
+  ) ?? null
+}
+
+/**
+ * True if an existing open position is an exact-lot match for a closed
+ * snapshot (same shares, avgCost, assetClass) — the "safe to silently
+ * overwrite after confirm" case. False means "different lot, coexist".
+ */
+export function isExactLotMatch(position: Position, closed: ClosedPosition): boolean {
+  return (
+    position.shares === closed.shares &&
+    position.avgCost === closed.avgCost &&
+    position.assetClass === closed.assetClass
+  )
+}
+
+/**
+ * Restore a ClosedPosition back into open positions (inverse of closePosition).
+ * Always assigns a fresh id. If replaceExistingPositionId is given, that
+ * position is removed and replaced by the restored one (exact-match-confirmed
+ * overwrite case); otherwise the restored position is simply added.
+ */
+export function restoreClosedPosition(
+  state: AppState,
+  closedPositionId: string,
+  replaceExistingPositionId?: string
+): AppState {
+  const closed = state.closedPositions.find((cp) => cp.id === closedPositionId)
+  if (!closed) return state
+  const restored: Position = {
+    id: uid('position'),
+    accountId: closed.accountId,
+    symbol: closed.symbol,
+    name: closed.name,
+    assetClass: closed.assetClass,
+    assetClassManualOverride: closed.assetClassManualOverride,
+    shares: closed.shares,
+    avgCost: closed.avgCost,
+    price: closed.price,
+    lastImportedAt: closed.lastImportedAt,
+  }
+  return {
+    ...state,
+    positions: [
+      ...state.positions.filter((p) => p.id !== replaceExistingPositionId),
+      restored,
+    ],
+    closedPositions: state.closedPositions.filter((cp) => cp.id !== closedPositionId),
   }
 }
 
