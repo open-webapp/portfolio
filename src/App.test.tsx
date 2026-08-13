@@ -488,6 +488,37 @@ describe('Drive-sync activation', () => {
 
     expect(disposeSpy).toHaveBeenCalledTimes(1)
   })
+
+  it('resets syncing state to false when user cancels Google auth', async () => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    const connectDriveMock = vi.mocked((await import('./lib/drive')).connectDrive)
+    connectDriveMock.mockRejectedValueOnce(new Error('User cancelled the login flow'))
+
+    await renderUnlockedApp()
+
+    // Navigate to settings
+    const gearButton = screen.getByTitle('Settings')
+    fireEvent.click(gearButton)
+
+    await waitFor(() => {
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+    })
+
+    // Click Connect button
+    const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
+    fireEvent.click(connectButton)
+
+    // Button should show "Connecting..." while the flow is in progress
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Connecting...' })).toBeTruthy()
+    })
+
+    // After the error is caught, button should return to "Connect Google Account" state
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Connecting...' })).toBeFalsy()
+    })
+  })
 })
 
 describe('undo closed positions', () => {

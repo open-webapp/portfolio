@@ -121,6 +121,9 @@ function App() {
     setSyncing(true)
     try {
       const connection = await connectDrive()
+      if (!connection) {
+        throw new Error('No connection returned from Google Drive')
+      }
       setDriveReady(true)
       setDriveEmail(connection.email)
       const fileId = await getBackupFileId()
@@ -128,7 +131,11 @@ function App() {
       alert('Connected to Drive')
     } catch (error) {
       console.error('Drive connect failed:', error)
-      alert(`Connect failed: ${error instanceof Error ? error.message : String(error)}`)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      alert(`Connect failed: ${errorMessage}`)
+      setDriveReady(false)
+      setDriveEmail(null)
+      setBackupFileId(null)
     } finally {
       setSyncing(false)
     }
@@ -144,7 +151,8 @@ function App() {
       alert('Disconnected from Drive')
     } catch (error) {
       console.error('Drive disconnect failed:', error)
-      alert(`Disconnect failed: ${error instanceof Error ? error.message : String(error)}`)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      alert(`Disconnect failed: ${errorMessage}`)
     } finally {
       setSyncing(false)
     }
@@ -283,7 +291,7 @@ function App() {
 
             {/* Allocation chart: full-width row */}
             <div style={{ marginBottom: 'var(--space-6)' }}>
-              <AllocationChart positions={positionsForCategory(state)} />
+              <AllocationChart positions={positionsForCategory(state)} title="Allocation" />
             </div>
 
             {/* Divider */}
