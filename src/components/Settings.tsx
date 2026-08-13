@@ -11,6 +11,16 @@ import {
 import { deriveKey, decryptState, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
 
+function DrivePickerFallback({ pickingFile, onPick }: { pickingFile: boolean; onPick: () => void }) {
+  return (
+    <div style={{ marginTop: 'var(--space-3)' }}>
+      <button className="btn btn-secondary" onClick={onPick} disabled={pickingFile}>
+        {pickingFile ? 'Opening Drive...' : 'Search Google Drive...'}
+      </button>
+    </div>
+  )
+}
+
 export interface SettingsPageProps {
   state: AppState
   dispatch: (action: any) => void
@@ -109,6 +119,8 @@ export function SettingsPage({
       const restored = await restoreBackupFromFileId(picked.id, sessionKey)
       dispatch({ type: '__SET_STATE', newState: restored })
       setNoBackupFound(false)
+      setCrossPasswordPrompt(null)
+      setCrossPasswordError(null)
       alert(`Restored from "${picked.name}"`)
     } catch (error) {
       if (error instanceof DriveDecryptError) {
@@ -314,13 +326,7 @@ export function SettingsPage({
                   No backup found in this account's own Drive folder. If someone shared a
                   {' '}<code>portfolio-state.json</code> backup with you instead, search for it directly:
                 </p>
-                <button
-                  className="btn btn-secondary"
-                  onClick={handlePickFromDrive}
-                  disabled={pickingFile}
-                >
-                  {pickingFile ? 'Opening Drive...' : 'Search Google Drive...'}
-                </button>
+                <DrivePickerFallback pickingFile={pickingFile} onPick={handlePickFromDrive} />
               </div>
             )}
           </div>
@@ -363,6 +369,7 @@ export function SettingsPage({
             {crossPasswordError && (
               <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{crossPasswordError}</p>
             )}
+            {crossPasswordError && (<><p style={{marginTop:'var(--space-3)', marginBottom:'var(--space-2)', fontSize:'13px'}}>If this backup came from a different Google account, search Drive for the right file instead:</p><DrivePickerFallback pickingFile={pickingFile} onPick={handlePickFromDrive} /></>)}
           </div>
         )}
       </section>

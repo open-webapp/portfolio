@@ -545,15 +545,7 @@ describe('drive.ts Drive-sync wiring', () => {
       return { chain, setVisible, getCallback: () => capturedCallback }
     }
 
-    it('throws a clear error when VITE_GOOGLE_PICKER_API_KEY is not configured', async () => {
-      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', '')
-
-      const { pickDriveFile } = await import('./drive')
-      await expect(pickDriveFile()).rejects.toThrow('VITE_GOOGLE_PICKER_API_KEY')
-    })
-
     it('resolves with the picked file id/name, loading gapi + picker and requesting a token', async () => {
-      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', 'test-picker-key')
       const { chain, setVisible, getCallback } = installPickerFake()
 
       const { pickDriveFile } = await import('./drive')
@@ -571,12 +563,11 @@ describe('drive.ts Drive-sync wiring', () => {
       expect(result).toEqual({ id: 'picked-id', name: 'portfolio-state.json' })
       expect(mockGetAccessToken).toHaveBeenCalled()
       expect(chain.setOAuthToken).toHaveBeenCalledWith('mock-access-token')
-      expect(chain.setDeveloperKey).toHaveBeenCalledWith('test-picker-key')
+      expect(chain.setDeveloperKey).not.toHaveBeenCalled()
       expect(setVisible).toHaveBeenCalledWith(true)
     })
 
     it('resolves null when the user cancels the picker', async () => {
-      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', 'test-picker-key')
       const { getCallback } = installPickerFake()
 
       const { pickDriveFile } = await import('./drive')

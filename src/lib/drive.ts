@@ -365,8 +365,6 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
   }
 }
 
-const GOOGLE_PICKER_API_KEY = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
-
 /**
  * Minimal shape of the `google.picker`/`gapi` globals this file touches.
  * No official types package is installed for these Google-hosted scripts
@@ -391,7 +389,6 @@ interface GooglePickerNamespace {
   PickerBuilder: new () => {
     addView(view: unknown): PickerBuilderChain
     setOAuthToken(token: string): PickerBuilderChain
-    setDeveloperKey(key: string): PickerBuilderChain
     setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
     build(): PickerInstance
   }
@@ -403,7 +400,6 @@ interface DocsViewChain {
 interface PickerBuilderChain {
   addView(view: unknown): PickerBuilderChain
   setOAuthToken(token: string): PickerBuilderChain
-  setDeveloperKey(key: string): PickerBuilderChain
   setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
   build(): PickerInstance
 }
@@ -471,16 +467,9 @@ function loadPickerApi(): Promise<void> {
  * Resolves to `null` if the user cancels the picker instead of selecting a
  * file.
  *
- * @throws If `VITE_GOOGLE_PICKER_API_KEY` is not configured, the Picker
- *   script fails to load, or acquiring a token fails.
+ * @throws If the Picker script fails to load or acquiring a token fails.
  */
 export async function pickDriveFile(): Promise<{ id: string; name: string } | null> {
-  if (!GOOGLE_PICKER_API_KEY) {
-    throw new Error(
-      'VITE_GOOGLE_PICKER_API_KEY is not configured; cannot open the Google Drive file picker'
-    )
-  }
-
   await ensureFreshConnection()
   const token = await drive.project(APP_PROJECT_ID).getAccessToken()
   await loadPickerApi()
@@ -496,7 +485,6 @@ export async function pickDriveFile(): Promise<{ id: string; name: string } | nu
       const instance = new picker.PickerBuilder()
         .addView(view)
         .setOAuthToken(token)
-        .setDeveloperKey(GOOGLE_PICKER_API_KEY!)
         .setCallback((data: PickerResponse) => {
           if (data.action === picker.Action.PICKED) {
             const doc = data.docs?.[0]

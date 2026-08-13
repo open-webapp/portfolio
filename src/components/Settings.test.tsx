@@ -747,5 +747,288 @@ describe('SettingsPage', () => {
       expect(screen.getByRole('button', { name: 'Restore with this password' })).toBeTruthy()
       expect(mockDispatch).not.toHaveBeenCalled()
     })
+
+    it('T5.1: Fallback button appears after failed cross-password retry', async () => {
+      const backupSalt = generateSalt()
+      const restoredState = initialState()
+      const envelope = await encryptState(restoredState, sessionKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+
+      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // Submit wrong password
+      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      // Wait for error to appear
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
+      })
+
+      // The fallback button should now be present
+      expect(screen.getByRole('button', { name: 'Search Google Drive...' })).toBeTruthy()
+    })
+
+    it('T5.2: Clicking fallback button calls pickDriveFile and restores successfully', async () => {
+      const backupSalt = generateSalt()
+      const restoredState = initialState()
+      restoredState.accounts = [
+        {
+          id: 'picked-acc-1',
+          accountNumber: '555',
+          name: 'Picked Account',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+      const envelope = await encryptState(restoredState, sessionKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-file-id', name: 'shared-backup.json' })
+      vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(restoredState)
+
+      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // Submit wrong password to trigger fallback
+      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
+      })
+
+      // Click the fallback button
+      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(fallbackButton)
+
+      // Wait for successful restore
+      await waitFor(() => {
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-file-id', expect.anything())
+        expect(mockDispatch).toHaveBeenCalledWith({ type: '__SET_STATE', newState: restoredState })
+      })
+
+      // Prompt should be closed
+      expect(screen.queryByText(/This backup was saved with a different encryption password/)).toBeFalsy()
+
+      // Success alert shown
+      expect(global.alert).toHaveBeenCalledWith('Restored from "shared-backup.json"')
+    })
+
+    it('T5.3: Picking a file that also fails to decrypt shows blank password field (not pre-filled)', async () => {
+      const backupSalt1 = generateSalt()
+      const backupState = initialState()
+      const envelope1 = await encryptState(backupState, sessionKey, backupSalt1)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt1, envelope1)
+      )
+
+      // First wrong password attempt
+      // Then picking a file that also fails with a different salt/envelope
+      const backupSalt2 = generateSalt()
+      const envelope2 = await encryptState(backupState, sessionKey, backupSalt2)
+      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-file-b', name: 'another-backup.json' })
+      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt2, envelope2)
+      )
+
+      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // Submit wrong password
+      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      fireEvent.change(passwordInputs[0], { target: { value: 'first-wrong-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
+      })
+
+      // Click fallback
+      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(fallbackButton)
+
+      // Wait for the new cross-password prompt (from the picked file's envelope)
+      await waitFor(() => {
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-file-b', expect.anything())
+      })
+
+      // The old error should be cleared
+      expect(screen.queryByText('Incorrect encryption password')).toBeFalsy()
+
+      // A fresh password prompt should be shown
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // The password input should be blank (not pre-filled with the failed attempt)
+      const updatedPasswordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      expect(updatedPasswordInputs[0].value).toBe('')
+    })
+
+    it('T5.4: Chaining: pick A fails, pick B fails, blank password shown for B (not A\'s leftover)', async () => {
+      const backupSalt = generateSalt()
+      const backupState = initialState()
+      const envelope = await encryptState(backupState, sessionKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+
+      // First pick fails
+      const saltA = generateSalt()
+      const envelopeA = await encryptState(backupState, sessionKey, saltA)
+      // Second pick also fails with different salt
+      const saltB = generateSalt()
+      const envelopeB = await encryptState(backupState, sessionKey, saltB)
+
+      // Mock pickDriveFile to return different files on different calls
+      let pickCallCount = 0
+      vi.mocked(driveModule.pickDriveFile).mockImplementation(async () => {
+        pickCallCount++
+        if (pickCallCount === 1) return { id: 'file-a', name: 'backup-a.json' }
+        if (pickCallCount === 2) return { id: 'file-b', name: 'backup-b.json' }
+        return null
+      })
+
+      // Mock restoreBackupFromFileId to reject with different envelopes
+      let restoreCallCount = 0
+      vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
+        restoreCallCount++
+        if (fileId === 'file-a') {
+          throw new driveModule.DriveDecryptError('wrong for A', saltA, envelopeA)
+        } else if (fileId === 'file-b') {
+          throw new driveModule.DriveDecryptError('wrong for B', saltB, envelopeB)
+        }
+        throw new Error('unexpected fileId')
+      })
+
+      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // Step 1: Wrong password on the original file
+      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-for-original' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
+      })
+
+      // Step 2: Click fallback, pick file A (also fails)
+      let fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(fallbackButton)
+
+      await waitFor(() => {
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-a', expect.anything())
+      })
+
+      // Cross-password prompt still showing for file A
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // Password field should be blank
+      let currentPasswordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      expect(currentPasswordInputs[0].value).toBe('')
+
+      // Step 3: Type a password for file A, submit, wrong again
+      fireEvent.change(currentPasswordInputs[0], { target: { value: 'wrong-for-file-a' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
+      })
+
+      // Step 4: Click fallback again, pick file B (also fails)
+      fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(fallbackButton)
+
+      await waitFor(() => {
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-b', expect.anything())
+      })
+
+      // Cross-password prompt still showing for file B
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // Password field should STILL be blank (not carrying over the "wrong-for-file-a" we typed)
+      currentPasswordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      expect(currentPasswordInputs[0].value).toBe('')
+    })
+
+    it('T5.5: Cancelling the picker from crossPasswordError fallback does nothing', async () => {
+      const backupSalt = generateSalt()
+      const restoredState = initialState()
+      const envelope = await encryptState(restoredState, sessionKey, backupSalt)
+      vi.mocked(driveModule.restoreBackup).mockRejectedValue(
+        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      )
+      vi.mocked(driveModule.pickDriveFile).mockResolvedValue(null) // user cancels
+
+      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
+      fireEvent.click(restoreButton)
+
+      await waitFor(() => {
+        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      })
+
+      // Submit wrong password to trigger fallback
+      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
+      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
+      })
+
+      // Click fallback button
+      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(fallbackButton)
+
+      // Wait for the picker to be called
+      await waitFor(() => {
+        expect(driveModule.pickDriveFile).toHaveBeenCalled()
+      })
+
+      // Nothing should have changed: error still there, no dispatch, no alert
+      expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
+      expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      expect(mockDispatch).not.toHaveBeenCalled()
+      expect(driveModule.restoreBackupFromFileId).not.toHaveBeenCalled()
+      expect(global.alert).not.toHaveBeenCalled()
+    })
   })
 })
