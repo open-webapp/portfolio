@@ -120,7 +120,16 @@ function App() {
   const handleConnect = useCallback(async () => {
     setSyncing(true)
     try {
-      const connection = await connectDrive()
+      let connection: any
+      try {
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Google auth timed out')), 30000)
+        )
+        connection = await Promise.race([connectDrive(), timeoutPromise])
+      } catch (timeoutError) {
+        throw timeoutError
+      }
+
       if (!connection) {
         throw new Error('No connection returned from Google Drive')
       }
@@ -327,7 +336,7 @@ function App() {
           </div>
         ) : (
           /* Settings page view */
-          <div style={{ padding: 'var(--space-6)' }}>
+          <div style={{ padding: 'var(--space-6)', maxWidth: '560px' }}>
             <SettingsPage
               state={state}
               dispatch={dispatch}
