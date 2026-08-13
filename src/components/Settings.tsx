@@ -200,88 +200,88 @@ export function SettingsPage({
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Google Drive Sync</div>
 
-        <div>
-          {/* Google Account subsection */}
-          <div style={{ marginBottom: '16px' }}>
-            <div className="text-muted" style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              marginBottom: '8px'
-            }}>
-              Google Account
-            </div>
-
-            {!driveReady ? (
-              <button className="btn btn-primary blueprint" onClick={handleConnect} disabled={syncing}>
-                {syncing ? 'Connecting...' : 'Connect Google Account'}
-              </button>
-            ) : (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '10px 12px',
-                border: '1px solid var(--color-divider)',
-                backgroundColor: 'var(--color-surface)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      backgroundColor: '#2BAE66',
-                      flexShrink: 0
-                    }}
-                  />
-                  <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
-                    {driveEmail || 'Connected'}
-                  </span>
-                </div>
-                <span
-                  onClick={handleDisconnect}
-                  style={{
-                    fontSize: '12px',
-                    color: 'var(--color-accent-700)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Disconnect
-                </span>
-              </div>
-            )}
+        {/* Google Account subsection */}
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <div className="text-muted" style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            marginBottom: 'var(--space-2)'
+          }}>
+            Google Account
           </div>
 
-          {/* Drive Sync Actions (only when connected) */}
-          {driveReady && (
-            <>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="btn btn-primary blueprint" onClick={handleSync} disabled={syncing}>
-                  {syncing ? 'Syncing...' : 'Sync Now'}
-                </button>
-                <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
-                  {syncing ? 'Restoring...' : 'Restore from Drive'}
-                </button>
+          {!driveReady ? (
+            <button className="btn btn-primary blueprint" onClick={handleConnect} disabled={syncing}>
+              {syncing ? 'Connecting...' : 'Connect Google Account'}
+            </button>
+          ) : (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 12px',
+              border: '1px solid var(--color-divider)',
+              backgroundColor: 'var(--color-surface)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: '#2BAE66',
+                    flexShrink: 0
+                  }}
+                />
+                <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
+                  {driveEmail || 'Connected'}
+                </span>
               </div>
-              {backupFileId && (
-                <p style={{ marginTop: '12px', marginBottom: 0 }}>
-                  <a
-                    href={`https://drive.google.com/file/d/${backupFileId}/view`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View backup in Google Drive
-                  </a>
-                </p>
-              )}
-            </>
+              <span
+                onClick={handleDisconnect}
+                style={{
+                  fontSize: '12px',
+                  color: 'var(--color-accent-700)',
+                  cursor: 'pointer'
+                }}
+              >
+                Disconnect
+              </span>
+            </div>
           )}
         </div>
+
+        {/* Drive Sync Actions (only when connected) */}
+        {driveReady && (
+          <div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+              <button className="btn btn-primary blueprint" onClick={handleSync} disabled={syncing}>
+                {syncing ? 'Syncing...' : 'Sync Now'}
+              </button>
+              <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
+                {syncing ? 'Restoring...' : 'Restore from Drive'}
+              </button>
+            </div>
+            {backupFileId && (
+              <p style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>
+                <a
+                  href={`https://drive.google.com/file/d/${backupFileId}/view`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View backup in Google Drive
+                </a>
+              </p>
+            )}
+          </div>
+        )}
         {crossPasswordPrompt && (
-          <div style={{ marginTop: '16px' }}>
-            <p>This backup was saved with a different encryption password. Enter that password to restore:</p>
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            <p style={{ fontSize: '13px', marginBottom: 'var(--space-3)' }}>
+              This backup was saved with a different encryption password. Enter that password to restore:
+            </p>
             <div className="field">
               <label>Backup Encryption Password</label>
               <input
@@ -292,7 +292,7 @@ export function SettingsPage({
                 autoComplete="current-password"
               />
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
               <button
                 className="btn btn-primary blueprint"
                 onClick={handleCrossPasswordSubmit}
@@ -313,7 +313,7 @@ export function SettingsPage({
               </button>
             </div>
             {crossPasswordError && (
-              <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{crossPasswordError}</p>
+              <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{crossPasswordError}</p>
             )}
           </div>
         )}
@@ -324,54 +324,52 @@ export function SettingsPage({
       {settingsSection === 'encryption' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Change Encryption Password</div>
-        <div>
-          <div className="field">
-            <label>Current Encryption Password</label>
-            <input
-              className="input"
-              type="password"
-              value={currentPasswordInput}
-              onChange={(e) => setCurrentPasswordInput(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-          <div className="field">
-            <label>New Encryption Password</label>
-            <input
-              className="input"
-              type="password"
-              value={newPasswordInput}
-              onChange={(e) => setNewPasswordInput(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="field">
-            <label>Confirm New Encryption Password</label>
-            <input
-              className="input"
-              type="password"
-              value={confirmNewPasswordInput}
-              onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-          <button
-            className="btn btn-primary blueprint"
-            onClick={handleChangePassword}
-            disabled={changingPassword}
-          >
-            {changingPassword ? 'Changing Encryption Password...' : 'Change Encryption Password'}
-          </button>
-          {passwordError && (
-            <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{passwordError}</p>
-          )}
-          {passwordSuccess && (
-            <p style={{ marginTop: '12px', marginBottom: 0 }}>{passwordSuccess}</p>
-          )}
-          {driveSyncWarning && (
-            <p style={{ marginTop: '12px', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
-          )}
+        <div className="field">
+          <label>Current Encryption Password</label>
+          <input
+            className="input"
+            type="password"
+            value={currentPasswordInput}
+            onChange={(e) => setCurrentPasswordInput(e.target.value)}
+            autoComplete="current-password"
+          />
         </div>
+        <div className="field">
+          <label>New Encryption Password</label>
+          <input
+            className="input"
+            type="password"
+            value={newPasswordInput}
+            onChange={(e) => setNewPasswordInput(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="field">
+          <label>Confirm New Encryption Password</label>
+          <input
+            className="input"
+            type="password"
+            value={confirmNewPasswordInput}
+            onChange={(e) => setConfirmNewPasswordInput(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
+        <button
+          className="btn btn-primary blueprint"
+          onClick={handleChangePassword}
+          disabled={changingPassword}
+        >
+          {changingPassword ? 'Changing Encryption Password...' : 'Change Encryption Password'}
+        </button>
+        {passwordError && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{passwordError}</p>
+        )}
+        {passwordSuccess && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>{passwordSuccess}</p>
+        )}
+        {driveSyncWarning && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
+        )}
       </section>
       )}
     </div>
