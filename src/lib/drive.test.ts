@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NeedsReauthError } from '@open-webapp/drive-sync'
 import { initialState } from './state'
 import type { AppState } from './state'
@@ -382,6 +382,40 @@ describe('drive.ts Drive-sync wiring', () => {
     const restored = await restoreBackup(key)
 
     expect(restored).toBeNull()
+  })
+
+  /**
+   * Test 5b: restoreBackup() times out if files.read() hangs (e.g. shared file
+   * with permission issues). Prevents indefinite hangs.
+   */
+  it('restoreBackup() times out if files.read hangs', async () => {
+    vi.useFakeTimers()
+    try {
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+      mockList.mockResolvedValue([{ id: 'file-id-456' }])
+      // Mock a read that never resolves (simulates a hanging shared file)
+      mockFilesRead.mockImplementation(() => new Promise(() => {}))
+
+      const { restoreBackup } = await import('./drive')
+      const salt = generateSalt()
+      const key = await deriveKey('some-password', salt)
+
+      const restorePromise = restoreBackup(key).catch(e => {
+        // Catch the error to prevent unhandled rejection
+        return e
+      })
+
+      // Advance timers to trigger the timeout (30 seconds)
+      await vi.advanceTimersByTimeAsync(30000)
+
+      const caught = await restorePromise
+
+      expect(caught).toBeInstanceOf(Error)
+      expect((caught as Error).message).toContain('timed out')
+      expect((caught as Error).message).toContain('files.read')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   describe('Drive auth / token validation', () => {

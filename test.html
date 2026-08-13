@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paste Table Importer</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        padding: 30px;
+        font-family: Arial, Helvetica, sans-serif;
+        background: #f5f6f8;
+        color: #222;
+    }
+
+    .container {
+        max-width: 1400px;
+        margin: auto;
+    }
+
+    h1 {
+        margin: 0 0 8px;
+    }
+
+    .subtitle {
+        color: #666;
+        margin-bottom: 20px;
+    }
+
+    #pasteArea {
+        min-height: 180px;
+        border: 2px dashed #aaa;
+        border-radius: 10px;
+        background: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: #777;
+        font-size: 18px;
+        cursor: text;
+        outline: none;
+        padding: 30px;
+    }
+
+    #pasteArea:focus {
+        border-color: #2563eb;
+        background: #f8fbff;
+    }
+
+    button {
+        margin-top: 15px;
+        padding: 10px 18px;
+        border: none;
+        border-radius: 7px;
+        background: #2563eb;
+        color: white;
+        font-size: 15px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: #1d4ed8;
+    }
+
+    #status {
+        margin: 20px 0 10px;
+        color: #666;
+        font-size: 14px;
+    }
+
+    .table-wrapper {
+        overflow: auto;
+        max-height: 70vh;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+    }
+
+    table {
+        border-collapse: collapse;
+        min-width: 100%;
+        font-size: 14px;
+    }
+
+    th,
+    td {
+        padding: 9px 12px;
+        border-right: 1px solid #e5e7eb;
+        border-bottom: 1px solid #ddd;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    th {
+        background: #f0f2f5;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    tr:hover td {
+        background: #f8fafc;
+    }
+
+    .empty {
+        padding: 35px;
+        text-align: center;
+        color: #888;
+    }
+
+    .debug {
+        margin-top: 20px;
+        padding: 15px;
+        background: #1e1e1e;
+        color: #ddd;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        display: none;
+        max-height: 300px;
+        overflow: auto;
+    }
+
+    .controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    label {
+        font-size: 14px;
+        color: #555;
+    }
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+```
+<h1>Paste Table Importer</h1>
+
+<div class="subtitle">
+    Copy a table from a website, spreadsheet, or browser and paste it below.
+</div>
+
+<div
+    id="pasteArea"
+    tabindex="0"
+>
+    Click here and press <strong>Ctrl+V</strong> / <strong>⌘V</strong>
+    <br>
+    <small>
+        The importer will use the table structure from the clipboard when available.
+    </small>
+</div>
+
+<div class="controls">
+    <button onclick="clearTable()">Clear</button>
+
+    <label>
+        <input
+            type="checkbox"
+            id="showDebug"
+            onchange="toggleDebug()"
+        >
+        Show clipboard data
+    </label>
+</div>
+
+<div id="status"></div>
+
+<div class="table-wrapper">
+    <div id="output" class="empty">
+        No table imported yet.
+    </div>
+</div>
+
+<pre id="debug" class="debug"></pre>
+```
+
+</div>
+
+<script>
+
+const pasteArea = document.getElementById("pasteArea");
+const output = document.getElementById("output");
+const status = document.getElementById("status");
+const debug = document.getElementById("debug");
+
+
+/*
+ * Capture the actual clipboard data.
+ */
+pasteArea.addEventListener("paste", function(event) {
+
+    event.preventDefault();
+
+    const clipboard = event.clipboardData;
+
+    const html = clipboard.getData("text/html");
+    const text = clipboard.getData("text/plain");
+
+    debug.textContent =
+        "=== HTML CLIPBOARD ===\n\n" +
+        html +
+        "\n\n=== PLAIN TEXT CLIPBOARD ===\n\n" +
+        text;
+
+    /*
+     * Prefer HTML because it contains structural information.
+     */
+    if (html && html.trim()) {
+
+        const rows = parseClipboardHTML(html);
+
+        if (rows.length > 0) {
+            renderTable(rows, "HTML table");
+            return;
+        }
+    }
+
+    /*
+     * Fall back to plain text.
+     */
+    if (text && text.trim()) {
+
+        const rows = parsePlainText(text);
+
+        if (rows.length > 0) {
+            renderTable(rows, "plain text");
+            return;
+        }
+    }
+
+    output.innerHTML =
+        '<div class="empty">Could not find tabular data in the clipboard.</div>';
+
+    status.textContent = "";
+});
+
+
+/*
+ * Parse HTML clipboard contents.
+ */
+function parseClipboardHTML(html) {
+
+    const parser = new DOMParser();
+
+    const doc = parser.parseFromString(
+        html,
+        "text/html"
+    );
+
+    /*
+     * First look for actual <table> elements.
+     */
+    const tables = [...doc.querySelectorAll("table")];
+
+    if (tables.length > 0) {
+
+        /*
+         * Usually the first table is the copied table.
+         */
+        return parseHTMLTable(tables[0]);
+    }
+
+    /*
+     * Some websites don't use <table>.
+     *
+     * Try to find elements that look like rows.
+     */
+    return findGridStructure(doc);
+}
+
+
+/*
+ * Parse a real HTML <table>.
+ *
+ * This handles rowspan and colspan.
+ */
+function parseHTMLTable(table) {
+
+    const grid = [];
+
+    const trs = [...table.querySelectorAll("tr")];
+
+    trs.forEach((tr, rowIndex) => {
+
+        if (!grid[rowIndex]) {
+            grid[rowIndex] = [];
+        }
+
+        let columnIndex = 0;
+
+        const cells = [
+            ...tr.querySelectorAll(":scope > th"),
+            ...tr.querySelectorAll(":scope > td")
+        ];
+
+        cells.forEach(cell => {
+
+            /*
+             * Find the next empty position.
+             */
+            while (
+                grid[rowIndex][columnIndex] !== undefined
+            ) {
+                columnIndex++;
+            }
+
+            const rowspan =
+                parseInt(cell.getAttribute("rowspan") || "1", 10);
+
+            const colspan =
+                parseInt(cell.getAttribute("colspan") || "1", 10);
+
+            const value =
+                cleanText(cell.innerText || cell.textContent);
+
+            /*
+             * Fill the rectangular area.
+             */
+            for (
+                let r = 0;
+                r < rowspan;
+                r++
+            ) {
+
+                if (!grid[rowIndex + r]) {
+                    grid[rowIndex + r] = [];
+                }
+
+                for (
+                    let c = 0;
+                    c < colspan;
+                    c++
+                ) {
+
+                    grid[rowIndex + r][columnIndex + c] =
+                        value;
+                }
+            }
+
+            columnIndex += colspan;
+        });
+    });
+
+    return normalizeRows(grid);
+}
+
+
+/*
+ * Try to reconstruct a non-table HTML grid.
+ *
+ * Many modern websites use div-based grids.
+ */
+function findGridStructure(doc) {
+
+    /*
+     * Look for common row-like structures.
+     */
+    const candidates = [
+        '[role="row"]',
+        '.row',
+        '[class*="row"]'
+    ];
+
+    for (const selector of candidates) {
+
+        const rows = [...doc.querySelectorAll(selector)];
+
+        if (rows.length < 2) {
+            continue;
+        }
+
+        const parsed = [];
+
+        for (const row of rows) {
+
+            const cells = [
+                ...row.querySelectorAll(
+                    '[role="gridcell"], [role="cell"], td, th'
+                )
+            ];
+
+            if (cells.length > 0) {
+
+                parsed.push(
+                    cells.map(cell =>
+                        cleanText(
+                            cell.innerText ||
+                            cell.textContent
+                        )
+                    )
+                );
+            }
+        }
+
+        if (parsed.length >= 2) {
+            return normalizeRows(parsed);
+        }
+    }
+
+    return [];
+}
+
+
+/*
+ * Parse plain text clipboard data.
+ */
+function parsePlainText(text) {
+
+    const lines = text
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .split("\n")
+        .filter(line => line.trim() !== "");
+
+    if (!lines.length) {
+        return [];
+    }
+
+    /*
+     * Try to determine the delimiter.
+     */
+    const delimiter = detectDelimiter(lines);
+
+    /*
+     * Important special case:
+     *
+     * If there is no delimiter and we have a sequence like:
+     *
+     * Ticker
+     * Fund info
+     * Class
+     * Shares
+     * Price
+     *
+     * this is NOT enough information to know where the columns are.
+     *
+     * We therefore keep it as a single column rather than
+     * pretending that every line is a complete row.
+     */
+    if (!delimiter) {
+
+        return lines.map(line => [
+            cleanText(line)
+        ]);
+    }
+
+    return lines.map(line =>
+        parseDelimitedLine(line, delimiter)
+    );
+}
+
+
+/*
+ * Detect whether clipboard text contains tabs, commas, etc.
+ */
+function detectDelimiter(lines) {
+
+    const candidates = [
+        "\t",
+        ",",
+        ";",
+        "|"
+    ];
+
+    let best = null;
+    let bestScore = 0;
+
+    for (const delimiter of candidates) {
+
+        const counts = lines.map(line =>
+            countDelimiterOutsideQuotes(
+                line,
+                delimiter
+            )
+        );
+
+        const rowsWithDelimiter =
+            counts.filter(n => n > 0).length;
+
+        if (rowsWithDelimiter === 0) {
+            continue;
+        }
+
+        /*
+         * Count consistency.
+         */
+        const nonZero = counts.filter(n => n > 0);
+
+        const frequency = {};
+
+        nonZero.forEach(n => {
+            frequency[n] =
+                (frequency[n] || 0) + 1;
+        });
+
+        const mostCommon =
+            Math.max(...Object.values(frequency));
+
+        const score =
+            rowsWithDelimiter * 10 +
+            mostCommon * 20;
+
+        /*
+         * Strong preference for tabs.
+         */
+        const adjustedScore =
+            delimiter === "\t"
+                ? score + 50
+                : score;
+
+        if (adjustedScore > bestScore) {
+            bestScore = adjustedScore;
+            best = delimiter;
+        }
+    }
+
+    return best;
+}
+
+
+/*
+ * Count delimiter characters outside quotes.
+ */
+function countDelimiterOutsideQuotes(line, delimiter) {
+
+    let count = 0;
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+
+        const char = line[i];
+
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        }
+        else if (
+            char === delimiter &&
+            !inQuotes
+        ) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+
+/*
+ * CSV/TSV parser.
+ */
+function parseDelimitedLine(line, delimiter) {
+
+    const result = [];
+
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+
+        const char = line[i];
+
+        if (char === '"') {
+
+            if (
+                inQuotes &&
+                line[i + 1] === '"'
+            ) {
+                current += '"';
+                i++;
+            }
+            else {
+                inQuotes = !inQuotes;
+            }
+
+        }
+        else if (
+            char === delimiter &&
+            !inQuotes
+        ) {
+
+            result.push(
+                cleanText(current)
+            );
+
+            current = "";
+
+        }
+        else {
+
+            current += char;
+        }
+    }
+
+    result.push(
+        cleanText(current)
+    );
+
+    return result;
+}
+
+
+/*
+ * Normalize rows to the same number of columns.
+ */
+function normalizeRows(rows) {
+
+    if (!rows.length) {
+        return [];
+    }
+
+    const maxColumns =
+        Math.max(
+            ...rows.map(row => row.length)
+        );
+
+    return rows.map(row => {
+
+        const result = [...row];
+
+        while (
+            result.length < maxColumns
+        ) {
+            result.push("");
+        }
+
+        return result;
+    });
+}
+
+
+/*
+ * Clean cell text.
+ */
+function cleanText(value) {
+
+    return String(value || "")
+        .replace(/\u00a0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+
+/*
+ * Render table.
+ */
+function renderTable(rows, source) {
+
+    rows = normalizeRows(rows);
+
+    if (!rows.length) {
+        return;
+    }
+
+    const columnCount =
+        Math.max(...rows.map(row => row.length));
+
+    let html = "<table>";
+
+    /*
+     * First row = header.
+     */
+    html += "<thead><tr>";
+
+    for (let c = 0; c < columnCount; c++) {
+
+        html +=
+            "<th>" +
+            escapeHTML(rows[0][c] || "") +
+            "</th>";
+    }
+
+    html += "</tr></thead>";
+
+    /*
+     * Body.
+     */
+    html += "<tbody>";
+
+    for (let r = 1; r < rows.length; r++) {
+
+        html += "<tr>";
+
+        for (let c = 0; c < columnCount; c++) {
+
+            html +=
+                "<td>" +
+                escapeHTML(rows[r][c] || "") +
+                "</td>";
+        }
+
+        html += "</tr>";
+    }
+
+    html += "</tbody>";
+    html += "</table>";
+
+    output.innerHTML = html;
+
+    status.textContent =
+        `${rows.length} rows × ${columnCount} columns · Source: ${source}`;
+}
+
+
+/*
+ * Escape HTML so pasted content cannot inject markup.
+ */
+function escapeHTML(value) {
+
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+/*
+ * Clear.
+ */
+function clearTable() {
+
+    output.innerHTML =
+        '<div class="empty">No table imported yet.</div>';
+
+    status.textContent = "";
+
+    debug.textContent = "";
+}
+
+
+/*
+ * Debug panel.
+ */
+function toggleDebug() {
+
+    debug.style.display =
+        document.getElementById("showDebug").checked
+            ? "block"
+            : "none";
+}
+
+</script>
+
+</body>
+</html>
+

@@ -27,6 +27,12 @@ const APP_PROJECT_ID = 'app'
 const TOKEN_REAUTH_BUFFER_MS = 5 * 60 * 1000
 
 /**
+ * Drive I/O operations (list, read, write) must complete within this timeout.
+ * Prevents hangs when files have permission issues or are in an inconsistent state.
+ */
+const DRIVE_IO_TIMEOUT_MS = 30 * 1000
+
+/**
  * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
  * equivalent helper is private; kept in sync with its behavior rather than
  * exported from there.
@@ -38,6 +44,22 @@ function base64ToBytes(b64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i)
   }
   return bytes
+}
+
+/**
+ * Wrap a promise in a timeout. Rejects with a descriptive error if the operation
+ * does not complete within the specified time.
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${operationName} timed out after ${timeoutMs}ms (possible permission or sync issue with shared files)`)),
+        timeoutMs
+      )
+    ),
+  ])
 }
 
 /**
@@ -162,19 +184,27 @@ export async function syncBackup(state: AppState, key: CryptoKey, salt: Uint8Arr
     const project = drive.project(APP_PROJECT_ID)
 
     // Ensure app folder structure (OpenWebApp/Portfolio) exists
-    const folderId = await project.ensureFolderPath()
+    const folderId = await withTimeout(
+      project.ensureFolderPath(),
+      DRIVE_IO_TIMEOUT_MS,
+      'ensureFolderPath'
+    )
 
     // Encrypt state into a versioned envelope and serialize as JSON
     const envelope = await encryptState(state, key, salt)
     const jsonContent = JSON.stringify(envelope)
 
     // Write the file (will update if exists, create if not)
-    const file = await project.files.write({
-      folderId,
-      name: APP_STATE_FILENAME,
-      content: jsonContent,
-      mimeType: 'application/json',
-    })
+    const file = await withTimeout(
+      project.files.write({
+        folderId,
+        name: APP_STATE_FILENAME,
+        content: jsonContent,
+        mimeType: 'application/json',
+      }),
+      DRIVE_IO_TIMEOUT_MS,
+      'files.write'
+    )
 
     // Return the Drive file id so the UI can link to it
     return file.id
@@ -196,12 +226,20 @@ export async function getBackupFileId(): Promise<string | null> {
   try {
     const project = drive.project(APP_PROJECT_ID)
 
-    const folderId = await project.ensureFolderPath()
+    const folderId = await withTimeout(
+      project.ensureFolderPath(),
+      DRIVE_IO_TIMEOUT_MS,
+      'ensureFolderPath'
+    )
 
-    const files = await project.files.list({
-      folderId,
-      nameEquals: APP_STATE_FILENAME,
-    })
+    const files = await withTimeout(
+      project.files.list({
+        folderId,
+        nameEquals: APP_STATE_FILENAME,
+      }),
+      DRIVE_IO_TIMEOUT_MS,
+      'files.list'
+    )
 
     return files.length > 0 ? files[0].id : null
   } catch (error) {
@@ -237,14 +275,20 @@ export async function restoreBackup(key: CryptoKey): Promise<AppState | null> {
     const project = drive.project(APP_PROJECT_ID)
 
     // Ensure app folder structure exists (creates if missing, returns folderId)
-    const folderId = await project.ensureFolderPath()
+    const folderId = await withTimeout(
+      project.ensureFolderPath(),
+      DRIVE_IO_TIMEOUT_MS,
+      'ensureFolderPath'
+    )
 
     // Find the backup file
-    const files = await project.files.list(
-      {
+    const files = await withTimeout(
+      project.files.list({
         folderId,
         nameEquals: APP_STATE_FILENAME,
-      }
+      }),
+      DRIVE_IO_TIMEOUT_MS,
+      'files.list'
     )
 
     if (files.length === 0) {
@@ -252,7 +296,11 @@ export async function restoreBackup(key: CryptoKey): Promise<AppState | null> {
     }
 
     // Read the backup file content
-    const content = await project.files.read(files[0].id)
+    const content = await withTimeout(
+      project.files.read(files[0].id),
+      DRIVE_IO_TIMEOUT_MS,
+      'files.read'
+    )
 
     if (!content || typeof content !== 'string') {
       return null

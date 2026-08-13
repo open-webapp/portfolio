@@ -265,7 +265,7 @@ function App() {
 
   return (
     <div>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div>
         {/* Navigation: Dashboard/Accounts tabs, sync + settings buttons */}
         <Nav
           state={state}
@@ -281,7 +281,7 @@ function App() {
 
         {state.view === 'dashboard' ? (
           /* Main content area with padding */
-          <div style={{ padding: 'var(--space-6)' }}>
+          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
             {/* Overview card: 3-column layout with All Together, Retirement, Non-Retirement */}
             <OverviewCard state={state} />
 
@@ -331,12 +331,12 @@ function App() {
           </div>
         ) : state.view === 'accounts' ? (
           /* Accounts page view */
-          <div style={{ padding: 'var(--space-6)' }}>
+          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
             <AccountsPage state={state} dispatch={dispatch} />
           </div>
         ) : (
           /* Settings page view */
-          <div style={{ padding: 'var(--space-6)', maxWidth: '560px' }}>
+          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)', maxWidth: '560px', margin: '0 auto' }}>
             <SettingsPage
               state={state}
               dispatch={dispatch}
