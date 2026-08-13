@@ -469,17 +469,26 @@ describe('Drive-sync activation', () => {
     vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
   })
 
-  it('calls drive.activate() on mount and disposes it on unmount, so the cached Drive token is silently warmed up instead of going stale between settings-opens/syncs', async () => {
+  it('does not call drive.activate() while the password gate is showing, so a stale cached token cannot trigger a silent Google reauth prompt before local unlock', async () => {
+    const activateMock = vi.mocked(drive.activate)
+    activateMock.mockClear()
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('MockUnlock')).toBeTruthy()
+    })
+
+    expect(activateMock).not.toHaveBeenCalled()
+  })
+
+  it('calls drive.activate() once the password gate is passed, and disposes it on unmount, so the cached Drive token is silently warmed up instead of going stale between settings-opens/syncs', async () => {
     const activateMock = vi.mocked(drive.activate)
     const disposeSpy = vi.fn()
     activateMock.mockReturnValue(disposeSpy)
     activateMock.mockClear()
 
-    const { unmount } = render(<App />)
-
-    await waitFor(() => {
-      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
-    })
+    const { unmount } = await renderUnlockedApp()
 
     expect(activateMock).toHaveBeenCalledTimes(1)
     expect(disposeSpy).not.toHaveBeenCalled()

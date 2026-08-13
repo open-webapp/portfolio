@@ -72,12 +72,20 @@ function App() {
   // ensureFreshConnection() only ever finds an expired token and falls
   // back to the fully interactive connect flow, popping the Google auth
   // window on every settings-open/sync instead of reusing the stored one.
+  //
+  // Gated on sessionKey (i.e. only after the password gate is passed):
+  // Drive has no role before local unlock, and activate()'s
+  // visibilitychange/pageshow listeners fire on every tab focus change —
+  // registering them pre-unlock meant a stale cached token could trigger
+  // a silent reauth attempt (surfacing a Google auth prompt) every time
+  // the user tabbed away from and back to the password screen.
   useEffect(() => {
+    if (sessionKey === null) return
     const dispose = drive.activate()
     return () => {
       dispose()
     }
-  }, [])
+  }, [sessionKey])
 
   useEffect(() => {
     if (isHydrated) {
@@ -85,8 +93,9 @@ function App() {
     }
   }, [isHydrated])
 
-  // Check Drive connection status on mount (never opens a Google auth window)
+  // Check Drive connection status once unlocked (never opens a Google auth window)
   useEffect(() => {
+    if (sessionKey === null) return
     const checkDrive = async () => {
       try {
         const authStatus = await getDriveAuthStatus()
@@ -101,7 +110,7 @@ function App() {
       }
     }
     checkDrive()
-  }, [])
+  }, [sessionKey])
 
   const handleSync = useCallback(async () => {
     setSyncing(true)
