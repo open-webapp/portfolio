@@ -123,7 +123,7 @@ function App() {
       let connection: any
       try {
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Google auth timed out')), 30000)
+          setTimeout(() => reject(new Error('Google auth timed out')), 10000)
         )
         connection = await Promise.race([connectDrive(), timeoutPromise])
       } catch (timeoutError) {
