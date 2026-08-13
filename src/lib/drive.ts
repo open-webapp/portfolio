@@ -256,6 +256,40 @@ export async function getBackupFileId(): Promise<string | null> {
 }
 
 /**
+ * Reads a Drive file by id and decrypts it into an AppState. Shared by
+ * `restoreBackup` (looks the file up by name in the app's own folder) and
+ * `restoreBackupFromFileId` (file id supplied directly, e.g. from
+ * `pickDriveFile`) so both paths throw the same `DriveDecryptError` on a
+ * wrong-password mismatch.
+ */
+async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppState | null> {
+  const project = drive.project(APP_PROJECT_ID)
+
+  const content = await withTimeout(
+    project.files.read(fileId),
+    DRIVE_IO_TIMEOUT_MS,
+    'files.read'
+  )
+
+  if (!content || typeof content !== 'string') {
+    return null
+  }
+
+  // Parse the envelope and decrypt it back into the app state
+  const envelope = JSON.parse(content) as EncryptedEnvelope
+  const salt = base64ToBytes(envelope.salt)
+
+  try {
+    return await decryptState(envelope, key)
+  } catch (decryptError) {
+    if (decryptError instanceof Error && decryptError.name === 'OperationError') {
+      throw new DriveDecryptError('backup encrypted with a different password', salt, envelope)
+    }
+    throw decryptError
+  }
+}
+
+/**
  * Restore app state from Google Drive JSON backup.
  * Returns null if no backup file exists.
  *
@@ -295,31 +329,186 @@ export async function restoreBackup(key: CryptoKey): Promise<AppState | null> {
       return null
     }
 
-    // Read the backup file content
-    const content = await withTimeout(
-      project.files.read(files[0].id),
-      DRIVE_IO_TIMEOUT_MS,
-      'files.read'
-    )
-
-    if (!content || typeof content !== 'string') {
-      return null
-    }
-
-    // Parse the envelope and decrypt it back into the app state
-    const envelope = JSON.parse(content) as EncryptedEnvelope
-    const salt = base64ToBytes(envelope.salt)
-
-    try {
-      return await decryptState(envelope, key)
-    } catch (decryptError) {
-      if (decryptError instanceof Error && decryptError.name === 'OperationError') {
-        throw new DriveDecryptError('backup encrypted with a different password', salt, envelope)
-      }
-      throw decryptError
-    }
+    return await readAndDecryptFile(files[0].id, key)
   } catch (error) {
     console.error('Failed to restore backup from Drive:', error)
     throw error
   }
+}
+
+/**
+ * Restore app state from a specific Drive file id, bypassing the by-name
+ * lookup in the app's own `OpenWebApp/Portfolio` folder. For a backup that
+ * was shared with this account by another Google account rather than
+ * synced from it — `files.list` only ever sees files inside this account's
+ * own folder tree (see the `drive.file`-scope note on `folderPath` above),
+ * so a file merely shared with this account has to be located via
+ * `pickDriveFile()` (Google Picker) and read by id instead.
+ *
+ * @throws {DriveDecryptError} If the backup decrypts with an auth-tag
+ *   mismatch (wrong password/key)
+ * @throws Throws if Drive connection fails, the read fails, the file is
+ *   empty/unreadable, the backup JSON is malformed, or decryption fails for
+ *   a reason other than a wrong key
+ */
+export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): Promise<AppState> {
+  try {
+    await ensureFreshConnection()
+    const restored = await readAndDecryptFile(fileId, key)
+    if (!restored) {
+      throw new Error('Picked Drive file is empty or unreadable')
+    }
+    return restored
+  } catch (error) {
+    console.error('Failed to restore backup from picked Drive file:', error)
+    throw error
+  }
+}
+
+const GOOGLE_PICKER_API_KEY = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
+
+/**
+ * Minimal shape of the `google.picker`/`gapi` globals this file touches.
+ * No official types package is installed for these Google-hosted scripts
+ * (loaded dynamically, not bundled), so this is hand-typed to just what's
+ * used here rather than pulling in `any` at every call site.
+ */
+interface PickerDoc {
+  id: string
+  name: string
+}
+interface PickerResponse {
+  action: string
+  docs?: PickerDoc[]
+}
+interface PickerInstance {
+  setVisible(visible: boolean): void
+}
+interface GooglePickerNamespace {
+  Action: { PICKED: string; CANCEL: string }
+  ViewId: { DOCS: string }
+  DocsView: new (viewId: string) => DocsViewChain
+  PickerBuilder: new () => {
+    addView(view: unknown): PickerBuilderChain
+    setOAuthToken(token: string): PickerBuilderChain
+    setDeveloperKey(key: string): PickerBuilderChain
+    setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
+    build(): PickerInstance
+  }
+}
+interface DocsViewChain {
+  setIncludeFolders(v: boolean): DocsViewChain
+  setSelectFolderEnabled(v: boolean): DocsViewChain
+}
+interface PickerBuilderChain {
+  addView(view: unknown): PickerBuilderChain
+  setOAuthToken(token: string): PickerBuilderChain
+  setDeveloperKey(key: string): PickerBuilderChain
+  setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
+  build(): PickerInstance
+}
+interface GapiWindow {
+  gapi?: { load: (api: string, opts: { callback: () => void; onerror?: () => void }) => void }
+  google?: { picker?: GooglePickerNamespace }
+}
+
+let pickerApiLoadPromise: Promise<void> | null = null
+
+/**
+ * Loads `apis.google.com/js/api.js` (if not already present) and then the
+ * `picker` module off it. Idempotent: concurrent/repeat callers share one
+ * in-flight load.
+ */
+function loadPickerApi(): Promise<void> {
+  if (pickerApiLoadPromise) {
+    return pickerApiLoadPromise
+  }
+
+  pickerApiLoadPromise = new Promise<void>((resolve, reject) => {
+    const w = window as unknown as GapiWindow
+
+    const loadPickerModule = () => {
+      w.gapi!.load('picker', {
+        callback: () => resolve(),
+        onerror: () => reject(new Error('Failed to load Google Picker API')),
+      })
+    }
+
+    if (w.google?.picker) {
+      resolve()
+      return
+    }
+    if (w.gapi) {
+      loadPickerModule()
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = 'https://apis.google.com/js/api.js'
+    script.async = true
+    script.defer = true
+    script.onload = loadPickerModule
+    script.onerror = () => reject(new Error('Failed to load Google API script'))
+    document.head.appendChild(script)
+  }).catch((err) => {
+    // Let a failed load be retried by a later call rather than permanently
+    // caching the rejection.
+    pickerApiLoadPromise = null
+    throw err
+  })
+
+  return pickerApiLoadPromise
+}
+
+/**
+ * Opens Google's file picker so the user can select a Drive file this app
+ * has not created or synced itself — e.g. a `portfolio-state.json` backup
+ * another Google account shared with them. Picking a file grants this
+ * app's `drive.file`-scoped token access to that specific file (this is
+ * the intended mechanism for that scope, not a workaround), so the
+ * returned id can be read via `restoreBackupFromFileId` immediately after.
+ *
+ * Resolves to `null` if the user cancels the picker instead of selecting a
+ * file.
+ *
+ * @throws If `VITE_GOOGLE_PICKER_API_KEY` is not configured, the Picker
+ *   script fails to load, or acquiring a token fails.
+ */
+export async function pickDriveFile(): Promise<{ id: string; name: string } | null> {
+  if (!GOOGLE_PICKER_API_KEY) {
+    throw new Error(
+      'VITE_GOOGLE_PICKER_API_KEY is not configured; cannot open the Google Drive file picker'
+    )
+  }
+
+  await ensureFreshConnection()
+  const token = await drive.project(APP_PROJECT_ID).getAccessToken()
+  await loadPickerApi()
+
+  const picker = (window as unknown as GapiWindow).google!.picker!
+
+  return new Promise((resolve, reject) => {
+    try {
+      const view = new picker.DocsView(picker.ViewId.DOCS)
+        .setIncludeFolders(false)
+        .setSelectFolderEnabled(false)
+
+      const instance = new picker.PickerBuilder()
+        .addView(view)
+        .setOAuthToken(token)
+        .setDeveloperKey(GOOGLE_PICKER_API_KEY!)
+        .setCallback((data: PickerResponse) => {
+          if (data.action === picker.Action.PICKED) {
+            const doc = data.docs?.[0]
+            resolve(doc ? { id: doc.id, name: doc.name } : null)
+          } else if (data.action === picker.Action.CANCEL) {
+            resolve(null)
+          }
+        })
+        .build()
+      instance.setVisible(true)
+    } catch (err) {
+      reject(err)
+    }
+  })
 }

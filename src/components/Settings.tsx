@@ -2,6 +2,8 @@ import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import {
   restoreBackup,
+  restoreBackupFromFileId,
+  pickDriveFile,
   getDriveAuthStatus,
   syncBackup,
   DriveDecryptError,
@@ -65,17 +67,24 @@ export function SettingsPage({
   const [crossPasswordError, setCrossPasswordError] = useState<string | null>(null)
   const [restoringWithBackupPassword, setRestoringWithBackupPassword] = useState(false)
 
+  // Fallback path when no backup exists under this account's own Drive
+  // folder — e.g. the backup was shared with this account by a different
+  // Google account rather than synced from it (see pickDriveFile's docs).
+  const [noBackupFound, setNoBackupFound] = useState(false)
+  const [pickingFile, setPickingFile] = useState(false)
+
   const handleRestore = useCallback(async () => {
     if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
 
     setSyncing(true)
+    setNoBackupFound(false)
     try {
       const restored = await restoreBackup(sessionKey)
       if (restored) {
         dispatch({ type: '__SET_STATE', newState: restored })
         alert('Restored from Drive')
       } else {
-        alert('No backup found on Drive')
+        setNoBackupFound(true)
       }
     } catch (error) {
       if (error instanceof DriveDecryptError) {
@@ -90,6 +99,30 @@ export function SettingsPage({
       setSyncing(false)
     }
   }, [dispatch, sessionKey, setSyncing])
+
+  const handlePickFromDrive = useCallback(async () => {
+    setPickingFile(true)
+    try {
+      const picked = await pickDriveFile()
+      if (!picked) return // user cancelled the picker
+
+      const restored = await restoreBackupFromFileId(picked.id, sessionKey)
+      dispatch({ type: '__SET_STATE', newState: restored })
+      setNoBackupFound(false)
+      alert(`Restored from "${picked.name}"`)
+    } catch (error) {
+      if (error instanceof DriveDecryptError) {
+        setCrossPasswordPrompt({ salt: error.salt, envelope: error.envelope })
+        setCrossPasswordError(null)
+        setBackupPasswordInput('')
+        return
+      }
+      console.error('Restore from picked Drive file failed:', error)
+      alert(`Restore failed: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setPickingFile(false)
+    }
+  }, [dispatch, sessionKey])
 
   const handleCrossPasswordSubmit = useCallback(async () => {
     if (!crossPasswordPrompt) return
@@ -274,6 +307,21 @@ export function SettingsPage({
                   View backup in Google Drive
                 </a>
               </p>
+            )}
+            {noBackupFound && (
+              <div style={{ marginTop: 'var(--space-3)' }}>
+                <p style={{ fontSize: '13px', marginBottom: 'var(--space-2)' }}>
+                  No backup found in this account's own Drive folder. If someone shared a
+                  {' '}<code>portfolio-state.json</code> backup with you instead, search for it directly:
+                </p>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handlePickFromDrive}
+                  disabled={pickingFile}
+                >
+                  {pickingFile ? 'Opening Drive...' : 'Search Google Drive...'}
+                </button>
+              </div>
             )}
           </div>
         )}

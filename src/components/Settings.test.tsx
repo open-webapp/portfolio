@@ -24,6 +24,8 @@ vi.mock('../lib/drive', () => {
   }
   return {
     restoreBackup: vi.fn(),
+    restoreBackupFromFileId: vi.fn(),
+    pickDriveFile: vi.fn(),
     getDriveAuthStatus: vi.fn(),
     syncBackup: vi.fn(),
     DriveDecryptError,
@@ -257,7 +259,7 @@ describe('SettingsPage', () => {
       })
     })
 
-    it('shows "No backup found" alert if restore returns null', async () => {
+    it('shows the "Search Google Drive..." fallback (not an alert) if restore returns null', async () => {
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
       vi.mocked(global.confirm).mockReturnValue(true)
 
@@ -267,7 +269,71 @@ describe('SettingsPage', () => {
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
-        expect(global.alert).toHaveBeenCalledWith('No backup found on Drive')
+        expect(screen.getByRole('button', { name: 'Search Google Drive...' })).toBeTruthy()
+      })
+      expect(global.alert).not.toHaveBeenCalled()
+    })
+
+    it('picking a file via "Search Google Drive..." restores and dispatches __SET_STATE', async () => {
+      vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
+      vi.mocked(global.confirm).mockReturnValue(true)
+      const restoredState = initialState()
+      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-id', name: 'portfolio-state.json' })
+      vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(restoredState)
+
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
+      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(pickButton)
+
+      await waitFor(() => {
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-id', expect.anything())
+      })
+      expect(mockDispatch).toHaveBeenCalledWith({ type: '__SET_STATE', newState: restoredState })
+      expect(global.alert).toHaveBeenCalledWith('Restored from "portfolio-state.json"')
+    })
+
+    it('does nothing when the user cancels the Drive picker', async () => {
+      vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
+      vi.mocked(global.confirm).mockReturnValue(true)
+      vi.mocked(driveModule.pickDriveFile).mockResolvedValue(null)
+
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
+      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(pickButton)
+
+      await waitFor(() => {
+        expect(driveModule.pickDriveFile).toHaveBeenCalled()
+      })
+      expect(driveModule.restoreBackupFromFileId).not.toHaveBeenCalled()
+      expect(mockDispatch).not.toHaveBeenCalled()
+    })
+
+    it('a wrong-password backup picked via the Drive picker opens the cross-password prompt', async () => {
+      vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
+      vi.mocked(global.confirm).mockReturnValue(true)
+      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-id', name: 'portfolio-state.json' })
+      const salt = generateSalt()
+      const otherKey = await deriveKey('other-password', salt)
+      const envelope = await encryptState(initialState(), otherKey, salt)
+      const { DriveDecryptError } = await import('../lib/drive')
+      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
+        new DriveDecryptError('backup encrypted with a different password', salt, envelope)
+      )
+
+      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
+      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
+      fireEvent.click(pickButton)
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('This backup was saved with a different encryption password. Enter that password to restore:')
+        ).toBeTruthy()
       })
     })
 

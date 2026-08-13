@@ -12,6 +12,7 @@ let mockEnsureFolderPath: ReturnType<typeof vi.fn>
 let mockList: ReturnType<typeof vi.fn>
 let mockGetConnection: ReturnType<typeof vi.fn>
 let mockConnect: ReturnType<typeof vi.fn>
+let mockGetAccessToken: ReturnType<typeof vi.fn>
 
 // Mock the drive-sync package itself (spreading the real module so real error
 // classes like NeedsReauthError stay instanceof-compatible).
@@ -24,6 +25,7 @@ vi.mock('@open-webapp/drive-sync', async (importOriginal) => {
         getConnection: () => mockGetConnection(),
         connect: () => mockConnect(),
         ensureFolderPath: () => mockEnsureFolderPath(),
+        getAccessToken: (...args: unknown[]) => mockGetAccessToken(...args),
         files: {
           list: (...args: unknown[]) => mockList(...args),
           read: (...args: unknown[]) => mockFilesRead(...args),
@@ -49,6 +51,7 @@ describe('drive.ts Drive-sync wiring', () => {
       expiresAt: Date.now() + 60 * 60 * 1000,
     })
     mockConnect = vi.fn()
+    mockGetAccessToken = vi.fn().mockResolvedValue('mock-access-token')
     vi.resetModules()
   })
 
@@ -416,6 +419,174 @@ describe('drive.ts Drive-sync wiring', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  describe('restoreBackupFromFileId()', () => {
+    it('reads and decrypts a file by id directly, bypassing the by-name folder lookup', async () => {
+      const testState: AppState = {
+        ...initialState(),
+        positions: [
+          {
+            id: 'pos-1',
+            accountId: 'acc-1',
+            symbol: 'AAPL',
+            name: 'Apple',
+            assetClass: 'Equity',
+            shares: 100,
+            avgCost: 150,
+            price: 175,
+            lastImportedAt: '2024-01-01',
+          },
+        ],
+      }
+      const salt = generateSalt()
+      const key = await deriveKey('correct horse battery staple', salt)
+      const envelope = await encryptState(testState, key, salt)
+      mockFilesRead.mockResolvedValue(JSON.stringify(envelope))
+
+      const { restoreBackupFromFileId } = await import('./drive')
+      const restored = await restoreBackupFromFileId('shared-file-id-789', key)
+
+      expect(restored.positions[0].symbol).toBe('AAPL')
+      expect(mockFilesRead).toHaveBeenCalledWith('shared-file-id-789')
+      // Must not touch the by-name lookup at all — that's the whole point of this path.
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockList).not.toHaveBeenCalled()
+    })
+
+    it('throws DriveDecryptError carrying salt and envelope on a wrong-password mismatch', async () => {
+      const testState = initialState()
+      const salt = generateSalt()
+      const correctKey = await deriveKey('correct-password', salt)
+      const wrongKey = await deriveKey('wrong-password', salt)
+      const envelope = await encryptState(testState, correctKey, salt)
+      mockFilesRead.mockResolvedValue(JSON.stringify(envelope))
+
+      const { restoreBackupFromFileId, DriveDecryptError } = await import('./drive')
+
+      let caught: unknown
+      try {
+        await restoreBackupFromFileId('shared-file-id-789', wrongKey)
+        expect.fail('expected restoreBackupFromFileId to throw')
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toBeInstanceOf(DriveDecryptError)
+      expect((caught as InstanceType<typeof DriveDecryptError>).envelope).toEqual(envelope)
+    })
+
+    it('throws when the picked file is empty/unreadable', async () => {
+      mockFilesRead.mockResolvedValue(null)
+      const { restoreBackupFromFileId } = await import('./drive')
+      const salt = generateSalt()
+      const key = await deriveKey('some-password', salt)
+
+      await expect(restoreBackupFromFileId('shared-file-id-789', key)).rejects.toThrow(
+        'empty or unreadable'
+      )
+    })
+  })
+
+  describe('pickDriveFile()', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs()
+      delete (window as unknown as { gapi?: unknown }).gapi
+      delete (window as unknown as { google?: unknown }).google
+    })
+
+    /** Installs a fake `window.gapi`/`window.google.picker` and returns the captured PickerBuilder chain. */
+    function installPickerFake(): {
+      chain: { setOAuthToken: ReturnType<typeof vi.fn>; setDeveloperKey: ReturnType<typeof vi.fn> }
+      setVisible: ReturnType<typeof vi.fn>
+      getCallback: () => ((data: { action: string; docs?: { id: string; name: string }[] }) => void) | null
+    } {
+      let capturedCallback: ((data: { action: string; docs?: { id: string; name: string }[] }) => void) | null =
+        null
+      const setVisible = vi.fn()
+      const chain = {
+        addView: vi.fn().mockReturnThis(),
+        setOAuthToken: vi.fn().mockReturnThis(),
+        setDeveloperKey: vi.fn().mockReturnThis(),
+        setCallback: vi.fn().mockImplementation(function (
+          this: unknown,
+          cb: typeof capturedCallback
+        ) {
+          capturedCallback = cb
+          return this
+        }),
+        build: vi.fn().mockReturnValue({ setVisible }),
+      }
+
+      function DocsView() {
+        return {
+          setIncludeFolders: vi.fn().mockReturnThis(),
+          setSelectFolderEnabled: vi.fn().mockReturnThis(),
+        }
+      }
+      function PickerBuilder() {
+        return chain
+      }
+
+      const w = window as unknown as {
+        gapi: { load: (api: string, opts: { callback: () => void }) => void }
+        google: { picker: unknown }
+      }
+      w.gapi = { load: (_api: string, opts: { callback: () => void }) => opts.callback() }
+      w.google = {
+        picker: {
+          Action: { PICKED: 'picked', CANCEL: 'cancel' },
+          ViewId: { DOCS: 'docs' },
+          DocsView,
+          PickerBuilder,
+        },
+      }
+
+      return { chain, setVisible, getCallback: () => capturedCallback }
+    }
+
+    it('throws a clear error when VITE_GOOGLE_PICKER_API_KEY is not configured', async () => {
+      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', '')
+
+      const { pickDriveFile } = await import('./drive')
+      await expect(pickDriveFile()).rejects.toThrow('VITE_GOOGLE_PICKER_API_KEY')
+    })
+
+    it('resolves with the picked file id/name, loading gapi + picker and requesting a token', async () => {
+      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', 'test-picker-key')
+      const { chain, setVisible, getCallback } = installPickerFake()
+
+      const { pickDriveFile } = await import('./drive')
+      const resultPromise = pickDriveFile()
+
+      // pickDriveFile awaits ensureFreshConnection/getAccessToken/loadPickerApi
+      // before it ever builds the Picker, so the callback isn't captured until
+      // those microtasks drain; give them a turn before simulating a pick.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const callback = getCallback()
+      expect(callback).not.toBeNull()
+      callback!({ action: 'picked', docs: [{ id: 'picked-id', name: 'portfolio-state.json' }] })
+
+      const result = await resultPromise
+      expect(result).toEqual({ id: 'picked-id', name: 'portfolio-state.json' })
+      expect(mockGetAccessToken).toHaveBeenCalled()
+      expect(chain.setOAuthToken).toHaveBeenCalledWith('mock-access-token')
+      expect(chain.setDeveloperKey).toHaveBeenCalledWith('test-picker-key')
+      expect(setVisible).toHaveBeenCalledWith(true)
+    })
+
+    it('resolves null when the user cancels the picker', async () => {
+      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', 'test-picker-key')
+      const { getCallback } = installPickerFake()
+
+      const { pickDriveFile } = await import('./drive')
+      const resultPromise = pickDriveFile()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      getCallback()!({ action: 'cancel' })
+
+      const result = await resultPromise
+      expect(result).toBeNull()
+    })
   })
 
   describe('Drive auth / token validation', () => {

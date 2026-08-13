@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@open-webapp/drive-sync": "^0.1.0",
+    "@open-webapp/drive-sync": "^0.2.0",
     "lucide-react": "^1.28.0",
     "papaparse": "^5.5.4",
     "react": "^19.2.8",
