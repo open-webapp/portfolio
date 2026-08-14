@@ -492,7 +492,7 @@ export async function pickDriveFile(): Promise<{ id: string; name: string } | nu
       const instance = new picker.PickerBuilder()
         .addView(view)
         .setOAuthToken(token)
-        .setOrigin(window.location.protocol + '//' + window.location.host)
+        .setOrigin(window.location.origin)
         .setCallback((data: PickerResponse) => {
           if (data.action === picker.Action.PICKED) {
             const doc = data.docs?.[0]
