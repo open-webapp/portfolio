@@ -38,10 +38,14 @@ interface GooglePickerResponse {
 
 interface GapiWindow extends Window {
   gapi?: {
-    load: (lib: string, opts: { callback: () => void }) => void
+    load: (lib: string, opts: { callback: (result?: any) => void }) => void
     picker?: {
-      PickerBuilder: new () => GooglePickerBuilder
-      DocsView: new () => GooglePickerDocsView
+      PickerBuilder?: new () => GooglePickerBuilder
+      DocsView?: new () => GooglePickerDocsView
+      api?: {
+        PickerBuilder: new () => GooglePickerBuilder
+        DocsView: new () => GooglePickerDocsView
+      }
     }
   }
 }
@@ -507,20 +511,32 @@ async function loadPickerApi(): Promise<void> {
       reject(new Error('Google Picker API load timed out after 10s'))
     }, 10000)
 
-    const handlePickerLoaded = (result?: { error?: string; message?: string }) => {
+    const handlePickerLoaded = (result?: any) => {
       clearTimeout(timeoutHandle)
-      console.log('[loadPickerApi] handlePickerLoaded called with result:', result, 'gapi.picker:', gapiWindow.gapi?.picker)
+      console.log('[loadPickerApi] handlePickerLoaded called. result:', result)
+      if (gapiWindow.gapi?.picker) {
+        console.log('[loadPickerApi] gapi.picker exists. Contents:', Object.keys(gapiWindow.gapi.picker), gapiWindow.gapi.picker)
+        if ('api' in gapiWindow.gapi.picker) {
+          console.log('[loadPickerApi] gapi.picker.api exists:', gapiWindow.gapi.picker.api, 'keys:', Object.keys(gapiWindow.gapi.picker.api || {}))
+        }
+      }
       if (result?.error) {
+        console.log('[loadPickerApi] Load error detected:', result.error)
         pickerApiLoadPromise = null
         reject(new Error(`Google Picker API load failed: ${result.error}`))
         return
       }
-      if (gapiWindow.gapi?.picker?.PickerBuilder) {
-        console.log('[loadPickerApi] PickerBuilder is available, resolving')
+
+      // Check if PickerBuilder is available (it might be at gapi.picker.api.PickerBuilder or gapi.picker.PickerBuilder)
+      const PickerBuilder = gapiWindow.gapi?.picker?.PickerBuilder || (gapiWindow.gapi?.picker?.api as any)?.PickerBuilder
+      const DocsView = gapiWindow.gapi?.picker?.DocsView || (gapiWindow.gapi?.picker?.api as any)?.DocsView
+
+      if (PickerBuilder && DocsView) {
+        console.log('[loadPickerApi] PickerBuilder and DocsView are available, resolving')
         isPickerApiLoaded = true
         resolve()
       } else {
-        console.log('[loadPickerApi] PickerBuilder not available after callback. gapi.picker:', gapiWindow.gapi?.picker, 'keys:', Object.keys(gapiWindow.gapi?.picker || {}))
+        console.log('[loadPickerApi] PickerBuilder or DocsView not available. PickerBuilder:', PickerBuilder, 'DocsView:', DocsView)
         pickerApiLoadPromise = null
         reject(new Error('Google Picker library loaded but PickerBuilder not available'))
       }
@@ -601,7 +617,11 @@ export async function openDrivePicker(
   await loadPickerApi()
 
   const gapiWindow = window as GapiWindow
-  if (!gapiWindow.gapi?.picker?.PickerBuilder) {
+  // PickerBuilder might be at gapi.picker.PickerBuilder or gapi.picker.api.PickerBuilder
+  const PickerBuilder = gapiWindow.gapi?.picker?.PickerBuilder || (gapiWindow.gapi?.picker?.api as any)?.PickerBuilder
+  const DocsView = gapiWindow.gapi?.picker?.DocsView || (gapiWindow.gapi?.picker?.api as any)?.DocsView
+
+  if (!PickerBuilder || !DocsView) {
     throw new Error('Google Picker API not available')
   }
 
@@ -614,7 +634,7 @@ export async function openDrivePicker(
     'ensureFolderPath'
   )
 
-  const docsView = new gapiWindow.gapi.picker.DocsView().setParent(folderId)
+  const docsView = new DocsView().setParent(folderId)
 
   // Callback from Picker: check action and extract file id
   const handlePickerResponse = (data: GooglePickerResponse) => {
@@ -627,7 +647,7 @@ export async function openDrivePicker(
   }
 
   // Configure Picker: OAuth token + API key are both required
-  const picker = new gapiWindow.gapi.picker.PickerBuilder()
+  const picker = new PickerBuilder()
     .setOAuthToken(token)
     .setDeveloperKey(PICKER_API_KEY)
     .setOrigin(window.location.origin)
