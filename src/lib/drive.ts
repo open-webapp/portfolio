@@ -610,6 +610,7 @@ export async function openDrivePicker(
   onSelect: (fileId: string) => void,
   onCancel: () => void
 ): Promise<void> {
+  console.log('[openDrivePicker] Starting. Token length:', token?.length, 'API key length:', PICKER_API_KEY?.length)
   if (!PICKER_API_KEY) {
     throw new Error('VITE_GOOGLE_PICKER_API_KEY is not set — Google Picker requires an API key')
   }
@@ -647,6 +648,7 @@ export async function openDrivePicker(
   }
 
   // Configure Picker: OAuth token + API key are both required
+  console.log('[openDrivePicker] Building picker with origin:', window.location.origin, 'protocol:', window.location.protocol, 'host:', window.location.host)
   const picker = new PickerBuilder()
     .setOAuthToken(token)
     .setDeveloperKey(PICKER_API_KEY)
@@ -654,6 +656,7 @@ export async function openDrivePicker(
     .addView(docsView)
     .setCallback(handlePickerResponse)
     .build()
+  console.log('[openDrivePicker] Picker built successfully')
 
   // Show the Picker dialog
   picker.setVisible(true)
