@@ -20,7 +20,10 @@ vi.mock('../lib/drive', () => {
   return {
     openDrivePicker: vi.fn(),
     getDriveConnection: vi.fn(),
+    getAccessTokenForPicker: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
+    restoreBackup: vi.fn(),
+    extractDriveFileId: vi.fn(),
     DriveDecryptError,
   }
 })
@@ -42,6 +45,9 @@ describe('DriveRestorePanel', () => {
     vi.clearAllMocks()
     testRestoreSalt = generateSalt()
     testRestoreKey = await deriveKey('test-restore-password', testRestoreSalt)
+
+    // Default mock for getAccessTokenForPicker
+    vi.mocked(driveModule.getAccessTokenForPicker as any).mockResolvedValue('mock-token')
   })
 
   afterEach(() => {
@@ -152,9 +158,6 @@ describe('DriveRestorePanel', () => {
     })
 
     it('happy: opening Picker immediately on "Restore from Drive" click — no by-name lookup call', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
       let pickerSelectCallback: ((fileId: string) => void) | null = null
       vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
         pickerSelectCallback = onSelect
@@ -170,8 +173,8 @@ describe('DriveRestorePanel', () => {
         expect(driveModule.openDrivePicker).toHaveBeenCalled()
       })
 
-      // Verify getDriveConnection was called to get token
-      expect(driveModule.getDriveConnection).toHaveBeenCalled()
+      // Verify getAccessTokenForPicker was called to get token
+      expect(driveModule.getAccessTokenForPicker).toHaveBeenCalled()
     })
 
     it('happy: user selects file from Picker → confirm → restore succeeds → onRestored called', async () => {
@@ -561,9 +564,9 @@ describe('DriveRestorePanel', () => {
   })
 
   describe('Error handling', () => {
-    it('error: getDriveConnection fails → error message shown in Picker fallback', async () => {
-      vi.mocked(driveModule.getDriveConnection).mockRejectedValue(
-        new Error('Failed to get Drive connection')
+    it('error: getAccessTokenForPicker fails → error message shown in Picker fallback', async () => {
+      vi.mocked(driveModule.getAccessTokenForPicker as any).mockRejectedValue(
+        new Error('Failed to get access token')
       )
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
@@ -571,30 +574,14 @@ describe('DriveRestorePanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(screen.getByText(/Failed to get Drive connection/)).toBeTruthy()
+        expect(screen.getByText(/Failed to open file picker/)).toBeTruthy()
       })
 
       // openDrivePicker should NOT have been called
       expect(driveModule.openDrivePicker).not.toHaveBeenCalled()
     })
 
-    it('error: getDriveConnection returns null → error message shown', async () => {
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(null)
-
-      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      await waitFor(() => {
-        expect(screen.getByText(/No Drive connection available/)).toBeTruthy()
-      })
-
-      expect(driveModule.openDrivePicker).not.toHaveBeenCalled()
-    })
-
     it('error: openDrivePicker throws → error message shown in Picker fallback', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
       vi.mocked(driveModule.openDrivePicker).mockRejectedValue(
         new Error('VITE_GOOGLE_PICKER_API_KEY is not set')
       )

@@ -33,8 +33,9 @@ vi.mock('../lib/drive', () => {
   }
   return {
     openDrivePicker: vi.fn(),
-    getDriveConnection: vi.fn(),
+    getAccessTokenForPicker: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
+    restoreBackup: vi.fn(),
     DriveDecryptError,
   }
 })
@@ -370,12 +371,7 @@ describe('PasswordGate', () => {
       const backupSalt = new Uint8Array([4, 5, 6])
       const mockEnvelope = { encrypted: 'data' }
 
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue({
-        accessToken: 'fake-token',
-        refreshToken: 'fake-refresh',
-        userEmail: 'user@example.com',
-      })
-
+      vi.mocked(driveModule.getAccessTokenForPicker).mockResolvedValue('fake-token')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )
@@ -431,12 +427,7 @@ describe('PasswordGate', () => {
       const mockEnvelope = { encrypted: 'data' }
       const backupKey = { backup: 'key' } as unknown as CryptoKey
 
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue({
-        accessToken: 'fake-token',
-        refreshToken: 'fake-refresh',
-        userEmail: 'user@example.com',
-      })
-
+      vi.mocked(driveModule.getAccessTokenForPicker).mockResolvedValue('fake-token')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )
@@ -489,12 +480,7 @@ describe('PasswordGate', () => {
       const backupSalt = new Uint8Array([4, 5, 6])
       const mockEnvelope = { encrypted: 'data' }
 
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue({
-        accessToken: 'fake-token',
-        refreshToken: 'fake-refresh',
-        userEmail: 'user@example.com',
-      })
-
+      vi.mocked(driveModule.getAccessTokenForPicker).mockResolvedValue('fake-token')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )

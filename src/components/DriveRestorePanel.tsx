@@ -11,11 +11,9 @@ import { deriveKey, decryptState } from '../lib/crypto'
 function DrivePickerFallback({
   onSelect,
   onCancel,
-  restoring,
 }: {
   onSelect: (fileId: string) => void
   onCancel: () => void
-  restoring: boolean
 }) {
   const [error, setError] = useState<string | null>(null)
   const [pickerLoading, setPickerLoading] = useState(false)
@@ -24,12 +22,13 @@ function DrivePickerFallback({
     // Open Picker immediately when this component mounts (i.e. as soon
     // as the user clicks "Restore from Drive" — no lookup step first).
     const openPicker = async () => {
-      if (pickerLoading || restoring) return
-
       setPickerLoading(true)
       setError(null)
       try {
         const token = await getAccessTokenForPicker()
+        if (!token) {
+          throw new Error('Failed to get access token for file picker')
+        }
         await openDrivePicker(
           token,
           (fileId: string) => {
@@ -48,7 +47,7 @@ function DrivePickerFallback({
     }
 
     openPicker()
-  }, [onSelect, onCancel, pickerLoading, restoring])
+  }, [])
 
   if (error) {
     return (
@@ -234,7 +233,6 @@ export function DriveRestorePanel({
             // Drive" can be clicked again to reopen it.
             setShowPicker(false)
           }}
-          restoring={syncing}
         />
       )}
 
@@ -307,7 +305,6 @@ export function DriveRestorePanel({
               onCancel={() => {
                 // User closed Picker during cross-password retry — state unchanged
               }}
-              restoring={syncing}
             />
           )}
         </div>
