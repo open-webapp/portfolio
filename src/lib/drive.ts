@@ -94,6 +94,7 @@ let isPickerApiLoaded = false
  * openDrivePicker() throws a descriptive error (see below).
  */
 const PICKER_API_KEY = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
+console.log('[drive.ts] PICKER_API_KEY loaded from env:', PICKER_API_KEY?.substring(0, 20) + '...' || 'UNDEFINED')
 
 /**
  * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
