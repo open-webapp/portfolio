@@ -676,6 +676,7 @@ describe('drive.ts Drive-sync wiring', () => {
 
     beforeEach(() => {
       vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', 'fake-api-key')
+      vi.stubEnv('VITE_GOOGLE_CLIENT_ID', '1234567890-abcdef.apps.googleusercontent.com')
       builderCalls = {}
       mockGapi = {
         load: vi.fn((lib, opts) => {
@@ -686,6 +687,7 @@ describe('drive.ts Drive-sync wiring', () => {
             addView(view: any) { builderCalls.view = view; return this }
             setOAuthToken(token: string) { builderCalls.token = token; return this }
             setDeveloperKey(key: string) { builderCalls.apiKey = key; return this }
+            setAppId(appId: string) { builderCalls.appId = appId; return this }
             setOrigin(origin: string) { builderCalls.origin = origin; return this }
             setCallback(cb: any) { builderCalls.callback = cb; return this }
             build() { return { setVisible: vi.fn() } }
@@ -713,6 +715,33 @@ describe('drive.ts Drive-sync wiring', () => {
       expect(builderCalls.token).toBe('fake-token')
       expect(builderCalls.apiKey).toBe('fake-api-key')
       expect(builderCalls.parentFolderId).toBeTruthy() // OpenWebApp/Portfolio folder id
+    })
+
+    // Regression: without setAppId(), Picker discards the drive.file-scoped
+    // OAuth token, shows its own sign-in prompt, and then reports "The API
+    // developer key is invalid" — the picker UI never appears.
+    it('sets the Picker app id to the project number derived from the OAuth client id', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+
+      expect(builderCalls.appId).toBe('1234567890')
+    })
+
+    it('prefers an explicit VITE_GOOGLE_PROJECT_NUMBER over the client id prefix', async () => {
+      vi.stubEnv('VITE_GOOGLE_PROJECT_NUMBER', '99887766')
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+
+      expect(builderCalls.appId).toBe('99887766')
+    })
+
+    it('throws a descriptive error when no app id can be resolved', async () => {
+      vi.stubEnv('VITE_GOOGLE_CLIENT_ID', '')
+      vi.stubEnv('VITE_GOOGLE_PROJECT_NUMBER', '')
+      const { openDrivePicker } = await import('./drive')
+      await expect(openDrivePicker('fake-token', vi.fn(), vi.fn())).rejects.toThrow(/app id/i)
     })
 
     it('throws a descriptive error when VITE_GOOGLE_PICKER_API_KEY is not set', async () => {

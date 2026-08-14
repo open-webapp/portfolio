@@ -17,6 +17,7 @@ interface GooglePickerBuilder {
   addView(view: GooglePickerDocsView): GooglePickerBuilder
   setOAuthToken(token: string): GooglePickerBuilder
   setDeveloperKey(apiKey: string): GooglePickerBuilder
+  setAppId(appId: string): GooglePickerBuilder
   setOrigin(origin: string): GooglePickerBuilder
   setCallback(callback: (data: GooglePickerResponse) => void): GooglePickerBuilder
   build(): GooglePickerInstance
@@ -94,6 +95,33 @@ let isPickerApiLoaded = false
  * openDrivePicker() throws a descriptive error (see below).
  */
 const PICKER_API_KEY = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
+
+/**
+ * Cloud project *number* of the OAuth client that mints Picker's token.
+ *
+ * Required, not cosmetic: this app requests only the `drive.file` scope, and
+ * Picker refuses to run a scoped session it cannot attribute to an app. Omit
+ * it and Picker silently discards the OAuth token passed to setOAuthToken(),
+ * falls back to its own sign-in prompt, and then fails the now-unauthenticated
+ * developer-key check with "The API developer key is invalid" — even when the
+ * key and its referrer restrictions are perfectly valid.
+ *
+ * Derived from the numeric prefix of the OAuth client id
+ * (`<projectNumber>-<hash>.apps.googleusercontent.com`), so it needs no
+ * separate env var; VITE_GOOGLE_PROJECT_NUMBER overrides it if the client
+ * ever comes from a different project than the API key.
+ */
+function resolveProjectNumber(): string | undefined {
+  const explicit = import.meta.env.VITE_GOOGLE_PROJECT_NUMBER as string | undefined
+  if (explicit) {
+    return explicit
+  }
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+  const match = /^(\d+)-/.exec(clientId ?? '')
+  return match ? match[1] : undefined
+}
+
+const PICKER_APP_ID = resolveProjectNumber()
 
 /**
  * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
@@ -603,6 +631,13 @@ export async function openDrivePicker(
   if (!PICKER_API_KEY) {
     throw new Error('VITE_GOOGLE_PICKER_API_KEY is not set — Google Picker requires an API key')
   }
+  if (!PICKER_APP_ID) {
+    throw new Error(
+      'Google Picker app id is not resolvable — set VITE_GOOGLE_PROJECT_NUMBER, ' +
+        'or ensure VITE_GOOGLE_CLIENT_ID is a standard `<projectNumber>-<hash>.apps.googleusercontent.com` id. ' +
+        'Picker rejects drive.file sessions without it.'
+    )
+  }
 
   await loadPickerApi()
 
@@ -636,10 +671,13 @@ export async function openDrivePicker(
     }
   }
 
-  // Configure Picker: OAuth token + API key are both required
+  // Configure Picker: OAuth token + API key + app id are all required. The
+  // app id is what makes Picker honor the drive.file-scoped token instead of
+  // discarding it and demanding its own sign-in.
   const picker = new PickerBuilder()
     .setOAuthToken(token)
     .setDeveloperKey(PICKER_API_KEY)
+    .setAppId(PICKER_APP_ID)
     .setOrigin(window.location.origin)
     .addView(docsView)
     .setCallback(handlePickerResponse)
