@@ -11,7 +11,8 @@ import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
 import { ImportDialog } from './components/import/ImportDialog'
 import { PasswordGate } from './components/PasswordGate'
-import { drive, getDriveAuthStatus, getBackupFileId, connectDrive, disconnectDrive, syncBackup } from './lib/drive'
+import { drive, getDriveAuthStatus, getBackupFileId, ensureFreshConnection, disconnectDrive, syncBackup } from './lib/drive'
+import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
 
 const categoryTabs = [
@@ -129,15 +130,10 @@ function App() {
   const handleConnect = useCallback(async () => {
     setSyncing(true)
     try {
-      let connection: any
-      try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Google auth timed out')), 10000)
-        )
-        connection = await Promise.race([connectDrive(), timeoutPromise])
-      } catch (timeoutError) {
-        throw timeoutError
-      }
+      const timeoutPromise = new Promise<Connection>((_, reject) =>
+        setTimeout(() => reject(new Error('Google auth timed out')), 10000)
+      )
+      const connection = await Promise.race<Connection>([ensureFreshConnection(), timeoutPromise])
 
       if (!connection) {
         throw new Error('No connection returned from Google Drive')

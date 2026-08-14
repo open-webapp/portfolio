@@ -26,7 +26,7 @@ vi.mock('./lib/drive', () => ({
     tokenValid: false,
   }),
   getBackupFileId: vi.fn().mockResolvedValue(null),
-  connectDrive: vi.fn(),
+  ensureFreshConnection: vi.fn(),
   disconnectDrive: vi.fn(),
   syncBackup: vi.fn(),
 }))
@@ -500,8 +500,8 @@ describe('Drive-sync activation', () => {
 
   it('resets syncing state to false when user cancels Google auth', async () => {
     vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
-    const connectDriveMock = vi.mocked((await import('./lib/drive')).connectDrive)
-    connectDriveMock.mockRejectedValueOnce(new Error('User cancelled the login flow'))
+    const ensureFreshConnectionMock = vi.mocked((await import('./lib/drive')).ensureFreshConnection)
+    ensureFreshConnectionMock.mockRejectedValueOnce(new Error('User cancelled the login flow'))
 
     await renderUnlockedApp()
 
@@ -526,6 +526,36 @@ describe('Drive-sync activation', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
       expect(screen.queryByRole('button', { name: 'Connecting...' })).toBeFalsy()
+    })
+  })
+
+  it('handleConnect uses ensureFreshConnection to reuse existing tokens', async () => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    const ensureFreshConnectionMock = vi.mocked((await import('./lib/drive')).ensureFreshConnection)
+    const mockConnection = {
+      email: 'test@example.com',
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      needsReauth: false,
+    }
+    ensureFreshConnectionMock.mockResolvedValue(mockConnection as any)
+
+    await renderUnlockedApp()
+
+    // Navigate to settings
+    const gearButton = screen.getByTitle('Settings')
+    fireEvent.click(gearButton)
+
+    await waitFor(() => {
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+    })
+
+    // Click Connect button and wait for connection to succeed
+    const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
+    fireEvent.click(connectButton)
+
+    // Verify connection succeeded by checking for email display
+    await waitFor(() => {
+      expect(screen.getByText('test@example.com')).toBeTruthy()
     })
   })
 })

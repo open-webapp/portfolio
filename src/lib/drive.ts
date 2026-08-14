@@ -136,7 +136,7 @@ let connectInFlight: Promise<Connection> | null = null
  * the cached token as-is while it is still valid; otherwise starts the
  * interactive Google auth flow — exactly once, even if several callers race.
  */
-async function ensureFreshConnection(): Promise<Connection> {
+export async function ensureFreshConnection(): Promise<Connection> {
   const conn = await getDriveConnection()
   if (isTokenUsable(conn)) {
     return conn
