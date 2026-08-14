@@ -669,4 +669,84 @@ describe('drive.ts Drive-sync wiring', () => {
       expect(fileId).toBeNull()
     })
   })
+
+  describe('openDrivePicker', () => {
+    let mockGapi: any
+    let builderCalls: any
+
+    beforeEach(() => {
+      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', 'fake-api-key')
+      builderCalls = {}
+      mockGapi = {
+        load: vi.fn((lib, opts) => {
+          if (lib === 'picker' && opts.callback) opts.callback()
+        }),
+        picker: {
+          PickerBuilder: class {
+            addView(view: any) { builderCalls.view = view; return this }
+            setOAuthToken(token: string) { builderCalls.token = token; return this }
+            setDeveloperKey(key: string) { builderCalls.apiKey = key; return this }
+            setOrigin(origin: string) { builderCalls.origin = origin; return this }
+            setCallback(cb: any) { builderCalls.callback = cb; return this }
+            build() { return { setVisible: vi.fn() } }
+          },
+          DocsView: class {
+            setParent(folderId: string) { builderCalls.parentFolderId = folderId; return this }
+          },
+        },
+      }
+      ;(window as any).gapi = mockGapi
+    })
+
+    afterEach(() => {
+      delete (window as any).gapi
+      vi.unstubAllEnvs()
+    })
+
+    it('passes OAuth token, API key, and default folder id to the Picker builder', async () => {
+      // Assumes the module's Drive mock already returns a folder id from
+      // project.ensureFolderPath() (same mock used by syncBackup/restoreBackup tests).
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+
+      expect(builderCalls.token).toBe('fake-token')
+      expect(builderCalls.apiKey).toBe('fake-api-key')
+      expect(builderCalls.parentFolderId).toBeTruthy() // OpenWebApp/Portfolio folder id
+    })
+
+    it('throws a descriptive error when VITE_GOOGLE_PICKER_API_KEY is not set', async () => {
+      vi.unstubAllEnvs()
+      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', '')
+      const { openDrivePicker } = await import('./drive')
+      await expect(openDrivePicker('fake-token', vi.fn(), vi.fn())).rejects.toThrow(/API key/i)
+    })
+
+    it('calls onSelect with the picked file id when Picker callback fires with action "picked"', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+      const { openDrivePicker } = await import('./drive')
+      const onSelect = vi.fn()
+      await openDrivePicker('fake-token', onSelect, vi.fn())
+      builderCalls.callback({ action: 'picked', docs: [{ id: 'picked-file-id', name: 'x', mimeType: 'application/json', type: 'file' }] })
+      expect(onSelect).toHaveBeenCalledWith('picked-file-id')
+    })
+
+    it('calls onCancel when Picker callback fires with action "cancel"', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+      const { openDrivePicker } = await import('./drive')
+      const onCancel = vi.fn()
+      await openDrivePicker('fake-token', vi.fn(), onCancel)
+      builderCalls.callback({ action: 'cancel' })
+      expect(onCancel).toHaveBeenCalled()
+    })
+
+    it('loads the Picker API library only once across repeated calls', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+      const firstLoadCalls = mockGapi.load.mock.calls.length
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+      expect(mockGapi.load.mock.calls.length).toBe(firstLoadCalls) // cached, no second load
+    })
+  })
 })

@@ -5,6 +5,48 @@ import { decryptState, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
 
 /**
+ * Google Picker API types and window augmentation.
+ * The Picker library is loaded dynamically; these interfaces
+ * support type-checking the initialization and picker builder.
+ */
+interface GooglePickerDocsView {
+  setParent(folderId: string): GooglePickerDocsView
+}
+
+interface GooglePickerBuilder {
+  addView(view: GooglePickerDocsView): GooglePickerBuilder
+  setOAuthToken(token: string): GooglePickerBuilder
+  setDeveloperKey(apiKey: string): GooglePickerBuilder
+  setOrigin(origin: string): GooglePickerBuilder
+  setCallback(callback: (data: GooglePickerResponse) => void): GooglePickerBuilder
+  build(): GooglePickerInstance
+}
+
+interface GooglePickerInstance {
+  setVisible(visible: boolean): void
+}
+
+interface GooglePickerResponse {
+  action: string
+  docs?: Array<{
+    id: string
+    name: string
+    mimeType: string
+    type: string
+  }>
+}
+
+interface GapiWindow extends Window {
+  gapi?: {
+    load: (lib: string, opts: { callback: () => void }) => void
+    picker?: {
+      PickerBuilder: new () => GooglePickerBuilder
+      DocsView: new () => GooglePickerDocsView
+    }
+  }
+}
+
+/**
  * Single app-wide drive-sync facade. `folderPath` here is load-bearing and
  * silent-failure-prone: a wrong value does not error, it just creates a
  * fresh EMPTY Drive folder, and every existing user's backup appears to
@@ -31,6 +73,23 @@ const TOKEN_REAUTH_BUFFER_MS = 5 * 60 * 1000
  * Prevents hangs when files have permission issues or are in an inconsistent state.
  */
 const DRIVE_IO_TIMEOUT_MS = 30 * 1000
+
+// Picker API loader cache: prevent multiple concurrent loadPickerApi() calls
+let pickerApiLoadPromise: Promise<void> | null = null
+
+/**
+ * Tracks if Picker library is available (gapi.picker loaded).
+ * Once loaded, remains loaded for the lifetime of the app.
+ */
+let isPickerApiLoaded = false
+
+/**
+ * Picker API key, required alongside the OAuth token (Google Picker
+ * rejects init without both). Read once from env; undefined here means
+ * misconfiguration, not "optional" — Picker will fail to open and
+ * openDrivePicker() throws a descriptive error (see below).
+ */
+const PICKER_API_KEY = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
 
 /**
  * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
@@ -88,6 +147,16 @@ export class DriveDecryptError extends Error {
  */
 export async function getDriveConnection(): Promise<Connection | null> {
   return drive.project(APP_PROJECT_ID).getConnection()
+}
+
+/**
+ * Get a fresh OAuth access token for Google Picker.
+ * Required to initialize the Picker widget. Reuses a still-valid cached
+ * token; otherwise acquires a fresh one interactively (opens a Google auth
+ * window if the cached token has expired or scopes are incomplete).
+ */
+export async function getAccessTokenForPicker(): Promise<string> {
+  return drive.project(APP_PROJECT_ID).getAccessToken({ interactive: true })
 }
 
 /**
@@ -414,6 +483,127 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
     console.error('Failed to restore backup from picked Drive file:', error)
     throw error
   }
+}
+
+/**
+ * Load the Google Picker API library from Google's CDN.
+ * Caches the load promise to prevent multiple concurrent load attempts.
+ * Once loaded, the library remains available for the lifetime of the app.
+ * @throws Throws if the library fails to load
+ */
+async function loadPickerApi(): Promise<void> {
+  if (isPickerApiLoaded) {
+    return
+  }
+
+  if (pickerApiLoadPromise) {
+    return pickerApiLoadPromise
+  }
+
+  pickerApiLoadPromise = new Promise<void>((resolve, reject) => {
+    const gapiWindow = window as GapiWindow
+    if (!gapiWindow.gapi) {
+      const script = document.createElement('script')
+      script.src = 'https://apis.google.com/js/platform.js'
+      script.onload = () => {
+        if (gapiWindow.gapi?.load) {
+          gapiWindow.gapi.load('picker', {
+            callback: () => {
+              isPickerApiLoaded = true
+              resolve()
+            },
+          })
+        } else {
+          reject(new Error('gapi.load not available after script loaded'))
+        }
+      }
+      script.onerror = () => {
+        pickerApiLoadPromise = null
+        reject(new Error('Failed to load Google Picker API from https://apis.google.com/js/platform.js'))
+      }
+      document.head.appendChild(script)
+    } else if (gapiWindow.gapi.load) {
+      gapiWindow.gapi.load('picker', {
+        callback: () => {
+          isPickerApiLoaded = true
+          resolve()
+        },
+      })
+    } else {
+      reject(new Error('gapi.load not available'))
+    }
+  })
+
+  return pickerApiLoadPromise
+}
+
+/**
+ * Open a Google Picker dialog to select a file from the user's Drive.
+ * Always starts in the `OpenWebApp/Portfolio` folder (same folder
+ * syncBackup/restoreBackup use), resolved via ensureFolderPath(), but
+ * the user can navigate to any other folder they have access to using
+ * Picker's built-in navigation — nothing is restricted beyond the
+ * starting view.
+ *
+ * Requires a valid, fresh OAuth token AND a Picker API key
+ * (VITE_GOOGLE_PICKER_API_KEY) — Picker needs both to initialize.
+ * Call `ensureFreshConnection()` before calling this to guarantee a
+ * usable token.
+ *
+ * @param token The OAuth access token to authenticate Picker with
+ * @param onSelect Callback when user selects a file: passed the Drive file id
+ * @param onCancel Callback when user closes Picker without selecting
+ * @throws Throws if Picker library fails to load, or if
+ *   VITE_GOOGLE_PICKER_API_KEY is not configured
+ */
+export async function openDrivePicker(
+  token: string,
+  onSelect: (fileId: string) => void,
+  onCancel: () => void
+): Promise<void> {
+  if (!PICKER_API_KEY) {
+    throw new Error('VITE_GOOGLE_PICKER_API_KEY is not set — Google Picker requires an API key')
+  }
+
+  await loadPickerApi()
+
+  const gapiWindow = window as GapiWindow
+  if (!gapiWindow.gapi?.picker?.PickerBuilder) {
+    throw new Error('Google Picker API not available')
+  }
+
+  // Default Picker's starting folder to the app's own OpenWebApp/Portfolio
+  // Drive folder — same folder syncBackup/restoreBackup read/write.
+  const project = drive.project(APP_PROJECT_ID)
+  const folderId = await withTimeout(
+    project.ensureFolderPath(),
+    DRIVE_IO_TIMEOUT_MS,
+    'ensureFolderPath'
+  )
+
+  const docsView = new gapiWindow.gapi.picker.DocsView().setParent(folderId)
+
+  // Callback from Picker: check action and extract file id
+  const handlePickerResponse = (data: GooglePickerResponse) => {
+    if (data.action === 'picked' && data.docs && data.docs.length > 0) {
+      const fileId = data.docs[0].id
+      onSelect(fileId)
+    } else if (data.action === 'cancel') {
+      onCancel()
+    }
+  }
+
+  // Configure Picker: OAuth token + API key are both required
+  const picker = new gapiWindow.gapi.picker.PickerBuilder()
+    .setOAuthToken(token)
+    .setDeveloperKey(PICKER_API_KEY)
+    .setOrigin(window.location.origin)
+    .addView(docsView)
+    .setCallback(handlePickerResponse)
+    .build()
+
+  // Show the Picker dialog
+  picker.setVisible(true)
 }
 
 /**
