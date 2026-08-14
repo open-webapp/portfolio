@@ -250,6 +250,13 @@ export async function getBackupFileId(): Promise<string | null> {
       console.warn('Drive token expired; skipping backup link lookup:', error)
       return null
     }
+    // Timeout or permission errors are not fatal for a passive lookup —
+    // the folder may not exist yet, or may be inaccessible. Return null
+    // and let sync/restore handle creating the folder or showing errors.
+    if (error instanceof Error && error.message.includes('timed out')) {
+      console.warn('Drive folder lookup timed out; assuming no backup exists:', error)
+      return null
+    }
     console.error('Failed to look up backup file on Drive:', error)
     throw error
   }
