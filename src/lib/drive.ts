@@ -278,7 +278,10 @@ async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppSt
     'files.read'
   )
 
+  console.log('[readAndDecryptFile] fileId:', fileId, 'content type:', typeof content, 'is null:', content === null, 'is empty string:', content === '', 'content sample:', typeof content === 'string' ? content.substring(0, 100) : String(content).substring(0, 100))
+
   if (!content) {
+    console.log('[readAndDecryptFile] content is falsy, returning null')
     return null
   }
 
@@ -287,19 +290,24 @@ async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppSt
   // Handle case where content might be a Blob, Buffer, or other non-string type
   if (typeof content === 'string') {
     contentStr = content
+    console.log('[readAndDecryptFile] content is string, length:', contentStr.length)
   } else if (content instanceof ArrayBuffer || content instanceof Uint8Array) {
     // Convert binary data to string
     const decoder = new TextDecoder()
     contentStr = decoder.decode(content)
+    console.log('[readAndDecryptFile] converted ArrayBuffer/Uint8Array to string, length:', contentStr.length)
   } else if (typeof content === 'object' && 'text' in content && typeof (content as any).text === 'function') {
     // Handle Blob type (has a text() method)
     contentStr = await (content as any).text()
+    console.log('[readAndDecryptFile] converted Blob to string, length:', contentStr.length)
   } else {
     // Unrecognized content type
+    console.log('[readAndDecryptFile] unrecognized content type:', typeof content, Object.prototype.toString.call(content))
     return null
   }
 
   if (!contentStr) {
+    console.log('[readAndDecryptFile] contentStr is empty after conversion')
     return null
   }
 
@@ -311,10 +319,13 @@ async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppSt
   try {
     envelope = JSON.parse(contentStr) as EncryptedEnvelope
     salt = base64ToBytes(envelope.salt)
+    console.log('[readAndDecryptFile] successfully parsed envelope and salt')
   } catch (parseError) {
     // If we can't parse the JSON or extract the salt, treat it as an
     // unreadable file rather than a decryption error
+    console.log('[readAndDecryptFile] parse error:', parseError instanceof Error ? parseError.message : String(parseError))
     if (parseError instanceof Error && (parseError.name === 'SyntaxError' || parseError.name === 'TypeError')) {
+      console.log('[readAndDecryptFile] treating parse error as unreadable file')
       return null
     }
     throw parseError
