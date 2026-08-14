@@ -1,25 +1,9 @@
 import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
-import {
-  restoreBackup,
-  restoreBackupFromFileId,
-  pickDriveFile,
-  getDriveAuthStatus,
-  syncBackup,
-  DriveDecryptError,
-} from '../lib/drive'
-import { deriveKey, decryptState, generateSalt } from '../lib/crypto'
+import { getDriveAuthStatus, syncBackup } from '../lib/drive'
+import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
-
-function DrivePickerFallback({ pickingFile, onPick }: { pickingFile: boolean; onPick: () => void }) {
-  return (
-    <div style={{ marginTop: 'var(--space-3)' }}>
-      <button className="btn btn-secondary" onClick={onPick} disabled={pickingFile}>
-        {pickingFile ? 'Opening Drive...' : 'Search Google Drive...'}
-      </button>
-    </div>
-  )
-}
+import { DriveRestorePanel } from './DriveRestorePanel'
 
 export interface SettingsPageProps {
   state: AppState
@@ -34,7 +18,6 @@ export interface SettingsPageProps {
   setSyncing: (v: boolean) => void
   handleConnect: () => void
   handleDisconnect: () => void
-  handleSync: () => void
   settingsSection: 'drive' | 'encryption'
   setSettingsSection: (s: 'drive' | 'encryption') => void
 }
@@ -55,7 +38,6 @@ export function SettingsPage({
   setSyncing,
   handleConnect,
   handleDisconnect,
-  handleSync,
   settingsSection,
   setSettingsSection,
 }: SettingsPageProps) {
@@ -68,94 +50,6 @@ export function SettingsPage({
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
   const [driveSyncWarning, setDriveSyncWarning] = useState<string | null>(null)
 
-  // Cross-password restore local state
-  const [crossPasswordPrompt, setCrossPasswordPrompt] = useState<{
-    salt: Uint8Array
-    envelope: Parameters<typeof decryptState>[0]
-  } | null>(null)
-  const [backupPasswordInput, setBackupPasswordInput] = useState('')
-  const [crossPasswordError, setCrossPasswordError] = useState<string | null>(null)
-  const [restoringWithBackupPassword, setRestoringWithBackupPassword] = useState(false)
-
-  // Fallback path when no backup exists under this account's own Drive
-  // folder — e.g. the backup was shared with this account by a different
-  // Google account rather than synced from it (see pickDriveFile's docs).
-  const [noBackupFound, setNoBackupFound] = useState(false)
-  const [pickingFile, setPickingFile] = useState(false)
-
-  const handleRestore = useCallback(async () => {
-    if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
-
-    setSyncing(true)
-    setNoBackupFound(false)
-    try {
-      const restored = await restoreBackup(sessionKey)
-      if (restored) {
-        dispatch({ type: '__SET_STATE', newState: restored })
-        alert('Restored from Drive')
-      } else {
-        setNoBackupFound(true)
-      }
-    } catch (error) {
-      if (error instanceof DriveDecryptError) {
-        setCrossPasswordPrompt({ salt: error.salt, envelope: error.envelope })
-        setCrossPasswordError(null)
-        setBackupPasswordInput('')
-        return
-      }
-      console.error('Restore failed:', error)
-      alert(`Restore failed: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setSyncing(false)
-    }
-  }, [dispatch, sessionKey, setSyncing])
-
-  const handlePickFromDrive = useCallback(async () => {
-    setPickingFile(true)
-    try {
-      const picked = await pickDriveFile()
-      if (!picked) return // user cancelled the picker
-
-      const restored = await restoreBackupFromFileId(picked.id, sessionKey)
-      dispatch({ type: '__SET_STATE', newState: restored })
-      setNoBackupFound(false)
-      setCrossPasswordPrompt(null)
-      setCrossPasswordError(null)
-      alert(`Restored from "${picked.name}"`)
-    } catch (error) {
-      if (error instanceof DriveDecryptError) {
-        setCrossPasswordPrompt({ salt: error.salt, envelope: error.envelope })
-        setCrossPasswordError(null)
-        setBackupPasswordInput('')
-        return
-      }
-      console.error('Restore from picked Drive file failed:', error)
-      alert(`Restore failed: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setPickingFile(false)
-    }
-  }, [dispatch, sessionKey])
-
-  const handleCrossPasswordSubmit = useCallback(async () => {
-    if (!crossPasswordPrompt) return
-    setCrossPasswordError(null)
-    setRestoringWithBackupPassword(true)
-    try {
-      const retryKey = await deriveKey(backupPasswordInput, crossPasswordPrompt.salt)
-      const decryptedState = await decryptState(crossPasswordPrompt.envelope, retryKey)
-      dispatch({ type: '__SET_STATE', newState: decryptedState })
-      onKeyChange(retryKey, crossPasswordPrompt.salt)
-      setCrossPasswordPrompt(null)
-      setBackupPasswordInput('')
-      alert('Restored from Drive')
-    } catch (error) {
-      console.error('Cross-password restore failed:', error)
-      setCrossPasswordError('Incorrect encryption password')
-    } finally {
-      setRestoringWithBackupPassword(false)
-      setSyncing(false)
-    }
-  }, [crossPasswordPrompt, backupPasswordInput, dispatch, onKeyChange, setSyncing])
 
   const handleChangePassword = useCallback(async () => {
     setPasswordError(null)
@@ -244,134 +138,21 @@ export function SettingsPage({
       {settingsSection === 'drive' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Google Drive Sync</div>
-
-        {/* Google Account subsection */}
-        <div style={{ marginBottom: 'var(--space-4)' }}>
-          <div className="text-muted" style={{
-            fontSize: '11px',
-            fontWeight: 600,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            marginBottom: 'var(--space-2)'
-          }}>
-            Google Account
-          </div>
-
-          {!driveReady ? (
-            <button className="btn btn-primary blueprint" onClick={handleConnect} disabled={syncing}>
-              {syncing ? 'Connecting...' : 'Connect Google Account'}
-            </button>
-          ) : (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '10px 12px',
-              border: '1px solid var(--color-divider)',
-              backgroundColor: 'var(--color-surface)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: '#2BAE66',
-                    flexShrink: 0
-                  }}
-                />
-                <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
-                  {driveEmail || 'Connected'}
-                </span>
-              </div>
-              <span
-                onClick={handleDisconnect}
-                style={{
-                  fontSize: '12px',
-                  color: 'var(--color-accent-700)',
-                  cursor: 'pointer'
-                }}
-              >
-                Disconnect
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Drive Sync Actions (only when connected) */}
-        {driveReady && (
-          <div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <button className="btn btn-primary blueprint" onClick={handleSync} disabled={syncing}>
-                {syncing ? 'Syncing...' : 'Sync Now'}
-              </button>
-              <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
-                {syncing ? 'Restoring...' : 'Restore from Drive'}
-              </button>
-            </div>
-            {backupFileId && (
-              <p style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>
-                <a
-                  href={`https://drive.google.com/file/d/${backupFileId}/view`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View backup in Google Drive
-                </a>
-              </p>
-            )}
-            {noBackupFound && (
-              <div style={{ marginTop: 'var(--space-3)' }}>
-                <p style={{ fontSize: '13px', marginBottom: 'var(--space-2)' }}>
-                  No backup found in this account's own Drive folder. If someone shared a
-                  {' '}<code>portfolio-state.json</code> backup with you instead, search for it directly:
-                </p>
-                <DrivePickerFallback pickingFile={pickingFile} onPick={handlePickFromDrive} />
-              </div>
-            )}
-          </div>
-        )}
-        {crossPasswordPrompt && (
-          <div style={{ marginTop: 'var(--space-4)' }}>
-            <p style={{ fontSize: '13px', marginBottom: 'var(--space-3)' }}>
-              This backup was saved with a different encryption password. Enter that password to restore:
-            </p>
-            <div className="field">
-              <label>Backup Encryption Password</label>
-              <input
-                className="input"
-                type="password"
-                value={backupPasswordInput}
-                onChange={(e) => setBackupPasswordInput(e.target.value)}
-                autoComplete="current-password"
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <button
-                className="btn btn-primary blueprint"
-                onClick={handleCrossPasswordSubmit}
-                disabled={restoringWithBackupPassword}
-              >
-                {restoringWithBackupPassword ? 'Restoring...' : 'Restore with this password'}
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  setCrossPasswordPrompt(null)
-                  setBackupPasswordInput('')
-                  setCrossPasswordError(null)
-                }}
-                disabled={restoringWithBackupPassword}
-              >
-                Cancel
-              </button>
-            </div>
-            {crossPasswordError && (
-              <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{crossPasswordError}</p>
-            )}
-            {crossPasswordError && (<><p style={{marginTop:'var(--space-3)', marginBottom:'var(--space-2)', fontSize:'13px'}}>If this backup came from a different Google account, search Drive for the right file instead:</p><DrivePickerFallback pickingFile={pickingFile} onPick={handlePickFromDrive} /></>)}
-          </div>
-        )}
+        <DriveRestorePanel
+          driveReady={driveReady}
+          driveEmail={driveEmail}
+          backupFileId={backupFileId}
+          syncing={syncing}
+          setSyncing={setSyncing}
+          handleConnect={handleConnect}
+          handleDisconnect={handleDisconnect}
+          restoreKey={sessionKey}
+          restoreSalt={sessionSalt}
+          onRestored={(state, key, salt) => {
+            dispatch({ type: '__SET_STATE', newState: state })
+            onKeyChange(key, salt)
+          }}
+        />
       </section>
       )}
 

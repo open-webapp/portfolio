@@ -15,7 +15,7 @@ Nav renders on all views (dashboard, accounts, settings). Single always-visible 
 - **Brand**: `.nav-brand` "Ledger".
 - **Dashboard tab**: labeled "Dashboard", active when `state.view === 'dashboard'`, dispatches `SET_VIEW` on click.
 - **Accounts tab**: labeled "Accounts", active when `state.view === 'accounts'`, dispatches `SET_VIEW` on click. Neither tab is active when viewing Settings.
-- **Sync Now icon button** (refresh icon, `title="Sync now"`): shown only when Drive is connected (`driveReady`); disabled while a sync is in progress (`syncing`). Triggers the same sync action as the Settings page's own "Sync Now" button.
+- **Sync Now icon button** (refresh icon, `title="Sync now"`): shown only when Drive is connected (`driveReady`); disabled while a sync is in progress (`syncing`). Triggers a backup sync to Google Drive.
 - **Settings gear** (SVG icon): navigates to the Settings page (resets `settingsSection` to "Google Drive" on every open).
 
 ## Overview card

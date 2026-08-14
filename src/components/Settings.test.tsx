@@ -48,7 +48,6 @@ const mockOnKeyChange = vi.fn()
 const mockSetSyncing = vi.fn()
 const mockHandleConnect = vi.fn()
 const mockHandleDisconnect = vi.fn()
-const mockHandleSync = vi.fn()
 const mockSetSettingsSection = vi.fn()
 
 const notConnectedAuthStatus: driveModule.DriveAuthStatus = {
@@ -100,7 +99,6 @@ describe('SettingsPage', () => {
       setSyncing: mockSetSyncing,
       handleConnect: mockHandleConnect,
       handleDisconnect: mockHandleDisconnect,
-      handleSync: mockHandleSync,
       settingsSection: 'drive',
       setSettingsSection: mockSetSettingsSection,
     }
@@ -149,26 +147,22 @@ describe('SettingsPage', () => {
   })
 
   describe('Connected state', () => {
-    it('renders connected state with Sync Now, Restore from Drive, and Disconnect buttons', () => {
+    it('renders connected state with Restore from Drive and Disconnect', () => {
       renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-      expect(screen.getByRole('button', { name: 'Sync Now' })).toBeTruthy()
       expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
 
       // Should show connected email and disconnect link
       expect(screen.getByText('test@example.com')).toBeTruthy()
       expect(screen.getByText('Disconnect')).toBeTruthy()
 
-      // Should not show Connect button
+      // Should not show Connect button or Sync Now button
       expect(screen.queryByRole('button', { name: 'Connect Google Account' })).toBeFalsy()
+      expect(screen.queryByRole('button', { name: /Sync Now/ })).toBeFalsy()
     })
 
-    it('connected buttons use correct btn classes (Sync Now blueprint, Restore secondary)', () => {
+    it('Restore from Drive button uses correct classes', () => {
       renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const syncButton = screen.getByRole('button', { name: 'Sync Now' })
-      expect(syncButton.className).toContain('btn btn-primary')
-      expect(syncButton.className).toContain('blueprint')
 
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       expect(restoreButton.className).toContain('btn btn-secondary')
@@ -190,21 +184,9 @@ describe('SettingsPage', () => {
       expect(link.getAttribute('target')).toBe('_blank')
     })
 
-    it('clicking Sync Now calls the handleSync prop', () => {
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
-      const syncButton = screen.getByRole('button', { name: 'Sync Now' })
-      fireEvent.click(syncButton)
-
-      expect(mockHandleSync).toHaveBeenCalledTimes(1)
-    })
-
-    it('shows "Syncing..." text and disables Sync Now / Restore when syncing prop is true', () => {
+    it('shows "Restoring..." text and disables Restore when syncing prop is true', () => {
       renderSettings({ driveReady: true, driveEmail: 'test@example.com', syncing: true })
-
-      const syncButton = screen.getByRole('button', { name: 'Syncing...' })
-      expect(syncButton).toBeTruthy()
-      expect((syncButton as HTMLButtonElement).disabled).toBe(true)
 
       const restoreButton = screen.getByRole('button', { name: 'Restoring...' })
       expect(restoreButton).toBeTruthy()
