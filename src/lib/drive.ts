@@ -123,6 +123,9 @@ function resolveProjectNumber(): string | undefined {
 
 const PICKER_APP_ID = resolveProjectNumber()
 
+/** Google's API loader. Exported for tests to pin — see loadPickerApi(). */
+export const PICKER_LOADER_SRC = 'https://apis.google.com/js/api.js'
+
 /**
  * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
  * equivalent helper is private; kept in sync with its behavior rather than
@@ -562,7 +565,12 @@ async function loadPickerApi(): Promise<void> {
 
     if (!gapiWindow.gapi) {
       const script = document.createElement('script')
-      script.src = 'https://apis.google.com/js/platform.js'
+      // api.js, NOT platform.js. platform.js is the legacy Sign-In platform
+      // library; it happens to expose gapi.load so gapi.load('picker') appears
+      // to work, but it installs its own gapi.iframes context and Picker ends
+      // up opened with a `parent` that is not this page. Picker validates the
+      // developer key against that parent and rejects the frame with a 401.
+      script.src = PICKER_LOADER_SRC
       script.onload = () => {
         if (gapiWindow.gapi?.load) {
           try {
@@ -582,7 +590,7 @@ async function loadPickerApi(): Promise<void> {
       script.onerror = () => {
         clearTimeout(timeoutHandle)
         pickerApiLoadPromise = null
-        reject(new Error('Failed to load Google Picker API from https://apis.google.com/js/platform.js'))
+        reject(new Error(`Failed to load Google Picker API from ${PICKER_LOADER_SRC}`))
       }
       document.head.appendChild(script)
     } else if (gapiWindow.gapi.load) {

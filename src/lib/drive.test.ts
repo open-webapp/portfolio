@@ -717,6 +717,35 @@ describe('drive.ts Drive-sync wiring', () => {
       expect(builderCalls.parentFolderId).toBeTruthy() // OpenWebApp/Portfolio folder id
     })
 
+    // Regression: platform.js (the legacy Sign-In library) also exposes
+    // gapi.load, so loading Picker through it appears to work — but it
+    // installs its own gapi.iframes context and Picker opens with a `parent`
+    // that isn't this page, which Google rejects with a 401 on the frame.
+    it('loads Picker from api.js, not platform.js', async () => {
+      delete (window as any).gapi
+      const appended: string[] = []
+      const appendSpy = vi
+        .spyOn(document.head, 'appendChild')
+        .mockImplementation(((node: any) => {
+          if (node?.src) appended.push(node.src)
+          return node
+        }) as any)
+
+      try {
+        const { openDrivePicker } = await import('./drive')
+        mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+        // Never resolves (the script never loads); we only care about the src.
+        void openDrivePicker('fake-token', vi.fn(), vi.fn()).catch(() => {})
+        await Promise.resolve()
+
+        expect(appended).toContain('https://apis.google.com/js/api.js')
+        expect(appended.join(' ')).not.toContain('platform.js')
+      } finally {
+        appendSpy.mockRestore()
+        ;(window as any).gapi = mockGapi
+      }
+    })
+
     // Regression: without setAppId(), Picker discards the drive.file-scoped
     // OAuth token, shows its own sign-in prompt, and then reports "The API
     // developer key is invalid" — the picker UI never appears.
