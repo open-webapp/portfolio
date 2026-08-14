@@ -3,16 +3,41 @@ import type { AppState } from '../lib/state'
 import {
   restoreBackup,
   restoreBackupFromFileId,
-  pickDriveFile,
+  extractDriveFileId,
   DriveDecryptError,
 } from '../lib/drive'
 import { deriveKey, decryptState } from '../lib/crypto'
 
-function DrivePickerFallback({ pickingFile, onPick }: { pickingFile: boolean; onPick: () => void }) {
+function DrivePasteFallback({
+  value,
+  onChange,
+  onSubmit,
+  error,
+  restoring,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onSubmit: () => void
+  error: string | null
+  restoring: boolean
+}) {
   return (
     <div style={{ marginTop: 'var(--space-3)' }}>
-      <button className="btn btn-secondary" onClick={onPick} disabled={pickingFile}>
-        {pickingFile ? 'Opening Drive...' : 'Search Google Drive...'}
+      <input
+        className="input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Paste Google Drive file link or ID"
+        disabled={restoring}
+        style={{ marginBottom: 'var(--space-2)', width: '100%' }}
+      />
+      {error && (
+        <div style={{ color: 'var(--color-error)', fontSize: '0.85rem', marginBottom: 'var(--space-2)' }}>
+          {error}
+        </div>
+      )}
+      <button className="btn btn-secondary" onClick={onSubmit} disabled={restoring}>
+        {restoring ? 'Loading...' : 'Load file'}
       </button>
     </div>
   )
@@ -56,7 +81,9 @@ export function DriveRestorePanel({
   // folder — e.g. the backup was shared with this account by a different
   // Google account rather than synced from it
   const [noBackupFound, setNoBackupFound] = useState(false)
-  const [pickingFile, setPickingFile] = useState(false)
+  const [pasteInput, setPasteInput] = useState('')
+  const [pasteError, setPasteError] = useState<string | null>(null)
+  const [loadingPastedFile, setLoadingPastedFile] = useState(false)
 
   const handleRestore = useCallback(async () => {
     if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
@@ -85,18 +112,24 @@ export function DriveRestorePanel({
     }
   }, [restoreKey, restoreSalt, onRestored, setSyncing])
 
-  const handlePickFromDrive = useCallback(async () => {
-    setPickingFile(true)
-    try {
-      const picked = await pickDriveFile()
-      if (!picked) return // user cancelled the picker
+  const handleLoadPastedFile = useCallback(async () => {
+    const fileId = extractDriveFileId(pasteInput)
+    if (!fileId) {
+      setPasteError("Couldn't find a file ID in that link")
+      return
+    }
 
-      const restored = await restoreBackupFromFileId(picked.id, restoreKey)
+    if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
+
+    setLoadingPastedFile(true)
+    setPasteError(null)
+    try {
+      const restored = await restoreBackupFromFileId(fileId, restoreKey)
       onRestored(restored, restoreKey, restoreSalt)
       setNoBackupFound(false)
       setCrossPasswordPrompt(null)
       setCrossPasswordError(null)
-      alert(`Restored from "${picked.name}"`)
+      alert('Restored from Drive')
     } catch (error) {
       if (error instanceof DriveDecryptError) {
         setCrossPasswordPrompt({ salt: error.salt, envelope: error.envelope })
@@ -104,12 +137,12 @@ export function DriveRestorePanel({
         setBackupPasswordInput('')
         return
       }
-      console.error('Restore from picked Drive file failed:', error)
+      console.error('Restore from pasted file ID failed:', error)
       alert(`Restore failed: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
-      setPickingFile(false)
+      setLoadingPastedFile(false)
     }
-  }, [restoreKey, restoreSalt, onRestored])
+  }, [pasteInput, restoreKey, restoreSalt, onRestored])
 
   const handleCrossPasswordSubmit = useCallback(async () => {
     if (!crossPasswordPrompt) return
@@ -194,7 +227,15 @@ export function DriveRestorePanel({
       )}
 
       {/* No Backup Found Fallback */}
-      {noBackupFound && <DrivePickerFallback pickingFile={pickingFile} onPick={handlePickFromDrive} />}
+      {noBackupFound && (
+        <DrivePasteFallback
+          value={pasteInput}
+          onChange={setPasteInput}
+          onSubmit={handleLoadPastedFile}
+          error={pasteError}
+          restoring={loadingPastedFile}
+        />
+      )}
 
       {/* Cross-Password Prompt */}
       {crossPasswordPrompt && (
@@ -236,7 +277,15 @@ export function DriveRestorePanel({
               Cancel
             </button>
           </div>
-          {crossPasswordError && <DrivePickerFallback pickingFile={pickingFile} onPick={handlePickFromDrive} />}
+          {crossPasswordError && (
+            <DrivePasteFallback
+              value={pasteInput}
+              onChange={setPasteInput}
+              onSubmit={handleLoadPastedFile}
+              error={pasteError}
+              restoring={loadingPastedFile}
+            />
+          )}
         </div>
       )}
     </>

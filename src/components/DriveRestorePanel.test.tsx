@@ -20,7 +20,7 @@ vi.mock('../lib/drive', () => {
   return {
     restoreBackup: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
-    pickDriveFile: vi.fn(),
+    extractDriveFileId: vi.fn(),
     DriveDecryptError,
   }
 })
@@ -212,27 +212,29 @@ describe('DriveRestorePanel', () => {
       ).toBeFalsy()
     })
 
-    it('edge: restoreBackup resolves null → "Search Google Drive..." fallback appears; picking a file that decrypts successfully calls onRestored', async () => {
+    it('edge: restoreBackup resolves null → paste fallback appears; pasting a file ID and loading successfully calls onRestored', async () => {
       const restoredState = initialState()
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-id', name: 'portfolio-state.json' })
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('file-id-123')
       vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(restoredState)
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
-      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
-      expect(pickButton).toBeTruthy()
+      const pasteInput = await screen.findByPlaceholderText('Paste Google Drive file link or ID')
+      expect(pasteInput).toBeTruthy()
 
-      fireEvent.click(pickButton)
+      fireEvent.change(pasteInput, { target: { value: 'https://drive.google.com/file/d/file-id-123/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       await waitFor(() => {
-        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-id', testRestoreKey)
+        expect(driveModule.extractDriveFileId).toHaveBeenCalledWith('https://drive.google.com/file/d/file-id-123/view')
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-id-123', testRestoreKey)
         expect(mockOnRestored).toHaveBeenCalledWith(restoredState, testRestoreKey, testRestoreSalt)
       })
 
-      expect(global.alert).toHaveBeenCalledWith('Restored from "portfolio-state.json"')
+      expect(global.alert).toHaveBeenCalledWith('Restored from Drive')
     })
 
     it('error: restoreBackup throws DriveDecryptError → inline password prompt appears (not window.confirm, not full gate)', async () => {
@@ -304,7 +306,7 @@ describe('DriveRestorePanel', () => {
       expect(screen.queryByText(/This backup was saved with a different encryption password/)).toBeFalsy()
     })
 
-    it('error → error: wrong password on the cross-password prompt shows "Incorrect encryption password" and keeps the prompt open (retryable), and reveals the picker fallback', async () => {
+    it('error → error: wrong password on the cross-password prompt shows "Incorrect encryption password" and keeps the prompt open (retryable), and reveals the paste fallback', async () => {
       const backupSalt = generateSalt()
       const restoredState = initialState()
       const envelope = await encryptState(restoredState, testRestoreKey, backupSalt)
@@ -336,17 +338,17 @@ describe('DriveRestorePanel', () => {
       expect(screen.getByRole('button', { name: 'Restore with this password' })).toBeTruthy()
       expect(mockOnRestored).not.toHaveBeenCalled()
 
-      // Fallback button should now be visible
-      expect(screen.getByRole('button', { name: 'Search Google Drive...' })).toBeTruthy()
+      // Paste fallback should now be visible
+      expect(screen.getByPlaceholderText('Paste Google Drive file link or ID')).toBeTruthy()
     })
   })
 
-  describe('Picker fallback chaining', () => {
+  describe('Paste URL fallback chaining', () => {
     beforeEach(() => {
       vi.mocked(global.confirm).mockReturnValue(true)
     })
 
-    it('error → error: picking a file that also fails to decrypt shows blank password field (not pre-filled)', async () => {
+    it('error → error: pasting a file ID that also fails to decrypt shows blank password field (not pre-filled)', async () => {
       const backupSalt1 = generateSalt()
       const backupState = initialState()
       const envelope1 = await encryptState(backupState, testRestoreKey, backupSalt1)
@@ -355,10 +357,10 @@ describe('DriveRestorePanel', () => {
       )
 
       // First wrong password attempt
-      // Then picking a file that also fails with a different salt/envelope
+      // Then pasting a file ID that also fails with a different salt/envelope
       const backupSalt2 = generateSalt()
       const envelope2 = await encryptState(backupState, testRestoreKey, backupSalt2)
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-file-b', name: 'another-backup.json' })
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('file-id-b')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt2, envelope2)
       )
@@ -381,13 +383,14 @@ describe('DriveRestorePanel', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Click fallback
-      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(fallbackButton)
+      // Click fallback and paste a file ID
+      const pasteInput = screen.getByPlaceholderText('Paste Google Drive file link or ID')
+      fireEvent.change(pasteInput, { target: { value: 'file-id-b' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
-      // Wait for the new cross-password prompt (from the picked file's envelope)
+      // Wait for the new cross-password prompt (from the pasted file's envelope)
       await waitFor(() => {
-        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-file-b', expect.anything())
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-id-b', expect.anything())
       })
 
       // The old error should be cleared
@@ -403,14 +406,14 @@ describe('DriveRestorePanel', () => {
       expect(updatedPasswordInputs[0].value).toBe('')
     })
 
-    it('T5.5: Cancelling the picker from crossPasswordError fallback does nothing', async () => {
+    it('edge: pasting invalid input from crossPasswordError fallback shows error message', async () => {
       const backupSalt = generateSalt()
       const restoredState = initialState()
       const envelope = await encryptState(restoredState, testRestoreKey, backupSalt)
       vi.mocked(driveModule.restoreBackup).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue(null) // user cancels
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue(null) // invalid input
 
       const { container } = renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
 
@@ -430,13 +433,14 @@ describe('DriveRestorePanel', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Click fallback button
-      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(fallbackButton)
+      // Try to paste invalid input
+      const pasteInput = screen.getByPlaceholderText('Paste Google Drive file link or ID')
+      fireEvent.change(pasteInput, { target: { value: 'not-a-valid-id' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
-      // Wait for the picker to be called
+      // Should show an error message
       await waitFor(() => {
-        expect(driveModule.pickDriveFile).toHaveBeenCalled()
+        expect(screen.getByText("Couldn't find a file ID in that link")).toBeTruthy()
       })
 
       // Nothing should have changed: error still there, no dispatch, no alert
@@ -447,33 +451,41 @@ describe('DriveRestorePanel', () => {
       expect(global.alert).not.toHaveBeenCalled()
     })
 
-    it('does nothing when the user cancels the Restore confirmation dialog', async () => {
-      vi.mocked(global.confirm).mockReturnValue(false)
-
-      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      await waitFor(() => {
-        expect(global.confirm).toHaveBeenCalled()
-        expect(driveModule.restoreBackup).not.toHaveBeenCalled()
-        expect(mockOnRestored).not.toHaveBeenCalled()
-      })
-    })
-
-    it('does nothing when the user cancels the Drive picker', async () => {
+    it('edge: confirm declined on paste → no restoreBackupFromFileId call', async () => {
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue(null)
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('file-id-123')
+
+      // First confirm is accepted (to get to the paste fallback)
+      // Second confirm is declined (when pasting a file)
+      vi.mocked(global.confirm).mockReturnValueOnce(true).mockReturnValueOnce(false)
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(pickButton)
+      const pasteInput = await screen.findByPlaceholderText('Paste Google Drive file link or ID')
+      fireEvent.change(pasteInput, { target: { value: 'https://drive.google.com/file/d/file-id-123/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       await waitFor(() => {
-        expect(driveModule.pickDriveFile).toHaveBeenCalled()
+        expect(global.confirm).toHaveBeenCalledTimes(2)
+        expect(driveModule.restoreBackupFromFileId).not.toHaveBeenCalled()
+        expect(mockOnRestored).not.toHaveBeenCalled()
+      })
+    })
+
+    it('edge: shows error when pasting garbage in the paste fallback', async () => {
+      vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue(null)
+
+      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
+      const pasteInput = await screen.findByPlaceholderText('Paste Google Drive file link or ID')
+      fireEvent.change(pasteInput, { target: { value: 'invalid' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
+
+      await waitFor(() => {
+        expect(screen.getByText("Couldn't find a file ID in that link")).toBeTruthy()
       })
       expect(driveModule.restoreBackupFromFileId).not.toHaveBeenCalled()
       expect(mockOnRestored).not.toHaveBeenCalled()

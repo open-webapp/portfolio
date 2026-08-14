@@ -265,8 +265,8 @@ export async function getBackupFileId(): Promise<string | null> {
 /**
  * Reads a Drive file by id and decrypts it into an AppState. Shared by
  * `restoreBackup` (looks the file up by name in the app's own folder) and
- * `restoreBackupFromFileId` (file id supplied directly, e.g. from
- * `pickDriveFile`) so both paths throw the same `DriveDecryptError` on a
+ * `restoreBackupFromFileId` (file id supplied directly via pasted URL or
+ * bare id) so both paths throw the same `DriveDecryptError` on a
  * wrong-password mismatch.
  */
 async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppState | null> {
@@ -344,13 +344,12 @@ export async function restoreBackup(key: CryptoKey): Promise<AppState | null> {
 }
 
 /**
- * Restore app state from a specific Drive file id, bypassing the by-name
- * lookup in the app's own `OpenWebApp/Portfolio` folder. For a backup that
- * was shared with this account by another Google account rather than
- * synced from it — `files.list` only ever sees files inside this account's
- * own folder tree (see the `drive.file`-scope note on `folderPath` above),
- * so a file merely shared with this account has to be located via
- * `pickDriveFile()` (Google Picker) and read by id instead.
+ * Restore app state from a specific Drive file id, supplied via pasted URL
+ * or bare file id (parsed with `extractDriveFileId`). Bypasses the by-name
+ * lookup in the app's own `OpenWebApp/Portfolio` folder, allowing restore
+ * from a backup that was shared with this account by another Google account
+ * rather than synced from it — `files.list` only ever sees files inside
+ * this account's own folder tree.
  *
  * @throws {DriveDecryptError} If the backup decrypts with an auth-tag
  *   mismatch (wrong password/key)
@@ -373,164 +372,23 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
 }
 
 /**
- * Minimal shape of the `google.picker`/`gapi` globals this file touches.
- * No official types package is installed for these Google-hosted scripts
- * (loaded dynamically, not bundled), so this is hand-typed to just what's
- * used here rather than pulling in `any` at every call site.
+ * Extracts a Google Drive file id from a pasted Drive URL or bare file id.
+ * Supports `.../file/d/FILE_ID/...` and `...?id=FILE_ID` (or `&id=FILE_ID`)
+ * URL shapes; falls back to accepting the whole trimmed input as a bare id
+ * if it looks plausible (alnum + `-`/`_`, 10+ chars, no spaces/slashes).
+ * Returns null if nothing usable is found.
  */
-interface PickerDoc {
-  id: string
-  name: string
-}
-interface PickerResponse {
-  action: string
-  docs?: PickerDoc[]
-}
-interface PickerInstance {
-  setVisible(visible: boolean): void
-}
-interface GooglePickerNamespace {
-  Action: { PICKED: string; CANCEL: string }
-  ViewId: { DOCS: string }
-  DocsView: new (viewId: string) => DocsViewChain
-  PickerBuilder: new () => {
-    addView(view: unknown): PickerBuilderChain
-    setOAuthToken(token: string): PickerBuilderChain
-    setOrigin(origin: string): PickerBuilderChain
-    setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
-    build(): PickerInstance
-  }
-}
-interface DocsViewChain {
-  setIncludeFolders(v: boolean): DocsViewChain
-  setSelectFolderEnabled(v: boolean): DocsViewChain
-}
-interface PickerBuilderChain {
-  addView(view: unknown): PickerBuilderChain
-  setOAuthToken(token: string): PickerBuilderChain
-  setOrigin(origin: string): PickerBuilderChain
-  setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
-  build(): PickerInstance
-}
-interface GapiWindow {
-  gapi?: { load: (api: string, opts: { callback: () => void; onerror?: () => void }) => void }
-  google?: { picker?: GooglePickerNamespace }
-}
+export function extractDriveFileId(input: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
 
-let pickerApiLoadPromise: Promise<void> | null = null
+  const fileDMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+  if (fileDMatch) return fileDMatch[1]
 
-/**
- * Loads `apis.google.com/js/api.js` (if not already present) and then the
- * `picker` module off it. Idempotent: concurrent/repeat callers share one
- * in-flight load.
- */
-function loadPickerApi(): Promise<void> {
-  if (pickerApiLoadPromise) {
-    return pickerApiLoadPromise
-  }
+  const idParamMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+  if (idParamMatch) return idParamMatch[1]
 
-  pickerApiLoadPromise = new Promise<void>((resolve, reject) => {
-    const w = window as unknown as GapiWindow
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(trimmed)) return trimmed
 
-    const loadPickerModule = () => {
-      w.gapi!.load('picker', {
-        callback: () => resolve(),
-        onerror: () => reject(new Error('Failed to load Google Picker API')),
-      })
-    }
-
-    if (w.google?.picker) {
-      resolve()
-      return
-    }
-    if (w.gapi) {
-      loadPickerModule()
-      return
-    }
-
-    const script = document.createElement('script')
-    script.src = 'https://apis.google.com/js/api.js'
-    script.async = true
-    script.defer = true
-    script.onload = loadPickerModule
-    script.onerror = () => reject(new Error('Failed to load Google API script'))
-    document.head.appendChild(script)
-  }).catch((err) => {
-    // Let a failed load be retried by a later call rather than permanently
-    // caching the rejection.
-    pickerApiLoadPromise = null
-    throw err
-  })
-
-  return pickerApiLoadPromise
-}
-
-/**
- * Opens Google's file picker so the user can select a Drive file this app
- * has not created or synced itself — e.g. a `portfolio-state.json` backup
- * another Google account shared with them. Picking a file grants this
- * app's `drive.file`-scoped token access to that specific file (this is
- * the intended mechanism for that scope, not a workaround), so the
- * returned id can be read via `restoreBackupFromFileId` immediately after.
- *
- * Resolves to `null` if the user cancels the picker instead of selecting a
- * file.
- *
- * `setOrigin` is required, not cosmetic: the Picker iframe reports the pick
- * back to this window via `postMessage`, and without an explicit target
- * origin that message is silently dropped — the widget appears to hang
- * after a file is clicked (it never closes, the callback never fires).
- *
- * @throws If the Picker script fails to load or acquiring a token fails.
- */
-export async function pickDriveFile(): Promise<{ id: string; name: string } | null> {
-  await ensureFreshConnection()
-  const token = await drive.project(APP_PROJECT_ID).getAccessToken()
-  await loadPickerApi()
-
-  const picker = (window as unknown as GapiWindow).google!.picker!
-
-  return new Promise((resolve, reject) => {
-    let instance: PickerInstance | null = null
-    let resolved = false
-
-    try {
-      const view = new picker.DocsView(picker.ViewId.DOCS)
-        .setIncludeFolders(false)
-        .setSelectFolderEnabled(false)
-
-      instance = new picker.PickerBuilder()
-        .addView(view)
-        .setOAuthToken(token)
-        .setOrigin(window.location.origin)
-        .setCallback((data: PickerResponse) => {
-          // Guard against multiple resolutions and errors
-          if (resolved) return
-
-          try {
-            // Always close the picker first, regardless of action
-            instance?.setVisible(false)
-
-            if (data.action === picker.Action.PICKED) {
-              const doc = data.docs?.[0]
-              resolved = true
-              resolve(doc ? { id: doc.id, name: doc.name } : null)
-            } else if (data.action === picker.Action.CANCEL) {
-              resolved = true
-              resolve(null)
-            }
-            // For any other action (e.g., LOADED), just close the picker and do nothing
-          } catch (err) {
-            if (!resolved) {
-              resolved = true
-              reject(err)
-            }
-          }
-        })
-        .build()
-      instance.setVisible(true)
-    } catch (err) {
-      reject(err)
-    }
-  })
+  return null
 }

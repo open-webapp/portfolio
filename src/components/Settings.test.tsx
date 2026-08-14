@@ -25,7 +25,7 @@ vi.mock('../lib/drive', () => {
   return {
     restoreBackup: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
-    pickDriveFile: vi.fn(),
+    extractDriveFileId: vi.fn(),
     getDriveAuthStatus: vi.fn(),
     syncBackup: vi.fn(),
     DriveDecryptError,
@@ -241,7 +241,7 @@ describe('SettingsPage', () => {
       })
     })
 
-    it('shows the "Search Google Drive..." fallback (not an alert) if restore returns null', async () => {
+    it('shows the paste fallback input (not an alert) if restore returns null', async () => {
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
       vi.mocked(global.confirm).mockReturnValue(true)
 
@@ -251,57 +251,65 @@ describe('SettingsPage', () => {
       fireEvent.click(restoreButton)
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Search Google Drive...' })).toBeTruthy()
+        expect(screen.getByPlaceholderText('Paste Google Drive file link or ID')).toBeTruthy()
       })
       expect(global.alert).not.toHaveBeenCalled()
     })
 
-    it('picking a file via "Search Google Drive..." restores and dispatches __SET_STATE', async () => {
+    it('pasting a file ID via fallback restores and dispatches __SET_STATE', async () => {
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
       vi.mocked(global.confirm).mockReturnValue(true)
       const restoredState = initialState()
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-id', name: 'portfolio-state.json' })
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('picked-id')
       vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(restoredState)
 
       renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(pickButton)
+      const pasteInput = await screen.findByPlaceholderText('Paste Google Drive file link or ID')
+      fireEvent.change(pasteInput, { target: { value: 'https://drive.google.com/file/d/picked-id/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       await waitFor(() => {
         expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-id', expect.anything())
       })
       expect(mockDispatch).toHaveBeenCalledWith({ type: '__SET_STATE', newState: restoredState })
-      expect(global.alert).toHaveBeenCalledWith('Restored from "portfolio-state.json"')
+      expect(global.alert).toHaveBeenCalledWith('Restored from Drive')
     })
 
-    it('does nothing when the user cancels the Drive picker', async () => {
+    it('does nothing when the user submits an empty paste input', async () => {
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
       vi.mocked(global.confirm).mockReturnValue(true)
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue(null)
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue(null) // no file ID in empty input
 
       renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(pickButton)
 
+      // Wait for fallback to appear after no backup found
       await waitFor(() => {
-        expect(driveModule.pickDriveFile).toHaveBeenCalled()
+        expect(screen.getByPlaceholderText('Paste Google Drive file link or ID')).toBeTruthy()
+      })
+
+      // Try to load with empty input
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
+
+      // Error should appear
+      await waitFor(() => {
+        expect(screen.getByText("Couldn't find a file ID in that link")).toBeTruthy()
       })
       expect(driveModule.restoreBackupFromFileId).not.toHaveBeenCalled()
       expect(mockDispatch).not.toHaveBeenCalled()
     })
 
-    it('a wrong-password backup picked via the Drive picker opens the cross-password prompt', async () => {
+    it('a wrong-password backup pasted via fallback opens the cross-password prompt', async () => {
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
       vi.mocked(global.confirm).mockReturnValue(true)
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-id', name: 'portfolio-state.json' })
       const salt = generateSalt()
       const otherKey = await deriveKey('other-password', salt)
       const envelope = await encryptState(initialState(), otherKey, salt)
       const { DriveDecryptError } = await import('../lib/drive')
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('picked-id')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new DriveDecryptError('backup encrypted with a different password', salt, envelope)
       )
@@ -309,8 +317,11 @@ describe('SettingsPage', () => {
       renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-      const pickButton = await screen.findByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(pickButton)
+
+      // Wait for fallback to appear
+      const pasteInput = await screen.findByPlaceholderText('Paste Google Drive file link or ID') as HTMLInputElement
+      fireEvent.change(pasteInput, { target: { value: 'https://drive.google.com/file/d/picked-id/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       await waitFor(() => {
         expect(
@@ -757,11 +768,11 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // The fallback button should now be present
-      expect(screen.getByRole('button', { name: 'Search Google Drive...' })).toBeTruthy()
+      // The paste input field should now be present
+      expect(screen.getByPlaceholderText('Paste Google Drive file link or ID')).toBeTruthy()
     })
 
-    it('T5.2: Clicking fallback button calls pickDriveFile and restores successfully', async () => {
+    it('T5.2: Pasting a file ID via fallback from cross-password error restores successfully', async () => {
       const backupSalt = generateSalt()
       const restoredState = initialState()
       restoredState.accounts = [
@@ -777,7 +788,7 @@ describe('SettingsPage', () => {
       vi.mocked(driveModule.restoreBackup).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-file-id', name: 'shared-backup.json' })
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('picked-file-id')
       vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(restoredState)
 
       const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
@@ -798,9 +809,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Click the fallback button
-      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(fallbackButton)
+      // Paste the file ID and click load
+      const pasteInputs = Array.from(container.querySelectorAll('input[placeholder="Paste Google Drive file link or ID"]')) as HTMLInputElement[]
+      fireEvent.change(pasteInputs[0], { target: { value: 'https://drive.google.com/file/d/picked-file-id/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       // Wait for successful restore
       await waitFor(() => {
@@ -812,7 +824,7 @@ describe('SettingsPage', () => {
       expect(screen.queryByText(/This backup was saved with a different encryption password/)).toBeFalsy()
 
       // Success alert shown
-      expect(global.alert).toHaveBeenCalledWith('Restored from "shared-backup.json"')
+      expect(global.alert).toHaveBeenCalledWith('Restored from Drive')
     })
 
     it('T5.3: Picking a file that also fails to decrypt shows blank password field (not pre-filled)', async () => {
@@ -824,10 +836,10 @@ describe('SettingsPage', () => {
       )
 
       // First wrong password attempt
-      // Then picking a file that also fails with a different salt/envelope
+      // Then pasting a file that also fails with a different salt/envelope
       const backupSalt2 = generateSalt()
       const envelope2 = await encryptState(backupState, sessionKey, backupSalt2)
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-file-b', name: 'another-backup.json' })
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('picked-file-b')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt2, envelope2)
       )
@@ -850,9 +862,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Click fallback
-      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(fallbackButton)
+      // Paste a file ID and click load
+      const pasteInputs = Array.from(container.querySelectorAll('input[placeholder="Paste Google Drive file link or ID"]')) as HTMLInputElement[]
+      fireEvent.change(pasteInputs[0], { target: { value: 'https://drive.google.com/file/d/picked-file-b/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       // Wait for the new cross-password prompt (from the picked file's envelope)
       await waitFor(() => {
@@ -880,26 +893,22 @@ describe('SettingsPage', () => {
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
 
-      // First pick fails
+      // First paste fails
       const saltA = generateSalt()
       const envelopeA = await encryptState(backupState, sessionKey, saltA)
-      // Second pick also fails with different salt
+      // Second paste also fails with different salt
       const saltB = generateSalt()
       const envelopeB = await encryptState(backupState, sessionKey, saltB)
 
-      // Mock pickDriveFile to return different files on different calls
-      let pickCallCount = 0
-      vi.mocked(driveModule.pickDriveFile).mockImplementation(async () => {
-        pickCallCount++
-        if (pickCallCount === 1) return { id: 'file-a', name: 'backup-a.json' }
-        if (pickCallCount === 2) return { id: 'file-b', name: 'backup-b.json' }
+      // Mock extractDriveFileId to return different IDs based on input
+      vi.mocked(driveModule.extractDriveFileId).mockImplementation((input: string) => {
+        if (input.includes('file-a')) return 'file-a'
+        if (input.includes('file-b')) return 'file-b'
         return null
       })
 
       // Mock restoreBackupFromFileId to reject with different envelopes
-      let restoreCallCount = 0
       vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
-        restoreCallCount++
         if (fileId === 'file-a') {
           throw new driveModule.DriveDecryptError('wrong for A', saltA, envelopeA)
         } else if (fileId === 'file-b') {
@@ -926,9 +935,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Step 2: Click fallback, pick file A (also fails)
-      let fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(fallbackButton)
+      // Step 2: Paste file A (also fails)
+      let pasteInputs = Array.from(container.querySelectorAll('input[placeholder="Paste Google Drive file link or ID"]')) as HTMLInputElement[]
+      fireEvent.change(pasteInputs[0], { target: { value: 'https://drive.google.com/file/d/file-a/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       await waitFor(() => {
         expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-a', expect.anything())
@@ -951,9 +961,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Step 4: Click fallback again, pick file B (also fails)
-      fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(fallbackButton)
+      // Step 4: Paste file B (also fails)
+      pasteInputs = Array.from(container.querySelectorAll('input[placeholder="Paste Google Drive file link or ID"]')) as HTMLInputElement[]
+      fireEvent.change(pasteInputs[0], { target: { value: 'https://drive.google.com/file/d/file-b/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       await waitFor(() => {
         expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-b', expect.anything())
@@ -969,14 +980,14 @@ describe('SettingsPage', () => {
       expect(currentPasswordInputs[0].value).toBe('')
     })
 
-    it('T5.5: Cancelling the picker from crossPasswordError fallback does nothing', async () => {
+    it('T5.5: Submitting an empty paste input from crossPasswordError fallback does nothing', async () => {
       const backupSalt = generateSalt()
       const restoredState = initialState()
       const envelope = await encryptState(restoredState, sessionKey, backupSalt)
       vi.mocked(driveModule.restoreBackup).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue(null) // user cancels
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue(null) // no valid ID in paste
 
       const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
 
@@ -996,13 +1007,14 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Click fallback button
-      const fallbackButton = screen.getByRole('button', { name: 'Search Google Drive...' })
-      fireEvent.click(fallbackButton)
+      // Try to paste an invalid file ID
+      const pasteInputs = Array.from(container.querySelectorAll('input[placeholder="Paste Google Drive file link or ID"]')) as HTMLInputElement[]
+      fireEvent.change(pasteInputs[0], { target: { value: 'invalid-input' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
-      // Wait for the picker to be called
+      // Error should appear about not finding a file ID
       await waitFor(() => {
-        expect(driveModule.pickDriveFile).toHaveBeenCalled()
+        expect(screen.getByText("Couldn't find a file ID in that link")).toBeTruthy()
       })
 
       // Nothing should have changed: error still there, no dispatch, no alert

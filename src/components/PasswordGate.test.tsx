@@ -34,7 +34,7 @@ vi.mock('../lib/drive', () => {
   return {
     restoreBackup: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
-    pickDriveFile: vi.fn(),
+    extractDriveFileId: vi.fn(),
     DriveDecryptError,
   }
 })
@@ -499,7 +499,7 @@ describe('PasswordGate', () => {
       expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
     })
 
-    it('restoreBackup resolves null shows "Search Google Drive..." fallback button', async () => {
+    it('restoreBackup resolves null shows paste fallback input', async () => {
       const mockOnUnlock = vi.fn()
 
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
@@ -522,11 +522,11 @@ describe('PasswordGate', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Search Google Drive...' })).toBeTruthy()
+        expect(screen.getByPlaceholderText('Paste Google Drive file link or ID')).toBeTruthy()
       })
     })
 
-    it('picking a file via fallback that decrypts successfully calls onUnlock with that file\'s key/salt/state', async () => {
+    it('pasting a file ID via fallback that decrypts successfully calls onUnlock with that file\'s key/salt/state', async () => {
       const mockOnUnlock = vi.fn()
       const pickedState = initialState()
       pickedState.accounts = [
@@ -540,7 +540,7 @@ describe('PasswordGate', () => {
       ]
 
       vi.mocked(driveModule.restoreBackup).mockResolvedValue(null)
-      vi.mocked(driveModule.pickDriveFile).mockResolvedValue({ id: 'picked-file-id', name: 'shared-backup.json' })
+      vi.mocked(driveModule.extractDriveFileId).mockReturnValue('picked-file-id')
       vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(pickedState)
       vi.mocked(global.confirm).mockReturnValue(true)
 
@@ -561,10 +561,12 @@ describe('PasswordGate', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Search Google Drive...' })).toBeTruthy()
+        expect(screen.getByPlaceholderText('Paste Google Drive file link or ID')).toBeTruthy()
       })
 
-      fireEvent.click(screen.getByRole('button', { name: 'Search Google Drive...' }))
+      const pasteInput = screen.getByPlaceholderText('Paste Google Drive file link or ID')
+      fireEvent.change(pasteInput, { target: { value: 'https://drive.google.com/file/d/picked-file-id/view' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Load file' }))
 
       await waitFor(() => {
         expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-file-id', expect.anything())

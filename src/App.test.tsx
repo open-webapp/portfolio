@@ -11,9 +11,14 @@ import App from './App'
 
 // Stable session key/salt used by the mocked PasswordGate's onUnlock callback.
 // Declared via vi.hoisted so it's initialized before the hoisted vi.mock factories run.
-const { mockSessionKey, mockSessionSalt } = vi.hoisted(() => ({
+// Also capture PasswordGate props for testing early Drive status checks.
+const { mockSessionKey, mockSessionSalt, passwordGatePropsCapture } = vi.hoisted(() => ({
   mockSessionKey: {} as CryptoKey,
   mockSessionSalt: new Uint8Array([1, 2, 3]),
+  passwordGatePropsCapture: {
+    driveReady: undefined as boolean | undefined,
+    driveEmail: undefined as string | null | undefined,
+  },
 }))
 
 vi.mock('./lib/drive', () => ({
@@ -42,11 +47,18 @@ vi.mock('./lib/persist', () => ({
 vi.mock('./components/PasswordGate', () => ({
   PasswordGate: ({
     onUnlock,
+    driveReady,
+    driveEmail,
   }: {
     onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: unknown) => void
-  }) => (
-    <button onClick={() => onUnlock(mockSessionKey, mockSessionSalt, undefined)}>MockUnlock</button>
-  ),
+    driveReady?: boolean
+    driveEmail?: string | null
+  }) => {
+    // Capture props for test verification
+    passwordGatePropsCapture.driveReady = driveReady
+    passwordGatePropsCapture.driveEmail = driveEmail
+    return <button onClick={() => onUnlock(mockSessionKey, mockSessionSalt, undefined)}>MockUnlock</button>
+  },
 }))
 
 afterEach(cleanup)
@@ -465,8 +477,68 @@ describe('persistence on unmount within the debounce window', () => {
 })
 
 describe('Drive-sync activation', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    // Reset mocks to default disconnected state
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.getDriveAuthStatus).mockClear()
+    vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue({
+      connected: false,
+      email: null,
+      expiresAt: null,
+      needsReauth: false,
+      tokenValid: false,
+    })
+    vi.mocked(driveModule.getBackupFileId).mockClear()
+    vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
+    passwordGatePropsCapture.driveReady = undefined
+    passwordGatePropsCapture.driveEmail = undefined
+  })
+
+  it('early Drive status check populates driveReady and driveEmail before password gate is passed', async () => {
+    // Mock getDriveAuthStatus to return connected status
+    const getDriveAuthStatusMock = vi.mocked((await import('./lib/drive')).getDriveAuthStatus)
+    getDriveAuthStatusMock.mockResolvedValue({
+      connected: true,
+      email: 'test@gmail.com',
+      tokenValid: true,
+      expiresAt: Date.now() + 3600000,
+      needsReauth: false,
+    })
+
+    // Mock getBackupFileId to ensure it's not called before unlock
+    const getBackupFileIdMock = vi.mocked((await import('./lib/drive')).getBackupFileId)
+    getBackupFileIdMock.mockClear()
+    getBackupFileIdMock.mockResolvedValue(null)
+
+    // Reset captured props
+    passwordGatePropsCapture.driveReady = undefined
+    passwordGatePropsCapture.driveEmail = undefined
+
+    render(<App />)
+
+    // Wait for the early Drive status check to resolve before checking the gate
+    await waitFor(() => {
+      expect(screen.getByText('MockUnlock')).toBeTruthy()
+    })
+
+    // Verify PasswordGate received the correct Drive props BEFORE unlock
+    expect(passwordGatePropsCapture.driveReady).toBe(true)
+    expect(passwordGatePropsCapture.driveEmail).toBe('test@gmail.com')
+
+    // Verify getBackupFileId was NOT called yet (it should only be called after unlock)
+    expect(getBackupFileIdMock).not.toHaveBeenCalled()
+
+    // Now click unlock and verify dashboard renders
+    fireEvent.click(screen.getByText('MockUnlock'))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
+      expect(screen.getByText('Allocation')).toBeTruthy()
+    })
+
+    // After unlock, getBackupFileId SHOULD have been called
+    expect(getBackupFileIdMock).toHaveBeenCalled()
   })
 
   it('does not call drive.activate() while the password gate is showing, so a stale cached token cannot trigger a silent Google reauth prompt before local unlock', async () => {
@@ -529,34 +601,48 @@ describe('Drive-sync activation', () => {
     })
   })
 
-  it('handleConnect uses ensureFreshConnection to reuse existing tokens', async () => {
-    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
-    const ensureFreshConnectionMock = vi.mocked((await import('./lib/drive')).ensureFreshConnection)
-    const mockConnection = {
-      email: 'test@example.com',
-      expiresAt: Date.now() + 60 * 60 * 1000,
-      needsReauth: false,
-    }
-    ensureFreshConnectionMock.mockResolvedValue(mockConnection as any)
+  it('early Drive status check logs error if getDriveAuthStatus fails, leaves state at defaults', async () => {
+    // Mock getDriveAuthStatus to reject with an error
+    const getDriveAuthStatusMock = vi.mocked((await import('./lib/drive')).getDriveAuthStatus)
+    getDriveAuthStatusMock.mockRejectedValueOnce(new Error('Network error'))
 
-    await renderUnlockedApp()
+    // Spy on console.warn to verify the error is logged
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    // Navigate to settings
-    const gearButton = screen.getByTitle('Settings')
-    fireEvent.click(gearButton)
+    // Reset captured props
+    passwordGatePropsCapture.driveReady = undefined
+    passwordGatePropsCapture.driveEmail = undefined
 
+    render(<App />)
+
+    // Wait for the PasswordGate to render
     await waitFor(() => {
-      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+      expect(screen.getByText('MockUnlock')).toBeTruthy()
     })
 
-    // Click Connect button and wait for connection to succeed
-    const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
-    fireEvent.click(connectButton)
+    // Verify that driveReady and driveEmail stayed at defaults (error was caught and logged)
+    expect(passwordGatePropsCapture.driveReady).toBe(false)
+    expect(passwordGatePropsCapture.driveEmail).toBe(null)
 
-    // Verify connection succeeded by checking for email display
+    // Verify the error was logged to console.warn
+    expect(warnSpy).toHaveBeenCalled()
+    const warnCall = warnSpy.mock.calls.find((call) =>
+      call[0]?.toString().includes('Drive status check failed') || call[0]?.includes?.('Network error')
+    )
+    expect(warnCall).toBeTruthy()
+
+    warnSpy.mockRestore()
+
+    // Click unlock and verify dashboard renders with no errors
+    fireEvent.click(screen.getByText('MockUnlock'))
+
     await waitFor(() => {
-      expect(screen.getByText('test@example.com')).toBeTruthy()
+      expect(screen.queryByText('Loading dashboard...')).toBeFalsy()
+      expect(screen.getByText('Allocation')).toBeTruthy()
     })
+
+    // No console errors should have occurred
+    expect(screen.queryByText('Error')).toBeFalsy()
   })
 })
 

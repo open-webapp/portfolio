@@ -12,3 +12,11 @@ Click Undo on a closed position to restore it instantly, using the exact snapsho
 - Open position with same symbol and identical shares/avgCost/assetClass: `window.confirm` asks to overwrite. Yes → restored position replaces the existing one, closed entry removed. No → cancels entirely; closed position stays closed, nothing changes.
 - Open position with same symbol but different shares/avgCost/assetClass: silent restore as a second, separate lot — duplicate symbol rows coexist, no confirmation shown.
 - Restored position always gets a new internal id (not user-visible).
+
+## Google Drive Sync
+
+### Drive Connection Persistence
+
+On app load, the app checks for a stored Google Drive connection (non-blocking, parallel with other initialization). If a connection exists and the cached token is still valid, the app displays "Connected as user@gmail.com" on the Restore tab without re-prompting. If the token is expired or no connection exists, the Restore tab shows a "Connect Google Account" button.
+
+The app does **not** automatically look up the backup file ID on load — file lookup only happens when the user clicks "Restore" and a fresh connection is confirmed.

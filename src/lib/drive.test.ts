@@ -488,105 +488,47 @@ describe('drive.ts Drive-sync wiring', () => {
     })
   })
 
-  describe('pickDriveFile()', () => {
-    afterEach(() => {
-      vi.unstubAllEnvs()
-      delete (window as unknown as { gapi?: unknown }).gapi
-      delete (window as unknown as { google?: unknown }).google
+  describe('extractDriveFileId', () => {
+    it('extracts file id from /file/d/FILE_ID/view?usp=sharing URL', async () => {
+      const { extractDriveFileId } = await import('./drive')
+      const fileId = extractDriveFileId('https://drive.google.com/file/d/1AbC-XyZ_123/view?usp=sharing')
+      expect(fileId).toBe('1AbC-XyZ_123')
     })
 
-    /** Installs a fake `window.gapi`/`window.google.picker` and returns the captured PickerBuilder chain. */
-    function installPickerFake(): {
-      chain: { setOAuthToken: ReturnType<typeof vi.fn>; setDeveloperKey: ReturnType<typeof vi.fn>; setOrigin: ReturnType<typeof vi.fn> }
-      setVisible: ReturnType<typeof vi.fn>
-      getCallback: () => ((data: { action: string; docs?: { id: string; name: string }[] }) => void) | null
-    } {
-      let capturedCallback: ((data: { action: string; docs?: { id: string; name: string }[] }) => void) | null =
-        null
-      const setVisible = vi.fn()
-      const chain = {
-        addView: vi.fn().mockReturnThis(),
-        setOAuthToken: vi.fn().mockReturnThis(),
-        setDeveloperKey: vi.fn().mockReturnThis(),
-        setOrigin: vi.fn().mockReturnThis(),
-        setCallback: vi.fn().mockImplementation(function (
-          this: unknown,
-          cb: typeof capturedCallback
-        ) {
-          capturedCallback = cb
-          return this
-        }),
-        build: vi.fn().mockReturnValue({ setVisible }),
-      }
-
-      function DocsView() {
-        return {
-          setIncludeFolders: vi.fn().mockReturnThis(),
-          setSelectFolderEnabled: vi.fn().mockReturnThis(),
-        }
-      }
-      function PickerBuilder() {
-        return chain
-      }
-
-      const w = window as unknown as {
-        gapi: { load: (api: string, opts: { callback: () => void }) => void }
-        google: { picker: unknown }
-      }
-      w.gapi = { load: (_api: string, opts: { callback: () => void }) => opts.callback() }
-      w.google = {
-        picker: {
-          Action: { PICKED: 'picked', CANCEL: 'cancel' },
-          ViewId: { DOCS: 'docs' },
-          DocsView,
-          PickerBuilder,
-        },
-      }
-
-      return { chain, setVisible, getCallback: () => capturedCallback }
-    }
-
-    it('resolves with the picked file id/name, loading gapi + picker and requesting a token', async () => {
-      const { chain, setVisible, getCallback } = installPickerFake()
-
-      const { pickDriveFile } = await import('./drive')
-      const resultPromise = pickDriveFile()
-
-      // pickDriveFile awaits ensureFreshConnection/getAccessToken/loadPickerApi
-      // before it ever builds the Picker, so the callback isn't captured until
-      // those microtasks drain; give them a turn before simulating a pick.
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      const callback = getCallback()
-      expect(callback).not.toBeNull()
-      callback!({ action: 'picked', docs: [{ id: 'picked-id', name: 'portfolio-state.json' }] })
-
-      const result = await resultPromise
-      expect(result).toEqual({ id: 'picked-id', name: 'portfolio-state.json' })
-      expect(mockGetAccessToken).toHaveBeenCalled()
-      expect(chain.setOAuthToken).toHaveBeenCalledWith('mock-access-token')
-      expect(chain.setDeveloperKey).not.toHaveBeenCalled()
-      // Without an explicit target origin, the Picker iframe's postMessage
-      // reporting the pick back to this window is silently dropped — the
-      // widget never closes and the callback never fires. Regression guard
-      // for that "stuck on the picker popup after selecting a file" bug.
-      expect(chain.setOrigin).toHaveBeenCalledWith(window.location.origin)
-      expect(setVisible).toHaveBeenCalledWith(true)
-      // After file selection, picker must be closed (setVisible(false))
-      expect(setVisible).toHaveBeenCalledWith(false)
+    it('extracts file id from ?id=FILE_ID URL parameter', async () => {
+      const { extractDriveFileId } = await import('./drive')
+      const fileId = extractDriveFileId('https://drive.google.com/open?id=1AbC-XyZ_123')
+      expect(fileId).toBe('1AbC-XyZ_123')
     })
 
-    it('resolves null when the user cancels the picker', async () => {
-      const { setVisible, getCallback } = installPickerFake()
+    it('accepts bare file id (≥10 chars, alphanumeric + hyphen + underscore)', async () => {
+      const { extractDriveFileId } = await import('./drive')
+      const fileId = extractDriveFileId('1AbC-XyZ_1234567890')
+      expect(fileId).toBe('1AbC-XyZ_1234567890')
+    })
 
-      const { pickDriveFile } = await import('./drive')
-      const resultPromise = pickDriveFile()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      getCallback()!({ action: 'cancel' })
+    it('returns null for invalid input (not a URL or valid id)', async () => {
+      const { extractDriveFileId } = await import('./drive')
+      const fileId = extractDriveFileId('not a url or id!!')
+      expect(fileId).toBeNull()
+    })
 
-      const result = await resultPromise
-      expect(result).toBeNull()
-      // After cancel, picker must be closed
-      expect(setVisible).toHaveBeenCalledWith(false)
+    it('returns null for empty string', async () => {
+      const { extractDriveFileId } = await import('./drive')
+      const fileId = extractDriveFileId('')
+      expect(fileId).toBeNull()
+    })
+
+    it('returns null for whitespace-only string', async () => {
+      const { extractDriveFileId } = await import('./drive')
+      const fileId = extractDriveFileId('   ')
+      expect(fileId).toBeNull()
+    })
+
+    it('returns null for short bare string (<10 chars)', async () => {
+      const { extractDriveFileId } = await import('./drive')
+      const fileId = extractDriveFileId('abc123')
+      expect(fileId).toBeNull()
     })
   })
 

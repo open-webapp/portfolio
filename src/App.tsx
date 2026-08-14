@@ -67,6 +67,21 @@ function App() {
     peekEnvelopeShape().then(setGateShape)
   }, [])
 
+  // Early Drive status check (non-blocking, runs on mount before password gate)
+  useEffect(() => {
+    const checkDrive = async () => {
+      try {
+        const authStatus = await getDriveAuthStatus()
+        setDriveReady(authStatus.connected)
+        setDriveEmail(authStatus.email)
+      } catch (error) {
+        console.warn('Early Drive status check failed (non-blocking):', error)
+        // Leave driveReady/driveEmail at defaults (false/null)
+      }
+    }
+    checkDrive()
+  }, [])
+
   // Drive-sync boot wiring: activate() attaches the visibility/pageshow
   // listeners that silently warm up the cached Drive token in the
   // background before it goes stale. Without this, drive.ts's
