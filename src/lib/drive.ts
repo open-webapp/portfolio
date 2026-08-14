@@ -509,15 +509,18 @@ async function loadPickerApi(): Promise<void> {
 
     const handlePickerLoaded = (result?: { error?: string; message?: string }) => {
       clearTimeout(timeoutHandle)
+      console.log('[loadPickerApi] handlePickerLoaded called with result:', result, 'gapi.picker:', gapiWindow.gapi?.picker)
       if (result?.error) {
         pickerApiLoadPromise = null
         reject(new Error(`Google Picker API load failed: ${result.error}`))
         return
       }
       if (gapiWindow.gapi?.picker?.PickerBuilder) {
+        console.log('[loadPickerApi] PickerBuilder is available, resolving')
         isPickerApiLoaded = true
         resolve()
       } else {
+        console.log('[loadPickerApi] PickerBuilder not available after callback. gapi.picker:', gapiWindow.gapi?.picker, 'keys:', Object.keys(gapiWindow.gapi?.picker || {}))
         pickerApiLoadPromise = null
         reject(new Error('Google Picker library loaded but PickerBuilder not available'))
       }
