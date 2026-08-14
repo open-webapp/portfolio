@@ -492,6 +492,8 @@ export async function pickDriveFile(): Promise<{ id: string; name: string } | nu
 
   return new Promise((resolve, reject) => {
     let instance: PickerInstance | null = null
+    let resolved = false
+
     try {
       const view = new picker.DocsView(picker.ViewId.DOCS)
         .setIncludeFolders(false)
@@ -502,13 +504,27 @@ export async function pickDriveFile(): Promise<{ id: string; name: string } | nu
         .setOAuthToken(token)
         .setOrigin(window.location.origin)
         .setCallback((data: PickerResponse) => {
-          if (data.action === picker.Action.PICKED) {
+          // Guard against multiple resolutions and errors
+          if (resolved) return
+
+          try {
+            // Always close the picker first, regardless of action
             instance?.setVisible(false)
-            const doc = data.docs?.[0]
-            resolve(doc ? { id: doc.id, name: doc.name } : null)
-          } else if (data.action === picker.Action.CANCEL) {
-            instance?.setVisible(false)
-            resolve(null)
+
+            if (data.action === picker.Action.PICKED) {
+              const doc = data.docs?.[0]
+              resolved = true
+              resolve(doc ? { id: doc.id, name: doc.name } : null)
+            } else if (data.action === picker.Action.CANCEL) {
+              resolved = true
+              resolve(null)
+            }
+            // For any other action (e.g., LOADED), just close the picker and do nothing
+          } catch (err) {
+            if (!resolved) {
+              resolved = true
+              reject(err)
+            }
           }
         })
         .build()

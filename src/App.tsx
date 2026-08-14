@@ -144,9 +144,17 @@ function App() {
       }
       setDriveReady(true)
       setDriveEmail(connection.email)
-      const fileId = await getBackupFileId()
-      setBackupFileId(fileId)
       alert('Connected to Drive')
+
+      // Lookup backup file separately so a failed lookup doesn't forget the connection
+      try {
+        const fileId = await getBackupFileId()
+        setBackupFileId(fileId)
+      } catch (lookupError) {
+        console.warn('Failed to lookup backup file:', lookupError)
+        // Connection succeeded but backup lookup failed — that's OK, just don't set the backup ID
+        setBackupFileId(null)
+      }
     } catch (error) {
       console.error('Drive connect failed:', error)
       const errorMessage = error instanceof Error ? error.message : String(error)
