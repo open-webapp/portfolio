@@ -278,13 +278,47 @@ async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppSt
     'files.read'
   )
 
-  if (!content || typeof content !== 'string') {
+  if (!content) {
     return null
   }
 
-  // Parse the envelope and decrypt it back into the app state
-  const envelope = JSON.parse(content) as EncryptedEnvelope
-  const salt = base64ToBytes(envelope.salt)
+  let contentStr: string
+
+  // Handle case where content might be a Blob, Buffer, or other non-string type
+  if (typeof content === 'string') {
+    contentStr = content
+  } else if (content instanceof ArrayBuffer || content instanceof Uint8Array) {
+    // Convert binary data to string
+    const decoder = new TextDecoder()
+    contentStr = decoder.decode(content)
+  } else if (typeof content === 'object' && 'text' in content && typeof (content as any).text === 'function') {
+    // Handle Blob type (has a text() method)
+    contentStr = await (content as any).text()
+  } else {
+    // Unrecognized content type
+    return null
+  }
+
+  if (!contentStr) {
+    return null
+  }
+
+  let envelope: EncryptedEnvelope
+  let salt: Uint8Array
+
+  // Parse the envelope and extract salt before attempting decryption,
+  // so that wrong-password errors can carry both salt and envelope
+  try {
+    envelope = JSON.parse(contentStr) as EncryptedEnvelope
+    salt = base64ToBytes(envelope.salt)
+  } catch (parseError) {
+    // If we can't parse the JSON or extract the salt, treat it as an
+    // unreadable file rather than a decryption error
+    if (parseError instanceof Error && (parseError.name === 'SyntaxError' || parseError.name === 'TypeError')) {
+      return null
+    }
+    throw parseError
+  }
 
   try {
     return await decryptState(envelope, key)
