@@ -491,23 +491,20 @@ export async function pickDriveFile(): Promise<{ id: string; name: string } | nu
   const picker = (window as unknown as GapiWindow).google!.picker!
 
   return new Promise((resolve, reject) => {
-    let instance: PickerInstance | null = null
     try {
       const view = new picker.DocsView(picker.ViewId.DOCS)
         .setIncludeFolders(false)
         .setSelectFolderEnabled(false)
 
-      instance = new picker.PickerBuilder()
+      const instance = new picker.PickerBuilder()
         .addView(view)
         .setOAuthToken(token)
         .setOrigin(window.location.origin)
         .setCallback((data: PickerResponse) => {
           if (data.action === picker.Action.PICKED) {
-            instance?.setVisible(false)
             const doc = data.docs?.[0]
             resolve(doc ? { id: doc.id, name: doc.name } : null)
           } else if (data.action === picker.Action.CANCEL) {
-            instance?.setVisible(false)
             resolve(null)
           }
         })

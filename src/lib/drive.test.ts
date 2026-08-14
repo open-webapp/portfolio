@@ -571,12 +571,10 @@ describe('drive.ts Drive-sync wiring', () => {
       // for that "stuck on the picker popup after selecting a file" bug.
       expect(chain.setOrigin).toHaveBeenCalledWith(window.location.origin)
       expect(setVisible).toHaveBeenCalledWith(true)
-      // After file selection, picker must be closed (setVisible(false))
-      expect(setVisible).toHaveBeenCalledWith(false)
     })
 
     it('resolves null when the user cancels the picker', async () => {
-      const { setVisible, getCallback } = installPickerFake()
+      const { getCallback } = installPickerFake()
 
       const { pickDriveFile } = await import('./drive')
       const resultPromise = pickDriveFile()
@@ -585,8 +583,6 @@ describe('drive.ts Drive-sync wiring', () => {
 
       const result = await resultPromise
       expect(result).toBeNull()
-      // After cancel, picker must be closed
-      expect(setVisible).toHaveBeenCalledWith(false)
     })
   })
 
