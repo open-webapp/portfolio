@@ -389,6 +389,7 @@ interface GooglePickerNamespace {
   PickerBuilder: new () => {
     addView(view: unknown): PickerBuilderChain
     setOAuthToken(token: string): PickerBuilderChain
+    setOrigin(origin: string): PickerBuilderChain
     setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
     build(): PickerInstance
   }
@@ -400,6 +401,7 @@ interface DocsViewChain {
 interface PickerBuilderChain {
   addView(view: unknown): PickerBuilderChain
   setOAuthToken(token: string): PickerBuilderChain
+  setOrigin(origin: string): PickerBuilderChain
   setCallback(cb: (data: PickerResponse) => void): PickerBuilderChain
   build(): PickerInstance
 }
@@ -467,6 +469,11 @@ function loadPickerApi(): Promise<void> {
  * Resolves to `null` if the user cancels the picker instead of selecting a
  * file.
  *
+ * `setOrigin` is required, not cosmetic: the Picker iframe reports the pick
+ * back to this window via `postMessage`, and without an explicit target
+ * origin that message is silently dropped — the widget appears to hang
+ * after a file is clicked (it never closes, the callback never fires).
+ *
  * @throws If the Picker script fails to load or acquiring a token fails.
  */
 export async function pickDriveFile(): Promise<{ id: string; name: string } | null> {
@@ -485,6 +492,7 @@ export async function pickDriveFile(): Promise<{ id: string; name: string } | nu
       const instance = new picker.PickerBuilder()
         .addView(view)
         .setOAuthToken(token)
+        .setOrigin(window.location.protocol + '//' + window.location.host)
         .setCallback((data: PickerResponse) => {
           if (data.action === picker.Action.PICKED) {
             const doc = data.docs?.[0]

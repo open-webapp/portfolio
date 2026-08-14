@@ -497,7 +497,7 @@ describe('drive.ts Drive-sync wiring', () => {
 
     /** Installs a fake `window.gapi`/`window.google.picker` and returns the captured PickerBuilder chain. */
     function installPickerFake(): {
-      chain: { setOAuthToken: ReturnType<typeof vi.fn>; setDeveloperKey: ReturnType<typeof vi.fn> }
+      chain: { setOAuthToken: ReturnType<typeof vi.fn>; setDeveloperKey: ReturnType<typeof vi.fn>; setOrigin: ReturnType<typeof vi.fn> }
       setVisible: ReturnType<typeof vi.fn>
       getCallback: () => ((data: { action: string; docs?: { id: string; name: string }[] }) => void) | null
     } {
@@ -508,6 +508,7 @@ describe('drive.ts Drive-sync wiring', () => {
         addView: vi.fn().mockReturnThis(),
         setOAuthToken: vi.fn().mockReturnThis(),
         setDeveloperKey: vi.fn().mockReturnThis(),
+        setOrigin: vi.fn().mockReturnThis(),
         setCallback: vi.fn().mockImplementation(function (
           this: unknown,
           cb: typeof capturedCallback
@@ -564,6 +565,11 @@ describe('drive.ts Drive-sync wiring', () => {
       expect(mockGetAccessToken).toHaveBeenCalled()
       expect(chain.setOAuthToken).toHaveBeenCalledWith('mock-access-token')
       expect(chain.setDeveloperKey).not.toHaveBeenCalled()
+      // Without an explicit target origin, the Picker iframe's postMessage
+      // reporting the pick back to this window is silently dropped — the
+      // widget never closes and the callback never fires. Regression guard
+      // for that "stuck on the picker popup after selecting a file" bug.
+      expect(chain.setOrigin).toHaveBeenCalledWith(window.location.origin)
       expect(setVisible).toHaveBeenCalledWith(true)
     })
 
