@@ -507,8 +507,13 @@ async function loadPickerApi(): Promise<void> {
       reject(new Error('Google Picker API load timed out after 10s'))
     }, 10000)
 
-    const handlePickerLoaded = () => {
+    const handlePickerLoaded = (result?: { error?: string; message?: string }) => {
       clearTimeout(timeoutHandle)
+      if (result?.error) {
+        pickerApiLoadPromise = null
+        reject(new Error(`Google Picker API load failed: ${result.error}`))
+        return
+      }
       if (gapiWindow.gapi?.picker?.PickerBuilder) {
         isPickerApiLoaded = true
         resolve()
