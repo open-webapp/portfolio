@@ -94,7 +94,6 @@ let isPickerApiLoaded = false
  * openDrivePicker() throws a descriptive error (see below).
  */
 const PICKER_API_KEY = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
-console.log('[drive.ts] PICKER_API_KEY loaded from env:', PICKER_API_KEY?.substring(0, 20) + '...' || 'UNDEFINED')
 
 /**
  * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
@@ -514,15 +513,7 @@ async function loadPickerApi(): Promise<void> {
 
     const handlePickerLoaded = (result?: any) => {
       clearTimeout(timeoutHandle)
-      console.log('[loadPickerApi] handlePickerLoaded called. result:', result)
-      if (gapiWindow.gapi?.picker) {
-        console.log('[loadPickerApi] gapi.picker exists. Contents:', Object.keys(gapiWindow.gapi.picker), gapiWindow.gapi.picker)
-        if ('api' in gapiWindow.gapi.picker) {
-          console.log('[loadPickerApi] gapi.picker.api exists:', gapiWindow.gapi.picker.api, 'keys:', Object.keys(gapiWindow.gapi.picker.api || {}))
-        }
-      }
       if (result?.error) {
-        console.log('[loadPickerApi] Load error detected:', result.error)
         pickerApiLoadPromise = null
         reject(new Error(`Google Picker API load failed: ${result.error}`))
         return
@@ -533,11 +524,9 @@ async function loadPickerApi(): Promise<void> {
       const DocsView = gapiWindow.gapi?.picker?.DocsView || (gapiWindow.gapi?.picker?.api as any)?.DocsView
 
       if (PickerBuilder && DocsView) {
-        console.log('[loadPickerApi] PickerBuilder and DocsView are available, resolving')
         isPickerApiLoaded = true
         resolve()
       } else {
-        console.log('[loadPickerApi] PickerBuilder or DocsView not available. PickerBuilder:', PickerBuilder, 'DocsView:', DocsView)
         pickerApiLoadPromise = null
         reject(new Error('Google Picker library loaded but PickerBuilder not available'))
       }
@@ -611,7 +600,6 @@ export async function openDrivePicker(
   onSelect: (fileId: string) => void,
   onCancel: () => void
 ): Promise<void> {
-  console.log('[openDrivePicker] Starting. Token length:', token?.length, 'API key length:', PICKER_API_KEY?.length)
   if (!PICKER_API_KEY) {
     throw new Error('VITE_GOOGLE_PICKER_API_KEY is not set — Google Picker requires an API key')
   }
@@ -649,7 +637,6 @@ export async function openDrivePicker(
   }
 
   // Configure Picker: OAuth token + API key are both required
-  console.log('[openDrivePicker] Building picker with origin:', window.location.origin, 'protocol:', window.location.protocol, 'host:', window.location.host)
   const picker = new PickerBuilder()
     .setOAuthToken(token)
     .setDeveloperKey(PICKER_API_KEY)
@@ -657,7 +644,6 @@ export async function openDrivePicker(
     .addView(docsView)
     .setCallback(handlePickerResponse)
     .build()
-  console.log('[openDrivePicker] Picker built successfully')
 
   // Show the Picker dialog
   picker.setVisible(true)
