@@ -158,9 +158,8 @@ describe('DriveRestorePanel', () => {
     })
 
     it('happy: opening Picker immediately on "Restore from Drive" click — no by-name lookup call', async () => {
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
+      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, _onSelect, _onCancel) => {
+        // Picker opened successfully
       })
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })

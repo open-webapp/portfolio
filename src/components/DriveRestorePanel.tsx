@@ -111,11 +111,13 @@ export function DriveRestorePanel({
 
   // Show the Picker when user clicks "Restore from Drive"
   const [showPicker, setShowPicker] = useState(false)
+  const [pickerKey, setPickerKey] = useState(0)
 
   function handleRestore() {
     // Picker is the only restore entry point — always open it immediately,
     // no by-name lookup in the app's own Drive folder first.
     setShowPicker(true)
+    setPickerKey(k => k + 1)
   }
 
 
@@ -204,6 +206,7 @@ export function DriveRestorePanel({
       {/* File Picker Fallback */}
       {showPicker && (
         <DrivePickerFallback
+          key={pickerKey}
           onSelect={async (fileId: string) => {
             if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
 

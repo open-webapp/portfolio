@@ -26,8 +26,6 @@ vi.mock('../lib/drive', () => {
     getAccessTokenForPicker: vi.fn(),
     getDriveAuthStatus: vi.fn(),
     syncBackup: vi.fn(),
-    restoreBackup: vi.fn(),
-    extractDriveFileId: vi.fn(),
     DriveDecryptError,
   }
 })
@@ -70,11 +68,6 @@ const connectedAuthStatus: driveModule.DriveAuthStatus = {
   expiresAt: Date.now() + 60 * 60 * 1000,
   needsReauth: false,
   tokenValid: true,
-}
-
-function expectCornersInOrder(button: HTMLElement) {
-  const corners = Array.from(button.querySelectorAll('i.corner'))
-  expect(corners.map((c) => c.className)).toEqual(['corner tl', 'corner tr', 'corner bl', 'corner br'])
 }
 
 describe('SettingsPage', () => {
