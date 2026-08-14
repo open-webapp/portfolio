@@ -42,7 +42,13 @@ function DrivePickerFallback({
         )
       } catch (err) {
         setPickerLoading(false)
-        setError(`Failed to open file picker: ${err instanceof Error ? err.message : String(err)}`)
+        const message = err instanceof Error ? err.message : String(err)
+        // Provide helpful context for common configuration issues
+        let fullMessage = `Failed to open file picker: ${message}`
+        if (message.includes('PickerBuilder')) {
+          fullMessage += '\n\nThe Google Picker API key may be invalid or not authorized for this origin. Please check VITE_GOOGLE_PICKER_API_KEY in .env and ensure it is valid in Google Cloud Console.'
+        }
+        setError(fullMessage)
       }
     }
 
