@@ -502,34 +502,59 @@ async function loadPickerApi(): Promise<void> {
 
   pickerApiLoadPromise = new Promise<void>((resolve, reject) => {
     const gapiWindow = window as GapiWindow
+    const timeoutHandle = setTimeout(() => {
+      pickerApiLoadPromise = null
+      reject(new Error('Google Picker API load timed out after 10s'))
+    }, 10000)
+
+    const handlePickerLoaded = () => {
+      clearTimeout(timeoutHandle)
+      if (gapiWindow.gapi?.picker?.PickerBuilder) {
+        isPickerApiLoaded = true
+        resolve()
+      } else {
+        pickerApiLoadPromise = null
+        reject(new Error('Google Picker library loaded but PickerBuilder not available'))
+      }
+    }
+
     if (!gapiWindow.gapi) {
       const script = document.createElement('script')
       script.src = 'https://apis.google.com/js/platform.js'
       script.onload = () => {
         if (gapiWindow.gapi?.load) {
-          gapiWindow.gapi.load('picker', {
-            callback: () => {
-              isPickerApiLoaded = true
-              resolve()
-            },
-          })
+          try {
+            gapiWindow.gapi.load('picker', {
+              callback: handlePickerLoaded,
+            })
+          } catch (err) {
+            clearTimeout(timeoutHandle)
+            pickerApiLoadPromise = null
+            reject(err instanceof Error ? err : new Error(String(err)))
+          }
         } else {
+          clearTimeout(timeoutHandle)
           reject(new Error('gapi.load not available after script loaded'))
         }
       }
       script.onerror = () => {
+        clearTimeout(timeoutHandle)
         pickerApiLoadPromise = null
         reject(new Error('Failed to load Google Picker API from https://apis.google.com/js/platform.js'))
       }
       document.head.appendChild(script)
     } else if (gapiWindow.gapi.load) {
-      gapiWindow.gapi.load('picker', {
-        callback: () => {
-          isPickerApiLoaded = true
-          resolve()
-        },
-      })
+      try {
+        gapiWindow.gapi.load('picker', {
+          callback: handlePickerLoaded,
+        })
+      } catch (err) {
+        clearTimeout(timeoutHandle)
+        pickerApiLoadPromise = null
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
     } else {
+      clearTimeout(timeoutHandle)
       reject(new Error('gapi.load not available'))
     }
   })

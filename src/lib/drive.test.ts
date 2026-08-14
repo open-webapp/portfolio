@@ -748,5 +748,28 @@ describe('drive.ts Drive-sync wiring', () => {
       await openDrivePicker('fake-token', vi.fn(), vi.fn())
       expect(mockGapi.load.mock.calls.length).toBe(firstLoadCalls) // cached, no second load
     })
+
+    it('throws an error if the Picker library fails to load (callback fires but PickerBuilder not available)', async () => {
+      vi.stubEnv('VITE_GOOGLE_PICKER_API_KEY', 'fake-api-key')
+      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+
+      // Mock gapi.load to call the callback, but don't actually set up PickerBuilder
+      const mockGapiNoPickerBuilder = {
+        load: vi.fn((lib, opts) => {
+          if (lib === 'picker' && opts.callback) {
+            // Simulate a load that completes but doesn't set up the library
+            opts.callback()
+          }
+        }),
+        picker: undefined, // Intentionally not available
+      }
+      ;(window as any).gapi = mockGapiNoPickerBuilder
+
+      const { openDrivePicker } = await import('./drive')
+      await expect(openDrivePicker('fake-token', vi.fn(), vi.fn())).rejects.toThrow(/PickerBuilder not available/)
+
+      vi.unstubAllEnvs()
+      delete (window as any).gapi
+    })
   })
 })
