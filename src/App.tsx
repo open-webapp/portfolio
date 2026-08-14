@@ -259,6 +259,13 @@ function App() {
           dispatch({ type: '__SET_STATE', newState: initialState() })
           setIsHydrated(false)
         }}
+        driveReady={driveReady}
+        driveEmail={driveEmail}
+        backupFileId={backupFileId}
+        syncing={syncing}
+        setSyncing={setSyncing}
+        handleConnect={handleConnect}
+        handleDisconnect={handleDisconnect}
       />
     )
   }
@@ -362,7 +369,6 @@ function App() {
               setSyncing={setSyncing}
               handleConnect={handleConnect}
               handleDisconnect={handleDisconnect}
-              handleSync={handleSync}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
             />

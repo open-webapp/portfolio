@@ -1,12 +1,21 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AppState } from '../lib/state'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadLegacyPlaintextApp, loadPersistedApp, peekStoredSalt, clearPersistedApp } from '../lib/persist'
+import { DriveRestorePanel } from './DriveRestorePanel'
 
 export interface PasswordGateProps {
   shape: 'absent' | 'legacy-plaintext' | 'encrypted'
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
   onReset: () => void
+  // Drive props for restore feature
+  driveReady?: boolean
+  driveEmail?: string | null
+  backupFileId?: string | null
+  syncing?: boolean
+  setSyncing?: (v: boolean) => void
+  handleConnect?: () => void
+  handleDisconnect?: () => void
 }
 
 /**
@@ -14,7 +23,18 @@ export interface PasswordGateProps {
  * Nav/dashboard tree until the user has unlocked (or set) a password.
  * Mirrors design/v4's "Encryption Password" screen layout for all three shapes.
  */
-export function PasswordGate({ shape, onUnlock, onReset }: PasswordGateProps) {
+export function PasswordGate({
+  shape,
+  onUnlock,
+  onReset,
+  driveReady = false,
+  driveEmail = null,
+  backupFileId = null,
+  syncing = false,
+  setSyncing,
+  handleConnect,
+  handleDisconnect,
+}: PasswordGateProps) {
   const handleReset = async () => {
     await clearPersistedApp()
     onReset()
@@ -23,8 +43,27 @@ export function PasswordGate({ shape, onUnlock, onReset }: PasswordGateProps) {
   return shape === 'encrypted' ? (
     <EnterPasswordScreen onUnlock={onUnlock} onReset={handleReset} />
   ) : (
-    <SetPasswordScreen shape={shape} onUnlock={onUnlock} onReset={handleReset} />
+    <SetPasswordScreen
+      shape={shape}
+      onUnlock={onUnlock}
+      onReset={handleReset}
+      driveReady={driveReady}
+      driveEmail={driveEmail}
+      backupFileId={backupFileId}
+      syncing={syncing}
+      setSyncing={setSyncing}
+      handleConnect={handleConnect}
+      handleDisconnect={handleDisconnect}
+    />
   )
+}
+
+interface GateShellProps {
+  title: string
+  subtitle: string
+  children: React.ReactNode
+  onReset: () => Promise<void>
+  tabControl?: React.ReactNode
 }
 
 function GateShell({
@@ -32,12 +71,8 @@ function GateShell({
   subtitle,
   children,
   onReset,
-}: {
-  title: string
-  subtitle: string
-  children: React.ReactNode
-  onReset: () => Promise<void>
-}) {
+  tabControl,
+}: GateShellProps) {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [resetConfirmText, setResetConfirmText] = useState('')
   const [resetting, setResetting] = useState(false)
@@ -83,6 +118,12 @@ function GateShell({
             {subtitle}
           </div>
         </div>
+
+        {tabControl && (
+          <div style={{ marginBottom: 'var(--space-5)' }}>
+            {tabControl}
+          </div>
+        )}
 
         <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
           {children}
@@ -184,15 +225,55 @@ function SetPasswordScreen({
   shape,
   onUnlock,
   onReset,
+  driveReady = false,
+  driveEmail = null,
+  backupFileId = null,
+  syncing = false,
+  setSyncing,
+  handleConnect,
+  handleDisconnect,
 }: {
   shape: 'absent' | 'legacy-plaintext'
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
   onReset: () => Promise<void>
+  driveReady?: boolean
+  driveEmail?: string | null
+  backupFileId?: string | null
+  syncing?: boolean
+  setSyncing?: (v: boolean) => void
+  handleConnect?: () => void
+  handleDisconnect?: () => void
 }) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Tab control for new vs restore (only in 'absent' shape)
+  const [gateTab, setGateTab] = useState<'new' | 'restore'>('new')
+
+  // Dummy key/salt for restore panel initialization
+  const [dummyKey, setDummyKey] = useState<CryptoKey | null>(null)
+  const [dummySalt, setDummySalt] = useState<Uint8Array | null>(null)
+  const [dummyKeyReady, setDummyKeyReady] = useState(false)
+
+  // Initialize dummy key on mount
+  useEffect(() => {
+    if (shape === 'absent') {
+      const initDummyKey = async () => {
+        try {
+          const salt = generateSalt()
+          const key = await deriveKey(crypto.randomUUID(), salt)
+          setDummySalt(salt)
+          setDummyKey(key)
+          setDummyKeyReady(true)
+        } catch (err) {
+          console.error('Failed to generate dummy key:', err)
+        }
+      }
+      void initDummyKey()
+    }
+  }, [shape])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -223,51 +304,113 @@ function SetPasswordScreen({
     }
   }
 
+  // Conditional title/subtitle based on tab
+  const title = gateTab === 'new' ? 'Set Encryption Password' : 'Restore from Google Drive'
+  const subtitle =
+    gateTab === 'new'
+      ? 'Choose a password to encrypt your data on this device.'
+      : 'Load your data stored in Google Drive.'
+
+  // Tab control (only in 'absent' shape)
+  const tabControl =
+    shape === 'absent' ? (
+      <div className="seg" style={{ marginBottom: 'var(--space-5)' }}>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="gateTab"
+            checked={gateTab === 'new'}
+            readOnly
+            onClick={() => setGateTab('new')}
+          />
+          New Setup
+        </label>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="gateTab"
+            checked={gateTab === 'restore'}
+            readOnly
+            onClick={() => setGateTab('restore')}
+          />
+          Restore from Drive
+        </label>
+      </div>
+    ) : null
+
   return (
     <GateShell
-      title="Set Encryption Password"
-      subtitle="Choose a password to encrypt your data on this device."
+      title={title}
+      subtitle={subtitle}
       onReset={onReset}
+      tabControl={tabControl}
     >
-      <form onSubmit={handleSubmit}>
-        <div className="field">
-          <label>New password</label>
-          <input
-            className="input"
-            type="password"
-            placeholder="Enter a new password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            autoFocus
-          />
-        </div>
-        <div className="field">
-          <label>Confirm password</label>
-          <input
-            className="input"
-            type="password"
-            placeholder="Re-enter your password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            autoComplete="new-password"
-          />
-        </div>
+      {/* New Setup Panel - always mounted, visibility toggled */}
+      <div style={{ display: gateTab === 'new' ? 'block' : 'none' }}>
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>New password</label>
+            <input
+              className="input"
+              type="password"
+              placeholder="Enter a new password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              autoFocus
+            />
+          </div>
+          <div className="field">
+            <label>Confirm password</label>
+            <input
+              className="input"
+              type="password"
+              placeholder="Re-enter your password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
 
-        <div className="text-muted" style={{ fontSize: '12px', lineHeight: 1.6, marginBottom: 'var(--space-3)' }}>
-          This password encrypts your data locally on this device. It is never saved anywhere, and you
-          will need to enter it every time you open the app. If you forget it, your data cannot be
-          recovered.
+          <div className="text-muted" style={{ fontSize: '12px', lineHeight: 1.6, marginBottom: 'var(--space-3)' }}>
+            This password encrypts your data locally on this device. It is never saved anywhere, and you
+            will need to enter it every time you open the app. If you forget it, your data cannot be
+            recovered.
+          </div>
+
+          {error && (
+            <div style={{ color: '#8a3c2e', fontSize: '12px', marginBottom: 'var(--space-2)' }}>{error}</div>
+          )}
+
+          <button type="submit" className="btn btn-primary btn-block blueprint" disabled={submitting}>
+            {submitting ? 'Setting password...' : 'Set password'}
+          </button>
+        </form>
+      </div>
+
+      {/* Restore Panel - only rendered in 'absent' shape, always mounted, visibility toggled */}
+      {shape === 'absent' && (
+        <div style={{ display: gateTab === 'restore' ? 'block' : 'none' }}>
+          {dummyKeyReady && dummyKey && dummySalt ? (
+            <DriveRestorePanel
+              driveReady={driveReady}
+              driveEmail={driveEmail}
+              backupFileId={backupFileId}
+              syncing={syncing}
+              setSyncing={setSyncing || (() => {})}
+              handleConnect={handleConnect || (() => {})}
+              handleDisconnect={handleDisconnect || (() => {})}
+              restoreKey={dummyKey}
+              restoreSalt={dummySalt}
+              onRestored={(state, key, salt) => onUnlock(key, salt, state)}
+            />
+          ) : (
+            <div style={{ padding: 'var(--space-3)', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+              Loading restore options...
+            </div>
+          )}
         </div>
-
-        {error && (
-          <div style={{ color: '#8a3c2e', fontSize: '12px', marginBottom: 'var(--space-2)' }}>{error}</div>
-        )}
-
-        <button type="submit" className="btn btn-primary btn-block blueprint" disabled={submitting}>
-          {submitting ? 'Setting password...' : 'Set password'}
-        </button>
-      </form>
+      )}
     </GateShell>
   )
 }
