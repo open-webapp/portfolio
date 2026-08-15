@@ -197,7 +197,7 @@ function AccountDropdown({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
       <div>{account.institution} — {account.name}</div>
       <div style={{ fontSize: '0.875em', color: 'var(--text-muted)' }}>
-        {getTaxCategoryLabel(account.taxCategory)} • {getRetirementLabel(account.retirement)}
+        {getTaxCategoryLabel(account.taxCategory)} • {getRetirementLabel(account.retirement)} • #{account.accountNumber}
       </div>
     </div>
   )
