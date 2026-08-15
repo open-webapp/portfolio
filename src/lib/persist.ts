@@ -38,8 +38,13 @@ function base64ToBytes(b64: string): Uint8Array {
 
 /**
  * Migration tolerance: fill in missing collections/fields with defaults from initialState().
+ *
+ * Every path that turns stored bytes back into an AppState must run through
+ * this — local unlock and Drive restore alike. A backup written by an older
+ * build is missing whatever fields have been added since, and handing that
+ * raw object to the reducer puts `undefined` where the UI expects arrays.
  */
-function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
+export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
   const defaults = initialState()
   return {
     // Data collections

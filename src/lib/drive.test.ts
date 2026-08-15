@@ -422,6 +422,31 @@ describe('drive.ts Drive-sync wiring', () => {
   })
 
   describe('restoreBackupFromFileId()', () => {
+    // Regression: a backup written by an older build lacks whatever fields
+    // have been added since. Returned raw, those land in the reducer as
+    // `undefined`, the first component to read one throws during render, and
+    // React unmounts the whole tree — the restore "succeeds" onto a blank page.
+    // The local unlock path has always coalesced; this one must too.
+    it('fills in fields missing from an older backup rather than returning them undefined', async () => {
+      const salt = generateSalt()
+      const key = await deriveKey('correct horse battery staple', salt)
+
+      // An older backup: only the fields that build knew about.
+      const legacyBackup = { positions: [], accounts: [] } as unknown as AppState
+      const envelope = await encryptState(legacyBackup, key, salt)
+      mockFilesRead.mockResolvedValue(JSON.stringify(envelope))
+
+      const { restoreBackupFromFileId } = await import('./drive')
+      const restored = await restoreBackupFromFileId('legacy-backup-id', key)
+
+      const defaults = initialState()
+      for (const field of Object.keys(defaults) as (keyof AppState)[]) {
+        expect(restored[field], `restored.${String(field)} is undefined`).toBeDefined()
+      }
+      expect(restored.transactions).toEqual(defaults.transactions)
+      expect(restored.closedPositions).toEqual(defaults.closedPositions)
+    })
+
     it('reads and decrypts a file by id directly, bypassing the by-name folder lookup', async () => {
       const testState: AppState = {
         ...initialState(),

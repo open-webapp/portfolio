@@ -22,6 +22,15 @@ vi.mock('../lib/drive', () => {
   return {
     openDrivePicker: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
+    // Real envelopes are built with the real crypto module in these tests, so
+    // the stand-in decrypts for real. The coalescing the production helper
+    // layers on top is unit-tested in drive.test.ts.
+    decryptBackupEnvelope: vi.fn(async (envelope: any, key: any) => {
+      // Plain import, not importActual: resolves to the mocked crypto module
+      // where a test mocks it, and the real one where it doesn't.
+      const crypto = await import('../lib/crypto')
+      return crypto.decryptState(envelope, key)
+    }),
     getDriveConnection: vi.fn(),
     getAccessTokenForPicker: vi.fn(),
     getDriveAuthStatus: vi.fn(),

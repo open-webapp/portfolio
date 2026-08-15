@@ -4,6 +4,7 @@ import {
   restoreBackupFromFileId,
   openDrivePicker,
   getAccessTokenForPicker,
+  decryptBackupEnvelope,
   DriveDecryptError,
 } from '../lib/drive'
 import { deriveKey, decryptState } from '../lib/crypto'
@@ -133,7 +134,7 @@ export function DriveRestorePanel({
     setRestoringWithBackupPassword(true)
     try {
       const retryKey = await deriveKey(backupPasswordInput, crossPasswordPrompt.salt)
-      const decryptedState = await decryptState(crossPasswordPrompt.envelope, retryKey)
+      const decryptedState = await decryptBackupEnvelope(crossPasswordPrompt.envelope, retryKey)
       onRestored(decryptedState, retryKey, crossPasswordPrompt.salt)
       setCrossPasswordPrompt(null)
       setBackupPasswordInput('')

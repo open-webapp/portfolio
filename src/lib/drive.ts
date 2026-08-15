@@ -3,6 +3,24 @@ import type { Connection } from '@open-webapp/drive-sync'
 import type { AppState } from './state'
 import { decryptState, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
+import { coalesceWithDefaults } from './persist'
+
+/**
+ * Decrypts a backup envelope into a usable AppState.
+ *
+ * The coalesce step is not optional. A Drive backup written by an older build
+ * lacks whatever fields have been added since, and JSON.parse hands those back
+ * as `undefined` — which the reducer stores verbatim, so the first component to
+ * read one throws during render and React unmounts the entire tree, leaving a
+ * blank page. The local unlock path has always normalized here; the Drive
+ * restore path must too. Every caller that decrypts a backup goes through this.
+ */
+export async function decryptBackupEnvelope(
+  envelope: EncryptedEnvelope,
+  key: CryptoKey
+): Promise<AppState> {
+  return coalesceWithDefaults(await decryptState(envelope, key))
+}
 
 /**
  * Google Picker API types and window augmentation.
@@ -439,7 +457,7 @@ async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppSt
   }
 
   try {
-    return await decryptState(envelope, key)
+    return await decryptBackupEnvelope(envelope, key)
   } catch (decryptError) {
     if (decryptError instanceof Error && decryptError.name === 'OperationError') {
       throw new DriveDecryptError('backup encrypted with a different password', salt, envelope)
