@@ -136,16 +136,11 @@ function fixtureState(): AppState {
     customInstitutions: [],
 
     // UI state
-    category: 'all',
-    tab: 'positions',
-    view: 'dashboard',
+    view: 'accounts',
     sortKey: 'symbol',
     sortDir: 'asc',
-    assetClassFilter: 'All',
-    posSearch: 'test search',
     txTypeFilter: 'Buy',
     txSearch: 'tx search',
-    showClosed: true,
     selectedAccountId: 'acc-1',
     selectedCategoryKey: null,
     expandedCategories: { taxable: true },
@@ -255,17 +250,12 @@ describe('IndexedDB persistence', () => {
         snapshots: [],
         csvMappings: [],
         customInstitutions: [],
-        // UI state (omitting the 4 new fields)
-        category: 'all',
-        tab: 'positions',
-        view: 'dashboard',
+        // UI state (omitting the 4 newer AccountsPage fields)
+        view: 'accounts',
         sortKey: 'symbol',
         sortDir: 'asc',
-        assetClassFilter: 'All',
-        posSearch: '',
         txTypeFilter: 'All',
         txSearch: '',
-        showClosed: false,
         // selectedAccountId, expandedCategories, acctAssetClassFilter, acctPosSearch are missing
       }
 
@@ -283,15 +273,10 @@ describe('IndexedDB persistence', () => {
     it('preserves UI state accurately', async () => {
       const stateWithUIChanges: AppState = {
         ...initialState(),
-        category: 'long-term',
-        tab: 'transactions',
         sortKey: 'gainLoss',
         sortDir: 'desc',
-        assetClassFilter: 'Equities',
-        posSearch: 'test position',
         txTypeFilter: 'Sell',
         txSearch: 'test transaction',
-        showClosed: true,
         selectedAccountId: 'acc-1',
         expandedCategories: { taxable: true },
         acctAssetClassFilter: 'Equities',
@@ -303,15 +288,10 @@ describe('IndexedDB persistence', () => {
       await savePersistedApp(stateWithUIChanges, key, salt)
       const loaded = await loadPersistedApp(key)
 
-      expect(loaded?.category).toBe('long-term')
-      expect(loaded?.tab).toBe('transactions')
       expect(loaded?.sortKey).toBe('gainLoss')
       expect(loaded?.sortDir).toBe('desc')
-      expect(loaded?.assetClassFilter).toBe('Equities')
-      expect(loaded?.posSearch).toBe('test position')
       expect(loaded?.txTypeFilter).toBe('Sell')
       expect(loaded?.txSearch).toBe('test transaction')
-      expect(loaded?.showClosed).toBe(true)
       expect(loaded?.selectedAccountId).toBe('acc-1')
       expect(loaded?.expandedCategories).toEqual({ taxable: true })
       expect(loaded?.acctAssetClassFilter).toBe('Equities')
@@ -443,8 +423,6 @@ describe('IndexedDB persistence', () => {
         accounts: [],
         positions: [],
         // Missing other collections
-        category: 'all',
-        tab: 'transactions',
       }
 
       await putRaw(minimalState)
@@ -458,8 +436,8 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.transactions).toEqual([]) // Should default to []
       expect(loaded?.snapshots).toEqual([]) // Should default to []
       expect(legacyKey in loaded!).toBe(false) // Not part of AppState anymore
-      expect(loaded?.category).toBe('all')
-      expect(loaded?.tab).toBe('transactions')
+      expect(loaded?.view).toBe('accounts')
+      expect(loaded?.txTypeFilter).toBe('All')
     })
 
     it('silently drops a stale legacy collection key when loading pre-migration data', async () => {
@@ -479,16 +457,11 @@ describe('IndexedDB persistence', () => {
             },
           },
         ],
-        category: 'all',
-        tab: 'positions',
-        view: 'dashboard',
+        view: 'accounts',
         sortKey: 'symbol',
         sortDir: 'asc',
-        assetClassFilter: 'All',
-        posSearch: '',
         txTypeFilter: 'All',
         txSearch: '',
-        showClosed: false,
         // Omitting the 4 new fields to test backward compat
       }
 
@@ -617,12 +590,21 @@ describe('IndexedDB persistence', () => {
       })
     })
 
+    it('migrates a retired view: "dashboard" blob to the accounts view', async () => {
+      // Blobs written before the Dashboard was removed carry view: 'dashboard',
+      // which is no longer renderable. Passing it through would land the user on
+      // Settings (the else-branch of App's two-way view conditional).
+      await putRaw({ accounts: [], positions: [], view: 'dashboard' } as unknown as Partial<AppState>)
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded?.view).toBe('accounts')
+    })
+
     it('loads missing view with default', async () => {
       const preExistingState: Partial<AppState> = {
         accounts: [],
         positions: [],
-        category: 'all',
-        tab: 'positions',
         // Missing view
       }
 
@@ -631,7 +613,7 @@ describe('IndexedDB persistence', () => {
       const loaded = await loadLegacyPlaintextApp()
 
       expect(loaded).not.toBeNull()
-      expect(loaded?.view).toBe('dashboard')
+      expect(loaded?.view).toBe('accounts')
     })
 
     it('loads missing csvMappings with default empty array', async () => {
@@ -641,9 +623,7 @@ describe('IndexedDB persistence', () => {
         closedPositions: [],
         transactions: [],
         snapshots: [],
-        category: 'all',
-        tab: 'positions',
-        view: 'dashboard',
+        view: 'accounts',
         // Missing csvMappings
       }
 
@@ -664,16 +644,11 @@ describe('IndexedDB persistence', () => {
         snapshots: [],
         csvMappings: [],
         customInstitutions: [],
-        category: 'all',
-        tab: 'positions',
-        view: 'dashboard',
+        view: 'accounts',
         sortKey: 'symbol',
         sortDir: 'asc',
-        assetClassFilter: 'All',
-        posSearch: '',
         txTypeFilter: 'All',
         txSearch: '',
-        showClosed: false,
         selectedAccountId: null,
         expandedCategories: {},
         acctAssetClassFilter: 'All',
@@ -723,8 +698,6 @@ describe('IndexedDB persistence', () => {
       const minimalState: Partial<AppState> = {
         accounts: [],
         positions: [],
-        category: 'all',
-        tab: 'transactions',
         // Omitting the 4 new UI state fields to test backward compat
       }
 

@@ -1,7 +1,7 @@
 import type { AppState } from './state'
-import type { Position, ClosedPosition, Transaction, Account, TaxCategory } from './types'
+import type { Position, ClosedPosition, Transaction, TaxCategory } from './types'
 import { sortBy } from './sort'
-import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, glColor } from './computations'
+import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './computations'
 
 /**
  * Map tax category keys to display labels.
@@ -13,55 +13,12 @@ export const CATEGORY_LABEL: Record<TaxCategory, string> = {
 }
 
 /**
- * Filter positions by asset class, search text, and sort according to state.
- * Applies asset-class filter (or 'All' for everything), search on symbol/name (case-insensitive),
- * and sorts by the current sortKey/sortDir.
- */
-export function visiblePositions(state: AppState): Position[] {
-  const accountsInCategory = getAccountsForCategory(state)
-  let results = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
-
-  // Apply asset class filter
-  if (state.assetClassFilter !== 'All') {
-    results = results.filter((p) => {
-      const effectiveClass = p.assetClassManualOverride || p.assetClass
-      return effectiveClass === state.assetClassFilter
-    })
-  }
-
-  // Apply search filter (on symbol or name, case-insensitive)
-  // Note: name is nullable (display-only field). Null names don't exclude positions from search;
-  // only symbol matching is used if name is null. Search correctly handles both cases.
-  if (state.posSearch.trim()) {
-    const searchLower = state.posSearch.toLowerCase()
-    results = results.filter((p) =>
-      p.symbol.toLowerCase().includes(searchLower) ||
-      (p.name?.toLowerCase().includes(searchLower) ?? false)
-    )
-  }
-
-  // Apply sort
-  results = sortBy(results, state.sortKey, state.sortDir)
-
-  return results
-}
-
-/**
- * Compute total market value of positions filtered by category.
+ * Compute total market value across every open position.
  * This is the denominator for portfolio percentage calculations.
- * Does NOT apply asset-class or search filters — only category filter.
- * Returns the sum of all filtered positions' market values (can be zero, negative, or positive).
+ * Returns the sum of all positions' market values (can be zero, negative, or positive).
  */
 export function filteredPortfolioTotal(state: AppState): number {
-  const accountsInCategory = getAccountsForCategory(state)
-  let results = state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
-
-  // Sum market values across all filtered positions
-  return results.reduce((sum, p) => sum + computePosition(p).marketValue, 0)
+  return state.positions.reduce((sum, p) => sum + computePosition(p).marketValue, 0)
 }
 
 /**
@@ -81,10 +38,7 @@ export function assetClassOptions(state: AppState): string[] {
  * Applies type filter (or 'All' for everything) and search on symbol/date (case-insensitive).
  */
 export function visibleTransactions(state: AppState): Transaction[] {
-  const accountsInCategory = getAccountsForCategory(state)
-  let results = state.transactions.filter((t) =>
-    accountsInCategory.some((a) => a.id === t.accountId)
-  )
+  let results = state.transactions
 
   // Apply type filter
   if (state.txTypeFilter !== 'All') {
@@ -107,71 +61,6 @@ export function visibleTransactions(state: AppState): Transaction[] {
 }
 
 
-
-/**
- * Private helper: compute total value and formatted GL string for a set of positions.
- * Returns { totalValueStr, glStr, glColor } for use in segment card display.
- */
-function valueGlSummary(positions: Position[]): {
-  totalValueStr: string
-  glStr: string
-  glColor: string
-} {
-  // Total Value: sum of all open positions' market value
-  const totalValue = positions.reduce((sum, p) => {
-    return sum + computePosition(p).marketValue
-  }, 0)
-
-  // Total Gain/Loss: sum of all positions' gl
-  const totalGL = positions.reduce((sum, p) => {
-    return sum + computePosition(p).gl
-  }, 0)
-
-  // Cost Basis: sum of all positions' costBasis
-  const costBasis = positions.reduce((sum, p) => {
-    return sum + computePosition(p).costBasis
-  }, 0)
-
-  // Total GL percentage
-  const totalGLPct = costBasis === 0 ? 0 : (totalGL / costBasis) * 100
-
-  return {
-    totalValueStr: fmtUSD(totalValue),
-    glStr: (totalGL >= 0 ? '+' : '') + fmtUSD(totalGL) + ' (' + fmtPct(totalGLPct) + ')',
-    glColor: glColor(totalGL)
-  }
-}
-
-/**
- * Generate segment card data (total value and GL) filtered by retirement status.
- * Returns { totalValueStr, glStr, glColor } for display in segment cards.
- */
-export function segmentCards(
-  state: AppState,
-  retirement: boolean
-): {
-  totalValueStr: string
-  glStr: string
-  glColor: string
-} {
-  const filteredPositions = state.positions.filter((p) => {
-    const account = state.accounts.find((a) => a.id === p.accountId)
-    return account?.retirement === retirement
-  })
-  return valueGlSummary(filteredPositions)
-}
-
-/**
- * Get all positions scoped to the currently-selected category filter.
- * Returns all positions if category is 'all', otherwise only positions
- * from accounts in the selected tax category.
- */
-export function positionsForCategory(state: AppState): Position[] {
-  const accountsInCategory = getAccountsForCategory(state)
-  return state.positions.filter((p) =>
-    accountsInCategory.some((a) => a.id === p.accountId)
-  )
-}
 
 /**
  * Generate allocation bars by asset class.
@@ -445,16 +334,5 @@ export function acctAllocationTitle(state: AppState): string {
     return `Allocation — ${account?.name ?? ''}`
   }
   return 'Allocation — All Accounts'
-}
-
-/**
- * Get all accounts that match the currently-selected category filter.
- * Returns all accounts if category is 'all'.
- */
-function getAccountsForCategory(state: AppState): Account[] {
-  if (state.category === 'all') {
-    return state.accounts
-  }
-  return state.accounts.filter((a) => a.taxCategory === state.category)
 }
 

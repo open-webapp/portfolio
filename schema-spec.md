@@ -175,10 +175,10 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 - `DELETE_CLOSED_POSITION`: Remove a `ClosedPosition` from state
 
 **Filters & UI**
-- `SET_CATEGORY`, `SET_RANGE`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`
-- `SET_ASSET_CLASS_FILTER`, `SET_RETIREMENT_FILTER`
-- `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`
-- `TOGGLE_SHOW_CLOSED`: Toggle `showClosed` boolean
+- `SET_SORT`, `TOGGLE_SORT`
+- `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`
+- `SET_VIEW`: Switch between the `'accounts'` and `'settings'` views
+- `SELECT_ACCOUNT`, `TOGGLE_CATEGORY_EXPANDED`, `SET_ACCT_ASSET_CLASS_FILTER`, `SET_ACCT_POS_SEARCH`
 
 **Imports**
 - `IMPORT_POSITIONS`: Merge/replace positions for an account (calls `importPositions` helper)
@@ -189,7 +189,9 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
-`category: TaxCategory | 'all'`, `range: string` (`'6m' | '1y' | 'ytd' | 'all'`), `tab: 'positions' | 'transactions'`, `view: 'dashboard' | 'settings'`, `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `assetClassFilter: string`, `retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'`, `posSearch: string`, `txTypeFilter: string`, `txSearch: string`, `showClosed: boolean`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`.
+`view: 'settings' | 'accounts'` (defaults to `'accounts'`), `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `txTypeFilter: string`, `txSearch: string`, `selectedAccountId: string | null`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`, `expandedCategories: Record<string, boolean>`, `acctAssetClassFilter: string`, `acctPosSearch: string`.
+
+On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 
 ## Persistence envelope
 

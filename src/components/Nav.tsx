@@ -10,7 +10,7 @@ export interface NavProps {
 }
 
 /**
- * Nav component: Dashboard/Accounts tabs, sync + settings buttons.
+ * Nav component: Accounts tab, sync + settings buttons.
  */
 export function Nav({
   state,
@@ -21,7 +21,6 @@ export function Nav({
   onOpenSettings,
 }: NavProps) {
   const mainNavTabs = [
-    { value: 'dashboard', label: 'Dashboard' },
     { value: 'accounts', label: 'Accounts' },
   ]
 
@@ -36,7 +35,7 @@ export function Nav({
     >
       <div className="nav-brand" style={{ marginRight: 'var(--space-5)' }}>Ledger</div>
 
-      {/* Main navigation tabs (Dashboard / Accounts) */}
+      {/* Main navigation tab (Accounts) */}
       <div className="seg">
         {mainNavTabs.map((tab) => (
           <label

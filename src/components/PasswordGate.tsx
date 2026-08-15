@@ -20,7 +20,7 @@ export interface PasswordGateProps {
 
 /**
  * PasswordGate: full-replacement gate screen rendered by App.tsx instead of the
- * Nav/dashboard tree until the user has unlocked (or set) a password.
+ * Nav/Accounts tree until the user has unlocked (or set) a password.
  * Mirrors design/v4's "Encryption Password" screen layout for all three shapes.
  */
 export function PasswordGate({

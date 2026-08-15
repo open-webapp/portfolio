@@ -13,15 +13,10 @@ export type AppAction =
   | { type: 'CLOSE_POSITION'; positionId: string }
   | { type: 'DELETE_CLOSED_POSITION'; id: string }
   | { type: 'RESTORE_CLOSED_POSITION'; closedPositionId: string; replaceExistingPositionId?: string }
-  | { type: 'SET_CATEGORY'; category: any }
-  | { type: 'SET_TAB'; tab: any }
   | { type: 'SET_SORT'; sortKey: any; sortDir: any }
   | { type: 'TOGGLE_SORT'; sortKey: any }
-  | { type: 'SET_ASSET_CLASS_FILTER'; assetClass: string }
-  | { type: 'SET_POSITIONS_SEARCH'; search: string }
   | { type: 'SET_TRANSACTIONS_SEARCH'; search: string }
   | { type: 'SET_TRANSACTION_TYPE_FILTER'; filter: string }
-  | { type: 'TOGGLE_SHOW_CLOSED' }
   | { type: 'SET_VIEW'; view: any }
   | { type: 'IMPORT_POSITIONS'; accountId: string; mappedRows: any; importDate: any; mode: any }
   | { type: 'IMPORT_TRANSACTIONS'; accountId: string; mappedRows: any }
@@ -71,32 +66,17 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return StateActions.restoreClosedPosition(state, action.closedPositionId, action.replaceExistingPositionId)
 
     // Filters
-    case 'SET_CATEGORY':
-      return StateActions.setCategory(state, action.category)
-
-    case 'SET_TAB':
-      return StateActions.setTab(state, action.tab)
-
     case 'SET_SORT':
       return StateActions.setSort(state, action.sortKey, action.sortDir)
 
     case 'TOGGLE_SORT':
       return StateActions.toggleSort(state, action.sortKey)
 
-    case 'SET_ASSET_CLASS_FILTER':
-      return StateActions.setAssetClassFilter(state, action.assetClass)
-
-    case 'SET_POSITIONS_SEARCH':
-      return StateActions.setPositionsSearch(state, action.search)
-
     case 'SET_TRANSACTIONS_SEARCH':
       return StateActions.setTransactionsSearch(state, action.search)
 
     case 'SET_TRANSACTION_TYPE_FILTER':
       return StateActions.setTransactionTypeFilter(state, action.filter)
-
-    case 'TOGGLE_SHOW_CLOSED':
-      return StateActions.toggleShowClosed(state)
 
     case 'SET_VIEW':
       return StateActions.setView(state, action.view)

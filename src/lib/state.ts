@@ -20,16 +20,11 @@ export interface AppState {
   customInstitutions: string[]
 
   // UI state
-  category: TaxCategory | 'all'
-  tab: 'positions' | 'transactions'
-  view: 'dashboard' | 'settings' | 'accounts'
+  view: 'settings' | 'accounts'
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
-  assetClassFilter: string // 'All' or specific class
-  posSearch: string // search text for positions
   txTypeFilter: string // 'All' or specific type like 'Buy'
   txSearch: string // search text for transactions
-  showClosed: boolean // toggle closed positions table
   selectedAccountId: string | null // selected account on AccountsPage
   selectedCategoryKey: TaxCategory | 'closedPositions' | null // selected category on AccountsPage
   expandedCategories: Record<string, boolean> // category expansion state
@@ -58,16 +53,11 @@ export function initialState(): AppState {
     customInstitutions: [],
 
     // UI state
-    category: 'all',
-    tab: 'positions',
-    view: 'dashboard',
+    view: 'accounts',
     sortKey: 'symbol',
     sortDir: 'asc',
-    assetClassFilter: 'All',
-    posSearch: '',
     txTypeFilter: 'All',
     txSearch: '',
-    showClosed: false,
     selectedAccountId: null,
     selectedCategoryKey: null,
     expandedCategories: {},
@@ -231,29 +221,6 @@ export function restoreClosedPosition(
 }
 
 /**
- * Set the category filter (to be implemented in reducer cases).
- */
-export function setCategory(
-  state: AppState,
-  category: TaxCategory | 'all'
-): AppState {
-  return {
-    ...state,
-    category,
-  }
-}
-
-/**
- * Set the active tab (to be implemented in reducer cases).
- */
-export function setTab(state: AppState, tab: 'positions' | 'transactions'): AppState {
-  return {
-    ...state,
-    tab,
-  }
-}
-
-/**
  * Set the sort key and direction (to be implemented in reducer cases).
  */
 export function setSort(
@@ -280,26 +247,6 @@ export function toggleSort(state: AppState, newKey: keyof Position): AppState {
 }
 
 /**
- * Set the asset class filter (to be implemented in reducer cases).
- */
-export function setAssetClassFilter(state: AppState, filter: string): AppState {
-  return {
-    ...state,
-    assetClassFilter: filter,
-  }
-}
-
-/**
- * Set the positions search text (to be implemented in reducer cases).
- */
-export function setPositionsSearch(state: AppState, search: string): AppState {
-  return {
-    ...state,
-    posSearch: search,
-  }
-}
-
-/**
  * Set the transactions search text (to be implemented in reducer cases).
  */
 export function setTransactionsSearch(state: AppState, search: string): AppState {
@@ -316,16 +263,6 @@ export function setTransactionTypeFilter(state: AppState, filter: string): AppSt
   return {
     ...state,
     txTypeFilter: filter,
-  }
-}
-
-/**
- * Toggle the closed positions visibility (to be implemented in reducer cases).
- */
-export function toggleShowClosed(state: AppState): AppState {
-  return {
-    ...state,
-    showClosed: !state.showClosed,
   }
 }
 
@@ -414,7 +351,7 @@ export function addCustomInstitution(state: AppState, name: string): AppState {
 /**
  * Set the current view (to be implemented in reducer cases).
  */
-export function setView(state: AppState, view: 'dashboard' | 'settings' | 'accounts'): AppState {
+export function setView(state: AppState, view: 'settings' | 'accounts'): AppState {
   return {
     ...state,
     view,

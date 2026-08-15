@@ -278,15 +278,10 @@ describe('drive.ts Drive-sync wiring', () => {
           importedAt: '2024-01-01',
         },
       ],
-      category: 'all',
-      tab: 'positions',
       sortKey: 'symbol',
       sortDir: 'asc',
-      assetClassFilter: 'All',
-      posSearch: '',
       txTypeFilter: 'All',
       txSearch: '',
-      showClosed: false,
     }
 
     const salt = generateSalt()

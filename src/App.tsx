@@ -2,24 +2,13 @@ import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
-import { assetClassOptions, CATEGORY_LABEL, positionsForCategory } from './lib/selectors'
 import { Nav } from './components/Nav'
-import { OverviewCard } from './components/OverviewCard'
-import { AllocationChart } from './components/AllocationChart'
-import { PositionsTable } from './components/PositionsTable'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
-import { ImportDialog } from './components/import/ImportDialog'
 import { PasswordGate } from './components/PasswordGate'
 import { drive, getDriveAuthStatus, getBackupFileId, ensureFreshConnection, disconnectDrive, syncBackup } from './lib/drive'
 import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
-
-const categoryTabs = [
-  { value: 'all', label: 'All' },
-  ...Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label })),
-]
-
 
 /**
  * App: Main component that wires everything together.
@@ -253,7 +242,7 @@ function App() {
   if (gateShape === null) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <p>Loading dashboard...</p>
+        <p>Loading...</p>
       </div>
     )
   }
@@ -293,7 +282,7 @@ function App() {
   if (!isHydrated) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <p>Loading dashboard...</p>
+        <p>Loading...</p>
       </div>
     )
   }
@@ -301,7 +290,7 @@ function App() {
   return (
     <div>
       <div>
-        {/* Navigation: Dashboard/Accounts tabs, sync + settings buttons */}
+        {/* Navigation: Accounts tab, sync + settings buttons */}
         <Nav
           state={state}
           dispatch={dispatch}
@@ -314,57 +303,7 @@ function App() {
           }}
         />
 
-        {state.view === 'dashboard' ? (
-          /* Main content area with padding */
-          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
-            {/* Overview card: 3-column layout with All Together, Retirement, Non-Retirement */}
-            <OverviewCard state={state} />
-
-            {/* Divider (zero-height) */}
-            <div style={{ background: 'var(--color-divider)', margin: 'var(--space-6) 0' }} />
-
-            {/* Category tabs seg */}
-            <div className="seg" style={{ marginBottom: 'var(--space-6)' }}>
-              {categoryTabs.map((tab) => (
-                <label key={tab.value} className="seg-opt" onClick={() => dispatch({ type: 'SET_CATEGORY', category: tab.value })}>
-                  <input type="radio" name="category" checked={state.category === tab.value} readOnly />
-                  <span>{tab.label}</span>
-                </label>
-              ))}
-            </div>
-
-            {/* Allocation chart: full-width row */}
-            <div style={{ marginBottom: 'var(--space-6)' }}>
-              <AllocationChart positions={positionsForCategory(state)} title="Allocation" />
-            </div>
-
-            {/* Divider */}
-            <div style={{ borderTop: '1px solid var(--color-divider)', paddingTop: 'var(--space-5)', marginTop: 'var(--space-6)' }} />
-
-            {/* Asset-class filter .seg control + Import button row */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
-              {/* Left: asset-class filter .seg */}
-              <div className="seg">
-                {['All', ...assetClassOptions(state)].map((opt) => (
-                  <label key={opt} className="seg-opt" onClick={() => dispatch({ type: 'SET_ASSET_CLASS_FILTER', assetClass: opt })}>
-                    <input type="radio" name="assetClassFilter" checked={state.assetClassFilter === opt} readOnly />
-                    <span>{opt}</span>
-                  </label>
-                ))}
-              </div>
-
-              {/* Right: Import Dialog */}
-              <ImportDialog
-                state={state}
-                dispatch={dispatch}
-                onClose={() => {}}
-              />
-            </div>
-
-            {/* Positions table */}
-            <PositionsTable state={state} dispatch={dispatch} />
-          </div>
-        ) : state.view === 'accounts' ? (
+        {state.view === 'accounts' ? (
           /* Accounts page view */
           <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
             <AccountsPage state={state} dispatch={dispatch} />

@@ -151,16 +151,6 @@ describe('appReducer', () => {
     })
   })
 
-  describe('SET_ASSET_CLASS_FILTER', () => {
-    it('sets assetClassFilter from action.assetClass', () => {
-      const state: AppState = { ...initialState() }
-
-      const result = appReducer(state, { type: 'SET_ASSET_CLASS_FILTER', assetClass: 'Equity' })
-
-      expect(result.assetClassFilter).toBe('Equity')
-    })
-  })
-
   describe('SELECT_ACCOUNT', () => {
     it('sets selectedAccountId and selectedCategoryKey from action', () => {
       const state: AppState = { ...initialState(), selectedAccountId: null, selectedCategoryKey: null }

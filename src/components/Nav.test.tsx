@@ -22,54 +22,37 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
 }
 
 describe('Nav', () => {
-  // Test case 1: state.view = 'dashboard'
-  it('state.view = "dashboard" → Dashboard tab is checked, Accounts tab is not', () => {
-    const props = makeProps({ state: { view: 'dashboard' } as any })
+  // Test case 1: Accounts is the only main nav tab
+  it('renders exactly one main nav tab, labeled Accounts', () => {
+    const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
-    const dashboardRadio = screen.getByRole('radio', { name: /Dashboard/i }) as HTMLInputElement
-    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
-
-    expect(dashboardRadio.checked).toBe(true)
-    expect(accountsRadio.checked).toBe(false)
+    expect(screen.getAllByRole('radio')).toHaveLength(1)
+    expect(screen.getByRole('radio', { name: /Accounts/i })).toBeTruthy()
+    expect(screen.queryByText('Dashboard')).toBeFalsy()
   })
 
   // Test case 2: state.view = 'accounts'
-  it('state.view = "accounts" → Accounts tab is checked, Dashboard tab is not', () => {
+  it('state.view = "accounts" → Accounts tab is checked', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
-    const dashboardRadio = screen.getByRole('radio', { name: /Dashboard/i }) as HTMLInputElement
     const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
-
     expect(accountsRadio.checked).toBe(true)
-    expect(dashboardRadio.checked).toBe(false)
   })
 
   // Test case 3: state.view = 'settings'
-  it('state.view = "settings" → neither Dashboard nor Accounts tab is checked', () => {
+  it('state.view = "settings" → Accounts tab is not checked', () => {
     const props = makeProps({ state: { view: 'settings' } as any })
     render(<Nav {...props} />)
 
-    const dashboardRadio = screen.getByRole('radio', { name: /Dashboard/i }) as HTMLInputElement
     const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
-
-    expect(dashboardRadio.checked).toBe(false)
     expect(accountsRadio.checked).toBe(false)
   })
 
-  // Test case 4: Clicking Dashboard tab
-  it('clicking Dashboard tab dispatches { type: "SET_VIEW", view: "dashboard" }', () => {
-    const props = makeProps({ state: { view: 'accounts' } as any })
-    render(<Nav {...props} />)
-
-    fireEvent.click(screen.getByLabelText('Dashboard'))
-    expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'dashboard' })
-  })
-
-  // Test case 5: Clicking Accounts tab
+  // Test case 4: Clicking Accounts tab
   it('clicking Accounts tab dispatches { type: "SET_VIEW", view: "accounts" }', () => {
-    const props = makeProps({ state: { view: 'dashboard' } as any })
+    const props = makeProps({ state: { view: 'settings' } as any })
     render(<Nav {...props} />)
 
     fireEvent.click(screen.getByLabelText('Accounts'))

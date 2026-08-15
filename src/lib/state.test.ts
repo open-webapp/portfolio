@@ -193,15 +193,15 @@ describe('state helpers', () => {
   })
 
   describe('setView', () => {
-    it('toggles between "dashboard" and "settings"', () => {
+    it('defaults to "accounts" and toggles between "accounts" and "settings"', () => {
       const state = initialState()
-      expect(state.view).toBe('dashboard')
+      expect(state.view).toBe('accounts')
 
       const toSettings = setView(state, 'settings')
       expect(toSettings.view).toBe('settings')
 
-      const toDashboard = setView(toSettings, 'dashboard')
-      expect(toDashboard.view).toBe('dashboard')
+      const toAccounts = setView(toSettings, 'accounts')
+      expect(toAccounts.view).toBe('accounts')
     })
   })
 

@@ -76,7 +76,7 @@ describe('PositionGroupOverlay', () => {
     csvMappings: [],
     customInstitutions: [],
     tab: 'positions',
-    view: 'dashboard',
+    view: 'accounts',
     sortKey: 'symbol',
     sortDir: 'asc',
     assetClassFilter: 'All',

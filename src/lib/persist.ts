@@ -66,17 +66,15 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     csvMappings: loaded.csvMappings ?? defaults.csvMappings,
     customInstitutions: loaded.customInstitutions ?? defaults.customInstitutions,
 
-    // UI state with existing values or defaults
-    category: loaded.category ?? defaults.category,
-    tab: loaded.tab ?? defaults.tab,
-    view: loaded.view ?? defaults.view,
+    // UI state with existing values or defaults.
+    // `view` is whitelisted rather than defaulted: blobs written before the
+    // Dashboard was removed carry `view: 'dashboard'`, which is no longer a
+    // renderable view. Anything unrecognized falls back to the default.
+    view: loaded.view === 'accounts' || loaded.view === 'settings' ? loaded.view : defaults.view,
     sortKey: loaded.sortKey ?? defaults.sortKey,
     sortDir: loaded.sortDir ?? defaults.sortDir,
-    assetClassFilter: loaded.assetClassFilter ?? defaults.assetClassFilter,
-    posSearch: loaded.posSearch ?? defaults.posSearch,
     txTypeFilter: loaded.txTypeFilter ?? defaults.txTypeFilter,
     txSearch: loaded.txSearch ?? defaults.txSearch,
-    showClosed: loaded.showClosed ?? defaults.showClosed,
     selectedAccountId: loaded.selectedAccountId ?? defaults.selectedAccountId,
     selectedCategoryKey: loaded.selectedCategoryKey ?? defaults.selectedCategoryKey,
     expandedCategories: loaded.expandedCategories ?? defaults.expandedCategories,
