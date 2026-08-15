@@ -315,13 +315,25 @@ export async function syncBackup(state: AppState, key: CryptoKey, salt: Uint8Arr
       'ensureFolderPath'
     )
 
+    // Find the existing backup file by name so we can update it instead of creating a new one
+    const existingFiles = await withTimeout(
+      project.files.list({
+        folderId,
+        nameEquals: APP_STATE_FILENAME,
+      }),
+      DRIVE_IO_TIMEOUT_MS,
+      'files.list (for existing backup)'
+    )
+    const existingFileId = existingFiles.length > 0 ? existingFiles[0].id : undefined
+
     // Encrypt state into a versioned envelope and serialize as JSON
     const envelope = await encryptState(state, key, salt)
     const jsonContent = JSON.stringify(envelope)
 
-    // Write the file (will update if exists, create if not)
+    // Update the existing file or create a new one if none exists
     const file = await withTimeout(
       project.files.write({
+        fileId: existingFileId,
         folderId,
         name: APP_STATE_FILENAME,
         content: jsonContent,

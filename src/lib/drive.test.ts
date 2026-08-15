@@ -42,7 +42,8 @@ describe('drive.ts Drive-sync wiring', () => {
     mockEnsureFolderPath = vi.fn().mockResolvedValue('folder-id-123')
     mockFilesRead = vi.fn()
     mockFilesWrite = vi.fn()
-    mockList = vi.fn()
+    // Default to no existing backup file (syncBackup will create new one)
+    mockList = vi.fn().mockResolvedValue([])
     // Default to a healthy, non-expired connection so sync/restore do not
     // trigger the interactive connect flow unless a test opts in.
     mockGetConnection = vi.fn().mockResolvedValue({
@@ -153,6 +154,55 @@ describe('drive.ts Drive-sync wiring', () => {
 
     const fileId = await syncBackup(initialState(), key, salt)
     expect(fileId).toBe('file-id-123')
+  })
+
+  /**
+   * Test 2b2: syncBackup() updates an existing file instead of creating a new one.
+   * Regression test for: https://github.com/anthropics/claude-code/issues/XXXX
+   * Before the fix, syncBackup() would create a new file on every sync because
+   * it never passed fileId to files.write(). With the fix, it lists the existing
+   * file by name, gets its ID, and passes it to write() to update in place.
+   */
+  it('syncBackup() updates the existing file by id instead of creating a new one', async () => {
+    mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+    // First sync: no existing file
+    mockList.mockResolvedValueOnce([])
+    mockFilesWrite.mockResolvedValueOnce({ id: 'file-id-123' })
+
+    const { syncBackup } = await import('./drive')
+    const salt = generateSalt()
+    const key = await deriveKey('password', salt)
+    const state = initialState()
+
+    const firstFileId = await syncBackup(state, key, salt)
+    expect(firstFileId).toBe('file-id-123')
+
+    // Verify first write had no fileId (create mode, but would still succeed)
+    let writeCall = mockFilesWrite.mock.calls[0]?.[0]
+    expect(writeCall.fileId).toBeUndefined()
+
+    // Reset mocks for second sync
+    mockFilesWrite.mockClear()
+    mockList.mockClear()
+
+    // Second sync: existing file should be found and updated
+    mockList.mockResolvedValueOnce([{ id: 'file-id-123' }])
+    mockFilesWrite.mockResolvedValueOnce({ id: 'file-id-123' })
+
+    const secondFileId = await syncBackup(state, key, salt)
+    expect(secondFileId).toBe('file-id-123')
+
+    // Verify second write DID pass fileId (update mode)
+    writeCall = mockFilesWrite.mock.calls[0]?.[0]
+    expect(writeCall.fileId).toBe('file-id-123')
+    expect(writeCall.name).toBe('portfolio-state.json')
+    expect(writeCall.folderId).toBe('folder-id-123')
+
+    // Verify files.list was called to find the existing file
+    expect(mockList).toHaveBeenCalledWith({
+      folderId: 'folder-id-123',
+      nameEquals: 'portfolio-state.json',
+    })
   })
 
   /**
