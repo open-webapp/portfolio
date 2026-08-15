@@ -26,6 +26,8 @@ interface GooglePickerBuilder {
 
 interface GooglePickerInstance {
   setVisible(visible: boolean): void
+  /** Removes the Picker's DOM, backdrop included. Absent on older builds. */
+  dispose?(): void
 }
 
 interface GooglePickerResponse {
@@ -667,12 +669,34 @@ export async function openDrivePicker(
   // of Drive needs no extra scope.
   const docsView = new DocsView().setIncludeFolders(true)
 
-  // Callback from Picker: check action and extract file id
+  // Picker does not tear itself down when the callback fires — the dialog and
+  // its modal backdrop stay in the DOM and keep blocking the app until they
+  // are explicitly removed. setVisible(false) hides the dialog; dispose()
+  // removes the backdrop with it. Assigned once the builder has run; the
+  // callback cannot fire before setVisible(true) below.
+  let pickerInstance: GooglePickerInstance | null = null
+
+  const closePicker = () => {
+    if (!pickerInstance) {
+      return
+    }
+    const instance = pickerInstance
+    // Null first, so a duplicate callback can't double-dispose.
+    pickerInstance = null
+    instance.setVisible(false)
+    instance.dispose?.()
+  }
+
+  // Callback from Picker: check action and extract file id. Always close
+  // before handing control back — onSelect opens a confirm() dialog, which
+  // would otherwise surface behind the still-open Picker.
   const handlePickerResponse = (data: GooglePickerResponse) => {
     if (data.action === 'picked' && data.docs && data.docs.length > 0) {
       const fileId = data.docs[0].id
+      closePicker()
       onSelect(fileId)
     } else if (data.action === 'cancel') {
+      closePicker()
       onCancel()
     }
   }
@@ -688,6 +712,8 @@ export async function openDrivePicker(
     .addView(docsView)
     .setCallback(handlePickerResponse)
     .build()
+
+  pickerInstance = picker
 
   // Show the Picker dialog
   picker.setVisible(true)

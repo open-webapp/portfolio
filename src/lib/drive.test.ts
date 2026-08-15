@@ -690,7 +690,13 @@ describe('drive.ts Drive-sync wiring', () => {
             setAppId(appId: string) { builderCalls.appId = appId; return this }
             setOrigin(origin: string) { builderCalls.origin = origin; return this }
             setCallback(cb: any) { builderCalls.callback = cb; return this }
-            build() { return { setVisible: vi.fn() } }
+            build() {
+              builderCalls.instance = {
+                setVisible: vi.fn(),
+                dispose: vi.fn(),
+              }
+              return builderCalls.instance
+            }
           },
           DocsView: class {
             setParent(folderId: string) { builderCalls.parentFolderId = folderId; return this }
@@ -712,6 +718,57 @@ describe('drive.ts Drive-sync wiring', () => {
 
       expect(builderCalls.token).toBe('fake-token')
       expect(builderCalls.apiKey).toBe('fake-api-key')
+    })
+
+    // Regression: Picker does not tear itself down when the callback fires,
+    // so the dialog and its modal backdrop stayed up blocking the app after
+    // the user had already chosen a file.
+    it('closes the Picker when a file is selected, before invoking onSelect', async () => {
+      const { openDrivePicker } = await import('./drive')
+      const order: string[] = []
+      const onSelect = vi.fn(() => { order.push('onSelect') })
+      await openDrivePicker('fake-token', onSelect, vi.fn())
+
+      builderCalls.instance.setVisible.mockImplementation((v: boolean) => {
+        if (!v) order.push('hidden')
+      })
+      builderCalls.instance.dispose.mockImplementation(() => { order.push('disposed') })
+
+      builderCalls.callback({ action: 'picked', docs: [{ id: 'f1', name: 'x', mimeType: 'application/json', type: 'file' }] })
+
+      expect(builderCalls.instance.setVisible).toHaveBeenCalledWith(false)
+      expect(builderCalls.instance.dispose).toHaveBeenCalledTimes(1)
+      expect(order).toEqual(['hidden', 'disposed', 'onSelect'])
+    })
+
+    it('closes the Picker when the user cancels', async () => {
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+
+      builderCalls.callback({ action: 'cancel' })
+
+      expect(builderCalls.instance.setVisible).toHaveBeenCalledWith(false)
+      expect(builderCalls.instance.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not double-dispose when Picker fires its callback twice', async () => {
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+
+      const picked = { action: 'picked', docs: [{ id: 'f1', name: 'x', mimeType: 'application/json', type: 'file' }] }
+      builderCalls.callback(picked)
+      builderCalls.callback(picked)
+
+      expect(builderCalls.instance.dispose).toHaveBeenCalledTimes(1)
+    })
+
+    it('still closes on Picker builds that predate dispose()', async () => {
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+      delete builderCalls.instance.dispose
+
+      expect(() => builderCalls.callback({ action: 'cancel' })).not.toThrow()
+      expect(builderCalls.instance.setVisible).toHaveBeenCalledWith(false)
     })
 
     // The picker used to open pinned to the app's own OpenWebApp/Portfolio
