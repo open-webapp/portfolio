@@ -766,6 +766,37 @@ describe('drive.ts Drive-sync wiring', () => {
       expect(order).toEqual(['hidden', 'disposed', 'onSelect'])
     })
 
+    // Regression: Picker's backdrop lives on document.body, outside React, so
+    // no re-render clears it. Left behind it covers the restored app — which
+    // then looks normal but ignores every click.
+    it('removes the Picker backdrop from the DOM on selection', async () => {
+      const backdrop = document.createElement('div')
+      backdrop.className = 'picker-dialog-bg'
+      const dialog = document.createElement('div')
+      dialog.className = 'picker-dialog'
+      document.body.append(backdrop, dialog)
+
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+      builderCalls.callback({ action: 'picked', docs: [{ id: 'f1', name: 'x', mimeType: 'application/json', type: 'file' }] })
+
+      expect(document.querySelector('.picker-dialog-bg')).toBeNull()
+      expect(document.querySelector('.picker-dialog')).toBeNull()
+    })
+
+    it('removes the Picker backdrop even on builds where dispose() is absent', async () => {
+      const backdrop = document.createElement('div')
+      backdrop.className = 'picker-dialog-bg'
+      document.body.append(backdrop)
+
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+      delete builderCalls.instance.dispose
+      builderCalls.callback({ action: 'cancel' })
+
+      expect(document.querySelector('.picker-dialog-bg')).toBeNull()
+    })
+
     it('closes the Picker when the user cancels', async () => {
       const { openDrivePicker } = await import('./drive')
       await openDrivePicker('fake-token', vi.fn(), vi.fn())

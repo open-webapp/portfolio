@@ -542,6 +542,23 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
 }
 
 /**
+ * Picker appends its dialog and a full-viewport modal backdrop straight to
+ * document.body, outside React's tree, so nothing the app re-renders can
+ * clear them. setVisible(false) only hides the dialog, and dispose() is both
+ * absent on older builds and unreliable about the backdrop — which is
+ * transparent, fixed, and sits above everything. Leave it behind and the app
+ * looks fine but swallows every click.
+ *
+ * Sweeping by class name is deliberate: these are Picker's own chrome
+ * elements, and matching them is the only handle we have on nodes we did not
+ * create and hold no reference to.
+ */
+function removePickerChrome(): void {
+  const selector = '.picker-dialog-bg, .picker-dialog, .picker-dialog-frame'
+  document.querySelectorAll(selector).forEach((node) => node.remove())
+}
+
+/**
  * Load the Google Picker API library from Google's CDN.
  * Caches the load promise to prevent multiple concurrent load attempts.
  * Once loaded, the library remains available for the lifetime of the app.
@@ -689,9 +706,8 @@ export async function openDrivePicker(
 
   // Picker does not tear itself down when the callback fires — the dialog and
   // its modal backdrop stay in the DOM and keep blocking the app until they
-  // are explicitly removed. setVisible(false) hides the dialog; dispose()
-  // removes the backdrop with it. Assigned once the builder has run; the
-  // callback cannot fire before setVisible(true) below.
+  // are explicitly removed. Assigned once the builder has run; the callback
+  // cannot fire before setVisible(true) below.
   let pickerInstance: GooglePickerInstance | null = null
 
   const closePicker = () => {
@@ -703,6 +719,7 @@ export async function openDrivePicker(
     pickerInstance = null
     instance.setVisible(false)
     instance.dispose?.()
+    removePickerChrome()
   }
 
   // Callback from Picker: check action and extract file id. Always close
