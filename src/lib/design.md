@@ -4,7 +4,9 @@ Directory structure, API contract, component tree, state management, data model,
 
 ## Component Tree
 
-- `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons
+- `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
+  - Used by `PositionsTable.tsx` (passes `state.closedPositions`)
+  - Used by `AccountsPage.tsx` (passes `acctFilteredClosedPositions(state)`)
 
 ## Data Flows
 
@@ -15,6 +17,14 @@ ClosedPosition → ClosedPositionsTable Undo click → findMatchingOpenPosition/
 - No same-symbol open position in account → silent restore.
 - Same-symbol position, identical shares/avgCost/assetClass (exact-lot match) → confirm dialog; Yes replaces existing position, No is a no-op.
 - Same-symbol position, different shares/avgCost/assetClass → silent restore as separate duplicate-symbol row.
+
+### Account Selection
+
+SELECT_ACCOUNT (accountId, categoryKey) → selectAccount (state.ts) → sets selectedAccountId + selectedCategoryKey (toggle if same pair) → categoryCards/closedPositionsCard `selected` fields react → AccountsPage branches main panel on selectedCategoryKey
+
+- Same account + categoryKey clicked again → toggle: clear selection (both null).
+- Different account or categoryKey → replace selection.
+- Null selection → main panel shows portfolio-level view.
 
 ### Drive Connection Persistence
 

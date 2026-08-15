@@ -189,7 +189,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
-`category: TaxCategory | 'all'`, `range: string` (`'6m' | '1y' | 'ytd' | 'all'`), `tab: 'positions' | 'transactions'`, `view: 'dashboard' | 'settings'`, `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `assetClassFilter: string`, `retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'`, `posSearch: string`, `txTypeFilter: string`, `txSearch: string`, `showClosed: boolean`.
+`category: TaxCategory | 'all'`, `range: string` (`'6m' | '1y' | 'ytd' | 'all'`), `tab: 'positions' | 'transactions'`, `view: 'dashboard' | 'settings'`, `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `assetClassFilter: string`, `retirementFilter: 'All' | 'Retirement' | 'Non-Retirement'`, `posSearch: string`, `txTypeFilter: string`, `txSearch: string`, `showClosed: boolean`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`.
 
 ## Persistence envelope
 

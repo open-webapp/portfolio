@@ -34,7 +34,7 @@ src/
   components/
     PasswordGate.tsx           # full-replacement gate screen: set-password (first-run) with optional "Restore from Drive" tab, enter-password (returning encrypted), reset-app escape hatch
     Nav.tsx                    # nav-brand, Dashboard/Accounts seg tabs, SVG sync/gear icons
-    AccountsPage.tsx           # 2-column layout with collapsible category cards and allocation chart; row click opens PositionGroupOverlay
+    AccountsPage.tsx           # 2-column layout: left category cards (Retirement/Non-Retirement/Tax-Deferred/Closed Positions), right panel with allocation chart + positions table (open) or closed-positions table; row click on open-positions opens PositionGroupOverlay
     OverviewCard.tsx           # 2-segment card (Retirement/Non-Retirement, showing total value + GL tag)
     AllocationChart.tsx         # asset allocation bar list (positions, title); reused on Dashboard and Accounts page
     PositionsTable.tsx
@@ -84,19 +84,20 @@ interface AppState {
   txSearch: string
   showClosed: boolean
   selectedAccountId: string | null
+  selectedCategoryKey: TaxCategory | 'closedPositions' | null
   expandedCategories: Record<string, boolean>
   acctAssetClassFilter: string
   acctPosSearch: string
 }
 ```
 
-- `src/lib/state.ts` — `AppState` interface (6 data collections + 14 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `closePosition`, `deleteClosedPosition`, `setCategory`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `upsertCsvMapping`, `selectAccount`, `toggleCategoryExpanded`, `setAcctAssetClassFilter`, `setAcctPosSearch`).
+- `src/lib/state.ts` — `AppState` interface (6 data collections + 15 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `closePosition`, `deleteClosedPosition`, `setCategory`, `setTab`, `setSort`, `toggleSort`, `setAssetClassFilter`, `setPositionsSearch`, `setTransactionsSearch`, `setTransactionTypeFilter`, `toggleShowClosed`, `upsertCsvMapping`, `selectAccount(accountId, categoryKey?)`, `toggleCategoryExpanded`, `setAcctAssetClassFilter`, `setAcctPosSearch`). `selectAccount` now accepts an optional `categoryKey` parameter to set `selectedCategoryKey` to a tax category or `'closedPositions'`.
 - `src/lib/reducer.ts` — `appReducer(state, action)` switches on `action.type` (string) and calls the matching `state.ts` helper, or the import logic in `positionsImport.ts`/`transactionsImport.ts`. `default: return state`. Special case `__SET_STATE` replaces the whole state (used by hydration).
 - Components never mutate state directly; they `dispatch({ type: '...', ...payload })`.
 
 ### Action types (reducer.ts)
 
-`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `CLOSE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `UPSERT_CSV_MAPPING`, `SET_VIEW`, `SELECT_ACCOUNT`, `TOGGLE_CATEGORY_EXPANDED`, `SET_ACCT_ASSET_CLASS_FILTER`, `SET_ACCT_POS_SEARCH`.
+`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `CLOSE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_CATEGORY`, `SET_TAB`, `SET_SORT`, `TOGGLE_SORT`, `SET_ASSET_CLASS_FILTER`, `SET_POSITIONS_SEARCH`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `TOGGLE_SHOW_CLOSED`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `UPSERT_CSV_MAPPING`, `SET_VIEW`, `SELECT_ACCOUNT`, `TOGGLE_CATEGORY_EXPANDED`, `SET_ACCT_ASSET_CLASS_FILTER`, `SET_ACCT_POS_SEARCH`. Note: `SELECT_ACCOUNT` payload carries `accountId` and optional `categoryKey` (a tax category name or `'closedPositions'`).
 
 ## Component tree
 
@@ -121,7 +122,7 @@ App
     SettingsPage              (state, dispatch, sessionKey, sessionSalt, onKeyChange, driveReady, driveEmail, backupFileId, syncing, setSyncing, handleConnect, handleDisconnect, settingsSection, setSettingsSection)  — renders tab-seg ("Google Drive" / "Encryption") at the top (active per `settingsSection`, each `onClick` dispatches `setSettingsSection`), followed by `.hr` divider, then conditionally the Google Drive Sync card (renders DriveRestorePanel) when `settingsSection === 'drive'` or the Change Encryption Password card when `settingsSection === 'encryption'`.
       DriveRestorePanel      (driveReady, driveEmail, backupFileId, syncing, setSyncing, handleConnect, handleDisconnect, restoreKey, restoreSalt, onRestored) — shared Drive panel used here and on PasswordGate's restore tab
   [view === 'accounts']
-    AccountsPage              (state, dispatch) — 2-column layout: left collapsible category cards, right allocation chart + filter + aggregate positions table. Row click on category card opens `PositionGroupOverlay` with that account's positions.
+    AccountsPage              (state, dispatch) — 2-column layout: left collapsible category cards (Retirement, Non-Retirement, Tax-Deferred, plus optional 4th Closed Positions card when any exist), right panel switches between (allocation chart + asset-class filter + aggregate positions table for open positions) and (closed positions table when closed-positions category selected). Category card click sets `selectedAccountId` and `selectedCategoryKey`; opening open-positions category dispatches `PositionGroupOverlay` with that category's positions, but closed-positions category shows `ClosedPositionsTable` instead (no overlay).
 ```
 
 Props convention: most components take `{ state: AppState, dispatch }`; narrower props for focused components: `AssetClassOverrideSelect` (`position`, `dispatch`), `PositionGroupOverlay` (`positions`, `title`, `accounts`, `dispatch`, `onClose`, `existingAssetClasses`, `state`, `sortPositions?`), `PasswordGate` (`shape`, `onUnlock`, `onReset`, `driveReady?`, `driveEmail?`, `backupFileId?`, `syncing?`, `setSyncing?`, `handleConnect?`, `handleDisconnect?`), `Nav` (`state`, `dispatch`, `driveReady`, `syncing`, `handleSync`, `onOpenSettings`), `SettingsPage` (`state`, `dispatch`, `sessionKey`, `sessionSalt`, `onKeyChange`, `driveReady`, `driveEmail`, `backupFileId`, `syncing`, `setSyncing`, `handleConnect`, `handleDisconnect`, `settingsSection`, `setSettingsSection`), `DriveRestorePanel` (`driveReady`, `driveEmail`, `backupFileId`, `syncing`, `setSyncing`, `handleConnect`, `handleDisconnect`, `restoreKey`, `restoreSalt`, `onRestored`), `AllocationChart` (`positions: Position[]`, `title: string`), `AccountsPage` (`state`, `dispatch`). `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
