@@ -694,6 +694,7 @@ describe('drive.ts Drive-sync wiring', () => {
           },
           DocsView: class {
             setParent(folderId: string) { builderCalls.parentFolderId = folderId; return this }
+            setIncludeFolders(include: boolean) { builderCalls.includeFolders = include; return this }
           },
         },
       }
@@ -705,16 +706,30 @@ describe('drive.ts Drive-sync wiring', () => {
       vi.unstubAllEnvs()
     })
 
-    it('passes OAuth token, API key, and default folder id to the Picker builder', async () => {
-      // Assumes the module's Drive mock already returns a folder id from
-      // project.ensureFolderPath() (same mock used by syncBackup/restoreBackup tests).
-      mockEnsureFolderPath.mockResolvedValue('folder-id-123')
+    it('passes OAuth token and API key to the Picker builder', async () => {
       const { openDrivePicker } = await import('./drive')
       await openDrivePicker('fake-token', vi.fn(), vi.fn())
 
       expect(builderCalls.token).toBe('fake-token')
       expect(builderCalls.apiKey).toBe('fake-api-key')
-      expect(builderCalls.parentFolderId).toBeTruthy() // OpenWebApp/Portfolio folder id
+    })
+
+    // The picker used to open pinned to the app's own OpenWebApp/Portfolio
+    // folder, which left the user unable to reach the rest of My Drive.
+    it('opens at My Drive root with folder navigation rather than pinning to the app folder', async () => {
+      const { openDrivePicker } = await import('./drive')
+      await openDrivePicker('fake-token', vi.fn(), vi.fn())
+
+      expect(builderCalls.parentFolderId).toBeUndefined()
+      expect(builderCalls.includeFolders).toBe(true)
+    })
+
+    it('does not block opening the picker on a Drive round trip for the app folder', async () => {
+      mockEnsureFolderPath.mockRejectedValue(new Error('drive is down'))
+      const { openDrivePicker } = await import('./drive')
+
+      await expect(openDrivePicker('fake-token', vi.fn(), vi.fn())).resolves.toBeUndefined()
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
     })
 
     // Regression: platform.js (the legacy Sign-In library) also exposes

@@ -11,6 +11,7 @@ import type { EncryptedEnvelope } from './crypto'
  */
 interface GooglePickerDocsView {
   setParent(folderId: string): GooglePickerDocsView
+  setIncludeFolders(include: boolean): GooglePickerDocsView
 }
 
 interface GooglePickerBuilder {
@@ -658,16 +659,13 @@ export async function openDrivePicker(
     throw new Error('Google Picker API not available')
   }
 
-  // Default Picker's starting folder to the app's own OpenWebApp/Portfolio
-  // Drive folder — same folder syncBackup/restoreBackup read/write.
-  const project = drive.project(APP_PROJECT_ID)
-  const folderId = await withTimeout(
-    project.ensureFolderPath(),
-    DRIVE_IO_TIMEOUT_MS,
-    'ensureFolderPath'
-  )
-
-  const docsView = new DocsView().setParent(folderId)
+  // Open at My Drive root and let the user navigate anywhere, rather than
+  // pinning the view to the app's own OpenWebApp/Portfolio folder: backups
+  // worth restoring may have been moved, shared in, or written by another
+  // install. Picker is the sanctioned way to widen `drive.file` — whatever
+  // the user picks here is granted to the app on selection, so browsing all
+  // of Drive needs no extra scope.
+  const docsView = new DocsView().setIncludeFolders(true)
 
   // Callback from Picker: check action and extract file id
   const handlePickerResponse = (data: GooglePickerResponse) => {
