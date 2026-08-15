@@ -56,7 +56,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     // Should have 2 delete buttons (one per row)
     const buttons = screen.getAllByTitle('Delete this closed position')
@@ -96,7 +96,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const deleteButton = screen.getByTitle('Delete this closed position')
     fireEvent.click(deleteButton)
@@ -141,7 +141,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const deleteButton = screen.getByTitle('Delete this closed position')
     fireEvent.click(deleteButton)
@@ -185,7 +185,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const deleteButton = screen.getByTitle('Delete this closed position')
     fireEvent.click(deleteButton)
@@ -236,7 +236,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const deleteButtons = screen.getAllByTitle('Delete this closed position')
     fireEvent.click(deleteButtons[1]) // Click the second button
@@ -288,7 +288,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     // Should have 2 undo buttons (one per row)
     const undoButtons = screen.getAllByTitle('Reopen this position as an import')
@@ -330,7 +330,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const undoButton = screen.getByTitle('Reopen this position as an import')
     fireEvent.click(undoButton)
@@ -390,7 +390,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const undoButton = screen.getByTitle('Reopen this position as an import')
     fireEvent.click(undoButton)
@@ -451,7 +451,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const undoButton = screen.getByTitle('Reopen this position as an import')
     fireEvent.click(undoButton)
@@ -505,7 +505,7 @@ describe('ClosedPositionsTable', () => {
       showClosed: false,
     }
 
-    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} />)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={state.closedPositions} />)
 
     const undoButton = screen.getByTitle('Reopen this position as an import')
     fireEvent.click(undoButton)
@@ -517,5 +517,110 @@ describe('ClosedPositionsTable', () => {
     })
 
     confirmSpy.mockRestore()
+  })
+
+  it('renders only the positions passed in the positions prop, not all state.closedPositions', () => {
+    const allClosedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        closedDate: '2024-01-15',
+        assetClass: 'Equity',
+        realizedGL: 1500,
+        realizedGLBasis: 'transactions',
+      },
+      {
+        id: 'cp-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft Corp',
+        closedDate: '2024-02-20',
+        assetClass: 'Equity',
+        realizedGL: -500,
+        realizedGLBasis: 'transactions',
+      },
+      {
+        id: 'cp-3',
+        accountId: 'acc-1',
+        symbol: 'GOOGL',
+        name: 'Alphabet Inc',
+        closedDate: '2024-03-10',
+        assetClass: 'Equity',
+        realizedGL: 2000,
+        realizedGLBasis: 'transactions',
+      },
+    ]
+
+    const state: AppState = {
+      accounts: [],
+      positions: [],
+      closedPositions: allClosedPositions,
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+    }
+
+    // Pass only a subset (first two) to the component
+    const subset = allClosedPositions.slice(0, 2)
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={subset} />)
+
+    // Should only have 2 rows rendered, not 3
+    const rows = screen.getAllByRole('row')
+    expect(rows).toHaveLength(3) // 1 header + 2 data rows
+
+    // Should render AAPL and MSFT
+    expect(screen.getByText('AAPL')).toBeDefined()
+    expect(screen.getByText('MSFT')).toBeDefined()
+    // Should NOT render GOOGL
+    expect(screen.queryByText('GOOGL')).toBeNull()
+  })
+
+  it('renders an empty tbody with no crash when positions prop is empty array', () => {
+    const state: AppState = {
+      accounts: [],
+      positions: [],
+      closedPositions: [
+        {
+          id: 'cp-1',
+          accountId: 'acc-1',
+          symbol: 'AAPL',
+          name: 'Apple Inc',
+          closedDate: '2024-01-15',
+          assetClass: 'Equity',
+          realizedGL: 1500,
+          realizedGLBasis: 'transactions',
+        },
+      ],
+      transactions: [],
+      snapshots: [],
+      category: 'all',
+      tab: 'positions',
+      sortKey: 'symbol',
+      sortDir: 'asc',
+      assetClassFilter: 'All',
+      posSearch: '',
+      txTypeFilter: 'All',
+      txSearch: '',
+      showClosed: false,
+    }
+
+    render(<ClosedPositionsTable state={state} dispatch={mockDispatch} positions={[]} />)
+
+    // Should have only 1 row (header), no data rows
+    const rows = screen.getAllByRole('row')
+    expect(rows).toHaveLength(1)
+
+    // No position symbols should be rendered
+    expect(screen.queryByText('AAPL')).toBeNull()
   })
 })

@@ -1,5 +1,5 @@
 import type { AppState } from './state'
-import type { Position, Transaction, Account, TaxCategory } from './types'
+import type { Position, ClosedPosition, Transaction, Account, TaxCategory } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, glColor } from './computations'
 
@@ -245,7 +245,7 @@ export function categoryCards(state: AppState): Array<{
         accountNumber: account.accountNumber,
         updatedStr,
         totalStr: fmtUSD(total),
-        selected: state.selectedAccountId === account.id
+        selected: state.selectedAccountId === account.id && state.selectedCategoryKey === catKey
       }
     })
 
@@ -263,6 +263,91 @@ export function categoryCards(state: AppState): Array<{
 }
 
 /**
+ * Generate closed-positions card data for the Accounts page's left column.
+ * Mirrors categoryCards structure but shows closed positions across all accounts.
+ * One card labeled "Closed Positions", listing only accounts with ≥1 closed position,
+ * with per-account totals (sum of realizedGL where not null), expand/collapse state, and selection state.
+ */
+export function closedPositionsCard(state: AppState): {
+  key: string
+  label: string
+  totalStr: string
+  accountCount: number
+  expanded: boolean
+  accounts: Array<{
+    id: string
+    institution: string
+    name: string
+    accountNumber: string
+    updatedStr: string
+    totalStr: string
+    selected: boolean
+  }>
+  hasAccounts: boolean
+  noAccounts: boolean
+} {
+  // Group closed positions by account
+  const closedPositionsByAccount = new Map<string, ClosedPosition[]>()
+  state.closedPositions.forEach((cp) => {
+    if (!closedPositionsByAccount.has(cp.accountId)) {
+      closedPositionsByAccount.set(cp.accountId, [])
+    }
+    closedPositionsByAccount.get(cp.accountId)!.push(cp)
+  })
+
+  // Build accounts list: only include accounts with ≥1 closed position
+  let cardTotal = 0
+  const accounts = state.accounts
+    .filter((account) => closedPositionsByAccount.has(account.id))
+    .map((account) => {
+      const accountClosedPositions = closedPositionsByAccount.get(account.id)!
+
+      // Calculate total: sum of realizedGL where not null
+      const total = accountClosedPositions.reduce((sum, cp) => {
+        return cp.realizedGL !== null ? sum + cp.realizedGL : sum
+      }, 0)
+      cardTotal += total
+
+      // Determine totalStr: if all realizedGL are null, show '—', otherwise show sum
+      const hasAnyRealized = accountClosedPositions.some((cp) => cp.realizedGL !== null)
+      const totalStr = hasAnyRealized ? fmtUSD(total) : '—'
+
+      // updatedStr: latest lastImportedAt across closed positions
+      const updatedStr =
+        accountClosedPositions.length === 0
+          ? '—'
+          : new Date(
+              Math.max(...accountClosedPositions.map((cp) => new Date(cp.lastImportedAt).getTime()))
+            ).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+      return {
+        id: account.id,
+        institution: account.institution || '',
+        name: account.name,
+        accountNumber: account.accountNumber,
+        updatedStr,
+        totalStr,
+        selected: state.selectedAccountId === account.id && state.selectedCategoryKey === 'closedPositions'
+      }
+    })
+
+  // Determine card-level total
+  const hasAnyCardRealized = state.closedPositions.some((cp) => cp.realizedGL !== null)
+  const cardTotalStr = hasAnyCardRealized ? fmtUSD(cardTotal) : '—'
+
+  return {
+    key: 'closedPositions',
+    label: 'Closed Positions',
+    totalStr: cardTotalStr,
+    accountCount: accounts.length,
+    expanded: !!state.expandedCategories['closedPositions'],
+    accounts,
+    hasAccounts: accounts.length > 0,
+    noAccounts: accounts.length === 0
+  }
+}
+
+/**
  * Positions scoped to the currently-selected account on the Accounts page,
  * or all positions when no account is selected.
  */
@@ -274,9 +359,15 @@ export function acctScopedPositions(state: AppState): Position[] {
 }
 
 /**
+ * Structural type for items with asset class fields.
+ * Allows acctAssetClassOptions to work with Position or ClosedPosition.
+ */
+type AssetClassed = { assetClass: string; assetClassManualOverride?: string }
+
+/**
  * Distinct effective asset classes among the given positions, sorted alphabetically.
  */
-export function acctAssetClassOptions(positions: Position[]): string[] {
+export function acctAssetClassOptions(positions: AssetClassed[]): string[] {
   const assetClasses = new Set<string>()
   positions.forEach((p) => {
     assetClasses.add(p.assetClassManualOverride || p.assetClass)
@@ -303,6 +394,42 @@ export function acctFilteredPositions(state: AppState): Position[] {
       (p) =>
         p.symbol.toLowerCase().includes(searchLower) ||
         (p.name?.toLowerCase().includes(searchLower) ?? false)
+    )
+  }
+
+  return results
+}
+
+/**
+ * Closed positions scoped to the currently-selected account on the Accounts page,
+ * or all closed positions when no account is selected.
+ */
+export function acctScopedClosedPositions(state: AppState): ClosedPosition[] {
+  if (state.selectedAccountId) {
+    return state.closedPositions.filter((cp) => cp.accountId === state.selectedAccountId)
+  }
+  return state.closedPositions
+}
+
+/**
+ * Accounts page closed positions further filtered by acctAssetClassFilter and acctPosSearch.
+ */
+export function acctFilteredClosedPositions(state: AppState): ClosedPosition[] {
+  let results = acctScopedClosedPositions(state)
+
+  if (state.acctAssetClassFilter !== 'All') {
+    results = results.filter((cp) => {
+      const effectiveClass = cp.assetClassManualOverride || cp.assetClass
+      return effectiveClass === state.acctAssetClassFilter
+    })
+  }
+
+  if (state.acctPosSearch.trim()) {
+    const searchLower = state.acctPosSearch.toLowerCase()
+    results = results.filter(
+      (cp) =>
+        cp.symbol.toLowerCase().includes(searchLower) ||
+        (cp.name?.toLowerCase().includes(searchLower) ?? false)
     )
   }
 

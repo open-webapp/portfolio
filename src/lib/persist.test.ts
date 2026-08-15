@@ -147,6 +147,7 @@ function fixtureState(): AppState {
     txSearch: 'tx search',
     showClosed: true,
     selectedAccountId: 'acc-1',
+    selectedCategoryKey: null,
     expandedCategories: { taxable: true },
     acctAssetClassFilter: 'Equities',
     acctPosSearch: 'aapl',
@@ -652,6 +653,40 @@ describe('IndexedDB persistence', () => {
 
       expect(loaded).not.toBeNull()
       expect(loaded?.csvMappings).toEqual([])
+    })
+
+    it('loads missing selectedCategoryKey with null default (migration tolerance)', async () => {
+      const preExistingState: Partial<AppState> = {
+        accounts: [],
+        positions: [],
+        closedPositions: [],
+        transactions: [],
+        snapshots: [],
+        csvMappings: [],
+        customInstitutions: [],
+        category: 'all',
+        tab: 'positions',
+        view: 'dashboard',
+        sortKey: 'symbol',
+        sortDir: 'asc',
+        assetClassFilter: 'All',
+        posSearch: '',
+        txTypeFilter: 'All',
+        txSearch: '',
+        showClosed: false,
+        selectedAccountId: null,
+        expandedCategories: {},
+        acctAssetClassFilter: 'All',
+        acctPosSearch: '',
+        // selectedCategoryKey intentionally omitted
+      }
+
+      await putRaw(preExistingState)
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded).not.toBeNull()
+      expect(loaded?.selectedCategoryKey).toBe(null)
     })
   })
 

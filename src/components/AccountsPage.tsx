@@ -3,8 +3,11 @@ import type { AppState } from '../lib/state'
 import type { Position } from '../lib/types'
 import {
   categoryCards,
+  closedPositionsCard,
   acctScopedPositions,
   acctFilteredPositions,
+  acctScopedClosedPositions,
+  acctFilteredClosedPositions,
   acctAssetClassOptions,
   acctAllocationTitle,
   assetClassOptions,
@@ -15,6 +18,7 @@ import { fmtUSD, fmtPct, fmtPortfolioPercent, glColor } from '../lib/computation
 import { AllocationChart } from './AllocationChart'
 import { ImportDialog } from './import/ImportDialog'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
+import { ClosedPositionsTable } from './ClosedPositionsTable'
 
 export interface AccountsPageProps {
   state: AppState
@@ -29,7 +33,8 @@ export interface AccountsPageProps {
 export function AccountsPage({ state, dispatch }: AccountsPageProps) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
 
-  const cards = categoryCards(state)
+  const isClosedView = state.selectedCategoryKey === 'closedPositions'
+  const cards = [...categoryCards(state), closedPositionsCard(state)]
   const scopedPositions = acctScopedPositions(state)
   const filteredPositions = acctFilteredPositions(state)
   const acctPortfolioTotal = filteredPositions.reduce((s, p) => s + p.shares * p.price, 0)
@@ -118,7 +123,7 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
                   cat.accounts.map((acc) => (
                     <div
                       key={acc.id}
-                      onClick={() => dispatch({ type: 'SELECT_ACCOUNT', accountId: acc.id })}
+                      onClick={() => dispatch({ type: 'SELECT_ACCOUNT', accountId: acc.id, categoryKey: cat.key })}
                       style={{
                         padding: 'var(--space-3) var(--space-4)',
                         borderBottom: '1px solid var(--color-divider)',
@@ -179,7 +184,7 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
           }}
         >
           <div className="seg">
-            {['All', ...acctAssetClassOptions(scopedPositions)].map((opt) => (
+            {['All', ...(isClosedView ? acctAssetClassOptions(acctScopedClosedPositions(state)) : acctAssetClassOptions(scopedPositions))].map((opt) => (
               <label key={opt} className="seg-opt" onClick={() => dispatch({ type: 'SET_ACCT_ASSET_CLASS_FILTER', filter: opt })}>
                 <input type="radio" name="acctAssetClassFilter" checked={state.acctAssetClassFilter === opt} readOnly />
                 <span>{opt}</span>
@@ -225,77 +230,90 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
           </div>
         </div>
 
-        <table className="table">
-          <thead>
-            <tr>
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => dispatch({ type: 'TOGGLE_SORT', sortKey: col.key })}
-                  style={{ textAlign: col.align, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                >
-                  {col.label}
-                  {getSortArrow(col.key)}
-                </th>
-              ))}
-              <th style={{ textAlign: 'right' }}>Amount Invested</th>
-              <th style={{ textAlign: 'right' }}>Market Value</th>
-              <th style={{ textAlign: 'right' }}>% of Selection</th>
-              <th style={{ textAlign: 'right' }}>G/L</th>
-              <th style={{ textAlign: 'right' }}>G/L %</th>
-              <th style={{ textAlign: 'right' }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedRows.map((row) => {
-              const glColorVal = glColor(row.gl)
-              const glStr = (row.gl >= 0 ? '+' : '') + fmtUSD(row.gl)
-              const glPctStr = fmtPct(row.glPct)
-              const sharesStr = row.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-              return (
-                <tr key={row.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedGroupKey(row.key)}>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>{row.symbol}</div>
-                    <div style={{ fontSize: '11px' }} className="text-muted">{row.displayName}</div>
-                  </td>
-                  <td className="text-muted">{row.effectiveAssetClass}</td>
-                  <td style={{ textAlign: 'right' }}>{sharesStr}</td>
-                  <td style={{ textAlign: 'right' }}>{fmtUSD(row.avgCost)}</td>
-                  <td style={{ textAlign: 'right' }}>{fmtUSD(row.price)}</td>
-                  <td style={{ textAlign: 'right' }}>{fmtUSD(row.costBasis)}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtUSD(row.marketValue)}</td>
-                  <td style={{ textAlign: 'right' }}>{fmtPortfolioPercent(row.marketValue, acctPortfolioTotal)}</td>
-                  <td style={{ textAlign: 'right', color: glColorVal, fontWeight: 600 }}>{glStr}</td>
-                  <td style={{ textAlign: 'right', color: glColorVal }}>{glPctStr}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <span className="tag tag-neutral">{row.rowCount}</span>
-                  </td>
+        {isClosedView ? (
+          <>
+            <ClosedPositionsTable state={state} dispatch={dispatch} positions={acctFilteredClosedPositions(state)} />
+            {acctFilteredClosedPositions(state).length === 0 && (
+              <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
+                No positions to show.
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <table className="table">
+              <thead>
+                <tr>
+                  {columns.map((col) => (
+                    <th
+                      key={col.key}
+                      onClick={() => dispatch({ type: 'TOGGLE_SORT', sortKey: col.key })}
+                      style={{ textAlign: col.align, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      {col.label}
+                      {getSortArrow(col.key)}
+                    </th>
+                  ))}
+                  <th style={{ textAlign: 'right' }}>Amount Invested</th>
+                  <th style={{ textAlign: 'right' }}>Market Value</th>
+                  <th style={{ textAlign: 'right' }}>% of Selection</th>
+                  <th style={{ textAlign: 'right' }}>G/L</th>
+                  <th style={{ textAlign: 'right' }}>G/L %</th>
+                  <th style={{ textAlign: 'right' }}></th>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        {sortedRows.length === 0 && (
-          <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
-            No positions to show.
-          </div>
-        )}
+              </thead>
+              <tbody>
+                {sortedRows.map((row) => {
+                  const glColorVal = glColor(row.gl)
+                  const glStr = (row.gl >= 0 ? '+' : '') + fmtUSD(row.gl)
+                  const glPctStr = fmtPct(row.glPct)
+                  const sharesStr = row.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-        {selectedGroup && (() => {
-          const title = `${selectedGroup.symbol} — ${selectedGroup.displayName} — ${selectedGroup.effectiveAssetClass}`
-          return (
-            <PositionGroupOverlay
-              positions={selectedGroup.positions}
-              title={title}
-              accounts={state.accounts}
-              dispatch={dispatch}
-              onClose={() => setSelectedGroupKey(null)}
-              existingAssetClasses={assetClassOptions(state)}
-              state={state}
-            />
-          )
-        })()}
+                  return (
+                    <tr key={row.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedGroupKey(row.key)}>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{row.symbol}</div>
+                        <div style={{ fontSize: '11px' }} className="text-muted">{row.displayName}</div>
+                      </td>
+                      <td className="text-muted">{row.effectiveAssetClass}</td>
+                      <td style={{ textAlign: 'right' }}>{sharesStr}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtUSD(row.avgCost)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtUSD(row.price)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtUSD(row.costBasis)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtUSD(row.marketValue)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtPortfolioPercent(row.marketValue, acctPortfolioTotal)}</td>
+                      <td style={{ textAlign: 'right', color: glColorVal, fontWeight: 600 }}>{glStr}</td>
+                      <td style={{ textAlign: 'right', color: glColorVal }}>{glPctStr}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <span className="tag tag-neutral">{row.rowCount}</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {sortedRows.length === 0 && (
+              <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
+                No positions to show.
+              </div>
+            )}
+
+            {selectedGroup && (() => {
+              const title = `${selectedGroup.symbol} — ${selectedGroup.displayName} — ${selectedGroup.effectiveAssetClass}`
+              return (
+                <PositionGroupOverlay
+                  positions={selectedGroup.positions}
+                  title={title}
+                  accounts={state.accounts}
+                  dispatch={dispatch}
+                  onClose={() => setSelectedGroupKey(null)}
+                  existingAssetClasses={assetClassOptions(state)}
+                  state={state}
+                />
+              )
+            })()}
+          </>
+        )}
       </div>
     </div>
   )

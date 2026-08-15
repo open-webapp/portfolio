@@ -31,6 +31,7 @@ export interface AppState {
   txSearch: string // search text for transactions
   showClosed: boolean // toggle closed positions table
   selectedAccountId: string | null // selected account on AccountsPage
+  selectedCategoryKey: TaxCategory | 'closedPositions' | null // selected category on AccountsPage
   expandedCategories: Record<string, boolean> // category expansion state
   acctAssetClassFilter: string // asset class filter on AccountsPage
   acctPosSearch: string // position search text on AccountsPage
@@ -68,6 +69,7 @@ export function initialState(): AppState {
     txSearch: '',
     showClosed: false,
     selectedAccountId: null,
+    selectedCategoryKey: null,
     expandedCategories: {},
     acctAssetClassFilter: 'All',
     acctPosSearch: '',
@@ -328,12 +330,14 @@ export function toggleShowClosed(state: AppState): AppState {
 }
 
 /**
- * Select an account on AccountsPage (toggle if already selected).
+ * Select an account and category on AccountsPage (toggle if already selected).
  */
-export function selectAccount(state: AppState, accountId: string): AppState {
+export function selectAccount(state: AppState, accountId: string, categoryKey: TaxCategory | 'closedPositions'): AppState {
+  const isSame = state.selectedAccountId === accountId && state.selectedCategoryKey === categoryKey
   return {
     ...state,
-    selectedAccountId: state.selectedAccountId === accountId ? null : accountId,
+    selectedAccountId: isSame ? null : accountId,
+    selectedCategoryKey: isSame ? null : categoryKey,
   }
 }
 

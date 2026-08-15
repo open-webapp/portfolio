@@ -13,6 +13,13 @@ import {
 import type { AppState } from './types'
 
 describe('state helpers', () => {
+  describe('initialState', () => {
+    it('selectedCategoryKey defaults to null', () => {
+      const state = initialState()
+      expect(state.selectedCategoryKey).toBeNull()
+    })
+  })
+
   describe('deleteAccount', () => {
     it('removes account and associated positions', () => {
       const state: AppState = {
@@ -381,22 +388,26 @@ describe('state helpers', () => {
   })
 
   describe('selectAccount', () => {
-    it('happy path: sets selectedAccountId when new id is provided', () => {
+    it('happy path: sets selectedAccountId and selectedCategoryKey when new values are provided', () => {
       const state = initialState()
       expect(state.selectedAccountId).toBeNull()
+      expect(state.selectedCategoryKey).toBeNull()
 
-      const updated = selectAccount(state, 'acc1')
+      const updated = selectAccount(state, 'acc1', 'taxable')
       expect(updated.selectedAccountId).toBe('acc1')
+      expect(updated.selectedCategoryKey).toBe('taxable')
     })
 
-    it('toggle: selecting already-selected id sets it to null', () => {
+    it('toggle: selecting already-selected account+category clears both', () => {
       const state = {
         ...initialState(),
         selectedAccountId: 'acc1',
+        selectedCategoryKey: 'taxable',
       }
 
-      const updated = selectAccount(state, 'acc1')
+      const updated = selectAccount(state, 'acc1', 'taxable')
       expect(updated.selectedAccountId).toBeNull()
+      expect(updated.selectedCategoryKey).toBeNull()
     })
 
     it('other fields remain reference-equal when selecting a different account', () => {
@@ -404,10 +415,46 @@ describe('state helpers', () => {
       const originalAccounts = state.accounts
       const originalPositions = state.positions
 
-      const updated = selectAccount(state, 'acc1')
+      const updated = selectAccount(state, 'acc1', 'taxable')
 
       expect(updated.accounts).toBe(originalAccounts)
       expect(updated.positions).toBe(originalPositions)
+    })
+
+    it('selecting same accountId but different categoryKey switches to new category', () => {
+      const state = {
+        ...initialState(),
+        selectedAccountId: 'acc1',
+        selectedCategoryKey: 'taxable',
+      }
+
+      const updated = selectAccount(state, 'acc1', 'nonTaxable')
+      expect(updated.selectedAccountId).toBe('acc1')
+      expect(updated.selectedCategoryKey).toBe('nonTaxable')
+    })
+
+    it('selecting different accountId clears previous selection and sets new one', () => {
+      const state = {
+        ...initialState(),
+        selectedAccountId: 'acc1',
+        selectedCategoryKey: 'taxable',
+      }
+
+      const updated = selectAccount(state, 'acc2', 'taxDeferred')
+      expect(updated.selectedAccountId).toBe('acc2')
+      expect(updated.selectedCategoryKey).toBe('taxDeferred')
+    })
+
+    it('selecting closedPositions categoryKey works like other categories', () => {
+      const state = initialState()
+
+      const updated = selectAccount(state, 'acc1', 'closedPositions')
+      expect(updated.selectedAccountId).toBe('acc1')
+      expect(updated.selectedCategoryKey).toBe('closedPositions')
+
+      const toggled = selectAccount(updated, 'acc1', 'closedPositions')
+      expect(toggled.selectedAccountId).toBeNull()
+      expect(toggled.selectedCategoryKey).toBeNull()
     })
   })
 

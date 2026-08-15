@@ -162,20 +162,22 @@ describe('appReducer', () => {
   })
 
   describe('SELECT_ACCOUNT', () => {
-    it('sets selectedAccountId from action.accountId', () => {
-      const state: AppState = { ...initialState(), selectedAccountId: null }
+    it('sets selectedAccountId and selectedCategoryKey from action', () => {
+      const state: AppState = { ...initialState(), selectedAccountId: null, selectedCategoryKey: null }
 
-      const result = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acc1' })
+      const result = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acc1', categoryKey: 'taxable' })
 
       expect(result.selectedAccountId).toBe('acc1')
+      expect(result.selectedCategoryKey).toBe('taxable')
     })
 
-    it('toggles to null when selecting the same account twice', () => {
-      const state: AppState = { ...initialState(), selectedAccountId: 'acc1' }
+    it('toggles both to null when selecting the same account and category twice', () => {
+      const state: AppState = { ...initialState(), selectedAccountId: 'acc1', selectedCategoryKey: 'taxable' }
 
-      const result = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acc1' })
+      const result = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acc1', categoryKey: 'taxable' })
 
       expect(result.selectedAccountId).toBeNull()
+      expect(result.selectedCategoryKey).toBeNull()
     })
   })
 

@@ -13,6 +13,14 @@ Click Undo on a closed position to restore it instantly, using the exact snapsho
 - Open position with same symbol but different shares/avgCost/assetClass: silent restore as a second, separate lot — duplicate symbol rows coexist, no confirmation shown.
 - Restored position always gets a new internal id (not user-visible).
 
+### Closed Positions — Accounts Page Scoping
+
+Closed positions are viewable per-account on the Accounts page via a Closed Positions card:
+
+- Only accounts with ≥1 closed position display a Closed Positions card.
+- Realized G/L total: sum of all `realizedGL` values for the account's closed positions, excluding entries with unknown basis (`realizedGLBasis: 'unknown'`). Displays `—` when all entries in scope are unknown-basis.
+- Undo and delete behavior is unchanged (see "Closed Positions — Undo" above).
+
 ## Google Drive Sync
 
 ### Drive Connection Persistence

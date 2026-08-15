@@ -61,19 +61,23 @@ Rows are **aggregate groups** — each row represents a unique combination of sy
 
 2-column layout accessed via the "Accounts" tab in the Nav. Left panel (360px fixed width) shows collapsible category cards; right panel (flexible) shows allocation chart, filter controls, and aggregate positions table.
 
-**Left panel — Category cards** (Taxable / Non-Taxable / Tax-Deferred order):
-- **Card header** (click to toggle expanded state): category label + account-count badge (`.tag.tag-neutral`, unfiltered count).
+**Left panel — Category cards** (Taxable / Non-Taxable / Tax-Deferred / Closed Positions order):
+- **Card header** (click to toggle expanded state): category/collection label + account-count badge (`.tag.tag-neutral`, unfiltered count for category cards; for Closed Positions, badge is fixed at account count of those with ≥1 closed position).
 - **Collapsed state** (default): shows only the header with badge.
 - **Expanded state**: lists account rows, each clickable (cursor pointer), styled with:
   - Institution and account name on line 1 (or name only if institution is empty), using institution—name format.
-  - Tags on line 2: total value (formatted USD), account number, updated date (ISO format).
+  - Tags on line 2: for Taxable/Non-Taxable/Tax-Deferred cards, total value (formatted USD), account number, updated date (ISO format); for Closed Positions card, realized G/L sum (formatted USD, or `—` if all underlying closed positions have `realizedGLBasis === 'unknown'`), account number, updated date.
   - Click to select: dispatches `state.selectedAccountId` or toggles if already selected (toggle semantics). Global selection state persists across category expansions.
+- **Closed Positions card** (4th card, always shown in the card list): visible only if ≥1 account in state has ≥1 closed position. Badge shows total count of such accounts. Expanded list shows only accounts with closed positions. Totals on line 2 are realized G/L sums per account.
 
 **Right panel** (flexible width):
-- **Allocation chart** — top: `AllocationChart` component with positions from current selection (all accounts or single account) and title `"Allocation — All Accounts"` or `"Allocation — {account.name}"`.
-- **Filter row** — asset-class `.seg` radio control (computed from all positions, not selection-scoped, sorted alphabetically) + "Import" button (same as Dashboard). Free-text search field for symbol/name filtering.
-- **Aggregate Positions table** — sorted by column selection (global sort state shared with Dashboard via `state.sortBy`/`TOGGLE_SORT`). **Columns**: Symbol, Asset Class, Shares, Avg Cost, Current Price, Amount Invested, Market Value, G/L, G/L %, **% of Selection** (percentage of selection total, not whole portfolio), Row-count badge. **% of Selection** reflects only positions in the current selection (account or all). Rows are aggregate groups (symbol + asset class merge). Same interaction pattern as Dashboard PositionsTable: row click → `PositionGroupOverlay`, sortable headers with `↑`/`↓` indicators, etc.
+- **Allocation chart** — top: `AllocationChart` component with positions from current selection (all accounts, single account, or single account's closed positions) and title `"Allocation — All Accounts"`, `"Allocation — {account.name}"`, or `"Allocation — {account.name} (Closed)"`.
+- **Filter row** — asset-class `.seg` radio control (computed from all positions, not selection-scoped, sorted alphabetically) + "Import" button (same as Dashboard). Free-text search field for symbol/name filtering. When Closed Positions + account is selected, asset-class filter and search are scoped to that account's closed positions only.
+- **Aggregate Positions table** (open positions view; shown when a Taxable/Non-Taxable/Tax-Deferred category account is selected, or "All Accounts" is selected) — sorted by column selection (global sort state shared with Dashboard via `state.sortBy`/`TOGGLE_SORT`). **Columns**: Symbol, Asset Class, Shares, Avg Cost, Current Price, Amount Invested, Market Value, G/L, G/L %, **% of Selection** (percentage of selection total, not whole portfolio), Row-count badge. **% of Selection** reflects only positions in the current selection (account or all). Rows are aggregate groups (symbol + asset class merge). Same interaction pattern as Dashboard PositionsTable: row click → `PositionGroupOverlay`, sortable headers with `↑`/`↓` indicators, etc.
+- **Closed Positions table** (closed positions view; shown when Closed Positions card + account is selected) — **Columns**: Security (symbol + name), Closed (date, ISO format), Realized G/L (signed formatted USD, or `"unknown"` if `realizedGLBasis === 'unknown'`), Delete (trash-icon button per row, triggering confirm `"Delete this closed position? This permanently discards its realized G/L history."`, removing on confirm). Asset-class filter and symbol search apply. No `PositionGroupOverlay` overlay interaction. Same delete behavior as Dashboard's Closed Positions delete.
 - **Empty state**: "No positions to show." when selection has no positions.
+
+**Two-card overlap**: an account with both open and closed positions appears in two cards — one in its tax-category card (Taxable/Non-Taxable/Tax-Deferred) and one in the Closed Positions card. Selecting the account under one card sets `state.selectedAccountId` globally, but the visual selection highlight is scoped to the card it was selected from — the account does not highlight under the other card simultaneously. Switching to view the account's data (in the right panel) toggles between open-positions view (when selected from a tax-category card) and closed-positions view (when selected from Closed Positions card).
 
 **No longer shown**: "Subtotal row", "Cash/Investment/Total" column split, 3-section (Taxable/Non-Taxable/Tax-Deferred) table layout, dividers between sections. **Account CRUD**: remains in CSV import flow only (new-account form at import time).
 

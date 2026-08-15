@@ -202,7 +202,7 @@ export function PositionsTable({ state, dispatch }: PositionsTableProps) {
 
       {/* Closed positions table */}
       {state.showClosed && (
-        <ClosedPositionsTable state={state} dispatch={dispatch} />
+        <ClosedPositionsTable state={state} dispatch={dispatch} positions={state.closedPositions} />
       )}
 
       {/* Position group overlay */}

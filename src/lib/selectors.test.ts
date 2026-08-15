@@ -6,15 +6,18 @@ import {
   filteredPortfolioTotal,
   assetClassOptions,
   categoryCards,
+  closedPositionsCard,
   acctScopedPositions,
   acctAssetClassOptions,
   acctFilteredPositions,
+  acctScopedClosedPositions,
+  acctFilteredClosedPositions,
   acctAllocationTitle,
   segmentCards,
   positionsForCategory
 } from './selectors'
 import { AppState, initialState } from './state'
-import { Account, Position, Transaction } from './types'
+import { Account, Position, Transaction, ClosedPosition } from './types'
 
 describe('selectors', () => {
   // Helper to create a test state
@@ -724,14 +727,26 @@ describe('selectors', () => {
     expect(cards.find((c) => c.key === 'nonTaxable')?.expanded).toBe(false)
   })
 
-  it('categoryCards: selected reflects state.selectedAccountId', () => {
+  it('categoryCards: selected reflects state.selectedAccountId && state.selectedCategoryKey', () => {
     const state = createTestState({
       accounts: [testAccount1],
-      selectedAccountId: 'acc-1'
+      selectedAccountId: 'acc-1',
+      selectedCategoryKey: 'taxable'
     })
 
     const cards = categoryCards(state)
     expect(cards[0].accounts[0].selected).toBe(true)
+  })
+
+  it('categoryCards: selected is false when selectedCategoryKey differs', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      selectedAccountId: 'acc-1',
+      selectedCategoryKey: 'closedPositions'
+    })
+
+    const cards = categoryCards(state)
+    expect(cards[0].accounts[0].selected).toBe(false)
   })
 
   // === acctScopedPositions() / acctAssetClassOptions() / acctFilteredPositions() / acctAllocationTitle() tests ===
@@ -764,6 +779,16 @@ describe('selectors', () => {
 
   it('acctAssetClassOptions: empty positions returns empty array', () => {
     expect(acctAssetClassOptions([])).toEqual([])
+  })
+
+  it('acctAssetClassOptions: works with ClosedPosition[] array via structural compatibility', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', assetClassManualOverride: 'Tech', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 500, realizedGLBasis: 'transactions' },
+      { id: 'cp-2', accountId: 'acc-1', symbol: 'BND', name: 'Bond', assetClass: 'Bonds', shares: 50, avgCost: 100, price: 105, closedDate: '2026-08-02', lastImportedAt: '2026-08-08', realizedGL: 25, realizedGLBasis: 'transactions' },
+      { id: 'cp-3', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Equity', shares: 75, avgCost: 300, price: 400, closedDate: '2026-08-03', lastImportedAt: '2026-08-08', realizedGL: null, realizedGLBasis: 'unknown' }
+    ]
+    // Should return distinct effective asset classes (Tech override for cp-1, Bonds for cp-2, Equity for cp-3), sorted
+    expect(acctAssetClassOptions(closedPositions)).toEqual(['Bonds', 'Equity', 'Tech'])
   })
 
   it('acctFilteredPositions: composes asset-class filter and search', () => {
@@ -800,6 +825,84 @@ describe('selectors', () => {
   it('acctAllocationTitle: no selection returns "Allocation — All Accounts"', () => {
     const state = createTestState({ accounts: [testAccount1], selectedAccountId: null })
     expect(acctAllocationTitle(state)).toBe('Allocation — All Accounts')
+  })
+
+  // === acctScopedClosedPositions() / acctFilteredClosedPositions() tests ===
+
+  it('acctScopedClosedPositions: selected account returns only its closed positions', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' },
+      { id: 'cp-2', accountId: 'acc-2', symbol: 'BND', name: 'Bond', assetClass: 'Fixed Income', shares: 50, avgCost: 100, price: 105, closedDate: '2026-08-02', lastImportedAt: '2026-08-08', realizedGL: 250, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1, testAccount2], closedPositions, selectedAccountId: 'acc-1' })
+    expect(acctScopedClosedPositions(state)).toEqual([closedPositions[0]])
+  })
+
+  it('acctScopedClosedPositions: no selection returns all closed positions', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], closedPositions, selectedAccountId: null })
+    expect(acctScopedClosedPositions(state)).toEqual(closedPositions)
+  })
+
+  it('acctScopedClosedPositions: account with zero closed positions returns empty array', () => {
+    const state = createTestState({ accounts: [testAccount1], closedPositions: [], selectedAccountId: 'acc-1' })
+    expect(acctScopedClosedPositions(state)).toEqual([])
+  })
+
+  it('acctFilteredClosedPositions: asset-class filter narrows correctly', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' },
+      { id: 'cp-2', accountId: 'acc-1', symbol: 'BND', name: 'Bond', assetClass: 'Fixed Income', shares: 50, avgCost: 100, price: 105, closedDate: '2026-08-02', lastImportedAt: '2026-08-08', realizedGL: 250, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], closedPositions, selectedAccountId: 'acc-1', acctAssetClassFilter: 'Equity', acctPosSearch: '' })
+    expect(acctFilteredClosedPositions(state)).toEqual([closedPositions[0]])
+  })
+
+  it('acctFilteredClosedPositions: search matches symbol case-insensitively', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' },
+      { id: 'cp-2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Equity', shares: 50, avgCost: 100, price: 105, closedDate: '2026-08-02', lastImportedAt: '2026-08-08', realizedGL: 250, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], closedPositions, selectedAccountId: 'acc-1', acctAssetClassFilter: 'All', acctPosSearch: 'aapl' })
+    expect(acctFilteredClosedPositions(state)).toEqual([closedPositions[0]])
+  })
+
+  it('acctFilteredClosedPositions: search matches name case-insensitively', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Equity', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' },
+      { id: 'cp-2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Equity', shares: 50, avgCost: 100, price: 105, closedDate: '2026-08-02', lastImportedAt: '2026-08-08', realizedGL: 250, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], closedPositions, selectedAccountId: 'acc-1', acctAssetClassFilter: 'All', acctPosSearch: 'micro' })
+    expect(acctFilteredClosedPositions(state)).toEqual([closedPositions[1]])
+  })
+
+  it('acctFilteredClosedPositions: combining asset-class filter and search narrows further', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' },
+      { id: 'cp-2', accountId: 'acc-1', symbol: 'BND', name: 'Bond', assetClass: 'Fixed Income', shares: 50, avgCost: 100, price: 105, closedDate: '2026-08-02', lastImportedAt: '2026-08-08', realizedGL: 250, realizedGLBasis: 'transactions' },
+      { id: 'cp-3', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Equity', shares: 75, avgCost: 300, price: 400, closedDate: '2026-08-03', lastImportedAt: '2026-08-08', realizedGL: 7500, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], closedPositions, selectedAccountId: 'acc-1', acctAssetClassFilter: 'Equity', acctPosSearch: 'apple' })
+    expect(acctFilteredClosedPositions(state)).toEqual([closedPositions[0]])
+  })
+
+  it('acctFilteredClosedPositions: respects assetClassManualOverride when filtering', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', assetClassManualOverride: 'Tech', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' },
+      { id: 'cp-2', accountId: 'acc-1', symbol: 'BND', name: 'Bond', assetClass: 'Fixed Income', shares: 50, avgCost: 100, price: 105, closedDate: '2026-08-02', lastImportedAt: '2026-08-08', realizedGL: 250, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], closedPositions, selectedAccountId: 'acc-1', acctAssetClassFilter: 'Tech' })
+    expect(acctFilteredClosedPositions(state)).toEqual([closedPositions[0]])
+  })
+
+  it('acctFilteredClosedPositions: All filter + empty search matches acctScopedClosedPositions', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 100, avgCost: 150, price: 200, closedDate: '2026-08-01', lastImportedAt: '2026-08-08', realizedGL: 5000, realizedGLBasis: 'transactions' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], closedPositions, selectedAccountId: 'acc-1' })
+    expect(acctFilteredClosedPositions(state)).toEqual(acctScopedClosedPositions(state))
   })
 
   // === segmentCards() tests ===
@@ -1048,5 +1151,391 @@ describe('selectors', () => {
     const results = positionsForCategory(state)
 
     expect(results).toHaveLength(0)
+  })
+
+  // === closedPositionsCard() tests ===
+
+  it('closedPositionsCard: happy path with 2 accounts and closed positions', () => {
+    const testAccount3: Account = {
+      id: 'acc-3',
+      accountNumber: '11111',
+      name: 'Secondary Brokerage',
+      institution: 'Fidelity',
+      taxCategory: 'taxable',
+      retirement: false,
+      createdAt: '2026-01-01'
+    }
+
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      },
+      {
+        id: 'cp-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 300,
+        price: 400,
+        closedDate: '2026-07-15',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      },
+      {
+        id: 'cp-3',
+        accountId: 'acc-3',
+        symbol: 'BND',
+        name: 'Bond ETF',
+        assetClass: 'Fixed Income',
+        shares: 200,
+        avgCost: 100,
+        price: 105,
+        closedDate: '2026-08-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 1000,
+        realizedGLBasis: 'transactions'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2, testAccount3],
+      closedPositions
+    })
+
+    const card = closedPositionsCard(state)
+
+    // Card structure
+    expect(card.key).toBe('closedPositions')
+    expect(card.label).toBe('Closed Positions')
+    expect(card.accountCount).toBe(2)
+    expect(card.hasAccounts).toBe(true)
+    expect(card.noAccounts).toBe(false)
+
+    // Card total: 5000 + 5000 + 1000 = 11000
+    expect(card.totalStr).toBe('$11,000.00')
+
+    // Check account totals
+    const acc1 = card.accounts.find((a) => a.id === 'acc-1')
+    expect(acc1).toBeDefined()
+    expect(acc1?.totalStr).toBe('$10,000.00') // 5000 + 5000
+
+    const acc3 = card.accounts.find((a) => a.id === 'acc-3')
+    expect(acc3).toBeDefined()
+    expect(acc3?.totalStr).toBe('$1,000.00')
+  })
+
+  it('closedPositionsCard: account with all unknown-basis closed positions shows "—" for totalStr', () => {
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: null,
+        realizedGLBasis: 'unknown'
+      },
+      {
+        id: 'cp-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 300,
+        price: 400,
+        closedDate: '2026-07-15',
+        lastImportedAt: '2026-08-07',
+        realizedGL: null,
+        realizedGLBasis: 'unknown'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      closedPositions
+    })
+
+    const card = closedPositionsCard(state)
+
+    // Account should still be included (has closed positions)
+    expect(card.accountCount).toBe(1)
+    // But totalStr should be '—'
+    expect(card.accounts[0].totalStr).toBe('—')
+    // Card total should also be '—'
+    expect(card.totalStr).toBe('—')
+  })
+
+  it('closedPositionsCard: mixed known/unknown-basis closed positions sums only known realizedGL', () => {
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      },
+      {
+        id: 'cp-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 300,
+        price: 400,
+        closedDate: '2026-07-15',
+        lastImportedAt: '2026-08-07',
+        realizedGL: null,
+        realizedGLBasis: 'unknown'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      closedPositions
+    })
+
+    const card = closedPositionsCard(state)
+
+    // Account total should be 5000 (only the known one)
+    expect(card.accounts[0].totalStr).toBe('$5,000.00')
+    // Card total should also be 5000
+    expect(card.totalStr).toBe('$5,000.00')
+  })
+
+  it('closedPositionsCard: card-level total with multiple accounts sums correctly', () => {
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 3000,
+        realizedGLBasis: 'transactions'
+      },
+      {
+        id: 'cp-2',
+        accountId: 'acc-2',
+        symbol: 'BND',
+        name: 'Bond ETF',
+        assetClass: 'Fixed Income',
+        shares: 50,
+        avgCost: 100,
+        price: 105,
+        closedDate: '2026-08-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 2000,
+        realizedGLBasis: 'transactions'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      closedPositions
+    })
+
+    const card = closedPositionsCard(state)
+
+    // Card total should be 3000 + 2000 = 5000
+    expect(card.totalStr).toBe('$5,000.00')
+    expect(card.accountCount).toBe(2)
+  })
+
+  it('closedPositionsCard: selected is true only when same accountId AND selectedCategoryKey === "closedPositions"', () => {
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      }
+    ]
+
+    // Test case 1: same accountId but wrong categoryKey
+    const state1 = createTestState({
+      accounts: [testAccount1],
+      closedPositions,
+      selectedAccountId: 'acc-1',
+      selectedCategoryKey: 'taxable'
+    })
+
+    const card1 = closedPositionsCard(state1)
+    expect(card1.accounts[0].selected).toBe(false)
+
+    // Test case 2: same accountId and correct categoryKey
+    const state2 = createTestState({
+      accounts: [testAccount1],
+      closedPositions,
+      selectedAccountId: 'acc-1',
+      selectedCategoryKey: 'closedPositions'
+    })
+
+    const card2 = closedPositionsCard(state2)
+    expect(card2.accounts[0].selected).toBe(true)
+  })
+
+  it('closedPositionsCard: empty closed positions shows noAccounts message', () => {
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      closedPositions: []
+    })
+
+    const card = closedPositionsCard(state)
+
+    expect(card.hasAccounts).toBe(false)
+    expect(card.noAccounts).toBe(true)
+    expect(card.accounts).toEqual([])
+    expect(card.accountCount).toBe(0)
+    expect(card.totalStr).toBe('—')
+  })
+
+  it('closedPositionsCard: expanded reflects state.expandedCategories', () => {
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      closedPositions,
+      expandedCategories: { closedPositions: true }
+    })
+
+    const card = closedPositionsCard(state)
+    expect(card.expanded).toBe(true)
+
+    // Also test when not expanded
+    const state2 = createTestState({
+      accounts: [testAccount1],
+      closedPositions
+    })
+    const card2 = closedPositionsCard(state2)
+    expect(card2.expanded).toBe(false)
+  })
+
+  it('closedPositionsCard: updatedStr shows latest lastImportedAt across account\'s closed positions', () => {
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-05',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      },
+      {
+        id: 'cp-2',
+        accountId: 'acc-1',
+        symbol: 'MSFT',
+        name: 'Microsoft',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 300,
+        price: 400,
+        closedDate: '2026-07-15',
+        lastImportedAt: '2026-08-10',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      closedPositions
+    })
+
+    const card = closedPositionsCard(state)
+
+    // updatedStr should be the latest date: 2026-08-10 (may vary by timezone)
+    expect(card.accounts[0].updatedStr).toMatch(/Aug (9|10), 2026/)
+  })
+
+  it('closedPositionsCard: only includes accounts with closed positions, excludes those without', () => {
+    const closedPositions: ClosedPosition[] = [
+      {
+        id: 'cp-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        closedDate: '2026-07-01',
+        lastImportedAt: '2026-08-08',
+        realizedGL: 5000,
+        realizedGLBasis: 'transactions'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2], // acc-2 has no closed positions
+      closedPositions
+    })
+
+    const card = closedPositionsCard(state)
+
+    // Only acc-1 should be included
+    expect(card.accountCount).toBe(1)
+    expect(card.accounts[0].id).toBe('acc-1')
   })
 })

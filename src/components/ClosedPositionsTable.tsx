@@ -7,13 +7,14 @@ import { Trash, RotateCcw } from 'lucide-react'
 export interface ClosedPositionsTableProps {
   state: AppState
   dispatch: (action: any) => void
+  positions: ClosedPosition[]
 }
 
 /**
  * ClosedPositionsTable component: displays closed positions with symbol, name, closed date, and realized G/L.
  * Per .dc.html lines 190-205.
  */
-export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTableProps) {
+export function ClosedPositionsTable({ state, dispatch, positions }: ClosedPositionsTableProps) {
   const handleDeleteClosedPosition = (id: string) => {
     const confirmed = window.confirm(
       'Delete this closed position? This permanently discards its realized G/L history.'
@@ -55,7 +56,7 @@ export function ClosedPositionsTable({ state, dispatch }: ClosedPositionsTablePr
         </tr>
       </thead>
       <tbody>
-        {state.closedPositions.map((cp) => {
+        {positions.map((cp) => {
           const glColorVal = cp.realizedGL !== null ? glColor(cp.realizedGL) : LOSS_COLOR
           const glStr =
             cp.realizedGL === null
