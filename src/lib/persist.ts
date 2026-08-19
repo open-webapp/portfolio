@@ -2,29 +2,16 @@ import type { AppState } from './state'
 import { initialState } from './state'
 import { decryptState, detectEnvelopeShape, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
+import type { ProjectSync } from '@open-webapp/project-sync'
 
-const DB_NAME = 'portfolio_app_state_v1'
 const STORE_NAME = 'app_state'
 const STATE_KEY = 'current'
 
-/**
- * Open or create the IndexedDB database.
- * Initializes the object store if it doesn't exist.
- */
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1)
+// Global reference to the project-sync instance (initialized by App.tsx)
+let appInstance: ProjectSync | null = null
 
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME)
-      }
-    }
-  })
+export function setProjectSyncInstance(app: ProjectSync): void {
+  appInstance = app
 }
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -87,70 +74,120 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
  * Peeks at the raw stored value's shape without decrypting anything.
  * Used by the password gate to decide whether to prompt for a new password
  * (absent), migrate (legacy-plaintext), or unlock (encrypted).
+ *
+ * At the password gate stage, we need to check the old legacy database
+ * since the project hasn't been selected yet.
  */
 export async function peekEnvelopeShape(): Promise<'absent' | 'legacy-plaintext' | 'encrypted'> {
-  const db = await openDatabase()
-  const transaction = db.transaction(STORE_NAME, 'readonly')
-  const store = transaction.objectStore(STORE_NAME)
+  // At boot, before any project selection, check the old database for legacy data
+  try {
+    return await new Promise<'absent' | 'legacy-plaintext' | 'encrypted'>((resolve) => {
+      const request = indexedDB.open('portfolio_app_state_v1')
 
-  return new Promise((resolve, reject) => {
-    const request = store.get(STATE_KEY)
+      request.onerror = () => {
+        // Database doesn't exist
+        resolve('absent')
+      }
 
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(detectEnvelopeShape(request.result))
-  })
+      request.onsuccess = () => {
+        const db = request.result
+        try {
+          const transaction = db.transaction('app_state', 'readonly')
+          const store = transaction.objectStore('app_state')
+
+          const getRequest = store.get(STATE_KEY)
+          getRequest.onerror = () => resolve('absent')
+          getRequest.onsuccess = () => {
+            const shape = detectEnvelopeShape(getRequest.result)
+            resolve(shape)
+          }
+        } catch {
+          resolve('absent')
+        }
+      }
+    })
+  } catch {
+    return 'absent'
+  }
 }
 
 /**
  * Peeks at the stored envelope's salt (if it is already encrypted) without a password.
  * Returns null if nothing is stored or the stored value isn't an encrypted envelope.
+ *
+ * At the password gate stage, check the old database.
  */
 export async function peekStoredSalt(): Promise<Uint8Array | null> {
-  const db = await openDatabase()
-  const transaction = db.transaction(STORE_NAME, 'readonly')
-  const store = transaction.objectStore(STORE_NAME)
+  try {
+    return await new Promise<Uint8Array | null>((resolve) => {
+      const request = indexedDB.open('portfolio_app_state_v1')
 
-  return new Promise((resolve, reject) => {
-    const request = store.get(STATE_KEY)
-
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => {
-      const raw = request.result
-      if (detectEnvelopeShape(raw) !== 'encrypted') {
+      request.onerror = () => {
         resolve(null)
-        return
       }
-      resolve(base64ToBytes((raw as EncryptedEnvelope).salt))
-    }
-  })
+
+      request.onsuccess = () => {
+        const db = request.result
+        try {
+          const transaction = db.transaction('app_state', 'readonly')
+          const store = transaction.objectStore('app_state')
+
+          const getRequest = store.get(STATE_KEY)
+          getRequest.onerror = () => resolve(null)
+          getRequest.onsuccess = () => {
+            const result = getRequest.result
+            if (detectEnvelopeShape(result) !== 'encrypted') {
+              resolve(null)
+              return
+            }
+            resolve(base64ToBytes((result as EncryptedEnvelope).salt))
+          }
+        } catch {
+          resolve(null)
+        }
+      }
+    })
+  } catch {
+    return null
+  }
 }
 
 /**
  * Loads a pre-encryption plaintext AppState blob from IndexedDB as-is.
  * Returns the saved state, or null if nothing was saved.
  * Missing collections default to empty arrays for migration tolerance.
+ *
+ * At boot, checks the old database.
  */
 export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
   try {
-    const db = await openDatabase()
-    const transaction = db.transaction(STORE_NAME, 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
+    const loaded = await new Promise<Partial<AppState> | undefined>((resolve) => {
+      const request = indexedDB.open('portfolio_app_state_v1')
 
-    return new Promise((resolve, reject) => {
-      const request = store.get(STATE_KEY)
+      request.onerror = () => {
+        resolve(undefined)
+      }
 
-      request.onerror = () => reject(request.error)
       request.onsuccess = () => {
-        const loaded = request.result as Partial<AppState> | undefined
+        const db = request.result
+        try {
+          const transaction = db.transaction('app_state', 'readonly')
+          const store = transaction.objectStore('app_state')
 
-        if (!loaded) {
-          resolve(null)
-          return
+          const getRequest = store.get(STATE_KEY)
+          getRequest.onerror = () => resolve(undefined)
+          getRequest.onsuccess = () => resolve(getRequest.result)
+        } catch {
+          resolve(undefined)
         }
-
-        resolve(coalesceWithDefaults(loaded))
       }
     })
+
+    if (!loaded) {
+      return null
+    }
+
+    return coalesceWithDefaults(loaded)
   } catch (error) {
     console.error('Failed to load persisted app state:', error)
     return null
@@ -158,18 +195,23 @@ export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
 }
 
 /**
- * Loads and decrypts the persisted AppState from IndexedDB.
+ * Loads and decrypts the persisted AppState from the active project's database.
  * Returns null if nothing was saved.
  * Throws if the stored value is not an encrypted envelope (caller bug — the
  * gate must never call this on a legacy/absent envelope) or if decryption
  * fails (e.g. wrong password → OperationError propagates uncaught).
  */
 export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null> {
-  const db = await openDatabase()
-  const transaction = db.transaction(STORE_NAME, 'readonly')
-  const store = transaction.objectStore(STORE_NAME)
+  if (!appInstance) {
+    throw new Error('ProjectSync instance not initialized; cannot load persisted app state')
+  }
+
+  const dbHandle = await appInstance.data.getActiveDb() as any
+  const db = dbHandle as IDBDatabase
 
   const raw = await new Promise<unknown>((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly')
+    const store = transaction.objectStore(STORE_NAME)
     const request = store.get(STATE_KEY)
 
     request.onerror = () => reject(request.error)
@@ -189,16 +231,21 @@ export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null>
 }
 
 /**
- * Encrypts and saves app state to IndexedDB as a single versioned envelope.
+ * Encrypts and saves app state to the active project's database.
  */
 export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Uint8Array): Promise<void> {
+  if (!appInstance) {
+    throw new Error('ProjectSync instance not initialized; cannot save persisted app state')
+  }
+
   try {
     const envelope = await encryptState(state, key, salt)
-    const db = await openDatabase()
-    const transaction = db.transaction(STORE_NAME, 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
+    const dbHandle = await appInstance.data.getActiveDb() as any
+    const db = dbHandle as IDBDatabase
 
     return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite')
+      const store = transaction.objectStore(STORE_NAME)
       const request = store.put(envelope, STATE_KEY)
 
       request.onerror = () => reject(request.error)
@@ -211,14 +258,19 @@ export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Ui
 }
 
 /**
- * Deletes the persisted app state entry from IndexedDB.
+ * Deletes the persisted app state entry from the active project's database.
  */
 export async function clearPersistedApp(): Promise<void> {
-  const db = await openDatabase()
-  const transaction = db.transaction(STORE_NAME, 'readwrite')
-  const store = transaction.objectStore(STORE_NAME)
+  if (!appInstance) {
+    throw new Error('ProjectSync instance not initialized; cannot clear persisted app state')
+  }
+
+  const dbHandle = await appInstance.data.getActiveDb() as any
+  const db = dbHandle as IDBDatabase
 
   return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
     const request = store.delete(STATE_KEY)
 
     request.onerror = () => reject(request.error)
