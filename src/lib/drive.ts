@@ -1,4 +1,4 @@
-import { createDriveSync, NeedsReauthError } from '@open-webapp/drive-sync'
+import { createDriveSync, NeedsReauthError, PickerCancelledError } from '@open-webapp/drive-sync'
 import type { Connection } from '@open-webapp/drive-sync'
 import type { AppState } from './state'
 import { coalesceWithDefaults } from './persist'
@@ -57,12 +57,33 @@ export const drive = {
           throw new Error('Google Picker API key and project number are required for file picker. Set VITE_GOOGLE_PICKER_API_KEY and VITE_GOOGLE_PROJECT_NUMBER.')
         }
 
-        const result = await project.pickFile({
-          apiKey,
-          appId: projectNumber,
-          // Map unsupported options to valid PickFileOptions
-          ...options,
-        })
+        // drive-sync's pickFile forwards only apiKey/appId/mimeTypes/multiSelect/
+        // parentFolderId to openPicker — `includeFolders` is dropped on the way
+        // through. Backups live in a nested folder (OpenWebApp/Portfolio), so a
+        // picker without folder navigation can never reach them. Scope the view
+        // to that folder directly instead: parentFolderId *is* forwarded, and it
+        // puts the backup at the picker's root.
+        const { includeFolders: _includeFolders, ...pickerOptions } = (options ?? {}) as {
+          includeFolders?: boolean
+          parentFolderId?: string
+          [key: string]: unknown
+        }
+        const parentFolderId: string = pickerOptions.parentFolderId ?? (await project.ensureFolderPath())
+
+        let result
+        try {
+          result = await project.pickFile({
+            ...pickerOptions,
+            apiKey,
+            appId: projectNumber,
+            parentFolderId,
+          })
+        } catch (err) {
+          // Cancelling the picker rejects rather than resolving empty. That is a
+          // user no-op, not a failure — surface it as "nothing picked".
+          if (err instanceof PickerCancelledError) return null
+          throw err
+        }
         // Return the first file or null, with 'id' property mapped from 'fileId'
         if (Array.isArray(result) && result.length > 0) {
           return {
