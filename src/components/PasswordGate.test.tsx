@@ -20,7 +20,12 @@ vi.mock('../lib/persist', () => ({
   clearPersistedApp: vi.fn(),
 }))
 
-vi.mock('../lib/drive', () => {
+const mockPickFile = vi.fn()
+const mockEnsureFolderPath = vi.fn()
+
+vi.mock('../lib/drive', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/drive')>()
+
   class DriveDecryptError extends Error {
     salt: Uint8Array
     envelope: unknown
@@ -32,6 +37,7 @@ vi.mock('../lib/drive', () => {
     }
   }
   return {
+    ...actual,
     openDrivePicker: vi.fn(),
     getAccessTokenForPicker: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
@@ -45,6 +51,12 @@ vi.mock('../lib/drive', () => {
       return crypto.decryptState(envelope, key)
     }),
     restoreBackup: vi.fn(),
+    drive: {
+      project: (id: string) => ({
+        pickFile: mockPickFile,
+        ensureFolderPath: mockEnsureFolderPath,
+      }),
+    },
     DriveDecryptError,
   }
 })
@@ -93,6 +105,8 @@ describe('PasswordGate', () => {
     vi.clearAllMocks()
     vi.mocked(cryptoModule.generateSalt).mockReturnValue(fakeSalt)
     vi.mocked(cryptoModule.deriveKey).mockResolvedValue(fakeKey)
+    mockPickFile.mockResolvedValue(null)
+    mockEnsureFolderPath.mockResolvedValue('folder-portfolio')
     global.alert = vi.fn()
     global.confirm = vi.fn()
   })
@@ -384,6 +398,7 @@ describe('PasswordGate', () => {
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )
+      mockPickFile.mockResolvedValue({ id: 'picked-file-id', name: 'backup.json' })
       global.confirm = vi.fn().mockReturnValue(true)
 
       renderPasswordGate({
@@ -403,14 +418,9 @@ describe('PasswordGate', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
-      // Wait for openDrivePicker to be called
-      await waitFor(() => {
-        expect(vi.mocked(driveModule.openDrivePicker)).toHaveBeenCalled()
-      })
-
-      // Simulate file selection from picker
-      const [, onSelect] = vi.mocked(driveModule.openDrivePicker).mock.calls[0]
-      await onSelect('picked-file-id')
+      // Wait for the "Pick a file" button to appear
+      const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
+      fireEvent.click(pickButton)
 
       await waitFor(() => {
         expect(
@@ -440,6 +450,7 @@ describe('PasswordGate', () => {
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )
+      mockPickFile.mockResolvedValue({ id: 'picked-file-id', name: 'backup.json' })
       vi.mocked(global.confirm).mockReturnValue(true)
 
       const { container } = renderPasswordGate({
@@ -458,14 +469,9 @@ describe('PasswordGate', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
-      // Wait for openDrivePicker to be called
-      await waitFor(() => {
-        expect(vi.mocked(driveModule.openDrivePicker)).toHaveBeenCalled()
-      })
-
-      // Simulate file selection from picker
-      const [, onSelect] = vi.mocked(driveModule.openDrivePicker).mock.calls[0]
-      await onSelect('picked-file-id')
+      // Wait for the "Pick a file" button to appear
+      const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
+      fireEvent.click(pickButton)
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
@@ -494,6 +500,7 @@ describe('PasswordGate', () => {
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )
       vi.mocked(cryptoModule.decryptState).mockRejectedValue(new Error('decrypt failed'))
+      mockPickFile.mockResolvedValue({ id: 'picked-file-id', name: 'backup.json' })
       global.confirm = vi.fn().mockReturnValue(true)
 
       const { container } = renderPasswordGate({
@@ -512,14 +519,9 @@ describe('PasswordGate', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
-      // Wait for openDrivePicker to be called
-      await waitFor(() => {
-        expect(vi.mocked(driveModule.openDrivePicker)).toHaveBeenCalled()
-      })
-
-      // Simulate file selection from picker
-      const [, onSelect] = vi.mocked(driveModule.openDrivePicker).mock.calls[0]
-      await onSelect('picked-file-id')
+      // Wait for the "Pick a file" button to appear
+      const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
+      fireEvent.click(pickButton)
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
