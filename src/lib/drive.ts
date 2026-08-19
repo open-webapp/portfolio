@@ -43,8 +43,26 @@ export const drive = {
     return {
       ...project,
       pickFile: async (options?: any): Promise<{ id: string; name?: string; mimeType?: string } | null> => {
-        // Use modern drive-sync pickFile directly with no fallback
-        const result = await project.pickFile(options)
+        // drive-sync's pickFile requires apiKey and appId
+        const apiKey = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
+        const projectNumber = (() => {
+          const explicit = import.meta.env.VITE_GOOGLE_PROJECT_NUMBER as string | undefined
+          if (explicit) return explicit
+          const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+          const match = /^(\d+)-/.exec(clientId ?? '')
+          return match ? match[1] : undefined
+        })()
+
+        if (!apiKey || !projectNumber) {
+          throw new Error('Google Picker API key and project number are required for file picker. Set VITE_GOOGLE_PICKER_API_KEY and VITE_GOOGLE_PROJECT_NUMBER.')
+        }
+
+        const result = await project.pickFile({
+          apiKey,
+          appId: projectNumber,
+          // Map unsupported options to valid PickFileOptions
+          ...options,
+        })
         // Return the first file or null, with 'id' property mapped from 'fileId'
         if (Array.isArray(result) && result.length > 0) {
           return {
