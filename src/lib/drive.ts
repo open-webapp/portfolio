@@ -44,20 +44,8 @@ export const drive = {
       ...project,
       pickFile: async (options?: any): Promise<{ id: string; name?: string; mimeType?: string } | null> => {
         try {
-          // Call the real pickFile with required options
-          const apiKey = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
-          const projectNumber = (() => {
-            const explicit = import.meta.env.VITE_GOOGLE_PROJECT_NUMBER as string | undefined
-            if (explicit) return explicit
-            const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
-            const match = /^(\d+)-/.exec(clientId ?? '')
-            return match ? match[1] : undefined
-          })()
-          const result = await project.pickFile({
-            apiKey: apiKey || '',
-            appId: projectNumber || '',
-            ...options,
-          })
+          // Call the real pickFile with only valid options (not Picker-specific ones)
+          const result = await project.pickFile(options)
           // Return the first file or null, with 'id' property mapped from 'fileId'
           if (Array.isArray(result) && result.length > 0) {
             return {
@@ -68,7 +56,19 @@ export const drive = {
           }
           return null
         } catch (err) {
-          // If pickFile fails, try the old openDrivePicker approach
+          // If pickFile fails, fall back to old Google Picker as last resort
+          const apiKey = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
+          const projectNumber = (() => {
+            const explicit = import.meta.env.VITE_GOOGLE_PROJECT_NUMBER as string | undefined
+            if (explicit) return explicit
+            const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+            const match = /^(\d+)-/.exec(clientId ?? '')
+            return match ? match[1] : undefined
+          })()
+          if (!apiKey || !projectNumber) {
+            // Can't fall back if Picker env vars aren't set
+            throw err
+          }
           return new Promise((resolve, reject) => {
             getAccessTokenForPicker()
               .then((token) => {
