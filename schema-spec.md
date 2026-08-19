@@ -195,7 +195,7 @@ On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accoun
 
 ## Persistence envelope
 
-The entire `AppState` (all 7 collections + all UI fields) is never stored in the clear. Every write — both the IndexedDB record and the Google Drive backup file — stores the same `EncryptedEnvelope` shape (`src/lib/crypto.ts`):
+The entire `AppState` (all 7 collections + all UI fields) is wrapped in an `EncryptedEnvelope` shape (`src/lib/crypto.ts`) for every write — both local IndexedDB and Google Drive:
 
 ```ts
 interface EncryptedEnvelope {
@@ -206,12 +206,10 @@ interface EncryptedEnvelope {
 }
 ```
 
-- **IndexedDB** (`persist.ts`): DB `portfolio_app_state_v1`, object store `app_state`, single key `'current'` holding one `EncryptedEnvelope` object — no per-collection stores.
-- **Google Drive** (`drive.ts`): the backup file `portfolio-state.json` is `JSON.stringify(envelope)` for the same `EncryptedEnvelope` type — identical shape and code path (`encryptState`/`decryptState`), not a second format.
-- **Algorithm (fixed, not configurable)**: key derivation is PBKDF2-SHA256, 600,000 iterations (OWASP 2023 minimum), producing a non-extractable AES-256-GCM `CryptoKey`. Encryption is AES-256-GCM with a fresh random 12-byte IV per `encryptState` call. Salt is 16 random bytes, generated once per password (on set-password or password-change) and reused for every subsequent encryption under that password until rotated.
-- **Legacy-plaintext detection** (`detectEnvelopeShape`, pure/no I/O): a stored value is `'absent'` if `undefined`/`null`, `'encrypted'` if it structurally has `version === 1` and string `salt`/`iv`/`ciphertext` fields, otherwise `'legacy-plaintext'` (a pre-encryption raw `AppState` blob or any other shape). Purely structural — no version-field-only check, no content inspection beyond those four keys.
-- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both funnel through `coalesceWithDefaults`, which rebuilds the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults (`loaded.x ?? defaults.x`) — a blob missing a newer collection/field loads with that field defaulted rather than throwing, and stale keys not on the whitelist (left over from removed features) are silently dropped. This logic is unchanged from before encryption was added; it now runs **after** the decrypt step rather than directly on the raw stored value.
-- `loadPersistedApp(key: CryptoKey)` throws if the stored value is not `'encrypted'` (caller bug — the gate must never call it on a legacy/absent envelope) or if `crypto.subtle.decrypt` fails (wrong password → `OperationError` propagates uncaught, not swallowed).
-- `savePersistedApp(state, key: CryptoKey, salt: Uint8Array)` encrypts via `encryptState` then writes; rethrows IndexedDB open/write failures (rejections propagate to the caller — no silent success).
-- `peekEnvelopeShape()` / `peekStoredSalt()` read the raw IndexedDB record without a key — used by the password gate to decide which screen to show and, for `'encrypted'`, which salt to derive against.
-- `loadLegacyPlaintextApp()` reads the pre-encryption blob as-is for one-time migration on the set-password submit; `clearPersistedApp()` deletes the IndexedDB record entirely (used by the gate's "Reset app" escape hatch — does not touch Google Drive).
+- **IndexedDB** (managed by `@open-webapp/project-sync`): one `EncryptedEnvelope` record per project in the per-project db.
+- **Google Drive** (`drive.ts` implements sync): the backup file `portfolio-state.json` is `JSON.stringify(envelope)` — identical shape and encryption as the IndexedDB envelope.
+- **Algorithm (fixed, not configurable)**: key derivation is PBKDF2-SHA256, 600,000 iterations (OWASP 2023 minimum), producing a non-extractable AES-256-GCM `CryptoKey`. Encryption is AES-256-GCM with a fresh random 12-byte IV per `encryptState` call. Salt is 16 random bytes, generated once per password and reused until rotated.
+- **Legacy-plaintext detection** (`detectEnvelopeShape`, pure/no I/O): a stored value is `'absent'` if `undefined`/`null`, `'encrypted'` if it structurally has `version === 1` and string `salt`/`iv`/`ciphertext` fields, otherwise `'legacy-plaintext'`. Purely structural — no version-field-only check, no content inspection beyond those four keys.
+- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys are silently dropped.
+- `loadPersistedApp(key: CryptoKey)` throws if the stored value is not `'encrypted'` or if decryption fails (wrong password → `OperationError` propagates).
+- `loadLegacyPlaintextApp()` reads the pre-encryption blob for one-time migration; `clearPersistedApp()` deletes the IndexedDB record entirely.

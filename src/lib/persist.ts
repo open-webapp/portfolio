@@ -202,12 +202,24 @@ export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
  * fails (e.g. wrong password → OperationError propagates uncaught).
  */
 export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null> {
-  if (!appInstance) {
-    throw new Error('ProjectSync instance not initialized; cannot load persisted app state')
-  }
+  let db: IDBDatabase
 
-  const dbHandle = await appInstance.data.getActiveDb() as any
-  const db = dbHandle as IDBDatabase
+  if (appInstance) {
+    const dbHandle = await appInstance.data.getActiveDb() as any
+    db = dbHandle as IDBDatabase
+  } else {
+    db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('portfolio_app_state_v1', 1)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onupgradeneeded = (event) => {
+        const dbNew = (event.target as IDBOpenDBRequest).result
+        if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
+          dbNew.createObjectStore(STORE_NAME)
+        }
+      }
+    })
+  }
 
   const raw = await new Promise<unknown>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly')
@@ -234,14 +246,26 @@ export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null>
  * Encrypts and saves app state to the active project's database.
  */
 export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Uint8Array): Promise<void> {
-  if (!appInstance) {
-    throw new Error('ProjectSync instance not initialized; cannot save persisted app state')
-  }
-
   try {
     const envelope = await encryptState(state, key, salt)
-    const dbHandle = await appInstance.data.getActiveDb() as any
-    const db = dbHandle as IDBDatabase
+    let db: IDBDatabase
+
+    if (appInstance) {
+      const dbHandle = await appInstance.data.getActiveDb() as any
+      db = dbHandle as IDBDatabase
+    } else {
+      db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('portfolio_app_state_v1', 1)
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+        request.onupgradeneeded = (event) => {
+          const dbNew = (event.target as IDBOpenDBRequest).result
+          if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
+            dbNew.createObjectStore(STORE_NAME)
+          }
+        }
+      })
+    }
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite')
@@ -261,12 +285,24 @@ export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Ui
  * Deletes the persisted app state entry from the active project's database.
  */
 export async function clearPersistedApp(): Promise<void> {
-  if (!appInstance) {
-    throw new Error('ProjectSync instance not initialized; cannot clear persisted app state')
-  }
+  let db: IDBDatabase
 
-  const dbHandle = await appInstance.data.getActiveDb() as any
-  const db = dbHandle as IDBDatabase
+  if (appInstance) {
+    const dbHandle = await appInstance.data.getActiveDb() as any
+    db = dbHandle as IDBDatabase
+  } else {
+    db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('portfolio_app_state_v1', 1)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onupgradeneeded = (event) => {
+        const dbNew = (event.target as IDBOpenDBRequest).result
+        if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
+          dbNew.createObjectStore(STORE_NAME)
+        }
+      }
+    })
+  }
 
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite')

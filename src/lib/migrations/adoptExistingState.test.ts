@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import 'fake-indexeddb/auto'
 import { adoptExistingState } from './adoptExistingState'
 import { encryptState, generateSalt, deriveKey } from '../crypto'
 import { initialState } from '../state'

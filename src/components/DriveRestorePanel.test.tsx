@@ -5,8 +5,8 @@ import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
 
-// Create a mock drive object with pickFile
-let mockPickFile: ReturnType<typeof vi.fn>
+// Create mock functions
+const mockPickFile = vi.fn()
 
 // Mock the drive module
 vi.mock('../lib/drive', async (importOriginal) => {
@@ -22,8 +22,6 @@ vi.mock('../lib/drive', async (importOriginal) => {
       this.envelope = envelope
     }
   }
-
-  mockPickFile = vi.fn()
 
   return {
     ...actual,
@@ -57,6 +55,9 @@ describe('DriveRestorePanel', () => {
 
     // Default mock for drive.project().pickFile()
     mockPickFile.mockResolvedValue(null)
+
+    // Setup spy on restoreBackupFromFileId with a default implementation
+    vi.spyOn(driveModule, 'restoreBackupFromFileId').mockResolvedValue(initialState())
   })
 
   afterEach(() => {
