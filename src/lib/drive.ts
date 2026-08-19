@@ -23,56 +23,6 @@ export async function decryptBackupEnvelope(
 }
 
 /**
- * Google Picker API types and window augmentation.
- * The Picker library is loaded dynamically; these interfaces
- * support type-checking the initialization and picker builder.
- */
-interface GooglePickerDocsView {
-  setParent(folderId: string): GooglePickerDocsView
-  setIncludeFolders(include: boolean): GooglePickerDocsView
-}
-
-interface GooglePickerBuilder {
-  addView(view: GooglePickerDocsView): GooglePickerBuilder
-  setOAuthToken(token: string): GooglePickerBuilder
-  setDeveloperKey(apiKey: string): GooglePickerBuilder
-  setAppId(appId: string): GooglePickerBuilder
-  setOrigin(origin: string): GooglePickerBuilder
-  setCallback(callback: (data: GooglePickerResponse) => void): GooglePickerBuilder
-  build(): GooglePickerInstance
-}
-
-interface GooglePickerInstance {
-  setVisible(visible: boolean): void
-  /** Removes the Picker's DOM, backdrop included. Absent on older builds. */
-  dispose?(): void
-}
-
-interface GooglePickerResponse {
-  action: string
-  docs?: Array<{
-    id: string
-    name: string
-    mimeType: string
-    type: string
-  }>
-}
-
-interface GapiWindow extends Window {
-  gapi?: {
-    load: (lib: string, opts: { callback: (result?: any) => void }) => void
-    picker?: {
-      PickerBuilder?: new () => GooglePickerBuilder
-      DocsView?: new () => GooglePickerDocsView
-      api?: {
-        PickerBuilder: new () => GooglePickerBuilder
-        DocsView: new () => GooglePickerDocsView
-      }
-    }
-  }
-}
-
-/**
  * Single app-wide drive-sync facade. `folderPath` here is load-bearing and
  * silent-failure-prone: a wrong value does not error, it just creates a
  * fresh EMPTY Drive folder, and every existing user's backup appears to
@@ -88,64 +38,10 @@ const APP_STATE_FILENAME = 'portfolio-state.json'
 const APP_PROJECT_ID = 'app'
 
 /**
- * A cached token is treated as usable only while it has at least this much
- * runway left. Mirrors drive-sync's own refresh buffer so the app's guard
- * and the library's proactive warm-up agree on "stale".
- */
-const TOKEN_REAUTH_BUFFER_MS = 5 * 60 * 1000
-
-/**
  * Drive I/O operations (list, read, write) must complete within this timeout.
  * Prevents hangs when files have permission issues or are in an inconsistent state.
  */
 const DRIVE_IO_TIMEOUT_MS = 30 * 1000
-
-// Picker API loader cache: prevent multiple concurrent loadPickerApi() calls
-let pickerApiLoadPromise: Promise<void> | null = null
-
-/**
- * Tracks if Picker library is available (gapi.picker loaded).
- * Once loaded, remains loaded for the lifetime of the app.
- */
-let isPickerApiLoaded = false
-
-/**
- * Picker API key, required alongside the OAuth token (Google Picker
- * rejects init without both). Read once from env; undefined here means
- * misconfiguration, not "optional" — Picker will fail to open and
- * openDrivePicker() throws a descriptive error (see below).
- */
-const PICKER_API_KEY = import.meta.env.VITE_GOOGLE_PICKER_API_KEY as string | undefined
-
-/**
- * Cloud project *number* of the OAuth client that mints Picker's token.
- *
- * Required, not cosmetic: this app requests only the `drive.file` scope, and
- * Picker refuses to run a scoped session it cannot attribute to an app. Omit
- * it and Picker silently discards the OAuth token passed to setOAuthToken(),
- * falls back to its own sign-in prompt, and then fails the now-unauthenticated
- * developer-key check with "The API developer key is invalid" — even when the
- * key and its referrer restrictions are perfectly valid.
- *
- * Derived from the numeric prefix of the OAuth client id
- * (`<projectNumber>-<hash>.apps.googleusercontent.com`), so it needs no
- * separate env var; VITE_GOOGLE_PROJECT_NUMBER overrides it if the client
- * ever comes from a different project than the API key.
- */
-function resolveProjectNumber(): string | undefined {
-  const explicit = import.meta.env.VITE_GOOGLE_PROJECT_NUMBER as string | undefined
-  if (explicit) {
-    return explicit
-  }
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
-  const match = /^(\d+)-/.exec(clientId ?? '')
-  return match ? match[1] : undefined
-}
-
-const PICKER_APP_ID = resolveProjectNumber()
-
-/** Google's API loader. Exported for tests to pin — see loadPickerApi(). */
-export const PICKER_LOADER_SRC = 'https://apis.google.com/js/api.js'
 
 /**
  * Local base64 -> bytes decoder for the envelope's `salt` field. crypto.ts's
@@ -197,36 +93,12 @@ export class DriveDecryptError extends Error {
 }
 
 /**
- * Read the current Drive connection (no network calls, no reauth prompt).
- * Returns null if never connected. `expiresAt` is the cached token's expiry
- * (null when no token is stored yet).
- */
-export async function getDriveConnection(): Promise<Connection | null> {
-  return drive.project(APP_PROJECT_ID).getConnection()
-}
-
-/**
- * Get a fresh OAuth access token for Google Picker.
- * Required to initialize the Picker widget. Reuses a still-valid cached
- * token; otherwise acquires a fresh one interactively (opens a Google auth
- * window if the cached token has expired or scopes are incomplete).
- */
-export async function getAccessTokenForPicker(): Promise<string> {
-  return drive.project(APP_PROJECT_ID).getAccessToken({ interactive: true })
-}
-
-/**
- * A cached access token is "valid" only when a connection exists, its granted
- * scopes are complete, and the token's expiry is far enough in the future.
- * Anything else means a Google auth flow is required before Drive I/O can run.
+ * A cached token is "valid" only when a connection exists, its granted scopes
+ * are complete, and it doesn't need reauth. The library's `needsReauth` flag
+ * is the single source of truth for "can this token be used as-is?"
  */
 function isTokenUsable(conn: Connection | null): conn is Connection {
-  return (
-    conn !== null &&
-    !conn.needsReauth &&
-    conn.expiresAt !== null &&
-    conn.expiresAt > Date.now() + TOKEN_REAUTH_BUFFER_MS
-  )
+  return conn !== null && !conn.needsReauth
 }
 
 export interface DriveAuthStatus {
@@ -239,10 +111,10 @@ export interface DriveAuthStatus {
 
 /**
  * Non-interactive auth snapshot for the UI. Never opens a Google window.
- * `tokenValid` is true only when a cached token exists and has not expired.
+ * `tokenValid` is true only when a cached token exists and doesn't need reauth.
  */
 export async function getDriveAuthStatus(): Promise<DriveAuthStatus> {
-  const conn = await getDriveConnection()
+  const conn = await drive.project(APP_PROJECT_ID).getConnection()
   return {
     connected: conn !== null,
     email: conn?.email ?? null,
@@ -262,32 +134,16 @@ let connectInFlight: Promise<Connection> | null = null
  * interactive Google auth flow — exactly once, even if several callers race.
  */
 export async function ensureFreshConnection(): Promise<Connection> {
-  const conn = await getDriveConnection()
+  const conn = await drive.project(APP_PROJECT_ID).getConnection()
   if (isTokenUsable(conn)) {
     return conn
   }
   if (!connectInFlight) {
-    connectInFlight = connectDrive().finally(() => {
+    connectInFlight = drive.project(APP_PROJECT_ID).connect().finally(() => {
       connectInFlight = null
     })
   }
   return connectInFlight
-}
-
-/**
- * Start the interactive Google OAuth connect flow for the Portfolio project.
- * This is the only call that opens a Google auth window.
- */
-export async function connectDrive(): Promise<Connection> {
-  return drive.project(APP_PROJECT_ID).connect()
-}
-
-/**
- * Disconnect the Portfolio project: revokes the cached token and clears the
- * stored connection.
- */
-export async function disconnectDrive(): Promise<void> {
-  return drive.project(APP_PROJECT_ID).disconnect()
 }
 
 /**
@@ -551,219 +407,6 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
     console.error('Failed to restore backup from picked Drive file:', error)
     throw error
   }
-}
-
-/**
- * Picker appends its dialog and a full-viewport modal backdrop straight to
- * document.body, outside React's tree, so nothing the app re-renders can
- * clear them. setVisible(false) only hides the dialog, and dispose() is both
- * absent on older builds and unreliable about the backdrop — which is
- * transparent, fixed, and sits above everything. Leave it behind and the app
- * looks fine but swallows every click.
- *
- * Sweeping by class name is deliberate: these are Picker's own chrome
- * elements, and matching them is the only handle we have on nodes we did not
- * create and hold no reference to.
- */
-function removePickerChrome(): void {
-  const selector = '.picker-dialog-bg, .picker-dialog, .picker-dialog-frame'
-  document.querySelectorAll(selector).forEach((node) => node.remove())
-}
-
-/**
- * Load the Google Picker API library from Google's CDN.
- * Caches the load promise to prevent multiple concurrent load attempts.
- * Once loaded, the library remains available for the lifetime of the app.
- * @throws Throws if the library fails to load
- */
-async function loadPickerApi(): Promise<void> {
-  if (isPickerApiLoaded) {
-    return
-  }
-
-  if (pickerApiLoadPromise) {
-    return pickerApiLoadPromise
-  }
-
-  pickerApiLoadPromise = new Promise<void>((resolve, reject) => {
-    const gapiWindow = window as GapiWindow
-    const timeoutHandle = setTimeout(() => {
-      pickerApiLoadPromise = null
-      reject(new Error('Google Picker API load timed out after 10s'))
-    }, 10000)
-
-    const handlePickerLoaded = (result?: any) => {
-      clearTimeout(timeoutHandle)
-      if (result?.error) {
-        pickerApiLoadPromise = null
-        reject(new Error(`Google Picker API load failed: ${result.error}`))
-        return
-      }
-
-      // Check if PickerBuilder is available (it might be at gapi.picker.api.PickerBuilder or gapi.picker.PickerBuilder)
-      const PickerBuilder = gapiWindow.gapi?.picker?.PickerBuilder || (gapiWindow.gapi?.picker?.api as any)?.PickerBuilder
-      const DocsView = gapiWindow.gapi?.picker?.DocsView || (gapiWindow.gapi?.picker?.api as any)?.DocsView
-
-      if (PickerBuilder && DocsView) {
-        isPickerApiLoaded = true
-        resolve()
-      } else {
-        pickerApiLoadPromise = null
-        reject(new Error('Google Picker library loaded but PickerBuilder not available'))
-      }
-    }
-
-    if (!gapiWindow.gapi) {
-      const script = document.createElement('script')
-      // api.js, NOT platform.js. platform.js is the legacy Sign-In platform
-      // library; it happens to expose gapi.load so gapi.load('picker') appears
-      // to work, but it installs its own gapi.iframes context and Picker ends
-      // up opened with a `parent` that is not this page. Picker validates the
-      // developer key against that parent and rejects the frame with a 401.
-      script.src = PICKER_LOADER_SRC
-      script.onload = () => {
-        if (gapiWindow.gapi?.load) {
-          try {
-            gapiWindow.gapi.load('picker', {
-              callback: handlePickerLoaded,
-            })
-          } catch (err) {
-            clearTimeout(timeoutHandle)
-            pickerApiLoadPromise = null
-            reject(err instanceof Error ? err : new Error(String(err)))
-          }
-        } else {
-          clearTimeout(timeoutHandle)
-          reject(new Error('gapi.load not available after script loaded'))
-        }
-      }
-      script.onerror = () => {
-        clearTimeout(timeoutHandle)
-        pickerApiLoadPromise = null
-        reject(new Error(`Failed to load Google Picker API from ${PICKER_LOADER_SRC}`))
-      }
-      document.head.appendChild(script)
-    } else if (gapiWindow.gapi.load) {
-      try {
-        gapiWindow.gapi.load('picker', {
-          callback: handlePickerLoaded,
-        })
-      } catch (err) {
-        clearTimeout(timeoutHandle)
-        pickerApiLoadPromise = null
-        reject(err instanceof Error ? err : new Error(String(err)))
-      }
-    } else {
-      clearTimeout(timeoutHandle)
-      reject(new Error('gapi.load not available'))
-    }
-  })
-
-  return pickerApiLoadPromise
-}
-
-/**
- * Open a Google Picker dialog to select a file from the user's Drive.
- * Always starts in the `OpenWebApp/Portfolio` folder (same folder
- * syncBackup/restoreBackup use), resolved via ensureFolderPath(), but
- * the user can navigate to any other folder they have access to using
- * Picker's built-in navigation — nothing is restricted beyond the
- * starting view.
- *
- * Requires a valid, fresh OAuth token AND a Picker API key
- * (VITE_GOOGLE_PICKER_API_KEY) — Picker needs both to initialize.
- * Call `ensureFreshConnection()` before calling this to guarantee a
- * usable token.
- *
- * @param token The OAuth access token to authenticate Picker with
- * @param onSelect Callback when user selects a file: passed the Drive file id
- * @param onCancel Callback when user closes Picker without selecting
- * @throws Throws if Picker library fails to load, or if
- *   VITE_GOOGLE_PICKER_API_KEY is not configured
- */
-export async function openDrivePicker(
-  token: string,
-  onSelect: (fileId: string) => void,
-  onCancel: () => void
-): Promise<void> {
-  if (!PICKER_API_KEY) {
-    throw new Error('VITE_GOOGLE_PICKER_API_KEY is not set — Google Picker requires an API key')
-  }
-  if (!PICKER_APP_ID) {
-    throw new Error(
-      'Google Picker app id is not resolvable — set VITE_GOOGLE_PROJECT_NUMBER, ' +
-        'or ensure VITE_GOOGLE_CLIENT_ID is a standard `<projectNumber>-<hash>.apps.googleusercontent.com` id. ' +
-        'Picker rejects drive.file sessions without it.'
-    )
-  }
-
-  await loadPickerApi()
-
-  const gapiWindow = window as GapiWindow
-  // PickerBuilder might be at gapi.picker.PickerBuilder or gapi.picker.api.PickerBuilder
-  const PickerBuilder = gapiWindow.gapi?.picker?.PickerBuilder || (gapiWindow.gapi?.picker?.api as any)?.PickerBuilder
-  const DocsView = gapiWindow.gapi?.picker?.DocsView || (gapiWindow.gapi?.picker?.api as any)?.DocsView
-
-  if (!PickerBuilder || !DocsView) {
-    throw new Error('Google Picker API not available')
-  }
-
-  // Open at My Drive root and let the user navigate anywhere, rather than
-  // pinning the view to the app's own OpenWebApp/Portfolio folder: backups
-  // worth restoring may have been moved, shared in, or written by another
-  // install. Picker is the sanctioned way to widen `drive.file` — whatever
-  // the user picks here is granted to the app on selection, so browsing all
-  // of Drive needs no extra scope.
-  const docsView = new DocsView().setIncludeFolders(true)
-
-  // Picker does not tear itself down when the callback fires — the dialog and
-  // its modal backdrop stay in the DOM and keep blocking the app until they
-  // are explicitly removed. Assigned once the builder has run; the callback
-  // cannot fire before setVisible(true) below.
-  let pickerInstance: GooglePickerInstance | null = null
-
-  const closePicker = () => {
-    if (!pickerInstance) {
-      return
-    }
-    const instance = pickerInstance
-    // Null first, so a duplicate callback can't double-dispose.
-    pickerInstance = null
-    instance.setVisible(false)
-    instance.dispose?.()
-    removePickerChrome()
-  }
-
-  // Callback from Picker: check action and extract file id. Always close
-  // before handing control back — onSelect opens a confirm() dialog, which
-  // would otherwise surface behind the still-open Picker.
-  const handlePickerResponse = (data: GooglePickerResponse) => {
-    if (data.action === 'picked' && data.docs && data.docs.length > 0) {
-      const fileId = data.docs[0].id
-      closePicker()
-      onSelect(fileId)
-    } else if (data.action === 'cancel') {
-      closePicker()
-      onCancel()
-    }
-  }
-
-  // Configure Picker: OAuth token + API key + app id are all required. The
-  // app id is what makes Picker honor the drive.file-scoped token instead of
-  // discarding it and demanding its own sign-in.
-  const picker = new PickerBuilder()
-    .setOAuthToken(token)
-    .setDeveloperKey(PICKER_API_KEY)
-    .setAppId(PICKER_APP_ID)
-    .setOrigin(window.location.origin)
-    .addView(docsView)
-    .setCallback(handlePickerResponse)
-    .build()
-
-  pickerInstance = picker
-
-  // Show the Picker dialog
-  picker.setVisible(true)
 }
 
 /**

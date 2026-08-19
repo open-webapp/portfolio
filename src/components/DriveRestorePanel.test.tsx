@@ -5,8 +5,13 @@ import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
 
+// Create a mock drive object with pickFile
+let mockPickFile: ReturnType<typeof vi.fn>
+
 // Mock the drive module
-vi.mock('../lib/drive', () => {
+vi.mock('../lib/drive', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/drive')>()
+
   class DriveDecryptError extends Error {
     salt: Uint8Array
     envelope: unknown
@@ -17,22 +22,17 @@ vi.mock('../lib/drive', () => {
       this.envelope = envelope
     }
   }
+
+  mockPickFile = vi.fn()
+
   return {
-    openDrivePicker: vi.fn(),
-    getDriveConnection: vi.fn(),
-    getAccessTokenForPicker: vi.fn(),
-    restoreBackupFromFileId: vi.fn(),
-    restoreBackup: vi.fn(),
-    // These tests build real envelopes with the real crypto module, so the
-    // stand-in decrypts for real. The coalescing that the production helper
-    // layers on top is unit-tested in drive.test.ts.
-    decryptBackupEnvelope: vi.fn(async (envelope: any, key: any) => {
-      // Plain import, not importActual: resolves to the mocked crypto module
-      // where a test mocks it, and the real one where it doesn't.
-      const crypto = await import('../lib/crypto')
-      return crypto.decryptState(envelope, key)
-    }),
-    extractDriveFileId: vi.fn(),
+    ...actual,
+    drive: {
+      ...actual.drive,
+      project: (id: string) => ({
+        pickFile: mockPickFile,
+      }),
+    },
     DriveDecryptError,
   }
 })
@@ -55,8 +55,8 @@ describe('DriveRestorePanel', () => {
     testRestoreSalt = generateSalt()
     testRestoreKey = await deriveKey('test-restore-password', testRestoreSalt)
 
-    // Default mock for getAccessTokenForPicker
-    vi.mocked(driveModule.getAccessTokenForPicker as any).mockResolvedValue('mock-token')
+    // Default mock for drive.project().pickFile()
+    mockPickFile.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -161,34 +161,44 @@ describe('DriveRestorePanel', () => {
     })
   })
 
-  describe('Restore with Picker flow', () => {
+  describe('Restore with file picker flow', () => {
     beforeEach(() => {
       vi.mocked(global.confirm).mockReturnValue(true)
     })
 
-    it('happy: opening Picker immediately on "Restore from Drive" click — no by-name lookup call', async () => {
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, _onSelect, _onCancel) => {
-        // Picker opened successfully
-      })
+    it('happy: clicking "Restore from Drive" opens file picker', async () => {
+      mockPickFile.mockResolvedValue(null)
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
 
       // Click "Restore from Drive"
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
-      // Picker should open immediately
+      // File picker dialog should appear with "Pick a file" button
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
-
-      // Verify getAccessTokenForPicker was called to get token
-      expect(driveModule.getAccessTokenForPicker).toHaveBeenCalled()
     })
 
-    it('happy: user selects file from Picker → confirm → restore succeeds → onRestored called', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
+    it('happy: user clicks "Pick a file" button → pickFile called', async () => {
+      mockPickFile.mockResolvedValue(null)
 
+      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
+
+      await waitFor(() => {
+        expect(mockPickFile).toHaveBeenCalledWith({ includeFolders: true })
+      })
+    })
+
+    it('happy: pickFile returns file → restore succeeds → onRestored called', async () => {
       const restoredState = initialState()
       restoredState.accounts = [
         {
@@ -202,10 +212,7 @@ describe('DriveRestorePanel', () => {
         },
       ]
 
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
+      mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
       vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(restoredState)
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
@@ -213,13 +220,10 @@ describe('DriveRestorePanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
 
-      // Simulate Picker calling onSelect callback
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
 
       // User confirms
       await waitFor(() => {
@@ -239,27 +243,18 @@ describe('DriveRestorePanel', () => {
     })
 
     it('edge: user selects file then declines confirm → no restore', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
       vi.mocked(global.confirm).mockReturnValue(false)
-
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
+      mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
 
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
 
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
 
       await waitFor(() => {
         expect(global.confirm).toHaveBeenCalled()
@@ -270,14 +265,8 @@ describe('DriveRestorePanel', () => {
       expect(mockOnRestored).not.toHaveBeenCalled()
     })
 
-    it('edge: user cancels Picker → no-op, can click Restore again to reopen', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
-      let pickerCancelCallback: (() => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, _onSelect, onCancel) => {
-        pickerCancelCallback = onCancel
-      })
+    it('edge: pickFile returns null (user cancels) → no-op, can click Restore again to reopen', async () => {
+      mockPickFile.mockResolvedValue(null)
 
       renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
 
@@ -285,40 +274,27 @@ describe('DriveRestorePanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
 
-      // User cancels Picker
-      if (pickerCancelCallback) {
-        pickerCancelCallback()
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
 
-      // Should be able to click again
-      vi.clearAllMocks()
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, _onSelect, onCancel) => {
-        pickerCancelCallback = onCancel
-      })
-
+      // Second click - should be able to click Restore again
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalledTimes(1)
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
+
+      expect(mockPickFile).toHaveBeenCalledTimes(2)
     })
 
     it('error: restore from picked file throws DriveDecryptError → cross-password prompt shown', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
       const backupSalt = generateSalt()
       const backupState = initialState()
       const envelope = await encryptState(backupState, testRestoreKey, backupSalt)
 
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
+      mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
@@ -328,12 +304,10 @@ describe('DriveRestorePanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
 
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
 
       // Confirm the restore
       await waitFor(() => {
@@ -348,10 +322,51 @@ describe('DriveRestorePanel', () => {
       })
     })
 
-    it('error → happy: cross-password prompt with correct password → restore succeeds', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
+    it('error: restore from picked file throws generic error → alert shown', async () => {
+      const error = new Error('File permission denied')
+      mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
+      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(error)
 
+      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
+
+      await waitFor(() => {
+        expect(global.confirm).toHaveBeenCalled()
+      })
+
+      await waitFor(() => {
+        expect(global.alert).toHaveBeenCalledWith('Restore failed: File permission denied')
+      })
+    })
+
+    it('error: pickFile throws error → error message shown', async () => {
+      mockPickFile.mockRejectedValue(new Error('File picker not available'))
+
+      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to open file picker/)).toBeTruthy()
+      })
+    })
+  })
+
+  describe('Cross-password prompt', () => {
+    it('happy: cross-password prompt with correct password → restore succeeds', async () => {
       const backupPassword = 'correct-backup-password'
       const backupSalt = generateSalt()
       const backupKey = await deriveKey(backupPassword, backupSalt)
@@ -369,10 +384,7 @@ describe('DriveRestorePanel', () => {
       ]
       const envelope = await encryptState(restoredState, backupKey, backupSalt)
 
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
+      mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
@@ -382,12 +394,10 @@ describe('DriveRestorePanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
 
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
 
       await waitFor(() => {
         expect(global.confirm).toHaveBeenCalled()
@@ -413,18 +423,12 @@ describe('DriveRestorePanel', () => {
       expect(screen.queryByText(/This backup was saved with a different encryption password/)).toBeFalsy()
     })
 
-    it('error → error: wrong password on cross-password prompt → error shown, prompt stays open', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
+    it('error: wrong password on cross-password prompt → error shown, prompt stays open', async () => {
       const backupSalt = generateSalt()
       const restoredState = initialState()
       const envelope = await encryptState(restoredState, testRestoreKey, backupSalt)
 
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
+      mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
@@ -434,12 +438,10 @@ describe('DriveRestorePanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
 
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
 
       await waitFor(() => {
         expect(global.confirm).toHaveBeenCalled()
@@ -463,160 +465,12 @@ describe('DriveRestorePanel', () => {
       expect(mockOnRestored).not.toHaveBeenCalled()
     })
 
-    it('error: restore from picked file throws generic error → alert shown', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
-      const error = new Error('File permission denied')
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(error)
-
-      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
-      })
-
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
-
-      await waitFor(() => {
-        expect(global.confirm).toHaveBeenCalled()
-      })
-
-      await waitFor(() => {
-        expect(global.alert).toHaveBeenCalledWith('Restore failed: File permission denied')
-      })
-    })
-
-    it('multiple Picker open/cancel cycles → state resets properly', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
-      let pickerCancelCallback: (() => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, _onSelect, onCancel) => {
-        pickerCancelCallback = onCancel
-      })
-
-      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
-
-      // First cycle
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-      await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalledTimes(1)
-      })
-
-      if (pickerCancelCallback) {
-        pickerCancelCallback()
-      }
-
-      // Second cycle
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-      await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalledTimes(2)
-      })
-
-      if (pickerCancelCallback) {
-        pickerCancelCallback()
-      }
-
-      // Third cycle
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-      await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalledTimes(3)
-      })
-    })
-  })
-
-  describe('Syncing state', () => {
-    it('calls setSyncing(true) then setSyncing(false) around a restore', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-      vi.mocked(global.confirm).mockReturnValue(true)
-
-      const restoredState = initialState()
-      vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(restoredState), 20))
-      )
-
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
-
-      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
-      })
-
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
-
-      await waitFor(() => {
-        expect(mockSetSyncing).toHaveBeenCalledWith(true)
-      })
-      await waitFor(() => {
-        expect(mockSetSyncing).toHaveBeenCalledWith(false)
-      })
-    })
-  })
-
-  describe('Error handling', () => {
-    it('error: getAccessTokenForPicker fails → error message shown in Picker fallback', async () => {
-      vi.mocked(driveModule.getAccessTokenForPicker as any).mockRejectedValue(
-        new Error('Failed to get access token')
-      )
-
-      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      await waitFor(() => {
-        expect(screen.getByText(/Failed to open file picker/)).toBeTruthy()
-      })
-
-      // openDrivePicker should NOT have been called
-      expect(driveModule.openDrivePicker).not.toHaveBeenCalled()
-    })
-
-    it('error: openDrivePicker throws → error message shown in Picker fallback', async () => {
-      vi.mocked(driveModule.openDrivePicker).mockRejectedValue(
-        new Error('VITE_GOOGLE_PICKER_API_KEY is not set')
-      )
-
-      renderPanelWithKey({ driveReady: true, driveEmail: 'test@example.com' })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      await waitFor(() => {
-        expect(screen.getByText(/Failed to open file picker/)).toBeTruthy()
-      })
-    })
-  })
-
-  describe('Cross-password prompt cancel button', () => {
     it('happy: clicking cancel on cross-password prompt closes it', async () => {
-      const mockConnection = { accessToken: 'mock-token' }
-      vi.mocked(driveModule.getDriveConnection).mockResolvedValue(mockConnection as any)
-
       const backupSalt = generateSalt()
       const restoredState = initialState()
       const envelope = await encryptState(restoredState, testRestoreKey, backupSalt)
 
-      let pickerSelectCallback: ((fileId: string) => void) | null = null
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(async (_token, onSelect, _onCancel) => {
-        pickerSelectCallback = onSelect
-      })
+      mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
@@ -626,12 +480,10 @@ describe('DriveRestorePanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
 
       await waitFor(() => {
-        expect(driveModule.openDrivePicker).toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Pick a file' })).toBeTruthy()
       })
 
-      if (pickerSelectCallback) {
-        pickerSelectCallback('file-123')
-      }
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a file' }))
 
       await waitFor(() => {
         expect(global.confirm).toHaveBeenCalled()

@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import {
   restoreBackupFromFileId,
-  openDrivePicker,
-  getAccessTokenForPicker,
   decryptBackupEnvelope,
   DriveDecryptError,
+  drive,
 } from '../lib/drive'
 import { deriveKey, decryptState } from '../lib/crypto'
 
-function DrivePickerFallback({
+function DriveFilePickerDialog({
   onSelect,
   onCancel,
 }: {
@@ -19,42 +18,24 @@ function DrivePickerFallback({
   const [error, setError] = useState<string | null>(null)
   const [pickerLoading, setPickerLoading] = useState(false)
 
-  useEffect(() => {
-    // Open Picker immediately when this component mounts (i.e. as soon
-    // as the user clicks "Restore from Drive" — no lookup step first).
-    const openPicker = async () => {
-      setPickerLoading(true)
-      setError(null)
-      try {
-        const token = await getAccessTokenForPicker()
-        if (!token) {
-          throw new Error('Failed to get access token for file picker')
-        }
-        await openDrivePicker(
-          token,
-          (fileId: string) => {
-            setPickerLoading(false)
-            onSelect(fileId)
-          },
-          () => {
-            setPickerLoading(false)
-            onCancel()
-          }
-        )
-      } catch (err) {
-        setPickerLoading(false)
-        const message = err instanceof Error ? err.message : String(err)
-        // Provide helpful context for common configuration issues
-        let fullMessage = `Failed to open file picker: ${message}`
-        if (message.includes('PickerBuilder')) {
-          fullMessage += '\n\nThe Google Picker API key may be invalid or not authorized for this origin. Please check VITE_GOOGLE_PICKER_API_KEY in .env and ensure it is valid in Google Cloud Console.'
-        }
-        setError(fullMessage)
+  const handleOpenPicker = async () => {
+    setPickerLoading(true)
+    setError(null)
+    try {
+      // @ts-ignore - pickFile is available in drive-sync 0.5.0+
+      const file = await drive.project('app').pickFile({ includeFolders: true })
+      setPickerLoading(false)
+      if (file) {
+        onSelect(file.id)
+      } else {
+        onCancel()
       }
+    } catch (err) {
+      setPickerLoading(false)
+      const message = err instanceof Error ? err.message : String(err)
+      setError(`Failed to open file picker: ${message}`)
     }
-
-    openPicker()
-  }, [])
+  }
 
   if (error) {
     return (
@@ -71,15 +52,17 @@ function DrivePickerFallback({
     )
   }
 
-  if (pickerLoading) {
-    return (
-      <div style={{ marginTop: 'var(--space-3)', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-        Opening file picker...
-      </div>
-    )
-  }
-
-  return null
+  return (
+    <div style={{ marginTop: 'var(--space-3)' }}>
+      <button
+        className="btn btn-secondary"
+        onClick={handleOpenPicker}
+        disabled={pickerLoading}
+      >
+        {pickerLoading ? 'Opening file picker...' : 'Pick a file'}
+      </button>
+    </div>
+  )
 }
 
 export interface DriveRestorePanelProps {
@@ -116,15 +99,13 @@ export function DriveRestorePanel({
   const [crossPasswordError, setCrossPasswordError] = useState<string | null>(null)
   const [restoringWithBackupPassword, setRestoringWithBackupPassword] = useState(false)
 
-  // Show the Picker when user clicks "Restore from Drive"
+  // Show the file picker when user clicks "Restore from Drive"
   const [showPicker, setShowPicker] = useState(false)
-  const [pickerKey, setPickerKey] = useState(0)
 
   function handleRestore() {
-    // Picker is the only restore entry point — always open it immediately,
+    // File picker is the only restore entry point — always open it immediately,
     // no by-name lookup in the app's own Drive folder first.
     setShowPicker(true)
-    setPickerKey(k => k + 1)
   }
 
 
@@ -210,10 +191,9 @@ export function DriveRestorePanel({
         </div>
       )}
 
-      {/* File Picker Fallback */}
+      {/* File Picker Dialog */}
       {showPicker && (
-        <DrivePickerFallback
-          key={pickerKey}
+        <DriveFilePickerDialog
           onSelect={async (fileId: string) => {
             if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
 
@@ -239,7 +219,7 @@ export function DriveRestorePanel({
             }
           }}
           onCancel={() => {
-            // User closed Picker without selecting — reset so "Restore from
+            // User closed file picker without selecting — reset so "Restore from
             // Drive" can be clicked again to reopen it.
             setShowPicker(false)
           }}
@@ -287,7 +267,7 @@ export function DriveRestorePanel({
             </button>
           </div>
           {crossPasswordError && (
-            <DrivePickerFallback
+            <DriveFilePickerDialog
               onSelect={async (fileId: string) => {
                 if (!window.confirm('Restore will replace all data with the backed-up version. Continue?')) return
 
@@ -313,7 +293,7 @@ export function DriveRestorePanel({
                 }
               }}
               onCancel={() => {
-                // User closed Picker during cross-password retry — state unchanged
+                // User closed file picker during cross-password retry — state unchanged
               }}
             />
           )}
