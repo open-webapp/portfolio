@@ -6,7 +6,7 @@ import { Nav } from './components/Nav'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
 import { PasswordGate } from './components/PasswordGate'
-import { drive, getDriveAuthStatus, getBackupFileId, syncBackup } from './lib/drive'
+import { drive, getDriveAuthStatus, getBackupFileId, syncBackup, ensureFreshConnection } from './lib/drive'
 import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
 
@@ -137,7 +137,7 @@ function App() {
       const timeoutPromise = new Promise<Connection>((_, reject) =>
         setTimeout(() => reject(new Error('Google auth timed out')), 10000)
       )
-      const connection = await Promise.race<Connection>([drive.project('app').connect(), timeoutPromise])
+      const connection = await Promise.race<Connection>([ensureFreshConnection(), timeoutPromise])
 
       if (!connection) {
         throw new Error('No connection returned from Google Drive')

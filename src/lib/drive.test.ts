@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createPortfolioSyncDocument, DriveDecryptError } from './drive'
-import { encryptState, generateSalt, deriveKey } from './crypto'
+import { encryptState, decryptState, generateSalt, deriveKey } from './crypto'
 import { initialState } from './state'
 
 describe('Portfolio SyncDocument (T33)', () => {
@@ -73,15 +73,17 @@ describe('Portfolio SyncDocument (T33)', () => {
       await doc.writeLocal(encrypted1!)
       const encrypted2 = await doc.readLocal()
 
-      // Both should deserialize to the same envelope
-      const str1 = new TextDecoder().decode(encrypted1!)
-      const str2 = new TextDecoder().decode(encrypted2!)
+      // Encryption uses a fresh random IV every call, so the raw envelope
+      // bytes legitimately differ between reads; what must survive the
+      // round-trip untouched is the decrypted state itself (no UTF-8
+      // mangling through the base64 envelope).
+      const env1 = JSON.parse(new TextDecoder().decode(encrypted1!))
+      const env2 = JSON.parse(new TextDecoder().decode(encrypted2!))
 
-      const env1 = JSON.parse(str1)
-      const env2 = JSON.parse(str2)
+      const decrypted1 = await decryptState(env1, key)
+      const decrypted2 = await decryptState(env2, key)
 
-      // Should be identical (not just equal values)
-      expect(env1).toEqual(env2)
+      expect(decrypted2).toEqual(decrypted1)
     })
 
     it('merge: prefers remote when both exist', async () => {
@@ -188,7 +190,12 @@ describe('Portfolio SyncDocument (T33)', () => {
 
       const truncated = new TextEncoder().encode('{"version": 1}')
 
-      await expect(doc.merge(truncated, null)).rejects.toThrow()
+      // A truncated *local* envelope is tolerated (merge treats it as absent,
+      // per the "if local can't decrypt, treat as absent" design in
+      // drive.ts) so it doesn't block a restore. A truncated *remote*
+      // envelope is the thing being restored, so corruption there must
+      // surface as an error.
+      await expect(doc.merge(null, truncated)).rejects.toThrow()
     })
 
     it('writeLocal: decrypts and persists merged state', async () => {

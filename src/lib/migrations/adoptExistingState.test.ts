@@ -23,6 +23,10 @@ function createMockApp() {
         projects.push(project)
         return project
       },
+      remove: async (id: string) => {
+        const index = projects.findIndex((p) => p.id === id)
+        if (index !== -1) projects.splice(index, 1)
+      },
       setActive: async (id: string) => {
         activeProjectId = id
         // Create the derived database for this project
@@ -119,7 +123,12 @@ describe('adoptExistingState migration', () => {
         const store = tx.objectStore('app_state')
         const putReq = store.put(envelope, 'current')
         putReq.onerror = () => reject(putReq.error)
-        putReq.onsuccess = () => resolve()
+        tx.oncomplete = () => {
+          // Close so the migration's later deleteDatabase() isn't blocked
+          // by this fixture-setup connection staying open.
+          db.close()
+          resolve()
+        }
       }
       request.onupgradeneeded = (e) => {
         const db = (e.target as IDBOpenDBRequest).result
@@ -154,6 +163,7 @@ describe('adoptExistingState migration', () => {
       request.onsuccess = () => {
         const db = request.result
         const exists = db.version > 0
+        db.close()
         resolve(exists)
       }
       request.onerror = () => resolve(false)
@@ -179,7 +189,12 @@ describe('adoptExistingState migration', () => {
         const store = tx.objectStore('app_state')
         const putReq = store.put(envelope, 'current')
         putReq.onerror = () => reject(putReq.error)
-        putReq.onsuccess = () => resolve()
+        tx.oncomplete = () => {
+          // Close so the migration's later deleteDatabase() isn't blocked
+          // by this fixture-setup connection staying open.
+          db.close()
+          resolve()
+        }
       }
       request.onupgradeneeded = (e) => {
         const db = (e.target as IDBOpenDBRequest).result

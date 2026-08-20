@@ -6,8 +6,14 @@ import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
 import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
 
-// Mock the drive module. Settings.tsx renders DriveRestorePanel which uses
-// openDrivePicker, getDriveConnection, restoreBackupFromFileId, and DriveDecryptError.
+// Mock functions for drive.project('app').pickFile(), referenced by the
+// hoisted vi.mock('../lib/drive', ...) factory below.
+const mockPickFile = vi.fn()
+const mockEnsureFolderPath = vi.fn()
+
+// Mock the drive module. Settings.tsx renders DriveRestorePanel, which opens
+// the file picker via drive.project('app').pickFile(), and also uses
+// restoreBackupFromFileId and DriveDecryptError.
 vi.mock('../lib/drive', () => {
   class DriveDecryptError extends Error {
     salt: Uint8Array
@@ -20,7 +26,12 @@ vi.mock('../lib/drive', () => {
     }
   }
   return {
-    openDrivePicker: vi.fn(),
+    drive: {
+      project: () => ({
+        pickFile: mockPickFile,
+        ensureFolderPath: mockEnsureFolderPath,
+      }),
+    },
     restoreBackupFromFileId: vi.fn(),
     // Real envelopes are built with the real crypto module in these tests, so
     // the stand-in decrypts for real. The coalescing the production helper
@@ -31,8 +42,6 @@ vi.mock('../lib/drive', () => {
       const crypto = await import('../lib/crypto')
       return crypto.decryptState(envelope, key)
     }),
-    getDriveConnection: vi.fn(),
-    getAccessTokenForPicker: vi.fn(),
     getDriveAuthStatus: vi.fn(),
     syncBackup: vi.fn(),
     DriveDecryptError,
@@ -49,12 +58,6 @@ vi.mock('../lib/persist', () => ({
 // Mock window.alert and window.confirm
 global.alert = vi.fn()
 global.confirm = vi.fn()
-
-// Store captured callbacks from openDrivePicker mocks
-let capturedPickerCallback: {
-  onSelect: ((fileId: string) => void) | null
-  onCancel: (() => void) | null
-} = { onSelect: null, onCancel: null }
 
 const mockDispatch = vi.fn()
 const mockOnKeyChange = vi.fn()
@@ -85,27 +88,27 @@ describe('SettingsPage', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    capturedPickerCallback = { onSelect: null, onCancel: null }
     sessionSalt = generateSalt()
     sessionKey = await deriveKey('test-password', sessionSalt)
 
     // Default mocks
-    vi.mocked(driveModule.getAccessTokenForPicker as any).mockResolvedValue('mock-token')
-    vi.mocked(driveModule.getDriveConnection).mockResolvedValue({ accessToken: 'test-token' })
-
-    // Mock openDrivePicker to capture callbacks without calling them
-    vi.mocked(driveModule.openDrivePicker).mockImplementation(
-      async (_token, onSelect, onCancel) => {
-        capturedPickerCallback.onSelect = onSelect
-        capturedPickerCallback.onCancel = onCancel
-        // Don't call the callbacks - tests will do that
-      }
-    )
+    mockPickFile.mockResolvedValue(null)
+    mockEnsureFolderPath.mockResolvedValue('folder-portfolio')
   })
 
   afterEach(() => {
     cleanup()
   })
+
+  // Simulates picking `fileId` (or cancelling, when null) from whichever
+  // "Pick a file" dialog is currently on screen: sets up pickFile's next
+  // resolution and clicks the button, matching the real
+  // drive.project('app').pickFile() flow in DriveRestorePanel.tsx.
+  async function pickFile(fileId: string | null) {
+    mockPickFile.mockResolvedValueOnce(fileId ? { id: fileId, name: 'backup.json' } : null)
+    const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
+    fireEvent.click(pickButton)
+  }
 
   function renderSettings(overrides: Partial<SettingsPageProps> = {}) {
     const defaultProps: SettingsPageProps = {
@@ -235,12 +238,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(global.confirm).toHaveBeenCalledWith(
@@ -263,12 +262,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(global.confirm).toHaveBeenCalled()
@@ -290,12 +285,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(mockSetSyncing).toHaveBeenCalledWith(true)
@@ -315,12 +306,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(global.alert).toHaveBeenCalledWith('Restore failed: Restore error')
@@ -591,12 +578,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(
@@ -621,12 +604,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       const submitButton = await screen.findByRole('button', { name: 'Restore with this password' })
       expect(submitButton.className).toContain('btn btn-primary')
@@ -662,12 +641,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
@@ -703,12 +678,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker
-      await waitFor(() => {
-        expect(capturedPickerCallback.onSelect).not.toBeNull()
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user opening the picker and selecting a file
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
@@ -734,15 +705,6 @@ describe('SettingsPage', () => {
       const backupSalt = generateSalt()
       const restoredState = initialState()
       const envelope = await encryptState(restoredState, sessionKey, backupSalt)
-      let pickerCallCount = 0
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(
-        async (_token, onSelect, _onCancel) => {
-          pickerCallCount++
-          capturedPickerCallback.onSelect = onSelect
-          capturedPickerCallback.onCancel = onCancel
-          // Don't call callback - let the test control this
-        }
-      )
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
       )
@@ -752,16 +714,13 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting a file from picker (first picker call)
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThan(0)
-      })
-
-      capturedPickerCallback.onSelect!('picked-file-id')
+      // Simulate user selecting a file from the picker (first pick)
+      await pickFile('picked-file-id')
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
       })
+      expect(mockPickFile).toHaveBeenCalledTimes(1)
 
       // Submit wrong password
       const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
@@ -773,9 +732,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // The second Picker should have opened (fallback from cross-password error)
+      // The fallback picker's "Pick a file" button should now be showing,
+      // and the original dialog's button should not linger alongside it.
       await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThanOrEqual(2)
+        expect(screen.getAllByRole('button', { name: 'Pick a file' })).toHaveLength(1)
       })
     })
 
@@ -793,18 +753,6 @@ describe('SettingsPage', () => {
       ]
       const envelope = await encryptState(restoredState, sessionKey, backupSalt)
 
-      let pickerCallCount = 0
-      const pickerCallbacks: Array<{ onSelect: (fileId: string) => void; onCancel: () => void }> = []
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(
-        async (_token, onSelect, _onCancel) => {
-          pickerCallCount++
-          pickerCallbacks.push({ onSelect, onCancel: _onCancel })
-          capturedPickerCallback.onSelect = onSelect
-          capturedPickerCallback.onCancel = _onCancel
-          // Don't call callbacks - let the test control this
-        }
-      )
-
       vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
         if (fileId === 'first-file-id') {
           throw new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
@@ -817,18 +765,14 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting first file from picker
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThan(0)
-      })
-
-      pickerCallbacks[0].onSelect('first-file-id')
+      // Simulate user selecting the first file from the picker
+      await pickFile('first-file-id')
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
       })
 
-      // Submit wrong password to trigger fallback picker
+      // Submit wrong password to trigger the fallback picker
       const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
       fireEvent.change(passwordInputs[0], { target: { value: 'wrong-password' } })
       fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
@@ -837,13 +781,8 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Wait for the fallback picker to open
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThanOrEqual(2)
-      })
-
-      // Simulate user selecting file from fallback picker
-      pickerCallbacks[1].onSelect('picked-file-id')
+      // Simulate user selecting a file from the fallback picker
+      await pickFile('picked-file-id')
 
       // The confirmation dialog should be triggered for the fallback pick
       expect(global.confirm).toHaveBeenCalledWith('Restore will replace all data with the backed-up version. Continue?')
@@ -867,17 +806,6 @@ describe('SettingsPage', () => {
       const backupSalt2 = generateSalt()
       const envelope2 = await encryptState(backupState, sessionKey, backupSalt2)
 
-      let pickerCallCount = 0
-      const pickerCallbacks: Array<{ onSelect: (fileId: string) => void; onCancel: () => void }> = []
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(
-        async (_token, onSelect, _onCancel) => {
-          pickerCallCount++
-          pickerCallbacks.push({ onSelect, onCancel: _onCancel })
-          capturedPickerCallback.onSelect = onSelect
-          capturedPickerCallback.onCancel = _onCancel
-        }
-      )
-
       vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
         if (fileId === 'picked-file-1') {
           throw new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt1, envelope1)
@@ -892,12 +820,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting first file
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThan(0)
-      })
-
-      pickerCallbacks[0].onSelect('picked-file-1')
+      // Simulate user selecting the first file
+      await pickFile('picked-file-1')
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
@@ -912,13 +836,8 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
       })
 
-      // Wait for fallback picker to open
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThanOrEqual(2)
-      })
-
-      // Simulate user selecting file B from fallback picker
-      pickerCallbacks[1].onSelect('picked-file-b')
+      // Simulate user selecting file B from the fallback picker
+      await pickFile('picked-file-b')
 
       // Confirmation dialog for fallback pick
       expect(global.confirm).toHaveBeenCalledWith('Restore will replace all data with the backed-up version. Continue?')
@@ -950,17 +869,6 @@ describe('SettingsPage', () => {
       const envelopeA = await encryptState(backupState, sessionKey, saltA)
       const envelopeB = await encryptState(backupState, sessionKey, saltB)
 
-      let pickerCallCount = 0
-      const pickerCallbacks: Array<{ onSelect: (fileId: string) => void; onCancel: () => void }> = []
-      vi.mocked(driveModule.openDrivePicker).mockImplementation(
-        async (_token, onSelect, _onCancel) => {
-          pickerCallCount++
-          pickerCallbacks.push({ onSelect, onCancel: _onCancel })
-          capturedPickerCallback.onSelect = onSelect
-          capturedPickerCallback.onCancel = _onCancel
-        }
-      )
-
       vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
         if (fileId === 'original-file') {
           throw new driveModule.DriveDecryptError('wrong for original', saltOriginal, envelopeOriginal)
@@ -977,12 +885,8 @@ describe('SettingsPage', () => {
       const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
       fireEvent.click(restoreButton)
 
-      // Simulate user selecting original file
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThan(0)
-      })
-
-      pickerCallbacks[0].onSelect('original-file')
+      // Simulate user selecting the original file
+      await pickFile('original-file')
 
       await waitFor(() => {
         expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
@@ -998,11 +902,7 @@ describe('SettingsPage', () => {
       })
 
       // Step 2: Fallback picker opens (for file A)
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThanOrEqual(2)
-      })
-
-      pickerCallbacks[1].onSelect('file-a')
+      await pickFile('file-a')
 
       expect(global.confirm).toHaveBeenCalledWith('Restore will replace all data with the backed-up version. Continue?')
 
@@ -1029,11 +929,7 @@ describe('SettingsPage', () => {
       })
 
       // Step 4: Fallback picker opens again (for file B)
-      await waitFor(() => {
-        expect(pickerCallCount).toBeGreaterThanOrEqual(3)
-      })
-
-      pickerCallbacks[2].onSelect('file-b')
+      await pickFile('file-b')
 
       // File B also fails with cross-password error
       await waitFor(() => {

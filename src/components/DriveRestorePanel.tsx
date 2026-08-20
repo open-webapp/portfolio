@@ -207,6 +207,10 @@ export function DriveRestorePanel({
               alert('Restored from Drive')
             } catch (error) {
               if (error instanceof DriveDecryptError) {
+                // The cross-password prompt (and its own fallback picker) takes
+                // over from here — hide this dialog so its "Pick a file" button
+                // doesn't stay rendered alongside the fallback's.
+                setShowPicker(false)
                 setCrossPasswordPrompt({ salt: error.salt, envelope: error.envelope })
                 setCrossPasswordError(null)
                 setBackupPasswordInput('')

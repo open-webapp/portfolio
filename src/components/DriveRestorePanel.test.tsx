@@ -494,6 +494,10 @@ describe('DriveRestorePanel', () => {
       // Prompt should stay open
       expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
       expect(mockOnRestored).not.toHaveBeenCalled()
+
+      // Only the fallback dialog's "Pick a file" button should be visible —
+      // the original picker dialog must not linger underneath it.
+      expect(screen.getAllByRole('button', { name: 'Pick a file' })).toHaveLength(1)
     })
 
     it('happy: clicking cancel on cross-password prompt closes it', async () => {

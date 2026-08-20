@@ -34,17 +34,18 @@ Post-unlock, `drive.activate()` + post-unlock `getDriveAuthStatus()` run in a se
 
 ### Restore from Drive
 
-RestorePanel → [Restore from Drive button clicked] → showPicker = true → DrivePickerFallback
-  ├─ Picker opens immediately (async via openDrivePicker) — no by-name lookup first
-  ├─ getDriveConnection() retrieves OAuth token; openDrivePicker() resolves the
-  │  OpenWebApp/Portfolio folder id via ensureFolderPath() and sets it as Picker's
-  │  starting parent (DocsView.setParent) — user can still navigate elsewhere
-  ├─ Picker init requires both setOAuthToken(token) and setDeveloperKey(apiKey)
-  │  (VITE_GOOGLE_PICKER_API_KEY) — both required, not optional
-  ├─ Picker rendered in-browser; user selects file (from default folder or elsewhere)
-  └─ onSelect callback → confirm dialog → restoreBackupFromFileId(fileId, key)
-     ├─ Success: onRestored() → state hydrated
-     ├─ DriveDecryptError (password mismatch): setCrossPasswordPrompt() → user enters backup password → deriveKey + decryptState
-     └─ Error: alert + Picker remains closed, user can click "Restore from Drive" to retry
+DriveRestorePanel → [Restore from Drive button clicked] → showPicker = true → DriveFilePickerDialog ("Pick a file" button) → [user clicks "Pick a file"] → drive.project('app').pickFile({ includeFolders: true })
+  ├─ No by-name lookup first — the picker is the only restore entry point
+  ├─ `drive.ts`'s `pickFile` wrapper resolves apiKey (VITE_GOOGLE_PICKER_API_KEY) + appId
+  │  (VITE_GOOGLE_PROJECT_NUMBER, or the numeric prefix of VITE_GOOGLE_CLIENT_ID) and a
+  │  parentFolderId (defaults to project.ensureFolderPath(), i.e. OpenWebApp/Portfolio),
+  │  then calls @open-webapp/drive-sync's project.pickFile(...) — which acquires/refreshes
+  │  the OAuth token itself and opens Google Picker scoped to that starting folder; user
+  │  can still navigate elsewhere via Picker's own UI
+  ├─ Cancelling the picker (PickerCancelledError) resolves `null`, not a throw — treated as onCancel
+  └─ Selecting a file resolves `{ id, name, mimeType }` → onSelect(file.id) → confirm dialog → restoreBackupFromFileId(fileId, key)
+     ├─ Success: onRestored() → state hydrated, showPicker reset to false
+     ├─ DriveDecryptError (password mismatch): showPicker set to false, setCrossPasswordPrompt() → user enters backup password → deriveKey + decryptState
+     └─ Error: alert shown; showPicker stays true, "Pick a file" can be clicked again to retry
 
-Also applies to cross-password flow: after wrong-password error, Picker reopens (same as primary path).
+Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong backup-password submit), the cross-password prompt renders its own `DriveFilePickerDialog` ("Pick a file" button) inline — picking a file there re-attempts `restoreBackupFromFileId` with the newly picked file id, chaining into a fresh cross-password prompt if that also decrypts wrong. The original dialog's `showPicker` is cleared before this fallback appears (see above), so only one "Pick a file" button is ever on screen at a time.

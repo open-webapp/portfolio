@@ -38,8 +38,6 @@ vi.mock('../lib/drive', async (importOriginal) => {
   }
   return {
     ...actual,
-    openDrivePicker: vi.fn(),
-    getAccessTokenForPicker: vi.fn(),
     restoreBackupFromFileId: vi.fn(),
     // Real envelopes are built with the real crypto module in these tests, so
     // the stand-in decrypts for real. The coalescing the production helper
@@ -50,7 +48,6 @@ vi.mock('../lib/drive', async (importOriginal) => {
       const crypto = await import('../lib/crypto')
       return crypto.decryptState(envelope, key)
     }),
-    restoreBackup: vi.fn(),
     drive: {
       project: (id: string) => ({
         pickFile: mockPickFile,
@@ -394,7 +391,6 @@ describe('PasswordGate', () => {
       const backupSalt = new Uint8Array([4, 5, 6])
       const mockEnvelope = { encrypted: 'data' }
 
-      vi.mocked(driveModule.getAccessTokenForPicker).mockResolvedValue('fake-token')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )
@@ -446,7 +442,6 @@ describe('PasswordGate', () => {
       const mockEnvelope = { encrypted: 'data' }
       const backupKey = { backup: 'key' } as unknown as CryptoKey
 
-      vi.mocked(driveModule.getAccessTokenForPicker).mockResolvedValue('fake-token')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )
@@ -495,7 +490,6 @@ describe('PasswordGate', () => {
       const backupSalt = new Uint8Array([4, 5, 6])
       const mockEnvelope = { encrypted: 'data' }
 
-      vi.mocked(driveModule.getAccessTokenForPicker).mockResolvedValue('fake-token')
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
         new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
       )

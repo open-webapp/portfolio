@@ -73,7 +73,10 @@ export async function adoptExistingState(app: ProjectSync, key: CryptoKey): Prom
     // Verification passed; safe to delete old database
     await deleteOldDatabase()
   } catch (error) {
-    // Verification or copy failed; leave old db intact and let the error surface
+    // Verification or copy failed; leave the old db intact and roll back the
+    // half-adopted project so the registry stays empty and the migration
+    // can retry cleanly (decision 28: non-destructive until verified).
+    await app.projects.remove(project.id)
     throw error
   }
 }
@@ -86,6 +89,10 @@ async function readOldDatabase(): Promise<AppState | EncryptedEnvelope | null> {
   try {
     return await new Promise((resolve, reject) => {
       const request = indexedDB.open(OLD_DB_NAME)
+      // Opening a database that doesn't exist yet implicitly creates it and
+      // fires onupgradeneeded with no object stores; onsuccess still fires
+      // right after, so guard against querying a store that was never created.
+      let isFreshlyCreated = false
 
       request.onerror = () => {
         const error = request.error
@@ -99,18 +106,29 @@ async function readOldDatabase(): Promise<AppState | EncryptedEnvelope | null> {
 
       request.onsuccess = () => {
         const db = request.result
+        if (isFreshlyCreated || !db.objectStoreNames.contains(OLD_STORE_NAME)) {
+          db.close()
+          resolve(null)
+          return
+        }
+
         const transaction = db.transaction(OLD_STORE_NAME, 'readonly')
         const store = transaction.objectStore(OLD_STORE_NAME)
 
         const getRequest = store.get(OLD_STATE_KEY)
-        getRequest.onerror = () => reject(getRequest.error)
-        getRequest.onsuccess = () => resolve(getRequest.result ?? null)
+        getRequest.onerror = () => {
+          db.close()
+          reject(getRequest.error)
+        }
+        getRequest.onsuccess = () => {
+          db.close()
+          resolve(getRequest.result ?? null)
+        }
       }
 
       request.onupgradeneeded = () => {
-        // If we're in onupgradeneeded, the db version changed, meaning
-        // it exists but was just upgraded. Return null (no existing data).
-        resolve(null)
+        // The db didn't exist before this open call; nothing to migrate.
+        isFreshlyCreated = true
       }
     })
   } catch (error) {
