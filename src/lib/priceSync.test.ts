@@ -55,6 +55,7 @@ describe('priceSync', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   describe('nextBusinessDay', () => {
@@ -213,6 +214,49 @@ describe('priceSync', () => {
       expect(patch.lastRun.error).toBe(new PolygonApiError(403).message)
       expect(patch.lastRun.notFound).toEqual([])
       expect(patch.lastRun.updatedCount).toBe(0)
+      expect(patch.lastFetchedDate).toBeUndefined()
+      expect(updatedPrices).toEqual({})
+    })
+
+    it('403 for a same-day target is "not yet published" (no-op), not surfaced as an error', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-24T12:00:00.000Z')) // Monday
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, false, 403)))
+
+      const priceSync: PriceSyncState = {
+        apiKey: 'key',
+        lastFetchedDate: '2026-08-21', // Friday -> next business day = Monday = "today"
+        heldPrices: {},
+        lastRun: null,
+      }
+
+      const { patch, updatedPrices } = await runPriceSync(priceSync, ['AAPL', 'MSFT'])
+
+      expect(patch.lastRun.error).toBeUndefined()
+      expect(patch.lastRun.notFound).toEqual(['AAPL', 'MSFT'])
+      expect(patch.lastRun.updatedCount).toBe(0)
+      expect(patch.lastFetchedDate).toBeUndefined()
+      expect(updatedPrices).toEqual({})
+    })
+
+    it('403 for a past-date target still surfaces as lastRun.error (genuine entitlement failure)', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-24T12:00:00.000Z')) // Monday
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, false, 403)))
+
+      const priceSync: PriceSyncState = {
+        apiKey: 'bad-key',
+        lastFetchedDate: '2026-08-18', // Tuesday -> next business day = Wednesday, not "today"
+        heldPrices: {},
+        lastRun: null,
+      }
+
+      const { patch, updatedPrices } = await runPriceSync(priceSync, ['AAPL', 'MSFT'])
+
+      expect(patch.lastRun.error).toBe(new PolygonApiError(403).message)
+      expect(patch.lastRun.notFound).toEqual([])
       expect(patch.lastFetchedDate).toBeUndefined()
       expect(updatedPrices).toEqual({})
     })

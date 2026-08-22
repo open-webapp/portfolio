@@ -34,9 +34,10 @@ export interface PolygonGroupedBarsResponse {
   status?: string
 }
 
-/** Thrown when Polygon responds with a non-2xx status (e.g. 403 for an
- *  invalid/unauthorized API key) — distinct from "no data for this date",
- *  which callers should keep treating as an empty result. */
+/** Thrown when Polygon responds with a non-2xx status. Note: a 403 for
+ *  *today's* date is Polygon's normal "not published until end of day"
+ *  restriction, not an entitlement failure — see the isTodayNotYetPublished
+ *  check in runPriceSync, which treats that case like an empty result. */
 export class PolygonApiError extends Error {
   status: number
   constructor(status: number) {
@@ -109,11 +110,21 @@ export async function runPriceSync(
   try {
     results = await fetchGroupedDailyBars(targetDate, priceSync.apiKey)
   } catch (err) {
-    const error = err instanceof PolygonApiError ? err.message : 'Price sync failed'
-    return {
-      patch: { lastRun: { at: now, updatedCount: 0, notFound: [], error } },
-      updatedPrices: {},
+    // A 403 when targetDate is today is Polygon's expected "today's data isn't
+    // published yet" restriction (even on plans entitled to this endpoint) —
+    // treat exactly like an empty/no-data response and retry next trigger,
+    // not as a real error. Any other non-2xx (incl. a 403 for a PAST date,
+    // which means genuinely insufficient entitlement) is a real error.
+    const isTodayNotYetPublished =
+      err instanceof PolygonApiError && err.status === 403 && targetDate === now.slice(0, 10)
+    if (!isTodayNotYetPublished) {
+      const error = err instanceof PolygonApiError ? err.message : 'Price sync failed'
+      return {
+        patch: { lastRun: { at: now, updatedCount: 0, notFound: [], error } },
+        updatedPrices: {},
+      }
     }
+    results = null
   }
 
   // Empty/null/malformed response: no data for this date. Chosen semantics —

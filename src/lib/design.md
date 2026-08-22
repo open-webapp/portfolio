@@ -64,7 +64,7 @@ each held Equity/ETF symbol found in the response.
 
 - No API key configured → no fetch attempted (`runPriceSyncTrigger` returns early).
 - Empty/malformed response (incl. network error) → `lastFetchedDate` NOT advanced, every held symbol reported in `lastRun.notFound`, retried on next trigger.
-- Non-2xx HTTP response (e.g. 403 invalid/unauthorized API key) → `fetchGroupedDailyBars` throws `PolygonApiError`; `lastFetchedDate` NOT advanced, `lastRun.notFound` is empty and `lastRun.error` holds the message instead (surfaced in Settings), retried on next trigger.
+- Non-2xx HTTP response → `fetchGroupedDailyBars` throws `PolygonApiError`. `runPriceSync` special-cases a 403 when the target date is today: Polygon returns 403 NOT_AUTHORIZED ("today's data before end of day") for the *current* calendar day even on plans entitled to this endpoint — treated identically to an empty response (no-op, `lastRun.notFound` populated, no `error`, retried next trigger). A 403 (or any other non-2xx) for a non-today target date is a genuine entitlement/auth failure: `lastFetchedDate` NOT advanced, `lastRun.notFound` is empty and `lastRun.error` holds the message instead (surfaced in Settings).
 - CSV Positions import after a same-day fetch already ran →
   `positionsImport.ts` reapplies the cached `state.priceSync.heldPrices`
   price over the freshly-imported CSV price for Equity/ETF positions when the cached price's date >= the import date

@@ -48,7 +48,9 @@ The "Fetch prices now" button runs the identical fetch/update logic as the autom
 
 ### On a Failed Fetch (HTTP error, e.g. invalid/unauthorized API key)
 
-A non-2xx HTTP response (e.g. 403) is distinct from "no data for this date": it's shown as an error message in the status text instead of a "not found" list, so an invalid or unauthorized API key doesn't look like every held symbol is simply missing from the data. `lastFetchedDate` is not advanced; retried on next trigger.
+A non-2xx HTTP response for a *past* date is distinct from "no data for this date": it's shown as an error message in the status text instead of a "not found" list, so an invalid or unauthorized API key doesn't look like every held symbol is simply missing from the data. `lastFetchedDate` is not advanced; retried on next trigger.
+
+A 403 for *today's* date is not treated as an error even though it's the same HTTP status — Polygon rejects requests for the current calendar day's grouped bars until end of day regardless of plan, so this is expected and handled the same as "no data yet": shown as a "not found" list, not an error, retried on next trigger.
 
 ### Interaction with CSV Positions Import
 
