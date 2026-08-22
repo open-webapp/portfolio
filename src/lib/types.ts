@@ -96,6 +96,7 @@ export interface PriceSyncLastRun {
   at: string           // ISO timestamp
   updatedCount: number
   notFound: string[]   // held Equity/ETF symbols absent from the last response
+  error?: string        // set when the fetch itself failed (e.g. HTTP 403) — distinct from "no data"
 }
 
 export interface PriceSyncState {

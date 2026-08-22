@@ -34,9 +34,21 @@ export interface PolygonGroupedBarsResponse {
   status?: string
 }
 
-/** Fetch one grouped-daily-bars day. Returns null on non-2xx/network error
- *  or a malformed/missing `results` field (treated identically to "no data
- *  for this date" by the caller — do not advance lastFetchedDate). */
+/** Thrown when Polygon responds with a non-2xx status (e.g. 403 for an
+ *  invalid/unauthorized API key) — distinct from "no data for this date",
+ *  which callers should keep treating as an empty result. */
+export class PolygonApiError extends Error {
+  status: number
+  constructor(status: number) {
+    super(`Polygon API error: ${status}`)
+    this.status = status
+  }
+}
+
+/** Fetch one grouped-daily-bars day. Returns null on network error or a
+ *  malformed/missing `results` field (treated identically to "no data for
+ *  this date" by the caller — do not advance lastFetchedDate). Throws
+ *  PolygonApiError on a non-2xx HTTP response. */
 export async function fetchGroupedDailyBars(
   date: string,
   apiKey: string
@@ -50,7 +62,7 @@ export async function fetchGroupedDailyBars(
     return null
   }
 
-  if (!res.ok) return null
+  if (!res.ok) throw new PolygonApiError(res.status)
 
   let json: PolygonGroupedBarsResponse
   try {
@@ -93,7 +105,16 @@ export async function runPriceSync(
       ? nextBusinessDay(seedLastFetchedDate())
       : nextBusinessDay(priceSync.lastFetchedDate)
 
-  const results = await fetchGroupedDailyBars(targetDate, priceSync.apiKey)
+  let results: PolygonGroupedBarsResponse['results'] | null
+  try {
+    results = await fetchGroupedDailyBars(targetDate, priceSync.apiKey)
+  } catch (err) {
+    const error = err instanceof PolygonApiError ? err.message : 'Price sync failed'
+    return {
+      patch: { lastRun: { at: now, updatedCount: 0, notFound: [], error } },
+      updatedPrices: {},
+    }
+  }
 
   // Empty/null/malformed response: no data for this date. Chosen semantics —
   // every held symbol is reported "not found" for this run rather than silently

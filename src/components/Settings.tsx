@@ -259,9 +259,15 @@ export function SettingsPage({
         {priceSync.lastRun ? (
           <p>
             Last run: {new Date(priceSync.lastRun.at).toLocaleString()} —{' '}
-            {priceSync.lastRun.updatedCount} updated
-            {priceSync.lastRun.notFound.length > 0 &&
-              `, not found: ${priceSync.lastRun.notFound.join(', ')}`}
+            {priceSync.lastRun.error ? (
+              <span style={{ color: '#8a3c2e' }}>{priceSync.lastRun.error}</span>
+            ) : (
+              <>
+                {priceSync.lastRun.updatedCount} updated
+                {priceSync.lastRun.notFound.length > 0 &&
+                  `, not found: ${priceSync.lastRun.notFound.join(', ')}`}
+              </>
+            )}
           </p>
         ) : (
           <p>Never run</p>

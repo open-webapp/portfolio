@@ -7,7 +7,7 @@ Directory structure, API contract, component tree, state management, data model,
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
   - Used by `PositionsTable.tsx` (passes `state.closedPositions`)
   - Used by `AccountsPage.tsx` (passes `acctFilteredClosedPositions(state)`)
-- `Settings.tsx` "Price Sync" tab (third `.seg-opt`, alongside Drive/Encryption) — masked (`type="password"`) Polygon.io API key input (commits on blur via `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button (disabled while fetching or no API key), last-run status text (`state.priceSync.lastRun`: date/time, updated count, not-found list, or "Never run")
+- `Settings.tsx` "Price Sync" tab (third `.seg-opt`, alongside Drive/Encryption) — masked (`type="password"`) Polygon.io API key input (commits on blur via `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button (disabled while fetching or no API key), last-run status text (`state.priceSync.lastRun`: date/time, and either an error message (`lastRun.error`, e.g. invalid/unauthorized API key) or updated count + not-found list; "Never run" if no run yet)
   - Shares its fetch/orchestration call with `App.tsx`'s on-load/on-focus effect: both call the same `runPriceSyncTrigger` `useCallback`, lifted from `App.tsx` and passed down as a prop; the button just wraps it with a local `fetchingPrices` loading state
 
 ## Data Flows
@@ -63,8 +63,8 @@ local cache, separate from `persist.ts`/Drive) + `RECORD_PRICE_SYNC_RUN` dispatc
 each held Equity/ETF symbol found in the response.
 
 - No API key configured → no fetch attempted (`runPriceSyncTrigger` returns early).
-- Empty/error/malformed response → `lastFetchedDate` NOT advanced, every held symbol reported in `lastRun.notFound`, retried
-  on next trigger.
+- Empty/malformed response (incl. network error) → `lastFetchedDate` NOT advanced, every held symbol reported in `lastRun.notFound`, retried on next trigger.
+- Non-2xx HTTP response (e.g. 403 invalid/unauthorized API key) → `fetchGroupedDailyBars` throws `PolygonApiError`; `lastFetchedDate` NOT advanced, `lastRun.notFound` is empty and `lastRun.error` holds the message instead (surfaced in Settings), retried on next trigger.
 - CSV Positions import after a same-day fetch already ran →
   `positionsImport.ts` reapplies the cached `state.priceSync.heldPrices`
   price over the freshly-imported CSV price for Equity/ETF positions when the cached price's date >= the import date

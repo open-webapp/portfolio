@@ -29,7 +29,7 @@ Settings > Price Sync tab (alongside Drive Sync and Change Encryption Password) 
 
 - **API Key field**: masked (password-style) input. Committed on blur (click/tab away), not on every keystroke.
 - **"Fetch prices now" button**: disabled while a fetch is in progress or when no API key is set. Label reads "Fetching prices..." while running.
-- **Status text**: last run date/time, count of positions updated, and a "not found" list of held symbols absent from that day's data. Shows "Never run" before the first fetch.
+- **Status text**: last run date/time, then either an error message (API request failed, e.g. invalid/unauthorized API key) or the count of positions updated plus a "not found" list of held symbols absent from that day's data. Shows "Never run" before the first fetch.
 - No automatic or manual fetch happens at all until an API key is entered.
 
 ### Automatic Fetch (load + tab focus)
@@ -45,6 +45,10 @@ The "Fetch prices now" button runs the identical fetch/update logic as the autom
 - Held Equity or ETF positions whose symbol is found in that day's price data: price is updated to the new value.
 - Symbols not found in the response: left untouched, listed under "not found" in the status text — expected (e.g. delisted symbol, data gap), not shown as an error.
 - Other asset classes (Fixed Income, Cash, Crypto, etc.) are never touched by price sync.
+
+### On a Failed Fetch (HTTP error, e.g. invalid/unauthorized API key)
+
+A non-2xx HTTP response (e.g. 403) is distinct from "no data for this date": it's shown as an error message in the status text instead of a "not found" list, so an invalid or unauthorized API key doesn't look like every held symbol is simply missing from the data. `lastFetchedDate` is not advanced; retried on next trigger.
 
 ### Interaction with CSV Positions Import
 

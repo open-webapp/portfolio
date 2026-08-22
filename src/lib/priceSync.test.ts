@@ -5,6 +5,7 @@ import {
   seedLastFetchedDate,
   fetchGroupedDailyBars,
   runPriceSync,
+  PolygonApiError,
 } from './priceSync'
 import { getCachedBar } from './marketDataDb'
 import type { PriceSyncState } from './types'
@@ -84,12 +85,12 @@ describe('priceSync', () => {
       expect(out).toEqual(results)
     })
 
-    it('non-2xx response returns null', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, false, 500)))
+    it('non-2xx response throws PolygonApiError with status', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, false, 403)))
 
-      const out = await fetchGroupedDailyBars('2026-08-21', 'key')
-
-      expect(out).toBeNull()
+      await expect(fetchGroupedDailyBars('2026-08-21', 'key')).rejects.toMatchObject({
+        status: 403,
+      })
     })
 
     it('network error returns null without throwing', async () => {
@@ -194,6 +195,25 @@ describe('priceSync', () => {
       expect(patch.heldPrices).toBeUndefined()
       expect(patch.lastRun.updatedCount).toBe(0)
       expect(patch.lastRun.notFound).toEqual(['AAPL', 'MSFT'])
+      expect(updatedPrices).toEqual({})
+    })
+
+    it('403 response surfaces as lastRun.error, not as notFound for every held symbol', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, false, 403)))
+
+      const priceSync: PriceSyncState = {
+        apiKey: 'bad-key',
+        lastFetchedDate: '2026-08-20',
+        heldPrices: {},
+        lastRun: null,
+      }
+
+      const { patch, updatedPrices } = await runPriceSync(priceSync, ['AAPL', 'MSFT'])
+
+      expect(patch.lastRun.error).toBe(new PolygonApiError(403).message)
+      expect(patch.lastRun.notFound).toEqual([])
+      expect(patch.lastRun.updatedCount).toBe(0)
+      expect(patch.lastFetchedDate).toBeUndefined()
       expect(updatedPrices).toEqual({})
     })
 

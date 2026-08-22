@@ -1019,6 +1019,22 @@ describe('SettingsPage', () => {
       expect(screen.getByText(/not found: FOO, BAR/)).toBeTruthy()
     })
 
+    it('renders lastRun.error instead of updated count/not-found list when present', () => {
+      const state = initialState()
+      state.priceSync.apiKey = 'my-api-key'
+      state.priceSync.lastRun = {
+        at: '2026-08-22T12:00:00.000Z',
+        updatedCount: 0,
+        notFound: [],
+        error: 'Polygon API error: 403',
+      }
+      renderSettings({ state, settingsSection: 'priceSync' })
+
+      expect(screen.getByText('Polygon API error: 403')).toBeTruthy()
+      expect(screen.queryByText(/updated/)).toBeNull()
+      expect(screen.queryByText(/not found/)).toBeNull()
+    })
+
     it('renders "Never run" when lastRun is null', () => {
       const state = initialState()
       state.priceSync.lastRun = null
