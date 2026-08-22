@@ -80,14 +80,17 @@ export async function fetchGroupedDailyBars(
 /**
  * Orchestration: given current AppState.priceSync + held Equity/ETF symbols,
  * runs one fetch attempt for the next business day after lastFetchedDate
- * (or the seeded date if lastFetchedDate is null), writes ALL returned bars
- * to marketDataDb, and returns a RECORD_PRICE_SYNC_RUN-shaped patch plus the
- * updated Position[] (price-overwritten for held symbols found in the
- * response) — does NOT dispatch itself, caller dispatches the result.
+ * (or the seeded date if lastFetchedDate is null) — or for `overrideDate`
+ * (YYYY-MM-DD) if given, bypassing that computation entirely for a manual/
+ * ad-hoc fetch — writes ALL returned bars to marketDataDb, and returns a
+ * RECORD_PRICE_SYNC_RUN-shaped patch plus the updated Position[]
+ * (price-overwritten for held symbols found in the response) — does NOT
+ * dispatch itself, caller dispatches the result.
  */
 export async function runPriceSync(
   priceSync: PriceSyncState,
-  heldEquityEtfSymbols: string[]
+  heldEquityEtfSymbols: string[],
+  overrideDate?: string
 ): Promise<{
   patch: { lastFetchedDate?: string; heldPrices?: Record<string, HeldSymbolPrice>; lastRun: PriceSyncLastRun }
   updatedPrices: Record<string, number> // symbol -> new price, for caller to apply to Position[]
@@ -102,9 +105,10 @@ export async function runPriceSync(
   }
 
   const targetDate =
-    priceSync.lastFetchedDate === null
+    overrideDate ??
+    (priceSync.lastFetchedDate === null
       ? nextBusinessDay(seedLastFetchedDate())
-      : nextBusinessDay(priceSync.lastFetchedDate)
+      : nextBusinessDay(priceSync.lastFetchedDate))
 
   let results: PolygonGroupedBarsResponse['results'] | null
   try {

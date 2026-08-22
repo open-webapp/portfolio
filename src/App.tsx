@@ -104,7 +104,7 @@ function App() {
   // `state` directly, since this effect's dependency array intentionally omits
   // `state` — mirrors the sessionKeyRef/sessionSaltRef pattern used by the
   // flush-on-unmount effect below for the same reason.
-  const runPriceSyncTrigger = useCallback(async () => {
+  const runPriceSyncTrigger = useCallback(async (overrideDate?: string) => {
     const current = latestStateRef.current
     if (!current.priceSync.apiKey) return
     const heldSymbols = [
@@ -117,7 +117,7 @@ function App() {
           .map((p) => p.symbol)
       ),
     ]
-    const { patch, updatedPrices } = await runPriceSync(current.priceSync, heldSymbols)
+    const { patch, updatedPrices } = await runPriceSync(current.priceSync, heldSymbols, overrideDate)
     dispatch({ type: 'RECORD_PRICE_SYNC_RUN', patch })
     for (const [symbol, price] of Object.entries(updatedPrices)) {
       const positionIds = current.positions.filter((p) => p.symbol === symbol).map((p) => p.id)

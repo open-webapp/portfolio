@@ -20,7 +20,7 @@ export interface SettingsPageProps {
   handleDisconnect: () => void
   settingsSection: 'drive' | 'encryption' | 'priceSync'
   setSettingsSection: (s: 'drive' | 'encryption' | 'priceSync') => void
-  runPriceSyncTrigger: () => Promise<void>
+  runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
 }
 
 /**
@@ -55,16 +55,17 @@ export function SettingsPage({
   // Price Sync local state
   const [apiKeyInput, setApiKeyInput] = useState(state.priceSync.apiKey)
   const [fetchingPrices, setFetchingPrices] = useState(false)
+  const [fetchDateInput, setFetchDateInput] = useState('')
   const priceSync = state.priceSync
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
     try {
-      await runPriceSyncTrigger()
+      await runPriceSyncTrigger(fetchDateInput || undefined)
     } finally {
       setFetchingPrices(false)
     }
-  }, [runPriceSyncTrigger])
+  }, [runPriceSyncTrigger, fetchDateInput])
 
 
   const handleChangePassword = useCallback(async () => {
@@ -249,13 +250,23 @@ export function SettingsPage({
             onBlur={() => dispatch({ type: 'SET_PRICE_SYNC_API_KEY', apiKey: apiKeyInput })}
           />
         </div>
-        <button
-          className="btn btn-primary blueprint"
-          disabled={fetchingPrices || !priceSync.apiKey}
-          onClick={handleFetchPricesNow}
-        >
-          {fetchingPrices ? 'Fetching prices...' : 'Fetch prices now'}
-        </button>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+          <button
+            className="btn btn-primary blueprint"
+            disabled={fetchingPrices || !priceSync.apiKey}
+            onClick={handleFetchPricesNow}
+          >
+            {fetchingPrices ? 'Fetching prices...' : 'Fetch prices now'}
+          </button>
+          <input
+            type="date"
+            className="input"
+            aria-label="Date to fetch"
+            value={fetchDateInput}
+            onChange={(e) => setFetchDateInput(e.target.value)}
+            disabled={fetchingPrices}
+          />
+        </div>
         {priceSync.lastRun ? (
           <p>
             Last run: {new Date(priceSync.lastRun.at).toLocaleString()} —{' '}

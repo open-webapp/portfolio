@@ -1003,6 +1003,21 @@ describe('SettingsPage', () => {
       await waitFor(() => {
         expect(mockRunPriceSyncTrigger).toHaveBeenCalledTimes(1)
       })
+      expect(mockRunPriceSyncTrigger).toHaveBeenCalledWith(undefined)
+    })
+
+    it('setting a date then clicking Fetch prices now calls runPriceSyncTrigger with that date', async () => {
+      const state = initialState()
+      state.priceSync.apiKey = 'my-api-key'
+      renderSettings({ state, settingsSection: 'priceSync' })
+
+      const dateInput = screen.getByLabelText('Date to fetch') as HTMLInputElement
+      fireEvent.change(dateInput, { target: { value: '2026-08-10' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Fetch prices now' }))
+
+      await waitFor(() => {
+        expect(mockRunPriceSyncTrigger).toHaveBeenCalledWith('2026-08-10')
+      })
     })
 
     it('renders lastRun status text (date, updated count, not-found list) when populated', () => {

@@ -7,8 +7,8 @@ Directory structure, API contract, component tree, state management, data model,
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
   - Used by `PositionsTable.tsx` (passes `state.closedPositions`)
   - Used by `AccountsPage.tsx` (passes `acctFilteredClosedPositions(state)`)
-- `Settings.tsx` "Price Sync" tab (third `.seg-opt`, alongside Drive/Encryption) — masked (`type="password"`) Polygon.io API key input (commits on blur via `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button (disabled while fetching or no API key), last-run status text (`state.priceSync.lastRun`: date/time, and either an error message (`lastRun.error`, e.g. invalid/unauthorized API key) or updated count + not-found list; "Never run" if no run yet)
-  - Shares its fetch/orchestration call with `App.tsx`'s on-load/on-focus effect: both call the same `runPriceSyncTrigger` `useCallback`, lifted from `App.tsx` and passed down as a prop; the button just wraps it with a local `fetchingPrices` loading state
+- `Settings.tsx` "Price Sync" tab (third `.seg-opt`, alongside Drive/Encryption) — masked (`type="password"`) Polygon.io API key input (commits on blur via `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button + adjacent `type="date"` input (disabled while fetching; date optional — empty means auto-computed date), last-run status text (`state.priceSync.lastRun`: date/time, and either an error message (`lastRun.error`, e.g. invalid/unauthorized API key) or updated count + not-found list; "Never run" if no run yet)
+  - Shares its fetch/orchestration call with `App.tsx`'s on-load/on-focus effect: both call the same `runPriceSyncTrigger` `useCallback`, lifted from `App.tsx` and passed down as a prop; the button just wraps it with a local `fetchingPrices` loading state, passing the local date-input value (or `undefined` if empty) as `runPriceSyncTrigger`'s optional `overrideDate` arg — the automatic on-load/on-focus calls always call it with no argument
 
 ## Data Flows
 
@@ -54,15 +54,16 @@ Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong
 
 ### Price Sync
 
-App load/tab-focus (or Settings "Fetch prices now") → `App.tsx`'s `runPriceSyncTrigger` → `priceSync.ts`'s
-`runPriceSync(state.priceSync, heldEquityEtfSymbols)` → `fetchGroupedDailyBars`
-(Polygon grouped-daily-bars, one call for the next business day after
+App load/tab-focus (or Settings "Fetch prices now") → `App.tsx`'s `runPriceSyncTrigger(overrideDate?)` → `priceSync.ts`'s
+`runPriceSync(state.priceSync, heldEquityEtfSymbols, overrideDate?)` → `fetchGroupedDailyBars`
+(Polygon grouped-daily-bars, one call for `overrideDate` if given, else the next business day after
 `lastFetchedDate`) → `marketDataDb.putBars` (ALL response tickers, unencrypted
 local cache, separate from `persist.ts`/Drive) + `RECORD_PRICE_SYNC_RUN` dispatch (advances `lastFetchedDate` +
 `heldPrices` only on non-empty response) → `UPDATE_POSITION` dispatch for
 each held Equity/ETF symbol found in the response.
 
 - No API key configured → no fetch attempted (`runPriceSyncTrigger` returns early).
+- Settings "Fetch prices now" with a date entered in the adjacent date input → that date is used verbatim as `overrideDate`, bypassing the `lastFetchedDate`-based next-business-day computation; on success `lastFetchedDate` is still set to it (so the next automatic trigger continues forward from there, which can mean re-fetching or skipping days relative to a purely sequential catch-up — an accepted trade-off for an explicit manual/ad-hoc fetch).
 - Empty/malformed response (incl. network error) → `lastFetchedDate` NOT advanced, every held symbol reported in `lastRun.notFound`, retried on next trigger.
 - Non-2xx HTTP response → `fetchGroupedDailyBars` throws `PolygonApiError`. `runPriceSync` special-cases a 403 when the target date is today: Polygon returns 403 NOT_AUTHORIZED ("today's data before end of day") for the *current* calendar day even on plans entitled to this endpoint — treated identically to an empty response (no-op, `lastRun.notFound` populated, no `error`, retried next trigger). A 403 (or any other non-2xx) for a non-today target date is a genuine entitlement/auth failure: `lastFetchedDate` NOT advanced, `lastRun.notFound` is empty and `lastRun.error` holds the message instead (surfaced in Settings).
 - CSV Positions import after a same-day fetch already ran →

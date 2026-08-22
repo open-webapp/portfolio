@@ -278,5 +278,26 @@ describe('priceSync', () => {
       const calledUrl = fetchMock.mock.calls[0][0] as string
       expect(calledUrl).toContain(`/${expectedDate}?`)
     })
+
+    it('overrideDate bypasses lastFetchedDate-based computation and fetches that date directly', async () => {
+      const results = [{ T: 'AAPL', c: 100, h: 101, l: 99 }]
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const priceSync: PriceSyncState = {
+        apiKey: 'key',
+        lastFetchedDate: '2026-08-01', // would otherwise compute to 2026-08-03
+        heldPrices: {},
+        lastRun: null,
+      }
+
+      const { patch, updatedPrices } = await runPriceSync(priceSync, ['AAPL'], '2026-08-10')
+
+      const calledUrl = fetchMock.mock.calls[0][0] as string
+      expect(calledUrl).toContain('/2026-08-10?')
+      expect(patch.lastFetchedDate).toBe('2026-08-10')
+      expect(patch.heldPrices?.AAPL).toEqual({ price: 100, date: '2026-08-10', fetchedAt: expect.any(String) })
+      expect(updatedPrices).toEqual({ AAPL: 100 })
+    })
   })
 })
