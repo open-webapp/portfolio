@@ -7,6 +7,7 @@ import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
 import { PasswordGate } from './components/PasswordGate'
 import { drive, getDriveAuthStatus, getBackupFileId, syncBackup, ensureFreshConnection } from './lib/drive'
+import { runPriceSync } from './lib/priceSync'
 import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
 
@@ -36,7 +37,7 @@ function App() {
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
 
   // Which section of the Settings page is active
-  const [settingsSection, setSettingsSection] = useState<'drive' | 'encryption'>('drive')
+  const [settingsSection, setSettingsSection] = useState<'drive' | 'encryption' | 'priceSync'>('drive')
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -97,6 +98,46 @@ function App() {
       isHydratedRef.current = true
     }
   }, [isHydrated])
+
+  // Price-sync trigger: fetches held Equity/ETF prices on mount + on tab focus.
+  // Reads state via latestStateRef (kept current above) rather than closing over
+  // `state` directly, since this effect's dependency array intentionally omits
+  // `state` — mirrors the sessionKeyRef/sessionSaltRef pattern used by the
+  // flush-on-unmount effect below for the same reason.
+  const runPriceSyncTrigger = useCallback(async () => {
+    const current = latestStateRef.current
+    if (!current.priceSync.apiKey) return
+    const heldSymbols = [
+      ...new Set(
+        current.positions
+          .filter((p) => {
+            const cls = p.assetClassManualOverride || p.assetClass
+            return cls === 'Equity' || cls === 'ETF'
+          })
+          .map((p) => p.symbol)
+      ),
+    ]
+    const { patch, updatedPrices } = await runPriceSync(current.priceSync, heldSymbols)
+    dispatch({ type: 'RECORD_PRICE_SYNC_RUN', patch })
+    for (const [symbol, price] of Object.entries(updatedPrices)) {
+      const positionIds = current.positions.filter((p) => p.symbol === symbol).map((p) => p.id)
+      for (const id of positionIds) {
+        dispatch({ type: 'UPDATE_POSITION', positionId: id, patch: { price } })
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (sessionKey === null || !isHydrated) return
+
+    runPriceSyncTrigger()
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') runPriceSyncTrigger()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [sessionKey, isHydrated, runPriceSyncTrigger])
 
   // Check Drive connection status once unlocked (never opens a Google auth window)
   useEffect(() => {
@@ -329,6 +370,7 @@ function App() {
               handleDisconnect={handleDisconnect}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
+              runPriceSyncTrigger={runPriceSyncTrigger}
             />
           </div>
         )}

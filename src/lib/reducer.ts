@@ -26,6 +26,8 @@ export type AppAction =
   | { type: 'TOGGLE_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_ACCT_ASSET_CLASS_FILTER'; filter: string }
   | { type: 'SET_ACCT_POS_SEARCH'; search: string }
+  | { type: 'SET_PRICE_SYNC_API_KEY'; apiKey: string }
+  | { type: 'RECORD_PRICE_SYNC_RUN'; patch: any }
 
 /**
  * Reducer function that handles all state mutations.
@@ -111,6 +113,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_ACCT_POS_SEARCH':
       return StateActions.setAcctPosSearch(state, action.search)
+
+    // Price sync
+    case 'SET_PRICE_SYNC_API_KEY':
+      return StateActions.setPriceSyncApiKey(state, action.apiKey)
+
+    case 'RECORD_PRICE_SYNC_RUN':
+      return StateActions.recordPriceSyncRun(state, action.patch)
 
     default:
       return state

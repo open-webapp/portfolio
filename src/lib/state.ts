@@ -6,6 +6,9 @@ import type {
   PortfolioSnapshot,
   TaxCategory,
   SavedCsvMapping,
+  PriceSyncState,
+  HeldSymbolPrice,
+  PriceSyncLastRun,
 } from './types'
 import { uid } from './seed'
 
@@ -18,6 +21,7 @@ export interface AppState {
   snapshots: PortfolioSnapshot[]
   csvMappings: SavedCsvMapping[]
   customInstitutions: string[]
+  priceSync: PriceSyncState
 
   // UI state
   view: 'settings' | 'accounts'
@@ -51,6 +55,12 @@ export function initialState(): AppState {
     snapshots: [],
     csvMappings: [],
     customInstitutions: [],
+    priceSync: {
+      apiKey: '',
+      lastFetchedDate: null,
+      heldPrices: {},
+      lastRun: null,
+    },
 
     // UI state
     view: 'accounts',
@@ -120,6 +130,29 @@ export function updatePosition(
     positions: state.positions.map((p) =>
       p.id === positionId ? { ...p, ...patch } : p
     ),
+  }
+}
+
+export function setPriceSyncApiKey(state: AppState, apiKey: string): AppState {
+  return { ...state, priceSync: { ...state.priceSync, apiKey } }
+}
+
+export function recordPriceSyncRun(
+  state: AppState,
+  patch: {
+    lastFetchedDate?: string
+    heldPrices?: Record<string, HeldSymbolPrice>
+    lastRun: PriceSyncLastRun
+  }
+): AppState {
+  return {
+    ...state,
+    priceSync: {
+      ...state.priceSync,
+      lastFetchedDate: patch.lastFetchedDate ?? state.priceSync.lastFetchedDate,
+      heldPrices: patch.heldPrices ?? state.priceSync.heldPrices,
+      lastRun: patch.lastRun,
+    },
   }
 }
 

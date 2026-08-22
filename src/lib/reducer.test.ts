@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { appReducer } from './reducer'
-import { closePosition, restoreClosedPosition, initialState } from './state'
+import {
+  closePosition,
+  restoreClosedPosition,
+  initialState,
+  setPriceSyncApiKey,
+  recordPriceSyncRun,
+} from './state'
 import type { AppState } from './types'
 
 describe('appReducer', () => {
@@ -210,6 +216,34 @@ describe('appReducer', () => {
       const result = appReducer(state, { type: 'SET_ACCT_POS_SEARCH', search: 'AAPL' })
 
       expect(result.acctPosSearch).toBe('AAPL')
+    })
+  })
+
+  describe('SET_PRICE_SYNC_API_KEY', () => {
+    it('dispatches to setPriceSyncApiKey state action', () => {
+      const state: AppState = { ...initialState() }
+
+      const resultFromReducer = appReducer(state, { type: 'SET_PRICE_SYNC_API_KEY', apiKey: 'x' })
+      const resultDirect = setPriceSyncApiKey(state, 'x')
+
+      expect(resultFromReducer.priceSync).toEqual(resultDirect.priceSync)
+      expect(resultFromReducer.priceSync.apiKey).toBe('x')
+    })
+  })
+
+  describe('RECORD_PRICE_SYNC_RUN', () => {
+    it('dispatches to recordPriceSyncRun state action', () => {
+      const state: AppState = { ...initialState() }
+      const patch = {
+        lastFetchedDate: '2024-02-01',
+        heldPrices: { AAPL: { price: 190, date: '2024-02-01', fetchedAt: '2024-02-01T10:00:00Z' } },
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [] },
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'RECORD_PRICE_SYNC_RUN', patch })
+      const resultDirect = recordPriceSyncRun(state, patch)
+
+      expect(resultFromReducer.priceSync).toEqual(resultDirect.priceSync)
     })
   })
 })

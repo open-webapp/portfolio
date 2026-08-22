@@ -85,3 +85,22 @@ export const POSITIONS_OPTIONAL_FIELDS = ['name'] as const
 
 export const TRANSACTIONS_REQUIRED_FIELDS = ['date', 'symbol', 'type', 'shares', 'price', 'amount'] as const
 export const TRANSACTIONS_OPTIONAL_FIELDS = [] as const
+
+export interface HeldSymbolPrice {
+  price: number
+  date: string       // YYYY-MM-DD, the trading date this price is for
+  fetchedAt: string  // ISO timestamp of when the fetch happened
+}
+
+export interface PriceSyncLastRun {
+  at: string           // ISO timestamp
+  updatedCount: number
+  notFound: string[]   // held Equity/ETF symbols absent from the last response
+}
+
+export interface PriceSyncState {
+  apiKey: string
+  lastFetchedDate: string | null  // YYYY-MM-DD of last successful non-empty fetch
+  heldPrices: Record<string, HeldSymbolPrice>  // symbol -> latest price
+  lastRun: PriceSyncLastRun | null
+}

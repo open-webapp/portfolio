@@ -12,13 +12,24 @@ import App from './App'
 // Stable session key/salt used by the mocked PasswordGate's onUnlock callback.
 // Declared via vi.hoisted so it's initialized before the hoisted vi.mock factories run.
 // Also capture PasswordGate props for testing early Drive status checks.
-const { mockSessionKey, mockSessionSalt, passwordGatePropsCapture } = vi.hoisted(() => ({
+const { mockSessionKey, mockSessionSalt, passwordGatePropsCapture, mockUnlockLoadedState } = vi.hoisted(() => ({
   mockSessionKey: {} as CryptoKey,
   mockSessionSalt: new Uint8Array([1, 2, 3]),
   passwordGatePropsCapture: {
     driveReady: undefined as boolean | undefined,
     driveEmail: undefined as string | null | undefined,
   },
+  // Mutable box so individual tests can make the mocked PasswordGate's onUnlock hand
+  // App.tsx a specific loadedState (e.g. one with priceSync.apiKey set), without
+  // changing the default (undefined) behavior the other tests rely on.
+  mockUnlockLoadedState: { current: undefined as unknown },
+}))
+
+vi.mock('./lib/priceSync', () => ({
+  runPriceSync: vi.fn().mockResolvedValue({
+    patch: { lastRun: { at: '2024-01-01T00:00:00Z', updatedCount: 0, notFound: [] } },
+    updatedPrices: {},
+  }),
 }))
 
 vi.mock('./lib/drive', () => ({
@@ -57,7 +68,11 @@ vi.mock('./components/PasswordGate', () => ({
     // Capture props for test verification
     passwordGatePropsCapture.driveReady = driveReady
     passwordGatePropsCapture.driveEmail = driveEmail
-    return <button onClick={() => onUnlock(mockSessionKey, mockSessionSalt, undefined)}>MockUnlock</button>
+    return (
+      <button onClick={() => onUnlock(mockSessionKey, mockSessionSalt, mockUnlockLoadedState.current)}>
+        MockUnlock
+      </button>
+    )
   },
 }))
 
@@ -575,5 +590,50 @@ describe('undo closed positions', () => {
 
     // Verify the closed position was deleted
     expect(state.closedPositions.length).toBe(0)
+  })
+})
+
+describe('price sync trigger', () => {
+  beforeEach(async () => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    const priceSyncModule = await import('./lib/priceSync')
+    vi.mocked(priceSyncModule.runPriceSync).mockClear()
+    vi.mocked(priceSyncModule.runPriceSync).mockResolvedValue({
+      patch: { lastRun: { at: '2024-01-01T00:00:00Z', updatedCount: 0, notFound: [] } },
+      updatedPrices: {},
+    })
+    mockUnlockLoadedState.current = undefined
+  })
+
+  afterEach(() => {
+    mockUnlockLoadedState.current = undefined
+  })
+
+  it('calls runPriceSync once when sessionKey transitions from null to set and isHydrated is true, given a priceSync apiKey', async () => {
+    let state = initialState()
+    state = appReducer(state, { type: 'SET_PRICE_SYNC_API_KEY', apiKey: 'test-key' })
+    mockUnlockLoadedState.current = state
+
+    const priceSyncModule = await import('./lib/priceSync')
+    const runPriceSyncMock = vi.mocked(priceSyncModule.runPriceSync)
+
+    await renderUnlockedApp()
+
+    await waitFor(() => {
+      expect(runPriceSyncMock).toHaveBeenCalledTimes(1)
+    })
+    expect(runPriceSyncMock.mock.calls[0][0]).toEqual(state.priceSync)
+  })
+
+  it('does not call runPriceSync when there is no priceSync apiKey set', async () => {
+    const priceSyncModule = await import('./lib/priceSync')
+    const runPriceSyncMock = vi.mocked(priceSyncModule.runPriceSync)
+
+    await renderUnlockedApp()
+
+    // Give any pending effect a tick to fire.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(runPriceSyncMock).not.toHaveBeenCalled()
   })
 })

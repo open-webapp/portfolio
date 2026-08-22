@@ -7,6 +7,8 @@ Directory structure, API contract, component tree, state management, data model,
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
   - Used by `PositionsTable.tsx` (passes `state.closedPositions`)
   - Used by `AccountsPage.tsx` (passes `acctFilteredClosedPositions(state)`)
+- `Settings.tsx` "Price Sync" tab (third `.seg-opt`, alongside Drive/Encryption) — masked (`type="password"`) Polygon.io API key input (commits on blur via `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button (disabled while fetching or no API key), last-run status text (`state.priceSync.lastRun`: date/time, updated count, not-found list, or "Never run")
+  - Shares its fetch/orchestration call with `App.tsx`'s on-load/on-focus effect: both call the same `runPriceSyncTrigger` `useCallback`, lifted from `App.tsx` and passed down as a prop; the button just wraps it with a local `fetchingPrices` loading state
 
 ## Data Flows
 
@@ -49,3 +51,21 @@ DriveRestorePanel → [Restore from Drive button clicked] → showPicker = true 
      └─ Error: alert shown; showPicker stays true, "Pick a file" can be clicked again to retry
 
 Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong backup-password submit), the cross-password prompt renders its own `DriveFilePickerDialog` ("Pick a file" button) inline — picking a file there re-attempts `restoreBackupFromFileId` with the newly picked file id, chaining into a fresh cross-password prompt if that also decrypts wrong. The original dialog's `showPicker` is cleared before this fallback appears (see above), so only one "Pick a file" button is ever on screen at a time.
+
+### Price Sync
+
+App load/tab-focus (or Settings "Fetch prices now") → `App.tsx`'s `runPriceSyncTrigger` → `priceSync.ts`'s
+`runPriceSync(state.priceSync, heldEquityEtfSymbols)` → `fetchGroupedDailyBars`
+(Polygon grouped-daily-bars, one call for the next business day after
+`lastFetchedDate`) → `marketDataDb.putBars` (ALL response tickers, unencrypted
+local cache, separate from `persist.ts`/Drive) + `RECORD_PRICE_SYNC_RUN` dispatch (advances `lastFetchedDate` +
+`heldPrices` only on non-empty response) → `UPDATE_POSITION` dispatch for
+each held Equity/ETF symbol found in the response.
+
+- No API key configured → no fetch attempted (`runPriceSyncTrigger` returns early).
+- Empty/error/malformed response → `lastFetchedDate` NOT advanced, every held symbol reported in `lastRun.notFound`, retried
+  on next trigger.
+- CSV Positions import after a same-day fetch already ran →
+  `positionsImport.ts` reapplies the cached `state.priceSync.heldPrices`
+  price over the freshly-imported CSV price for Equity/ETF positions when the cached price's date >= the import date
+  (API always wins for the same day or newer).

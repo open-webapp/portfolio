@@ -90,9 +90,19 @@ export function importPositions(
       ? [...oldPositions.filter((p) => !newSymbols.has(p.symbol)), ...newPositions]
       : newPositions
 
+  // Reapply any cached API price for held Equity/ETF positions so a fetched price
+  // isn't clobbered by a stale CSV price on a same-day (or later-dated) reimport.
+  const withApiPrices = finalAccountPositions.map((p) => {
+    const effectiveClass = p.assetClassManualOverride || p.assetClass
+    if (effectiveClass !== 'Equity' && effectiveClass !== 'ETF') return p
+    const cached = state.priceSync.heldPrices[p.symbol]
+    if (!cached || cached.date < importDate) return p
+    return { ...p, price: cached.price }
+  })
+
   const replacedPositions = [
     ...state.positions.filter((p) => p.accountId !== accountId),
-    ...finalAccountPositions,
+    ...withApiPrices,
   ]
 
   // (b) Diff old vs new symbols to create ClosedPosition[] (replace mode only —
@@ -147,7 +157,7 @@ export function importPositions(
   ]
 
   // (c) Upsert PortfolioSnapshot for (accountId, importDate)
-  const snapshotValue = finalAccountPositions.reduce((sum, p) => {
+  const snapshotValue = withApiPrices.reduce((sum, p) => {
     return sum + p.shares * p.price
   }, 0)
 

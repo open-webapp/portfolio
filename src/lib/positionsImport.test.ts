@@ -924,4 +924,147 @@ describe('positionsImport', () => {
     expect(goog[0].shares).toBe(20)
   })
 
+  // Price-sync reapply: cached API price for held Equity/ETF positions overrides a
+  // stale CSV price when the cache is fresh (>= importDate).
+  describe('price-sync reapply', () => {
+    it('reapplies a fresher cached API price over the CSV price (CSV-after-fetch race)', () => {
+      let state = initialState()
+      state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+      const accountId = state.accounts[0].id
+      state.priceSync = {
+        ...state.priceSync,
+        heldPrices: {
+          AAPL: { price: 200, date: '2026-08-21', fetchedAt: '2026-08-21T14:00:00.000Z' },
+        },
+      }
+
+      const newRows = [
+        { symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Equity', shares: '10', avgCost: '150', price: '195' },
+      ]
+
+      const result = importPositions(state, accountId, newRows, '2026-08-21')
+
+      const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+      expect(aapl!.price).toBe(200)
+      // Snapshot value should reflect the reapplied API price too
+      const snap = result.snapshots.find((s) => s.accountId === accountId && s.date === '2026-08-21')
+      expect(snap!.value).toBe(10 * 200)
+    })
+
+    it('ignores a cached price older than the import date, uses CSV price', () => {
+      let state = initialState()
+      state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+      const accountId = state.accounts[0].id
+      state.priceSync = {
+        ...state.priceSync,
+        heldPrices: {
+          AAPL: { price: 200, date: '2026-08-19', fetchedAt: '2026-08-19T14:00:00.000Z' },
+        },
+      }
+
+      const newRows = [
+        { symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Equity', shares: '10', avgCost: '150', price: '195' },
+      ]
+
+      const result = importPositions(state, accountId, newRows, '2026-08-21')
+
+      const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+      expect(aapl!.price).toBe(195)
+    })
+
+    it('ignores cached price for a non-Equity/ETF asset class', () => {
+      let state = initialState()
+      state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+      const accountId = state.accounts[0].id
+      state.priceSync = {
+        ...state.priceSync,
+        heldPrices: {
+          BOND1: { price: 200, date: '2026-08-21', fetchedAt: '2026-08-21T14:00:00.000Z' },
+        },
+      }
+
+      const newRows = [
+        { symbol: 'BOND1', name: 'Some Bond', assetClass: 'Fixed Income', shares: '10', avgCost: '90', price: '95' },
+      ]
+
+      const result = importPositions(state, accountId, newRows, '2026-08-21')
+
+      const bond = result.positions.find((p) => p.symbol === 'BOND1')
+      expect(bond!.price).toBe(95)
+    })
+
+    it('leaves price unchanged when symbol is not in heldPrices', () => {
+      let state = initialState()
+      state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+      const accountId = state.accounts[0].id
+      state.priceSync = {
+        ...state.priceSync,
+        heldPrices: {
+          MSFT: { price: 400, date: '2026-08-21', fetchedAt: '2026-08-21T14:00:00.000Z' },
+        },
+      }
+
+      const newRows = [
+        { symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Equity', shares: '10', avgCost: '150', price: '195' },
+      ]
+
+      const result = importPositions(state, accountId, newRows, '2026-08-21')
+
+      const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+      expect(aapl!.price).toBe(195)
+    })
+
+    it('honors assetClassManualOverride when computing effective class for the cache check', () => {
+      let state = initialState()
+      state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+      const accountId = state.accounts[0].id
+      // Pre-existing position with an Equity override, raw assetClass on the CSV row is
+      // something else (e.g. 'Other'); override should win when deciding to use the cache.
+      state.positions = [
+        {
+          id: 'pos-1',
+          accountId,
+          symbol: 'AAPL',
+          name: 'Apple Inc.',
+          assetClass: 'Other',
+          assetClassManualOverride: 'Equity',
+          shares: 5,
+          avgCost: 140,
+          price: 190,
+          lastImportedAt: '2026-01-01',
+        },
+      ]
+      state.priceSync = {
+        ...state.priceSync,
+        heldPrices: {
+          AAPL: { price: 200, date: '2026-08-21', fetchedAt: '2026-08-21T14:00:00.000Z' },
+        },
+      }
+
+      const newRows = [
+        { symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Other', shares: '10', avgCost: '150', price: '195' },
+      ]
+
+      const result = importPositions(state, accountId, newRows, '2026-08-21')
+
+      const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+      expect(aapl!.price).toBe(200)
+    })
+
+    it('does not affect imports when heldPrices is empty (regression guard)', () => {
+      let state = initialState()
+      state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+      const accountId = state.accounts[0].id
+      expect(state.priceSync.heldPrices).toEqual({})
+
+      const newRows = [
+        { symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Equity', shares: '10', avgCost: '150', price: '195' },
+      ]
+
+      const result = importPositions(state, accountId, newRows, '2026-08-21')
+
+      const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+      expect(aapl!.price).toBe(195)
+    })
+  })
 })

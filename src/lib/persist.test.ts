@@ -135,6 +135,14 @@ function fixtureState(): AppState {
     ],
     csvMappings: [],
     customInstitutions: [],
+    priceSync: {
+      apiKey: 'test-api-key',
+      lastFetchedDate: '2024-01-01',
+      heldPrices: {
+        AAPL: { price: 200, date: '2024-01-01', fetchedAt: '2024-01-01T00:00:00.000Z' },
+      },
+      lastRun: { at: '2024-01-01T00:00:00.000Z', updatedCount: 1, notFound: [] },
+    },
 
     // UI state
     view: 'accounts',
@@ -297,6 +305,28 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.expandedCategories).toEqual({ taxable: true })
       expect(loaded?.acctAssetClassFilter).toBe('Equities')
       expect(loaded?.acctPosSearch).toBe('aapl')
+    })
+
+    it('round-trips a populated priceSync unchanged', async () => {
+      const stateWithPriceSync: AppState = {
+        ...initialState(),
+        priceSync: {
+          apiKey: 'sk-live-abc123',
+          lastFetchedDate: '2024-03-15',
+          heldPrices: {
+            AAPL: { price: 195.5, date: '2024-03-15', fetchedAt: '2024-03-15T20:00:00.000Z' },
+            MSFT: { price: 420.1, date: '2024-03-15', fetchedAt: '2024-03-15T20:00:00.000Z' },
+          },
+          lastRun: { at: '2024-03-15T20:00:00.000Z', updatedCount: 2, notFound: ['ZZZZ'] },
+        },
+      }
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+
+      await savePersistedApp(stateWithPriceSync, key, salt)
+      const loaded = await loadPersistedApp(key)
+
+      expect(loaded?.priceSync).toEqual(stateWithPriceSync.priceSync)
     })
 
     it('round-trips non-default view', async () => {
@@ -727,6 +757,32 @@ describe('IndexedDB persistence', () => {
       expect(encryptedLoaded?.expandedCategories).toEqual({})
       expect(encryptedLoaded?.acctAssetClassFilter).toBe('All')
       expect(encryptedLoaded?.acctPosSearch).toBe('')
+    })
+
+    it('loads missing priceSync with defaults via both paths', async () => {
+      const minimalState: Partial<AppState> = {
+        accounts: [],
+        positions: [],
+        // priceSync intentionally omitted (blob predates this field)
+      }
+
+      await putRaw(minimalState)
+      const legacyLoaded = await loadLegacyPlaintextApp()
+      expect(legacyLoaded?.priceSync).toEqual(initialState().priceSync)
+      expect(legacyLoaded?.priceSync).toEqual({
+        apiKey: '',
+        lastFetchedDate: null,
+        heldPrices: {},
+        lastRun: null,
+      })
+
+      await clearDatabase()
+
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+      await savePersistedApp(minimalState as AppState, key, salt)
+      const encryptedLoaded = await loadPersistedApp(key)
+      expect(encryptedLoaded?.priceSync).toEqual(initialState().priceSync)
     })
   })
 

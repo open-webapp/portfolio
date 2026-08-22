@@ -65,6 +65,7 @@ const mockSetSyncing = vi.fn()
 const mockHandleConnect = vi.fn()
 const mockHandleDisconnect = vi.fn()
 const mockSetSettingsSection = vi.fn()
+const mockRunPriceSyncTrigger = vi.fn()
 
 const notConnectedAuthStatus: driveModule.DriveAuthStatus = {
   connected: false,
@@ -94,6 +95,7 @@ describe('SettingsPage', () => {
     // Default mocks
     mockPickFile.mockResolvedValue(null)
     mockEnsureFolderPath.mockResolvedValue('folder-portfolio')
+    mockRunPriceSyncTrigger.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -126,6 +128,7 @@ describe('SettingsPage', () => {
       handleDisconnect: mockHandleDisconnect,
       settingsSection: 'drive',
       setSettingsSection: mockSetSettingsSection,
+      runPriceSyncTrigger: mockRunPriceSyncTrigger,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -946,5 +949,82 @@ describe('SettingsPage', () => {
       expect(currentPasswordInputs[0].value).toBe('')
     })
 
+  })
+
+  describe('Price Sync', () => {
+    it('clicking the Price Sync tab shows the API key input and Fetch prices now button, and hides Drive/Encryption sections', () => {
+      renderSettings({ settingsSection: 'drive' })
+
+      const priceSyncInput = screen.getByLabelText('Price Sync') as HTMLInputElement
+      fireEvent.click(priceSyncInput)
+
+      expect(mockSetSettingsSection).toHaveBeenCalledWith('priceSync')
+    })
+
+    it('settingsSection="priceSync" shows the Price Sync card only', () => {
+      const { container } = renderSettings({ settingsSection: 'priceSync' })
+
+      expect(screen.getAllByText('Price Sync').length).toBeGreaterThan(0)
+      expect(screen.getByText('Polygon.io API Key')).toBeTruthy()
+      expect(container.querySelector('input[type="password"]')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Fetch prices now' })).toBeTruthy()
+      expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
+      expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
+    })
+
+    it('typing into the API key input then blurring dispatches SET_PRICE_SYNC_API_KEY with the typed value', () => {
+      const { container } = renderSettings({ settingsSection: 'priceSync' })
+
+      const apiKeyInput = container.querySelector('input[type="password"]') as HTMLInputElement
+      fireEvent.change(apiKeyInput, { target: { value: 'my-api-key' } })
+      fireEvent.blur(apiKeyInput)
+
+      expect(mockDispatch).toHaveBeenCalledWith({ type: 'SET_PRICE_SYNC_API_KEY', apiKey: 'my-api-key' })
+    })
+
+    it('Fetch prices now button is disabled when state.priceSync.apiKey is empty', () => {
+      const state = initialState()
+      state.priceSync.apiKey = ''
+      renderSettings({ state, settingsSection: 'priceSync' })
+
+      const button = screen.getByRole('button', { name: 'Fetch prices now' }) as HTMLButtonElement
+      expect(button.disabled).toBe(true)
+    })
+
+    it('clicking Fetch prices now (with apiKey set) calls the runPriceSyncTrigger prop', async () => {
+      const state = initialState()
+      state.priceSync.apiKey = 'my-api-key'
+      renderSettings({ state, settingsSection: 'priceSync' })
+
+      const button = screen.getByRole('button', { name: 'Fetch prices now' }) as HTMLButtonElement
+      expect(button.disabled).toBe(false)
+      fireEvent.click(button)
+
+      await waitFor(() => {
+        expect(mockRunPriceSyncTrigger).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    it('renders lastRun status text (date, updated count, not-found list) when populated', () => {
+      const state = initialState()
+      state.priceSync.apiKey = 'my-api-key'
+      state.priceSync.lastRun = {
+        at: '2026-08-22T12:00:00.000Z',
+        updatedCount: 3,
+        notFound: ['FOO', 'BAR'],
+      }
+      renderSettings({ state, settingsSection: 'priceSync' })
+
+      expect(screen.getByText(/3 updated/)).toBeTruthy()
+      expect(screen.getByText(/not found: FOO, BAR/)).toBeTruthy()
+    })
+
+    it('renders "Never run" when lastRun is null', () => {
+      const state = initialState()
+      state.priceSync.lastRun = null
+      renderSettings({ state, settingsSection: 'priceSync' })
+
+      expect(screen.getByText('Never run')).toBeTruthy()
+    })
   })
 })

@@ -18,8 +18,9 @@ export interface SettingsPageProps {
   setSyncing: (v: boolean) => void
   handleConnect: () => void
   handleDisconnect: () => void
-  settingsSection: 'drive' | 'encryption'
-  setSettingsSection: (s: 'drive' | 'encryption') => void
+  settingsSection: 'drive' | 'encryption' | 'priceSync'
+  setSettingsSection: (s: 'drive' | 'encryption' | 'priceSync') => void
+  runPriceSyncTrigger: () => Promise<void>
 }
 
 /**
@@ -40,6 +41,7 @@ export function SettingsPage({
   handleDisconnect,
   settingsSection,
   setSettingsSection,
+  runPriceSyncTrigger,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -49,6 +51,20 @@ export function SettingsPage({
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
   const [driveSyncWarning, setDriveSyncWarning] = useState<string | null>(null)
+
+  // Price Sync local state
+  const [apiKeyInput, setApiKeyInput] = useState(state.priceSync.apiKey)
+  const [fetchingPrices, setFetchingPrices] = useState(false)
+  const priceSync = state.priceSync
+
+  const handleFetchPricesNow = useCallback(async () => {
+    setFetchingPrices(true)
+    try {
+      await runPriceSyncTrigger()
+    } finally {
+      setFetchingPrices(false)
+    }
+  }, [runPriceSyncTrigger])
 
 
   const handleChangePassword = useCallback(async () => {
@@ -131,6 +147,16 @@ export function SettingsPage({
           />
           Encryption
         </label>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="settingsSection"
+            checked={settingsSection === 'priceSync'}
+            readOnly
+            onClick={() => setSettingsSection('priceSync')}
+          />
+          Price Sync
+        </label>
       </div>
       <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
 
@@ -205,6 +231,40 @@ export function SettingsPage({
         )}
         {driveSyncWarning && (
           <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
+        )}
+      </section>
+      )}
+
+      {/* Price Sync section */}
+      {settingsSection === 'priceSync' && (
+      <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Price Sync</div>
+        <div className="field">
+          <label>Polygon.io API Key</label>
+          <input
+            type="password"
+            className="input"
+            value={apiKeyInput}
+            onChange={(e) => setApiKeyInput(e.target.value)}
+            onBlur={() => dispatch({ type: 'SET_PRICE_SYNC_API_KEY', apiKey: apiKeyInput })}
+          />
+        </div>
+        <button
+          className="btn btn-primary blueprint"
+          disabled={fetchingPrices || !priceSync.apiKey}
+          onClick={handleFetchPricesNow}
+        >
+          {fetchingPrices ? 'Fetching prices...' : 'Fetch prices now'}
+        </button>
+        {priceSync.lastRun ? (
+          <p>
+            Last run: {new Date(priceSync.lastRun.at).toLocaleString()} —{' '}
+            {priceSync.lastRun.updatedCount} updated
+            {priceSync.lastRun.notFound.length > 0 &&
+              `, not found: ${priceSync.lastRun.notFound.join(', ')}`}
+          </p>
+        ) : (
+          <p>Never run</p>
         )}
       </section>
       )}

@@ -9,6 +9,8 @@ import {
   toggleCategoryExpanded,
   setAcctAssetClassFilter,
   setAcctPosSearch,
+  setPriceSyncApiKey,
+  recordPriceSyncRun,
 } from './state'
 import type { AppState } from './types'
 
@@ -528,6 +530,75 @@ describe('state helpers', () => {
 
       state = setAcctPosSearch(state, '')
       expect(state.acctPosSearch).toBe('')
+    })
+  })
+
+  describe('setPriceSyncApiKey', () => {
+    it('sets apiKey and leaves other priceSync fields untouched', () => {
+      const state: AppState = {
+        ...initialState(),
+        priceSync: {
+          apiKey: '',
+          lastFetchedDate: '2024-01-01',
+          heldPrices: { AAPL: { price: 180, date: '2024-01-01', fetchedAt: '2024-01-01T10:00:00Z' } },
+          lastRun: { at: '2024-01-01T10:00:00Z', updatedCount: 1, notFound: [] },
+        },
+      }
+
+      const result = setPriceSyncApiKey(state, 'sk-123')
+
+      expect(result.priceSync.apiKey).toBe('sk-123')
+      expect(result.priceSync.lastFetchedDate).toBe('2024-01-01')
+      expect(result.priceSync.heldPrices).toEqual(state.priceSync.heldPrices)
+      expect(result.priceSync.lastRun).toEqual(state.priceSync.lastRun)
+    })
+  })
+
+  describe('recordPriceSyncRun', () => {
+    it('applies a full patch (lastFetchedDate, heldPrices, lastRun) to priceSync', () => {
+      const state: AppState = {
+        ...initialState(),
+        priceSync: {
+          apiKey: 'sk-123',
+          lastFetchedDate: null,
+          heldPrices: {},
+          lastRun: null,
+        },
+      }
+
+      const patch = {
+        lastFetchedDate: '2024-02-01',
+        heldPrices: { AAPL: { price: 190, date: '2024-02-01', fetchedAt: '2024-02-01T10:00:00Z' } },
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [] },
+      }
+
+      const result = recordPriceSyncRun(state, patch)
+
+      expect(result.priceSync.lastFetchedDate).toBe('2024-02-01')
+      expect(result.priceSync.heldPrices).toEqual(patch.heldPrices)
+      expect(result.priceSync.lastRun).toEqual(patch.lastRun)
+    })
+
+    it('with only lastRun (empty/error-fetch case), leaves lastFetchedDate/heldPrices unchanged', () => {
+      const state: AppState = {
+        ...initialState(),
+        priceSync: {
+          apiKey: 'sk-123',
+          lastFetchedDate: '2024-01-15',
+          heldPrices: { MSFT: { price: 300, date: '2024-01-15', fetchedAt: '2024-01-15T10:00:00Z' } },
+          lastRun: null,
+        },
+      }
+
+      const patch = {
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 0, notFound: ['AAPL'] },
+      }
+
+      const result = recordPriceSyncRun(state, patch)
+
+      expect(result.priceSync.lastFetchedDate).toBe('2024-01-15')
+      expect(result.priceSync.heldPrices).toEqual(state.priceSync.heldPrices)
+      expect(result.priceSync.lastRun).toEqual(patch.lastRun)
     })
   })
 })

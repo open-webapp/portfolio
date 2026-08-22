@@ -52,6 +52,7 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     snapshots: loaded.snapshots ?? defaults.snapshots,
     csvMappings: loaded.csvMappings ?? defaults.csvMappings,
     customInstitutions: loaded.customInstitutions ?? defaults.customInstitutions,
+    priceSync: loaded.priceSync ?? defaults.priceSync,
 
     // UI state with existing values or defaults.
     // `view` is whitelisted rather than defaulted: blobs written before the
