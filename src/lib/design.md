@@ -7,8 +7,9 @@ Directory structure, API contract, component tree, state management, data model,
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
   - Used by `PositionsTable.tsx` (passes `state.closedPositions`)
   - Used by `AccountsPage.tsx` (passes `acctFilteredClosedPositions(state)`)
-- `Settings.tsx` "Price Sync" tab (third `.seg-opt`, alongside Drive/Encryption) — masked (`type="password"`) Polygon.io API key input (commits on blur via `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button + adjacent `type="date"` input (disabled while fetching; date optional — empty means auto-computed date), last-run status text (`state.priceSync.lastRun`: date/time, and either an error message (`lastRun.error`, e.g. invalid/unauthorized API key) or updated count + not-found list; "Never run" if no run yet)
+- `Settings.tsx` "Price Sync" tab (third `.seg-opt`, alongside Drive/Encryption) — masked (`type="password"`) Polygon.io API key input (commits on blur via `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button + adjacent `type="date"` input (disabled while fetching; date optional — empty means auto-computed date), last-run status text (`state.priceSync.lastRun`: date/time, and either an error message (`lastRun.error`, e.g. invalid/unauthorized API key) or `{marketTickerCount} tickers fetched from Polygon` + updated count + not-found list; "Never run" if no run yet)
   - Shares its fetch/orchestration call with `App.tsx`'s on-load/on-focus effect: both call the same `runPriceSyncTrigger` `useCallback`, lifted from `App.tsx` and passed down as a prop; the button just wraps it with a local `fetchingPrices` loading state, passing the local date-input value (or `undefined` if empty) as `runPriceSyncTrigger`'s optional `overrideDate` arg — the automatic on-load/on-focus calls always call it with no argument
+  - Price table below loads ALL cached tickers via `marketDataDb.getAllBars()` in a `useEffect` keyed on `priceSync.lastRun?.at` (re-reads after every sync run), merged with `heldPrices`/`lastRun.notFound` — not just held symbols
 
 ## Data Flows
 
@@ -58,8 +59,8 @@ App load/tab-focus (or Settings "Fetch prices now") → `App.tsx`'s `runPriceSyn
 `runPriceSync(state.priceSync, heldEquityEtfSymbols, overrideDate?)` → `fetchGroupedDailyBars`
 (Polygon grouped-daily-bars, one call for `overrideDate` if given, else the next business day after
 `lastFetchedDate`) → `marketDataDb.putBars` (ALL response tickers, unencrypted
-local cache, separate from `persist.ts`/Drive) + `RECORD_PRICE_SYNC_RUN` dispatch (advances `lastFetchedDate` +
-`heldPrices` only on non-empty response) → `UPDATE_POSITION` dispatch for
+local cache, separate from `persist.ts`/Drive, readable in full via `marketDataDb.getAllBars()`) + `RECORD_PRICE_SYNC_RUN` dispatch (advances `lastFetchedDate` +
+`heldPrices` + `lastRun.marketTickerCount` (total tickers in the Polygon response, 0 on empty/error) only on non-empty response) → `UPDATE_POSITION` dispatch for
 each held Equity/ETF symbol found in the response.
 
 - No API key configured → no fetch attempted (`runPriceSyncTrigger` returns early).

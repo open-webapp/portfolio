@@ -237,7 +237,7 @@ describe('appReducer', () => {
       const patch = {
         lastFetchedDate: '2024-02-01',
         heldPrices: { AAPL: { price: 190, date: '2024-02-01', fetchedAt: '2024-02-01T10:00:00Z' } },
-        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [] },
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 1 },
       }
 
       const resultFromReducer = appReducer(state, { type: 'RECORD_PRICE_SYNC_RUN', patch })

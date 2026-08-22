@@ -541,7 +541,7 @@ describe('state helpers', () => {
           apiKey: '',
           lastFetchedDate: '2024-01-01',
           heldPrices: { AAPL: { price: 180, date: '2024-01-01', fetchedAt: '2024-01-01T10:00:00Z' } },
-          lastRun: { at: '2024-01-01T10:00:00Z', updatedCount: 1, notFound: [] },
+          lastRun: { at: '2024-01-01T10:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 1 },
         },
       }
 
@@ -569,7 +569,7 @@ describe('state helpers', () => {
       const patch = {
         lastFetchedDate: '2024-02-01',
         heldPrices: { AAPL: { price: 190, date: '2024-02-01', fetchedAt: '2024-02-01T10:00:00Z' } },
-        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [] },
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 1 },
       }
 
       const result = recordPriceSyncRun(state, patch)
@@ -591,7 +591,7 @@ describe('state helpers', () => {
       }
 
       const patch = {
-        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 0, notFound: ['AAPL'] },
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 0, notFound: ['AAPL'], marketTickerCount: 0 },
       }
 
       const result = recordPriceSyncRun(state, patch)

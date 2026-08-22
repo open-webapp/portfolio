@@ -44,6 +44,21 @@ export async function getCachedBar(ticker: string): Promise<DailyBar | null> {
   }
 }
 
+export async function getAllBars(): Promise<DailyBar[]> {
+  const db = await openDb()
+  try {
+    return await new Promise<DailyBar[]>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly')
+      const store = transaction.objectStore(STORE_NAME)
+      const request = store.getAll()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result as DailyBar[])
+    })
+  } finally {
+    db.close()
+  }
+}
+
 export async function putBars(bars: DailyBar[]): Promise<void> {
   if (bars.length === 0) return
 

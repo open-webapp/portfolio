@@ -30,7 +30,8 @@ Settings > Price Sync tab (alongside Drive Sync and Change Encryption Password) 
 - **API Key field**: masked (password-style) input. Committed on blur (click/tab away), not on every keystroke.
 - **"Fetch prices now" button**: disabled while a fetch is in progress or when no API key is set. Label reads "Fetching prices..." while running.
 - **Date input** (next to the button): optional `YYYY-MM-DD` date picker. Empty (default): fetch uses the normal auto-computed next-business-day date. A date entered here fetches that exact date instead, bypassing the auto-computed date entirely — for backfilling a missed day or re-checking a specific date.
-- **Status text**: last run date/time, then either an error message (API request failed, e.g. invalid/unauthorized API key) or the count of positions updated plus a "not found" list of held symbols absent from that day's data. Shows "Never run" before the first fetch.
+- **Status text**: last run date/time, then either an error message (API request failed, e.g. invalid/unauthorized API key) or the total number of tickers Polygon returned for that day (market-wide, not just held symbols) plus the count of positions updated plus a "not found" list of held symbols absent from that day's data. Shows "Never run" before the first fetch.
+- **Price table**: lists every ticker cached locally from Polygon responses (market-wide — thousands of tickers, not just held positions), each tagged "Held" Yes/No; see `src/lib/design.md` for the row-merge logic.
 - No automatic or manual fetch happens at all until an API key is entered.
 
 ### Automatic Fetch (load + tab focus)

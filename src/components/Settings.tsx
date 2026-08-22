@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { AppState } from '../lib/state'
 import { getDriveAuthStatus, syncBackup } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
 import { fmtUSD } from '../lib/computations'
+import { getAllBars, type DailyBar } from '../lib/marketDataDb'
 import { DriveRestorePanel } from './DriveRestorePanel'
 
 export interface SettingsPageProps {
@@ -58,7 +59,20 @@ export function SettingsPage({
   const [fetchingPrices, setFetchingPrices] = useState(false)
   const [fetchDateInput, setFetchDateInput] = useState('')
   const [priceSyncSearch, setPriceSyncSearch] = useState('')
+  const [allBars, setAllBars] = useState<DailyBar[]>([])
   const priceSync = state.priceSync
+
+  // marketDataDb caches every ticker Polygon returns (not just held symbols) —
+  // reload it whenever a new sync run completes so the table below stays current.
+  useEffect(() => {
+    let cancelled = false
+    getAllBars().then((bars) => {
+      if (!cancelled) setAllBars(bars)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [priceSync.lastRun?.at])
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
@@ -276,6 +290,7 @@ export function SettingsPage({
               <span style={{ color: '#8a3c2e' }}>{priceSync.lastRun.error}</span>
             ) : (
               <>
+                {priceSync.lastRun.marketTickerCount.toLocaleString()} tickers fetched from Polygon —{' '}
                 {priceSync.lastRun.updatedCount} updated
                 {priceSync.lastRun.notFound.length > 0 &&
                   `, not found: ${priceSync.lastRun.notFound.join(', ')}`}
@@ -287,9 +302,11 @@ export function SettingsPage({
         )}
         {(() => {
           const notFoundSet = new Set(priceSync.lastRun?.notFound ?? [])
+          const barsByTicker = new Map(allBars.map((b) => [b.ticker, b]))
           const symbols = Array.from(new Set([
             ...Object.keys(priceSync.heldPrices),
             ...(priceSync.lastRun?.notFound ?? []),
+            ...allBars.map((b) => b.ticker),
           ])).sort((a, b) => a.localeCompare(b))
 
           if (symbols.length === 0) {
@@ -298,13 +315,18 @@ export function SettingsPage({
 
           const rows = symbols.map((symbol) => {
             const held = priceSync.heldPrices[symbol]
-            const status = notFoundSet.has(symbol) ? 'Not found' : 'OK'
+            const bar = barsByTicker.get(symbol)
+            const isHeld = symbol in priceSync.heldPrices || notFoundSet.has(symbol)
+            const status = notFoundSet.has(symbol) ? 'Not found' : isHeld ? 'OK' : 'Market'
+            const price = held?.price ?? bar?.close
+            const tradingDate = held?.date ?? bar?.date
             return {
               symbol,
               status,
-              price: held ? fmtUSD(held.price) : '—',
-              tradingDate: held
-                ? new Date(held.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+              held: isHeld ? 'Yes' : 'No',
+              price: price !== undefined ? fmtUSD(price) : '—',
+              tradingDate: tradingDate
+                ? new Date(tradingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                 : '—',
               fetchedAt: held ? new Date(held.fetchedAt).toLocaleString() : '—',
             }
@@ -312,7 +334,12 @@ export function SettingsPage({
 
           const q = priceSyncSearch.trim().toLowerCase()
           const filteredRows = q
-            ? rows.filter((r) => r.symbol.toLowerCase().includes(q) || r.status.toLowerCase().includes(q))
+            ? rows.filter(
+                (r) =>
+                  r.symbol.toLowerCase().includes(q) ||
+                  r.status.toLowerCase().includes(q) ||
+                  r.held.toLowerCase().includes(q)
+              )
             : rows
 
           return (
@@ -333,6 +360,7 @@ export function SettingsPage({
                       <th>Ticker</th>
                       <th>Price</th>
                       <th>Status</th>
+                      <th>Held</th>
                       <th>Trading Date</th>
                       <th>Fetched At</th>
                     </tr>
@@ -343,6 +371,7 @@ export function SettingsPage({
                         <td>{r.symbol}</td>
                         <td>{r.price}</td>
                         <td style={r.status === 'Not found' ? { color: '#8a3c2e' } : undefined}>{r.status}</td>
+                        <td>{r.held}</td>
                         <td>{r.tradingDate}</td>
                         <td>{r.fetchedAt}</td>
                       </tr>

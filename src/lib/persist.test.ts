@@ -141,7 +141,7 @@ function fixtureState(): AppState {
       heldPrices: {
         AAPL: { price: 200, date: '2024-01-01', fetchedAt: '2024-01-01T00:00:00.000Z' },
       },
-      lastRun: { at: '2024-01-01T00:00:00.000Z', updatedCount: 1, notFound: [] },
+      lastRun: { at: '2024-01-01T00:00:00.000Z', updatedCount: 1, notFound: [], marketTickerCount: 1 },
     },
 
     // UI state
@@ -317,7 +317,7 @@ describe('IndexedDB persistence', () => {
             AAPL: { price: 195.5, date: '2024-03-15', fetchedAt: '2024-03-15T20:00:00.000Z' },
             MSFT: { price: 420.1, date: '2024-03-15', fetchedAt: '2024-03-15T20:00:00.000Z' },
           },
-          lastRun: { at: '2024-03-15T20:00:00.000Z', updatedCount: 2, notFound: ['ZZZZ'] },
+          lastRun: { at: '2024-03-15T20:00:00.000Z', updatedCount: 2, notFound: ['ZZZZ'], marketTickerCount: 2 },
         },
       }
       const salt = generateSalt()

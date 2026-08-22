@@ -27,7 +27,7 @@ const { mockSessionKey, mockSessionSalt, passwordGatePropsCapture, mockUnlockLoa
 
 vi.mock('./lib/priceSync', () => ({
   runPriceSync: vi.fn().mockResolvedValue({
-    patch: { lastRun: { at: '2024-01-01T00:00:00Z', updatedCount: 0, notFound: [] } },
+    patch: { lastRun: { at: '2024-01-01T00:00:00Z', updatedCount: 0, notFound: [], marketTickerCount: 0 } },
     updatedPrices: {},
   }),
 }))
@@ -599,7 +599,7 @@ describe('price sync trigger', () => {
     const priceSyncModule = await import('./lib/priceSync')
     vi.mocked(priceSyncModule.runPriceSync).mockClear()
     vi.mocked(priceSyncModule.runPriceSync).mockResolvedValue({
-      patch: { lastRun: { at: '2024-01-01T00:00:00Z', updatedCount: 0, notFound: [] } },
+      patch: { lastRun: { at: '2024-01-01T00:00:00Z', updatedCount: 0, notFound: [], marketTickerCount: 0 } },
       updatedPrices: {},
     })
     mockUnlockLoadedState.current = undefined

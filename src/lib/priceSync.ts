@@ -99,7 +99,7 @@ export async function runPriceSync(
 
   if (!priceSync.apiKey) {
     return {
-      patch: { lastRun: { at: now, updatedCount: 0, notFound: [] } },
+      patch: { lastRun: { at: now, updatedCount: 0, notFound: [], marketTickerCount: 0 } },
       updatedPrices: {},
     }
   }
@@ -124,7 +124,7 @@ export async function runPriceSync(
     if (!isTodayNotYetPublished) {
       const error = err instanceof PolygonApiError ? err.message : 'Price sync failed'
       return {
-        patch: { lastRun: { at: now, updatedCount: 0, notFound: [], error } },
+        patch: { lastRun: { at: now, updatedCount: 0, notFound: [], marketTickerCount: 0, error } },
         updatedPrices: {},
       }
     }
@@ -136,7 +136,7 @@ export async function runPriceSync(
   // skipped, so the caller/UI can surface that nothing was updated.
   if (!results || results.length === 0) {
     return {
-      patch: { lastRun: { at: now, updatedCount: 0, notFound: [...heldEquityEtfSymbols] } },
+      patch: { lastRun: { at: now, updatedCount: 0, notFound: [...heldEquityEtfSymbols], marketTickerCount: 0 } },
       updatedPrices: {},
     }
   }
@@ -169,7 +169,12 @@ export async function runPriceSync(
     patch: {
       lastFetchedDate: targetDate,
       heldPrices: { ...priceSync.heldPrices, ...newHeldPrices },
-      lastRun: { at: now, updatedCount: Object.keys(newHeldPrices).length, notFound },
+      lastRun: {
+        at: now,
+        updatedCount: Object.keys(newHeldPrices).length,
+        notFound,
+        marketTickerCount: results.length,
+      },
     },
     updatedPrices,
   }
