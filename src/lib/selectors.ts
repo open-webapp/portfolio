@@ -281,6 +281,19 @@ export function heldEquityEtfSymbols(state: AppState): string[] {
 }
 
 /**
+ * Distinct symbols among held positions whose effective asset class is Mutual Fund.
+ */
+export function heldMutualFundSymbols(state: AppState): string[] {
+  return Array.from(
+    new Set(
+      state.positions
+        .filter((p) => (p.assetClassManualOverride || p.assetClass) === 'Mutual Fund')
+        .map((p) => p.symbol)
+    )
+  )
+}
+
+/**
  * Accounts page positions further filtered by acctAssetClassFilter and acctPosSearch.
  */
 export function acctFilteredPositions(state: AppState): Position[] {
@@ -350,5 +363,32 @@ export function acctAllocationTitle(state: AppState): string {
     return `Allocation — ${account?.name ?? ''}`
   }
   return 'Allocation — All Accounts'
+}
+
+export const ALPHAVANTAGE_DAILY_CALL_CAP = 25
+
+/** True if the last Polygon run left symbols unresolved, or a ticker-overview
+ *  fetch is currently failing — either means a retry is worth trying. */
+export function shouldRetryPolygonSync(
+  state: AppState,
+  tickerOverviewErrors: Record<string, string>
+): boolean {
+  const notFoundCount = state.priceSync.lastRun?.notFound.length ?? 0
+  return notFoundCount > 0 || Object.keys(tickerOverviewErrors).length > 0
+}
+
+/** True if any held mutual fund symbol has a stale (not-today) or missing
+ *  price AND today's Alphavantage call budget isn't exhausted yet. */
+export function shouldRetryMutualFundSync(
+  state: AppState,
+  today: string = new Date().toISOString().slice(0, 10)
+): boolean {
+  const budget = state.mutualFundSync.callBudget
+  const callsUsedToday = budget.date === today ? budget.callsUsed : 0
+  if (callsUsedToday >= ALPHAVANTAGE_DAILY_CALL_CAP) return false
+  return heldMutualFundSymbols(state).some((symbol) => {
+    const held = state.mutualFundSync.heldPrices[symbol]
+    return !held || held.fetchedAt.slice(0, 10) !== today
+  })
 }
 

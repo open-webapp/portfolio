@@ -106,3 +106,14 @@ export interface PriceSyncState {
   heldPrices: Record<string, HeldSymbolPrice>  // symbol -> latest price
   lastRun: PriceSyncLastRun | null
 }
+
+export interface MutualFundSyncState {
+  apiKey: string
+  heldPrices: Record<string, HeldSymbolPrice>
+  // notFound here means "symbols with no Alphavantage SYMBOL_SEARCH match
+  // this run". marketTickerCount is always 0 for mutual fund runs — not
+  // meaningful for Alphavantage's per-symbol API, reused type only for
+  // the shared shape.
+  lastRun: PriceSyncLastRun | null
+  callBudget: { date: string; callsUsed: number } // date: YYYY-MM-DD, resets callsUsed when stale
+}

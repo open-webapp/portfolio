@@ -11,6 +11,8 @@ import {
   setAcctPosSearch,
   setPriceSyncApiKey,
   recordPriceSyncRun,
+  setMutualFundSyncApiKey,
+  recordMutualFundSyncRun,
 } from './state'
 import type { AppState } from './types'
 
@@ -605,6 +607,88 @@ describe('state helpers', () => {
       expect(result.priceSync.lastFetchedDate).toBe('2024-01-15')
       expect(result.priceSync.heldPrices).toEqual(state.priceSync.heldPrices)
       expect(result.priceSync.lastRun).toEqual(patch.lastRun)
+    })
+  })
+
+  describe('setMutualFundSyncApiKey', () => {
+    it('sets apiKey and leaves other mutualFundSync fields untouched', () => {
+      const state: AppState = {
+        ...initialState(),
+        mutualFundSync: {
+          apiKey: '',
+          heldPrices: { VFIAX: { price: 450, date: '2024-01-01', fetchedAt: '2024-01-01T10:00:00Z' } },
+          lastRun: { at: '2024-01-01T10:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 0 },
+          callBudget: { date: '2024-01-01', callsUsed: 3 },
+        },
+      }
+
+      const result = setMutualFundSyncApiKey(state, 'sk-mf-123')
+
+      expect(result.mutualFundSync.apiKey).toBe('sk-mf-123')
+      expect(result.mutualFundSync.heldPrices).toEqual(state.mutualFundSync.heldPrices)
+      expect(result.mutualFundSync.lastRun).toEqual(state.mutualFundSync.lastRun)
+      expect(result.mutualFundSync.callBudget).toEqual(state.mutualFundSync.callBudget)
+    })
+  })
+
+  describe('recordMutualFundSyncRun', () => {
+    it('applies a full patch (heldPrices, lastRun, callBudget) to mutualFundSync', () => {
+      const state: AppState = {
+        ...initialState(),
+        mutualFundSync: {
+          apiKey: 'sk-mf-123',
+          heldPrices: {},
+          lastRun: null,
+          callBudget: { date: '', callsUsed: 0 },
+        },
+      }
+
+      const patch = {
+        heldPrices: { VFIAX: { price: 460, date: '2024-02-01', fetchedAt: '2024-02-01T10:00:00Z' } },
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 0 },
+        callBudget: { date: '2024-02-01', callsUsed: 1 },
+      }
+
+      const result = recordMutualFundSyncRun(state, patch)
+
+      expect(result.mutualFundSync.heldPrices).toEqual(patch.heldPrices)
+      expect(result.mutualFundSync.lastRun).toEqual(patch.lastRun)
+      expect(result.mutualFundSync.callBudget).toEqual(patch.callBudget)
+    })
+
+    it('with no heldPrices in patch, leaves existing heldPrices unchanged while updating lastRun/callBudget', () => {
+      const state: AppState = {
+        ...initialState(),
+        mutualFundSync: {
+          apiKey: 'sk-mf-123',
+          heldPrices: { VBTLX: { price: 10, date: '2024-01-15', fetchedAt: '2024-01-15T10:00:00Z' } },
+          lastRun: null,
+          callBudget: { date: '2024-01-15', callsUsed: 2 },
+        },
+      }
+
+      const patch = {
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 0, notFound: ['SWPPX'], marketTickerCount: 0 },
+        callBudget: { date: '2024-02-01', callsUsed: 1 },
+      }
+
+      const result = recordMutualFundSyncRun(state, patch)
+
+      expect(result.mutualFundSync.heldPrices).toEqual(state.mutualFundSync.heldPrices)
+      expect(result.mutualFundSync.lastRun).toEqual(patch.lastRun)
+      expect(result.mutualFundSync.callBudget).toEqual(patch.callBudget)
+    })
+  })
+
+  describe('initialState mutualFundSync', () => {
+    it('defaults to empty apiKey, heldPrices, null lastRun, and zeroed callBudget', () => {
+      const state = initialState()
+      expect(state.mutualFundSync).toEqual({
+        apiKey: '',
+        heldPrices: {},
+        lastRun: null,
+        callBudget: { date: '', callsUsed: 0 },
+      })
     })
   })
 })

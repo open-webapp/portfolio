@@ -21,6 +21,9 @@ export interface SettingsPageProps {
   settingsSection: 'drive' | 'encryption' | 'priceSync'
   setSettingsSection: (s: 'drive' | 'encryption' | 'priceSync') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
+  runMutualFundSyncTrigger: () => Promise<void>
+  tickerOverviewErrors: Record<string, string>
+  mutualFundSyncErrors: Record<string, string>
 }
 
 /**
@@ -42,6 +45,9 @@ export function SettingsPage({
   settingsSection,
   setSettingsSection,
   runPriceSyncTrigger,
+  runMutualFundSyncTrigger,
+  tickerOverviewErrors,
+  mutualFundSyncErrors,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -57,6 +63,9 @@ export function SettingsPage({
   const [fetchingPrices, setFetchingPrices] = useState(false)
   const [fetchDateInput, setFetchDateInput] = useState('')
   const priceSync = state.priceSync
+  const [mfApiKeyInput, setMfApiKeyInput] = useState(state.mutualFundSync.apiKey)
+  const [fetchingMutualFunds, setFetchingMutualFunds] = useState(false)
+  const mutualFundSync = state.mutualFundSync
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
@@ -66,6 +75,15 @@ export function SettingsPage({
       setFetchingPrices(false)
     }
   }, [runPriceSyncTrigger, fetchDateInput])
+
+  const handleFetchMutualFundPricesNow = useCallback(async () => {
+    setFetchingMutualFunds(true)
+    try {
+      await runMutualFundSyncTrigger()
+    } finally {
+      setFetchingMutualFunds(false)
+    }
+  }, [runMutualFundSyncTrigger])
 
 
   const handleChangePassword = useCallback(async () => {
@@ -284,6 +302,55 @@ export function SettingsPage({
         ) : (
           <p>Never run</p>
         )}
+        {Object.keys(tickerOverviewErrors).length > 0 && (
+          <ul className="error-list" style={{ color: '#8a3c2e' }}>
+            {Object.entries(tickerOverviewErrors).map(([symbol, message]) => (
+              <li key={symbol}>{symbol}: {message}</li>
+            ))}
+          </ul>
+        )}
+        <div style={{ marginTop: 'var(--space-5)', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--border-color, #ddd)' }}>
+          <div className="field">
+            <label>Alphavantage API Key (Mutual Funds)</label>
+            <input
+              type="password"
+              className="input"
+              value={mfApiKeyInput}
+              onChange={(e) => setMfApiKeyInput(e.target.value)}
+              onBlur={() => dispatch({ type: 'SET_MUTUAL_FUND_SYNC_API_KEY', apiKey: mfApiKeyInput })}
+            />
+          </div>
+          <button
+            className="btn btn-primary blueprint"
+            disabled={fetchingMutualFunds || !mutualFundSync.apiKey}
+            onClick={handleFetchMutualFundPricesNow}
+          >
+            {fetchingMutualFunds ? 'Fetching mutual fund prices...' : 'Fetch mutual fund prices now'}
+          </button>
+          {mutualFundSync.lastRun ? (
+            <p>
+              Last run: {new Date(mutualFundSync.lastRun.at).toLocaleString()} —{' '}
+              {mutualFundSync.lastRun.error ? (
+                <span style={{ color: '#8a3c2e' }}>{mutualFundSync.lastRun.error}</span>
+              ) : (
+                <>
+                  {mutualFundSync.lastRun.updatedCount} updated
+                  {mutualFundSync.lastRun.notFound.length > 0 &&
+                    `, not found: ${mutualFundSync.lastRun.notFound.join(', ')}`}
+                </>
+              )}
+            </p>
+          ) : (
+            <p>Never run</p>
+          )}
+          {Object.keys(mutualFundSyncErrors).length > 0 && (
+            <ul className="error-list" style={{ color: '#8a3c2e' }}>
+              {Object.entries(mutualFundSyncErrors).map(([symbol, message]) => (
+                <li key={symbol}>{symbol}: {message}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
       )}
     </div>

@@ -9,10 +9,13 @@ import { QuotesPage } from './components/QuotesPage'
 import { PasswordGate } from './components/PasswordGate'
 import { drive, getDriveAuthStatus, getBackupFileId, syncBackup, ensureFreshConnection } from './lib/drive'
 import { runPriceSync } from './lib/priceSync'
-import { heldEquityEtfSymbols } from './lib/selectors'
+import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync } from './lib/selectors'
 import { syncTickerOverviews } from './lib/tickerOverview'
+import { runMutualFundSync } from './lib/mutualFundSync'
 import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
+
+const SYNC_RETRY_POLL_INTERVAL_MS = 60_000
 
 /**
  * App: Main component that wires everything together.
@@ -39,6 +42,7 @@ function App() {
   const [driveEmail, setDriveEmail] = useState<string | null>(null)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
   const [tickerOverviewErrors, setTickerOverviewErrors] = useState<Record<string, string>>({})
+  const [mutualFundSyncErrors, setMutualFundSyncErrors] = useState<Record<string, string>>({})
 
   // Which section of the Settings page is active
   const [settingsSection, setSettingsSection] = useState<'drive' | 'encryption' | 'priceSync'>('drive')
@@ -50,6 +54,7 @@ function App() {
   // minutes for a large portfolio, so a mount+focus retrigger mid-run must
   // no-op rather than starting a second overlapping loop.
   const tickerSyncInFlightRef = useRef(false)
+  const mutualFundSyncInFlightRef = useRef(false)
   // Latest state + hydration flag, so a flush-on-unmount can save even when the debounce hasn't fired
   const latestStateRef = useRef(state)
   latestStateRef.current = state
@@ -147,6 +152,32 @@ function App() {
     }
   }, [])
 
+  // Mutual-fund price-sync trigger: fetches held mutual fund NAVs on mount + on tab focus.
+  const runMutualFundSyncTrigger = useCallback(async () => {
+    const current = latestStateRef.current
+    if (!current.mutualFundSync.apiKey) return
+    if (mutualFundSyncInFlightRef.current) return
+    mutualFundSyncInFlightRef.current = true
+    try {
+      const heldSymbols = heldMutualFundSymbols(current)
+      const { patch } = await runMutualFundSync(
+        current.mutualFundSync,
+        heldSymbols,
+        current.positions,
+        dispatch,
+        (symbol, message) => setMutualFundSyncErrors((prev) => ({ ...prev, [symbol]: message })),
+        (symbol) => setMutualFundSyncErrors((prev) => {
+          const next = { ...prev }
+          delete next[symbol]
+          return next
+        })
+      )
+      dispatch({ type: 'RECORD_MUTUAL_FUND_SYNC_RUN', patch })
+    } finally {
+      mutualFundSyncInFlightRef.current = false
+    }
+  }, [])
+
   useEffect(() => {
     if (sessionKey === null || !isHydrated) return
 
@@ -158,6 +189,33 @@ function App() {
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [sessionKey, isHydrated, runPriceSyncTrigger])
+
+  useEffect(() => {
+    if (sessionKey === null || !isHydrated) return
+    runMutualFundSyncTrigger()
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') runMutualFundSyncTrigger()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [sessionKey, isHydrated, runMutualFundSyncTrigger])
+
+  // Retry-interval poll: periodically retries Polygon/mutual-fund syncs that
+  // failed or were left incomplete (e.g. rate-limited), without hammering on
+  // every tick — the shouldRetry* selectors gate whether a retry is due.
+  useEffect(() => {
+    if (sessionKey === null || !isHydrated) return
+    const id = setInterval(() => {
+      const current = latestStateRef.current
+      if (!tickerSyncInFlightRef.current && shouldRetryPolygonSync(current, tickerOverviewErrors)) {
+        runPriceSyncTrigger()
+      }
+      if (!mutualFundSyncInFlightRef.current && shouldRetryMutualFundSync(current)) {
+        runMutualFundSyncTrigger()
+      }
+    }, SYNC_RETRY_POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [sessionKey, isHydrated, runPriceSyncTrigger, runMutualFundSyncTrigger, tickerOverviewErrors])
 
   // Check Drive connection status once unlocked (never opens a Google auth window)
   useEffect(() => {
@@ -396,6 +454,9 @@ function App() {
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
               runPriceSyncTrigger={runPriceSyncTrigger}
+              runMutualFundSyncTrigger={runMutualFundSyncTrigger}
+              tickerOverviewErrors={tickerOverviewErrors}
+              mutualFundSyncErrors={mutualFundSyncErrors}
             />
           </div>
         )}

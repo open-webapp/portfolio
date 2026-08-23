@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AppState } from '../lib/state'
-import { heldEquityEtfSymbols } from '../lib/selectors'
+import { heldEquityEtfSymbols, heldMutualFundSymbols } from '../lib/selectors'
 import { fmtUSD } from '../lib/computations'
 import { getAllBars, getAllTickerOverviews, type DailyBar, type TickerOverview } from '../lib/marketDataDb'
 
@@ -32,21 +32,27 @@ export function QuotesPage({ state, dispatch: _dispatch, tickerOverviewErrors }:
     return () => {
       cancelled = true
     }
-  }, [priceSync.lastRun?.at])
+  }, [priceSync.lastRun?.at, state.mutualFundSync.lastRun?.at])
 
-  const symbols = heldEquityEtfSymbols(state).sort((a, b) => a.localeCompare(b))
+  const equityEtfSymbols = heldEquityEtfSymbols(state).sort((a, b) => a.localeCompare(b))
+  const mutualFundSymbols = heldMutualFundSymbols(state).sort((a, b) => a.localeCompare(b))
   const barByTicker = new Map(allBars.map((b) => [b.ticker, b]))
   const overviewByTicker = new Map(allOverviews.map((o) => [o.ticker, o]))
   const notFoundSet = new Set(priceSync.lastRun?.notFound ?? [])
+  const mfNotFoundSet = new Set(state.mutualFundSync.lastRun?.notFound ?? [])
+  const today = new Date().toISOString().slice(0, 10)
 
-  const rows = symbols.map((symbol) => {
+  const equityEtfRows = equityEtfSymbols.map((symbol) => {
     const held = priceSync.heldPrices[symbol]
     const bar = barByTicker.get(symbol)
     const overview = overviewByTicker.get(symbol)
     const status = notFoundSet.has(symbol) ? 'Not found' : held ? 'OK' : 'Not found'
     const price = held?.price ?? bar?.close
+    const position = state.positions.find((p) => p.symbol === symbol)
+    const assetClass = position ? position.assetClassManualOverride || position.assetClass : '—'
     return {
       symbol,
+      assetClass,
       name: overview?.name ?? '—',
       status,
       price: price !== undefined ? fmtUSD(price) : '—',
@@ -55,9 +61,35 @@ export function QuotesPage({ state, dispatch: _dispatch, tickerOverviewErrors }:
         bar && Number.isFinite(bar.t)
           ? new Date(bar.t).toISOString().slice(0, 19).replace('T', ' ') + ' UTC'
           : '—',
-      sicDescription: overview?.sicDescription ?? '—',
+      sicDescription: overview?.sicDescription || '—',
     }
   })
+
+  const mutualFundRows = mutualFundSymbols.map((symbol) => {
+    const mfHeld = state.mutualFundSync.heldPrices[symbol]
+    const bar = barByTicker.get(symbol)
+    const overview = overviewByTicker.get(symbol)
+    const status = mfNotFoundSet.has(symbol)
+      ? 'Not found'
+      : mfHeld && mfHeld.fetchedAt.slice(0, 10) === today
+        ? 'OK'
+        : 'Pending'
+    return {
+      symbol,
+      assetClass: 'Mutual Fund',
+      name: overview?.name ?? '—',
+      status,
+      price: mfHeld?.price !== undefined ? fmtUSD(mfHeld.price) : '—',
+      held: 'Yes',
+      lastUpdated:
+        bar && Number.isFinite(bar.t)
+          ? new Date(bar.t).toISOString().slice(0, 19).replace('T', ' ') + ' UTC'
+          : '—',
+      sicDescription: overview?.sicDescription || '—',
+    }
+  })
+
+  const rows = [...equityEtfRows, ...mutualFundRows].sort((a, b) => a.symbol.localeCompare(b.symbol))
 
   const q = search.trim().toLowerCase()
   const filteredRows = q
@@ -66,7 +98,8 @@ export function QuotesPage({ state, dispatch: _dispatch, tickerOverviewErrors }:
           r.symbol.toLowerCase().includes(q) ||
           r.name.toLowerCase().includes(q) ||
           r.status.toLowerCase().includes(q) ||
-          r.sicDescription.toLowerCase().includes(q)
+          r.sicDescription.toLowerCase().includes(q) ||
+          r.assetClass.toLowerCase().includes(q)
       )
     : rows
 
@@ -80,7 +113,7 @@ export function QuotesPage({ state, dispatch: _dispatch, tickerOverviewErrors }:
       {failedTickers.length > 0 && (
         <p style={{ color: '#8a3c2e' }}>Could not fetch name for: {failedTickers.join(', ')}</p>
       )}
-      {symbols.length === 0 ? (
+      {rows.length === 0 ? (
         <p>No holdings to show.</p>
       ) : (
         <>
@@ -98,6 +131,7 @@ export function QuotesPage({ state, dispatch: _dispatch, tickerOverviewErrors }:
               <thead>
                 <tr>
                   <th>Ticker</th>
+                  <th>Asset Class</th>
                   <th>Name</th>
                   <th>Status</th>
                   <th>Price</th>
@@ -110,6 +144,7 @@ export function QuotesPage({ state, dispatch: _dispatch, tickerOverviewErrors }:
                 {filteredRows.map((r) => (
                   <tr key={r.symbol}>
                     <td>{r.symbol}</td>
+                    <td>{r.assetClass}</td>
                     <td>{r.name}</td>
                     <td style={r.status === 'Not found' ? { color: '#8a3c2e' } : undefined}>{r.status}</td>
                     <td>{r.price}</td>

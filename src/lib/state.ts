@@ -7,6 +7,7 @@ import type {
   TaxCategory,
   SavedCsvMapping,
   PriceSyncState,
+  MutualFundSyncState,
   HeldSymbolPrice,
   PriceSyncLastRun,
 } from './types'
@@ -22,6 +23,7 @@ export interface AppState {
   csvMappings: SavedCsvMapping[]
   customInstitutions: string[]
   priceSync: PriceSyncState
+  mutualFundSync: MutualFundSyncState
 
   // UI state
   view: 'settings' | 'accounts' | 'quotes'
@@ -61,6 +63,7 @@ export function initialState(): AppState {
       heldPrices: {},
       lastRun: null,
     },
+    mutualFundSync: { apiKey: '', heldPrices: {}, lastRun: null, callBudget: { date: '', callsUsed: 0 } },
 
     // UI state
     view: 'accounts',
@@ -152,6 +155,29 @@ export function recordPriceSyncRun(
       lastFetchedDate: patch.lastFetchedDate ?? state.priceSync.lastFetchedDate,
       heldPrices: patch.heldPrices ?? state.priceSync.heldPrices,
       lastRun: patch.lastRun,
+    },
+  }
+}
+
+export function setMutualFundSyncApiKey(state: AppState, apiKey: string): AppState {
+  return { ...state, mutualFundSync: { ...state.mutualFundSync, apiKey } }
+}
+
+export function recordMutualFundSyncRun(
+  state: AppState,
+  patch: {
+    heldPrices?: Record<string, HeldSymbolPrice>
+    lastRun: PriceSyncLastRun
+    callBudget: { date: string; callsUsed: number }
+  }
+): AppState {
+  return {
+    ...state,
+    mutualFundSync: {
+      ...state.mutualFundSync,
+      heldPrices: patch.heldPrices ?? state.mutualFundSync.heldPrices,
+      lastRun: patch.lastRun,
+      callBudget: patch.callBudget,
     },
   }
 }

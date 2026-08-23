@@ -28,6 +28,8 @@ export type AppAction =
   | { type: 'SET_ACCT_POS_SEARCH'; search: string }
   | { type: 'SET_PRICE_SYNC_API_KEY'; apiKey: string }
   | { type: 'RECORD_PRICE_SYNC_RUN'; patch: any }
+  | { type: 'SET_MUTUAL_FUND_SYNC_API_KEY'; apiKey: string }
+  | { type: 'RECORD_MUTUAL_FUND_SYNC_RUN'; patch: any }
 
 /**
  * Reducer function that handles all state mutations.
@@ -120,6 +122,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'RECORD_PRICE_SYNC_RUN':
       return StateActions.recordPriceSyncRun(state, action.patch)
+
+    case 'SET_MUTUAL_FUND_SYNC_API_KEY':
+      return StateActions.setMutualFundSyncApiKey(state, action.apiKey)
+
+    case 'RECORD_MUTUAL_FUND_SYNC_RUN':
+      return StateActions.recordMutualFundSyncRun(state, action.patch)
 
     default:
       return state
