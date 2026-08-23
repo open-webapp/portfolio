@@ -46,9 +46,18 @@ export async function fetchTickerOverview(
     `https://api.polygon.io/v3/reference/tickers/${ticker}?apiKey=${apiKey}`
   )
   if (res.status === 429) throw new TickerOverviewRateLimitError()
-  if (!res.ok) throw new Error(`Polygon ticker overview error: ${res.status}`)
-  const json = await res.json()
+  // Polygon reports an unknown ticker as `status: "NOT_FOUND"` in the body,
+  // but the HTTP status carrying that body isn't reliably 200 — check the
+  // body before the ok-gate below, or a 404-with-NOT_FOUND response falls
+  // into the generic Error branch and is never cached, retrying forever.
+  let json: any = null
+  try {
+    json = await res.json()
+  } catch {
+    json = null
+  }
   if (json?.status === 'NOT_FOUND') throw new TickerOverviewNotFoundError()
+  if (!res.ok) throw new Error(`Polygon ticker overview error: ${res.status}`)
   const name = json?.results?.name
   const sicDescription = json?.results?.sic_description
   if (typeof name !== 'string') {

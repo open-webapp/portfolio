@@ -72,9 +72,11 @@ symbol not already in the `ticker_overviews` `marketDataDb` cache, fetches Polyg
 dispatches `UPDATE_POSITION` (`patch: { name }`) for every matching held position. `results.sic_description`
 is optional in Polygon's response (ETF/fund tickers, e.g. `SCHD`, omit it — only company tickers carry a SIC
 classification); `fetchTickerOverview` requires only `results.name`, defaulting `sicDescription` to `''` when
-absent, so an ETF response is never treated as malformed. A `status: "NOT_FOUND"` body (`GET` succeeds but
-Polygon doesn't recognize the ticker) throws `TickerOverviewNotFoundError`, distinct from a malformed/network
-failure: the caller caches it as `{ name: '', sicDescription: '', notFound: true }` and calls `onError` once —
+absent, so an ETF response is never treated as malformed. A `status: "NOT_FOUND"` body (Polygon doesn't
+recognize the ticker) throws `TickerOverviewNotFoundError`, checked before the HTTP-status gate since Polygon
+doesn't reliably return 200 for this body (a non-2xx NOT_FOUND response must still be detected, not swallowed
+into the generic non-2xx Error branch below it). Distinct from a malformed/network failure: the caller caches
+it as `{ name: '', sicDescription: '', notFound: true }` and calls `onError` once —
 `notFound: true` cache entries are treated as a cache hit on every later call, so the ticker is never
 refetched. Other per-ticker fetch/parse failures are caught and never rethrown, never touch `priceSync` state,
 leave the ticker uncached (retried on a future call), and are surfaced only via `tickerOverviewErrors` —
@@ -118,6 +120,11 @@ successful name fetch, mirroring `tickerOverview.ts`'s pattern.
   sync (see Price Sync above), writing `{ name, sicDescription: '' }` — Alphavantage has no SIC-equivalent
   field. `QuotesPage.tsx` reads this cache for both Equity/ETF and Mutual Fund rows, so the `||` (not `??`)
   fallback on `sicDescription` matters here: a mutual fund's cached-but-empty string must still render `—`.
+  A `SYMBOL_SEARCH` call with no match caches `{ name: '', sicDescription: '', notFound: true }` (same
+  `notFound: true` sentinel as Polygon's `TickerOverviewNotFoundError` path) and calls `onError` once — never
+  refetched on a later run, same cache-hit-skips-fetch behavior as the Polygon side. The cached not-found
+  status is still added to that run's `lastRun.notFound` even when the cache hit means no fetch happens, so
+  the Quotes page's "Not found" status keeps showing for it.
 - **Daily call budget**: Alphavantage's free tier caps at `ALPHAVANTAGE_DAILY_CALL_CAP = 25` calls/day
   (`mutualFundSync.ts` and `selectors.ts` each define the constant; a comment cross-references the other to
   keep them in sync). Spent budget is tracked in `mutualFundSync.callBudget: { date, callsUsed }`, reset when

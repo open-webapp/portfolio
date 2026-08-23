@@ -400,7 +400,7 @@ describe('mutualFundSync', () => {
       })
     })
 
-    it('not-found name: reported in lastRun.notFound, nothing cached, no onError call', async () => {
+    it('not-found name: reported in lastRun.notFound, cached permanently, never retried again', async () => {
       const fetchMock = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes('function=SYMBOL_SEARCH')) {
           return jsonResponse({ bestMatches: [] })
@@ -419,8 +419,21 @@ describe('mutualFundSync', () => {
       const { patch } = await runMutualFundSync(state, ['VTSAX'], [makePosition('VTSAX')], dispatch, onError)
 
       expect(patch.lastRun.notFound).toContain('VTSAX')
-      expect(await getTickerOverview('VTSAX')).toBeNull()
-      expect(onError).not.toHaveBeenCalled()
+      expect(await getTickerOverview('VTSAX')).toMatchObject({ ticker: 'VTSAX', notFound: true })
+      expect(onError).toHaveBeenCalledWith('VTSAX', 'Not found')
+
+      // A later run must not re-fetch the name — cache hit skips it, and the
+      // cached not-found status still surfaces in this run's notFound list.
+      fetchMock.mockClear()
+      const { patch: patch2 } = await runMutualFundSync(
+        { ...state, heldPrices: patch.heldPrices },
+        ['VTSAX'],
+        [makePosition('VTSAX')],
+        dispatch,
+        onError
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(patch2.lastRun.notFound).toContain('VTSAX')
     })
 
     it('rate limit then success on name fetch: retries after backoff sleep', async () => {

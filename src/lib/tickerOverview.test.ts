@@ -164,6 +164,25 @@ describe('tickerOverview', () => {
 
       await expect(fetchTickerOverview('BOGUS', 'key')).rejects.toThrow(TickerOverviewNotFoundError)
     })
+
+    it('status NOT_FOUND on a non-2xx HTTP response still throws TickerOverviewNotFoundError, not a generic Error', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          jsonResponse(
+            {
+              status: 'NOT_FOUND',
+              request_id: '9277c7578bd29619724469ab42b87ca5',
+              message: 'Ticker not found.',
+            },
+            false,
+            404
+          )
+        )
+      )
+
+      await expect(fetchTickerOverview('BOGUS', 'key')).rejects.toThrow(TickerOverviewNotFoundError)
+    })
   })
 
   describe('syncTickerOverviews', () => {

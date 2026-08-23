@@ -128,6 +128,7 @@ export async function runMutualFundSync(
     if (budgetExhausted) continue
 
     const cachedOverview = await getTickerOverview(symbol)
+    if (cachedOverview?.notFound) notFound.push(symbol)
     const heldPrice = newHeldPrices[symbol]
     let needsName = !cachedOverview
     let needsPrice = !heldPrice || heldPrice.fetchedAt.slice(0, 10) !== today
@@ -147,7 +148,9 @@ export async function runMutualFundSync(
           }
           onSuccess?.(symbol)
         } else {
+          await putTickerOverview({ ticker: symbol, name: '', sicDescription: '', fetchedAt: now, notFound: true })
           notFound.push(symbol)
+          onError(symbol, 'Not found')
         }
         needsName = false
       } catch (err) {

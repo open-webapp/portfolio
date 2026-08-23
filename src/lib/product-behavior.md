@@ -85,7 +85,7 @@ The "Fetch mutual fund prices now" button runs the identical fetch/update logic 
 
 ### Name and Price Lookup
 
-- **Name lookup** (Alphavantage SYMBOL_SEARCH): once per symbol, ever. Result is cached in the same `ticker_overviews` store Polygon uses, with an empty SIC description (Alphavantage doesn't provide one).
+- **Name lookup** (Alphavantage SYMBOL_SEARCH): once per symbol, ever. Result is cached in the same `ticker_overviews` store Polygon uses, with an empty SIC description (Alphavantage doesn't provide one). A no-match result is also cached (permanently not-found) and never retried — same as the Polygon not-found behavior below.
 - **Price lookup** (Alphavantage TIME_SERIES_DAILY): once per symbol per calendar day.
 - `Position.price` is never updated by this sync (out of scope) — only `Position.name`.
 
@@ -119,7 +119,7 @@ Nav has a "Quotes" tab next to "Accounts". Full-page, read-only table of current
 
 - Runs automatically in the background after every price sync (automatic or manual) — fetches Polygon's Ticker Overview for each held Equity/ETF symbol not already cached. Independent of price-date catch-up: a long-running name sync (e.g. working through a rate-limit backoff) never blocks or delays the periodic price-sync retry poll, and vice versa.
 - Fetched once per ticker, never re-fetched once successful (names/SIC don't change). ETF/fund tickers (e.g. `SCHD`) omit `sic_description` in Polygon's response — that's expected, not a malformed response; only `name` is required, `SIC Description` shows `—` for these.
-- A ticker Polygon reports as `NOT_FOUND` (`status: "NOT_FOUND"`) is cached as permanently not-found and never retried again — shown as "Not found" on the Quotes page.
+- A ticker Polygon reports as `NOT_FOUND` (`status: "NOT_FOUND"` in the body, regardless of whether the HTTP status itself is 2xx) is cached as permanently not-found and never retried again — shown as "Not found" on the Quotes page.
 - Other failures (bad key, network issue) are silent everywhere else in the app — not shown as a price-sync error in Settings — but surface as a small note on the Quotes page itself: "Could not fetch name for: XYZ". A failed ticker stays uncached, so it's retried automatically on the next sync.
 - Rate-limited (429) requests back off and retry the same ticker on a timer until they succeed or fail for a non-rate-limit reason, so one sync call drives every held symbol to completion.
 
