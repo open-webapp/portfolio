@@ -101,6 +101,22 @@ describe('QuotesPage', () => {
     expect(cells).toEqual(['AAPL', 'Apple Inc.', 'OK', '$190.50', 'Yes', expectedLastUpdated, 'Electronic Computers'])
   })
 
+  it('renders "—" for Last Updated instead of crashing when the cached bar has a missing/invalid timestamp', async () => {
+    getAllBarsMock.mockResolvedValue([
+      { ticker: 'AAPL', close: 190.5, high: 191, low: 189, date: '2026-08-21', t: undefined },
+    ])
+    getAllTickerOverviewsMock.mockResolvedValue([])
+    const state = initialState()
+    state.positions.push(makePosition({ id: 'p1', symbol: 'AAPL', assetClass: 'Equity' }))
+
+    await renderQuotesPage(state)
+
+    const table = screen.getByRole('table')
+    const row = table.querySelector('tbody tr')!
+    const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
+    expect(cells[5]).toBe('—')
+  })
+
   it('shows "Not found" status with Price "—" when symbol is in notFound and has no heldPrices entry', async () => {
     getAllBarsMock.mockResolvedValue([])
     getAllTickerOverviewsMock.mockResolvedValue([])

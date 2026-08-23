@@ -74,7 +74,7 @@ Nav has a "Quotes" tab next to "Accounts". Full-page, read-only table of current
   - **Status**: "OK" or "Not found" — same meaning as the old Settings table. "Not found" if the symbol is in that day's `notFound` list from the last sync, OR if there's simply no `heldPrices` entry yet (never synced).
   - **Price**: last synced price, else last cached daily bar close as fallback, else `—`.
   - **Held**: always "Yes" on this page (row set is holdings-only).
-  - **Last Updated (UTC)**: the exact UTC timestamp Polygon reported for that day's cached bar, else `—` if no cached bar yet.
+  - **Last Updated (UTC)**: the exact UTC timestamp Polygon reported for that day's cached bar, else `—` if no cached bar yet or the cached bar's timestamp is missing/invalid.
   - **SIC Description**: industry classification from the ticker overview fetch; `—` if not yet fetched.
 - **Search box**: live filter across ticker, name, status, and SIC description, case-insensitive, every keystroke.
 - **Empty state**: "No holdings to show." when there are no currently-held Equity/ETF positions.

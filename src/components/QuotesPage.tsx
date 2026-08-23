@@ -51,7 +51,10 @@ export function QuotesPage({ state, dispatch: _dispatch, tickerOverviewErrors }:
       status,
       price: price !== undefined ? fmtUSD(price) : '—',
       held: 'Yes',
-      lastUpdated: bar ? new Date(bar.t).toISOString().slice(0, 19).replace('T', ' ') + ' UTC' : '—',
+      lastUpdated:
+        bar && Number.isFinite(bar.t)
+          ? new Date(bar.t).toISOString().slice(0, 19).replace('T', ' ') + ' UTC'
+          : '—',
       sicDescription: overview?.sicDescription ?? '—',
     }
   })
