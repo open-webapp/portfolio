@@ -558,6 +558,32 @@ describe('selectors', () => {
     expect(acctFilteredPositions(state)).toEqual([positions[0]])
   })
 
+  it('acctFilteredPositions: search matches trackingSymbol substring', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08', trackingSymbol: 'GRP-1' },
+      { id: 'pos-2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions, acctPosSearch: 'GRP-1' })
+    expect(acctFilteredPositions(state)).toEqual([positions[0]])
+  })
+
+  it('acctFilteredPositions: search matches trackingSymbol case-insensitively', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08', trackingSymbol: 'GRP-1' },
+      { id: 'pos-2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions, acctPosSearch: 'grp' })
+    expect(acctFilteredPositions(state)).toEqual([positions[0]])
+  })
+
+  it('acctFilteredPositions: undefined trackingSymbol excluded when search matches nothing', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2026-08-08' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions, acctPosSearch: 'zzz-no-match' })
+    expect(acctFilteredPositions(state)).toEqual([])
+  })
+
   it('acctAllocationTitle: selected account uses account name', () => {
     const state = createTestState({ accounts: [testAccount1], selectedAccountId: 'acc-1' })
     expect(acctAllocationTitle(state)).toBe('Allocation — Brokerage')

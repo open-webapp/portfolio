@@ -73,6 +73,7 @@ export function importPositions(
       accountId,
       symbol: newSymbol,
       name: row.name ?? null,
+      trackingSymbol: row.trackingSymbol || undefined,
       assetClass: row.assetClass,
       assetClassManualOverride: oldPosition?.assetClassManualOverride,
       shares,

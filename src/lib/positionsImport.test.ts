@@ -701,6 +701,78 @@ describe('positionsImport', () => {
     expect(aapl!.name).toBeNull()
   })
 
+  // Import position with trackingSymbol column mapped and a non-empty value
+  it('Test: Import position with trackingSymbol mapped and non-empty value', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+    const accountId = state.accounts[0].id
+
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+        trackingSymbol: 'AAPL-GROUP',
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test17b')
+
+    const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+    expect(aapl).toBeDefined()
+    expect(aapl!.trackingSymbol).toBe('AAPL-GROUP')
+  })
+
+  // Import position with no trackingSymbol column mapped (key absent)
+  it('Test: Import position with no trackingSymbol column mapped', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+    const accountId = state.accounts[0].id
+
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+        // trackingSymbol is not provided
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test17c')
+
+    const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+    expect(aapl).toBeDefined()
+    expect(aapl!.trackingSymbol).toBeUndefined()
+  })
+
+  // Import position with trackingSymbol column mapped but value is empty string
+  it('Test: Import position with trackingSymbol mapped but empty value', () => {
+    let state = initialState()
+    state = addAccount(state, createTestAccount('ACC-001', 'Account 1', false))
+    const accountId = state.accounts[0].id
+
+    const newRows = [
+      {
+        symbol: 'AAPL',
+        assetClass: 'Equity',
+        shares: '100',
+        avgCost: '150',
+        price: '200',
+        trackingSymbol: '',
+      },
+    ]
+
+    const result = importPositions(state, accountId, newRows, '2026-08-08', 'import-test17d')
+
+    const aapl = result.positions.find((p) => p.symbol === 'AAPL')
+    expect(aapl).toBeDefined()
+    expect(aapl!.trackingSymbol).toBeUndefined()
+  })
+
   // Task 8: Test 4 - ClosedPosition inherits null name
   it('Test 8.4: ClosedPosition inherits null name', () => {
     let state = initialState()

@@ -9,7 +9,7 @@ import { computePosition } from './computations'
  */
 export function buildGroupKey(position: Position): string {
   const effectiveAssetClass = position.assetClassManualOverride || position.assetClass
-  return `${position.symbol}|${effectiveAssetClass}`
+  return `${position.trackingSymbol || position.symbol}|${effectiveAssetClass}`
 }
 
 /**
@@ -85,7 +85,7 @@ export function buildAggregateRows(positions: Position[]): AggregateRow[] {
 
     return {
       key,
-      symbol: groupPositions[0].symbol,
+      symbol: groupPositions[0].trackingSymbol || groupPositions[0].symbol,
       displayName,
       effectiveAssetClass: groupPositions[0].assetClassManualOverride || groupPositions[0].assetClass,
       shares: totalShares,

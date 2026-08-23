@@ -28,6 +28,7 @@ const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
 const FIELD_LABELS: Record<string, string> = {
   symbol: 'Symbol',
   name: 'Name',
+  trackingSymbol: 'Tracking Symbol',
   assetClass: 'Asset Class',
   shares: 'Shares',
   avgCost: 'Cost Basis',
