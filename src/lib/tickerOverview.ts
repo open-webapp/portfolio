@@ -22,9 +22,22 @@ export class TickerOverviewRateLimitError extends Error {
   }
 }
 
+/** Thrown when Polygon explicitly reports the ticker as unknown
+ *  (`status: "NOT_FOUND"`). Distinct from a malformed/network failure —
+ *  caller caches this outcome and never retries the ticker again. */
+export class TickerOverviewNotFoundError extends Error {
+  constructor() {
+    super('Polygon ticker overview: not found')
+  }
+}
+
 /** Fetch one ticker's name + SIC description from Polygon's Ticker Overview
- *  endpoint. Throws on network error, non-2xx, or a malformed/missing
- *  results.name / results.sic_description — caller catches. */
+ *  endpoint. `results.sic_description` is only present for company tickers
+ *  (ETFs/funds omit it), so it's optional — only `results.name` is
+ *  required. Throws TickerOverviewNotFoundError when Polygon reports
+ *  `status: "NOT_FOUND"`, TickerOverviewRateLimitError on 429, or a plain
+ *  Error on network error / other non-2xx / malformed-missing-name —
+ *  caller catches all three. */
 export async function fetchTickerOverview(
   ticker: string,
   apiKey: string
@@ -35,20 +48,22 @@ export async function fetchTickerOverview(
   if (res.status === 429) throw new TickerOverviewRateLimitError()
   if (!res.ok) throw new Error(`Polygon ticker overview error: ${res.status}`)
   const json = await res.json()
+  if (json?.status === 'NOT_FOUND') throw new TickerOverviewNotFoundError()
   const name = json?.results?.name
   const sicDescription = json?.results?.sic_description
-  if (typeof name !== 'string' || typeof sicDescription !== 'string') {
+  if (typeof name !== 'string') {
     throw new Error('Malformed ticker overview response')
   }
-  return { name, sicDescription }
+  return { name, sicDescription: typeof sicDescription === 'string' ? sicDescription : '' }
 }
 
 /**
  * Best-effort, cache-aware enrichment: for each held symbol not already
  * cached, fetches its overview, caches it, and syncs Position.name for
  * every matching held position. Never throws — non-rate-limit per-ticker
- * failures are reported via onError and otherwise ignored (retried
- * automatically on a future call, since a failed ticker is never cached).
+ * failures are reported via onError. A ticker Polygon reports as
+ * `NOT_FOUND` is cached with `notFound: true` and never retried; any other
+ * failure leaves the ticker uncached, so it's retried on a future call.
  *
  * Requests are spaced by REQUEST_SPACING_MS to stay under Polygon's rate
  * limit. If a 429 happens anyway, the same ticker is retried on a
@@ -93,6 +108,17 @@ export async function syncTickerOverviews(
           onError(ticker, err.message)
           await sleep(RATE_LIMIT_BACKOFF_MS)
           continue
+        }
+        if (err instanceof TickerOverviewNotFoundError) {
+          await putTickerOverview({
+            ticker,
+            name: '',
+            sicDescription: '',
+            fetchedAt: new Date().toISOString(),
+            notFound: true,
+          })
+          onError(ticker, 'Not found')
+          break
         }
         onError(ticker, err instanceof Error ? err.message : 'Could not fetch name')
         break

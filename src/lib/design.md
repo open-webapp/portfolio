@@ -69,18 +69,26 @@ each held Equity/ETF symbol found in the response → (unawaited) `tickerOvervie
 `syncTickerOverviews(heldSymbols, apiKey, positions, dispatch, onError, onSuccess?, sleep?)`: for each held
 symbol not already in the `ticker_overviews` `marketDataDb` cache, fetches Polygon's Ticker Overview endpoint
 (`GET /v3/reference/tickers/{ticker}`), caches `{ name, sicDescription }` via `putTickerOverview`, and
-dispatches `UPDATE_POSITION` (`patch: { name }`) for every matching held position; per-ticker fetch/parse
-failures are caught and never rethrown, never touch `priceSync` state, and are surfaced only via
-`tickerOverviewErrors` — `App.tsx` local state (`Record<ticker, message>`) passed as a prop to
-`QuotesPage.tsx` for its failure banner. Successive tickers are paced `REQUEST_SPACING_MS` (12.5s) apart to
-stay under Polygon's ~5 req/min free-tier limit proactively. A 429 (`TickerOverviewRateLimitError`) is
-treated differently from other per-ticker failures: instead of moving on, the same ticker is retried after
-`RATE_LIMIT_BACKOFF_MS` (60s, still within the rate limit) in a loop until it succeeds or fails for a
-non-rate-limit reason — so one call drives every held symbol to completion rather than stopping at the first
-rate-limited ticker. `sleep` is injectable (defaults to a real `setTimeout`-based wait) purely for test
-determinism. `App.tsx` guards against overlapping runs via `tickerSyncInFlightRef` — since a run can now take
-minutes for a large portfolio, a mount/tab-focus retrigger mid-run is a no-op rather than starting a second
-overlapping loop.
+dispatches `UPDATE_POSITION` (`patch: { name }`) for every matching held position. `results.sic_description`
+is optional in Polygon's response (ETF/fund tickers, e.g. `SCHD`, omit it — only company tickers carry a SIC
+classification); `fetchTickerOverview` requires only `results.name`, defaulting `sicDescription` to `''` when
+absent, so an ETF response is never treated as malformed. A `status: "NOT_FOUND"` body (`GET` succeeds but
+Polygon doesn't recognize the ticker) throws `TickerOverviewNotFoundError`, distinct from a malformed/network
+failure: the caller caches it as `{ name: '', sicDescription: '', notFound: true }` and calls `onError` once —
+`notFound: true` cache entries are treated as a cache hit on every later call, so the ticker is never
+refetched. Other per-ticker fetch/parse failures are caught and never rethrown, never touch `priceSync` state,
+leave the ticker uncached (retried on a future call), and are surfaced only via `tickerOverviewErrors` —
+`App.tsx` local state (`Record<ticker, message>`) passed as a prop to `QuotesPage.tsx` for its failure banner.
+Successive tickers are paced `REQUEST_SPACING_MS` (12.5s) apart to stay under Polygon's ~5 req/min free-tier
+limit proactively. A 429 (`TickerOverviewRateLimitError`) is treated differently from other per-ticker
+failures: instead of moving on, the same ticker is retried after `RATE_LIMIT_BACKOFF_MS` (60s, still within
+the rate limit) in a loop until it succeeds or fails for a non-rate-limit reason — so one call drives every
+held symbol to completion rather than stopping at the first rate-limited ticker. `sleep` is injectable
+(defaults to a real `setTimeout`-based wait) purely for test determinism. `App.tsx` guards against overlapping
+runs via `tickerSyncInFlightRef` — since a run can now take minutes for a large portfolio, a mount/tab-focus
+retrigger mid-run is a no-op rather than starting a second overlapping loop. This ref only gates *starting* a
+new name-sync run — it does NOT gate the price-sync retry poll (see Shared retry interval below): a
+long-running name sync never blocks price-date catch-up, since the two hit independent Polygon endpoints.
 
 `marketDataDb`'s `DailyBar` also carries `t` (Unix ms — Polygon aggregate bar's end-of-window timestamp),
 passed through unchanged from `PolygonGroupedBarsResponse.results[].t` by `runPriceSync`'s bar mapping;
@@ -129,8 +137,12 @@ successful name fetch, mirroring `tickerOverview.ts`'s pattern.
   tickerOverviewErrors)` (true if the last Polygon run left symbols in `notFound`, or a ticker-overview fetch
   is currently erroring) and `shouldRetryMutualFundSync(state, today?)` (true if any held mutual fund symbol
   has a stale/missing price AND today's call budget isn't exhausted) independently, re-triggering whichever
-  sync has unfinished work — each gated by its own in-flight ref (`tickerSyncInFlightRef` /
-  `mutualFundSyncInFlightRef`) so a due retry never overlaps a run already in progress.
+  sync has unfinished work. The price-sync (`runPriceSyncTrigger`) retry is NOT gated on
+  `tickerSyncInFlightRef` — price-date catch-up and ticker-name enrichment hit independent Polygon endpoints,
+  so a long name sync (which can run for minutes) must not stall price retries; `runPriceSyncTrigger`'s own
+  internal `tickerSyncInFlightRef` check still prevents it from starting an overlapping name sync. The
+  mutual-fund retry IS gated on `mutualFundSyncInFlightRef` so a due retry never overlaps a run already in
+  progress (mutual-fund price + name fetches share one call budget and one in-flight run, unlike Polygon's).
 - No API key configured → no fetch attempted (`runMutualFundSyncTrigger` returns early, mirrors Price Sync).
 - Symbol's price already fetched today (`heldPrices[symbol].fetchedAt` same calendar date) and name already
   cached → both fetches skipped for that symbol, no calls spent.

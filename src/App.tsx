@@ -203,11 +203,15 @@ function App() {
   // Retry-interval poll: periodically retries Polygon/mutual-fund syncs that
   // failed or were left incomplete (e.g. rate-limited), without hammering on
   // every tick — the shouldRetry* selectors gate whether a retry is due.
+  // Price-date catch-up and ticker-name enrichment are independent Polygon
+  // endpoints — price retries must NOT wait on tickerSyncInFlightRef (name
+  // sync can run for minutes); runPriceSyncTrigger's own internal check
+  // still prevents it from starting an overlapping name sync.
   useEffect(() => {
     if (sessionKey === null || !isHydrated) return
     const id = setInterval(() => {
       const current = latestStateRef.current
-      if (!tickerSyncInFlightRef.current && shouldRetryPolygonSync(current, tickerOverviewErrors)) {
+      if (shouldRetryPolygonSync(current, tickerOverviewErrors)) {
         runPriceSyncTrigger()
       }
       if (!mutualFundSyncInFlightRef.current && shouldRetryMutualFundSync(current)) {

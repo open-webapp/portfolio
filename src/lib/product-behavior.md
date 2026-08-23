@@ -117,9 +117,11 @@ Nav has a "Quotes" tab next to "Accounts". Full-page, read-only table of current
 
 ### Name/SIC Enrichment
 
-- Runs automatically in the background after every price sync (automatic or manual) — fetches Polygon's Ticker Overview for each held Equity/ETF symbol not already cached.
-- Fetched once per ticker, never re-fetched once successful (names/SIC don't change).
-- Failures (bad key, rate limit, network issue) are silent everywhere else in the app — not shown as a price-sync error in Settings — but surface as a small note on the Quotes page itself: "Could not fetch name for: XYZ". A failed ticker stays uncached, so it's retried automatically on the next sync.
+- Runs automatically in the background after every price sync (automatic or manual) — fetches Polygon's Ticker Overview for each held Equity/ETF symbol not already cached. Independent of price-date catch-up: a long-running name sync (e.g. working through a rate-limit backoff) never blocks or delays the periodic price-sync retry poll, and vice versa.
+- Fetched once per ticker, never re-fetched once successful (names/SIC don't change). ETF/fund tickers (e.g. `SCHD`) omit `sic_description` in Polygon's response — that's expected, not a malformed response; only `name` is required, `SIC Description` shows `—` for these.
+- A ticker Polygon reports as `NOT_FOUND` (`status: "NOT_FOUND"`) is cached as permanently not-found and never retried again — shown as "Not found" on the Quotes page.
+- Other failures (bad key, network issue) are silent everywhere else in the app — not shown as a price-sync error in Settings — but surface as a small note on the Quotes page itself: "Could not fetch name for: XYZ". A failed ticker stays uncached, so it's retried automatically on the next sync.
+- Rate-limited (429) requests back off and retry the same ticker on a timer until they succeed or fail for a non-rate-limit reason, so one sync call drives every held symbol to completion.
 
 ## Google Drive Sync
 

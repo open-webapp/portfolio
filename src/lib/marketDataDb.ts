@@ -22,6 +22,10 @@ export interface TickerOverview {
   name: string
   sicDescription: string
   fetchedAt: string
+  /** True when Polygon explicitly reported this ticker as not found (status
+   *  "NOT_FOUND") — cached so the sync loop skips it forever instead of
+   *  retrying every call. `name`/`sicDescription` are '' in this case. */
+  notFound?: boolean
 }
 
 function openDb(): Promise<IDBDatabase> {

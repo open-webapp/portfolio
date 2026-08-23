@@ -5,6 +5,7 @@ import {
   syncTickerOverviews,
   REQUEST_SPACING_MS,
   RATE_LIMIT_BACKOFF_MS,
+  TickerOverviewNotFoundError,
 } from './tickerOverview'
 import { getTickerOverview, putTickerOverview } from './marketDataDb'
 import type { Position } from './types'
@@ -114,6 +115,54 @@ describe('tickerOverview', () => {
       )
 
       await expect(fetchTickerOverview('AAPL', 'key')).rejects.toThrow()
+    })
+
+    it('ETF response missing sic_description (e.g. SCHD) does not throw, defaults sicDescription to empty string', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            request_id: 'e86e497b16bac0cbe538a39989d308ff',
+            results: {
+              ticker: 'SCHD',
+              name: 'Schwab US Dividend Equity ETF',
+              market: 'stocks',
+              locale: 'us',
+              primary_exchange: 'ARCX',
+              type: 'ETF',
+              active: true,
+              currency_name: 'usd',
+              cik: '0001454889',
+              composite_figi: 'BBG0025RWKW5',
+              share_class_figi: 'BBG0025RWLM4',
+              ticker_root: 'SCHD',
+              list_date: '2011-10-20',
+              share_class_shares_outstanding: 3184200000,
+              round_lot: 100,
+            },
+            status: 'OK',
+          })
+        )
+      )
+
+      const result = await fetchTickerOverview('SCHD', 'key')
+
+      expect(result).toEqual({ name: 'Schwab US Dividend Equity ETF', sicDescription: '' })
+    })
+
+    it('status NOT_FOUND throws TickerOverviewNotFoundError', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            status: 'NOT_FOUND',
+            request_id: '9277c7578bd29619724469ab42b87ca5',
+            message: 'Ticker not found.',
+          })
+        )
+      )
+
+      await expect(fetchTickerOverview('BOGUS', 'key')).rejects.toThrow(TickerOverviewNotFoundError)
     })
   })
 
@@ -238,6 +287,32 @@ describe('tickerOverview', () => {
       // One spacing sleep between the two tickers, none before the first.
       expect(sleep).toHaveBeenCalledTimes(1)
       expect(sleep).toHaveBeenCalledWith(REQUEST_SPACING_MS)
+      expect(onError).not.toHaveBeenCalled()
+    })
+
+    it('NOT_FOUND: caches a notFound marker, reports onError once, does not dispatch, and does not retry on a later call', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        jsonResponse({ status: 'NOT_FOUND', message: 'Ticker not found.' })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const dispatch = vi.fn()
+      const onError = vi.fn()
+      const onSuccess = vi.fn()
+
+      await syncTickerOverviews(['BOGUS'], 'key', [makePosition({ symbol: 'BOGUS' })], dispatch, onError, onSuccess)
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(onError).toHaveBeenCalledWith('BOGUS', expect.any(String))
+      expect(onSuccess).not.toHaveBeenCalled()
+      expect(dispatch).not.toHaveBeenCalled()
+      const cached = await getTickerOverview('BOGUS')
+      expect(cached).toMatchObject({ ticker: 'BOGUS', notFound: true })
+
+      // A later call must skip it entirely (cache hit) rather than refetching.
+      fetchMock.mockClear()
+      onError.mockClear()
+      await syncTickerOverviews(['BOGUS'], 'key', [makePosition({ symbol: 'BOGUS' })], dispatch, onError, onSuccess)
+      expect(fetchMock).not.toHaveBeenCalled()
       expect(onError).not.toHaveBeenCalled()
     })
 
