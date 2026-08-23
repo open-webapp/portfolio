@@ -26,6 +26,7 @@ export interface Position {
   accountId: string
   symbol: string
   name: string | null
+  trackingSymbol?: string
   assetClass: string
   assetClassManualOverride?: string
   shares: number
@@ -81,7 +82,7 @@ export const POSITIONS_REQUIRED_FIELDS = [
 
 export const AVGCOST_FIELDS = ['avgCost', 'purchaseAmount'] as const
 export const PRICE_FIELDS = ['price', 'marketValue'] as const
-export const POSITIONS_OPTIONAL_FIELDS = ['name'] as const
+export const POSITIONS_OPTIONAL_FIELDS = ['name', 'trackingSymbol'] as const
 
 export const TRANSACTIONS_REQUIRED_FIELDS = ['date', 'symbol', 'type', 'shares', 'price', 'amount'] as const
 export const TRANSACTIONS_OPTIONAL_FIELDS = [] as const

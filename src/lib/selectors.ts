@@ -298,7 +298,8 @@ export function acctFilteredPositions(state: AppState): Position[] {
     results = results.filter(
       (p) =>
         p.symbol.toLowerCase().includes(searchLower) ||
-        (p.name?.toLowerCase().includes(searchLower) ?? false)
+        (p.name?.toLowerCase().includes(searchLower) ?? false) ||
+        (p.trackingSymbol?.toLowerCase().includes(searchLower) ?? false)
     )
   }
 

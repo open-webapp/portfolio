@@ -93,17 +93,32 @@ function EditableTextCell({
   positionId,
   dispatch,
   field = 'symbol',
+  allowEmptyCommit,
 }: {
   value: string
   positionId: string
   dispatch: (action: any) => void
-  field?: 'symbol' | 'name'
+  field?: 'symbol' | 'name' | 'trackingSymbol'
+  allowEmptyCommit?: boolean
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(value)
 
   const commit = () => {
     const trimmed = draft.trim()
+    if (allowEmptyCommit) {
+      const patchValue = trimmed === '' ? undefined : trimmed
+      const currentValue = value === '' ? undefined : value
+      if (patchValue !== currentValue) {
+        dispatch({
+          type: 'UPDATE_POSITION',
+          positionId,
+          patch: { [field]: patchValue },
+        })
+      }
+      setIsEditing(false)
+      return
+    }
     if (trimmed === '') {
       setIsEditing(false)
       return
@@ -155,7 +170,7 @@ function EditableTextCell({
         color: value ? 'inherit' : 'var(--text-muted)',
       }}
     >
-      {value || '(no name)'}
+      {value || (field === 'trackingSymbol' ? '(none)' : '(no name)')}
     </span>
   )
 }
@@ -421,6 +436,7 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
               <tr>
                 <th style={{ textAlign: 'left' }}>Account</th>
                 <th style={{ textAlign: 'left' }}>Symbol</th>
+                <th style={{ textAlign: 'left' }}>Tracking Symbol</th>
                 <th style={{ textAlign: 'left' }}>Name</th>
                 <th style={{ textAlign: 'right' }}>Shares</th>
                 <th style={{ textAlign: 'right' }}>Avg Cost</th>
@@ -445,6 +461,15 @@ export const PositionGroupOverlay: React.FC<PositionGroupOverlayProps> = ({
                     <EditableTextCell
                       value={p.symbol}
                       positionId={p.id}
+                      dispatch={dispatch}
+                    />
+                  </td>
+                  <td style={{ textAlign: 'left' }}>
+                    <EditableTextCell
+                      value={p.trackingSymbol ?? ''}
+                      positionId={p.id}
+                      field="trackingSymbol"
+                      allowEmptyCommit
                       dispatch={dispatch}
                     />
                   </td>
