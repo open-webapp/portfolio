@@ -6,6 +6,8 @@ import {
   initialState,
   setPriceSyncApiKey,
   recordPriceSyncRun,
+  setMutualFundSyncApiKey,
+  recordMutualFundSyncRun,
 } from './state'
 import type { AppState } from './types'
 
@@ -244,6 +246,34 @@ describe('appReducer', () => {
       const resultDirect = recordPriceSyncRun(state, patch)
 
       expect(resultFromReducer.priceSync).toEqual(resultDirect.priceSync)
+    })
+  })
+
+  describe('SET_MUTUAL_FUND_SYNC_API_KEY', () => {
+    it('dispatches to setMutualFundSyncApiKey state action', () => {
+      const state: AppState = { ...initialState() }
+
+      const resultFromReducer = appReducer(state, { type: 'SET_MUTUAL_FUND_SYNC_API_KEY', apiKey: 'x' })
+      const resultDirect = setMutualFundSyncApiKey(state, 'x')
+
+      expect(resultFromReducer.mutualFundSync).toEqual(resultDirect.mutualFundSync)
+      expect(resultFromReducer.mutualFundSync.apiKey).toBe('x')
+    })
+  })
+
+  describe('RECORD_MUTUAL_FUND_SYNC_RUN', () => {
+    it('dispatches to recordMutualFundSyncRun state action', () => {
+      const state: AppState = { ...initialState() }
+      const patch = {
+        heldPrices: { VFIAX: { price: 450, date: '2024-02-01', fetchedAt: '2024-02-01T10:00:00Z' } },
+        lastRun: { at: '2024-02-01T10:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 1 },
+        callBudget: { date: '2024-02-01', callsUsed: 1 },
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'RECORD_MUTUAL_FUND_SYNC_RUN', patch })
+      const resultDirect = recordMutualFundSyncRun(state, patch)
+
+      expect(resultFromReducer.mutualFundSync).toEqual(resultDirect.mutualFundSync)
     })
   })
 })

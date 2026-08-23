@@ -12,7 +12,10 @@ import {
   acctScopedClosedPositions,
   acctFilteredClosedPositions,
   acctAllocationTitle,
-  heldEquityEtfSymbols
+  heldEquityEtfSymbols,
+  ALPHAVANTAGE_DAILY_CALL_CAP,
+  shouldRetryPolygonSync,
+  shouldRetryMutualFundSync
 } from './selectors'
 import { AppState, initialState } from './state'
 import { Account, Position, Transaction, ClosedPosition } from './types'
@@ -1183,5 +1186,164 @@ describe('selectors', () => {
     })
 
     expect(heldEquityEtfSymbols(state)).toEqual([])
+  })
+
+  // === shouldRetryPolygonSync() tests ===
+
+  it('shouldRetryPolygonSync: returns true when the last run left symbols unresolved', () => {
+    const state = createTestState({
+      priceSync: {
+        apiKey: '',
+        lastFetchedDate: '2026-08-22',
+        heldPrices: {},
+        lastRun: {
+          at: '2026-08-22T10:00:00.000Z',
+          updatedCount: 3,
+          notFound: ['X'],
+          marketTickerCount: 100
+        }
+      }
+    })
+
+    expect(shouldRetryPolygonSync(state, {})).toBe(true)
+  })
+
+  it('shouldRetryPolygonSync: returns false when nothing is unresolved and no ticker-overview errors', () => {
+    const state = createTestState({
+      priceSync: {
+        apiKey: '',
+        lastFetchedDate: '2026-08-22',
+        heldPrices: {},
+        lastRun: {
+          at: '2026-08-22T10:00:00.000Z',
+          updatedCount: 3,
+          notFound: [],
+          marketTickerCount: 100
+        }
+      }
+    })
+
+    expect(shouldRetryPolygonSync(state, {})).toBe(false)
+  })
+
+  it('shouldRetryPolygonSync: returns true when there is no last run but ticker-overview fetches are failing', () => {
+    const state = createTestState({
+      priceSync: {
+        apiKey: '',
+        lastFetchedDate: null,
+        heldPrices: {},
+        lastRun: null
+      }
+    })
+
+    expect(shouldRetryPolygonSync(state, { X: 'err' })).toBe(true)
+  })
+
+  // === shouldRetryMutualFundSync() tests ===
+
+  const mutualFundPosition: Position = {
+    id: 'pos-mf-1',
+    accountId: 'acc-1',
+    symbol: 'VFIAX',
+    name: 'Vanguard 500 Index Fund',
+    assetClass: 'Mutual Fund',
+    shares: 5,
+    avgCost: 400,
+    price: 420,
+    lastImportedAt: '2026-08-08'
+  }
+
+  it('shouldRetryMutualFundSync: returns true for a held mutual fund symbol with no cached price and budget under cap', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: [mutualFundPosition],
+      mutualFundSync: {
+        apiKey: '',
+        heldPrices: {},
+        lastRun: null,
+        callBudget: { date: '2026-08-23', callsUsed: 0 }
+      }
+    })
+
+    expect(shouldRetryMutualFundSync(state, '2026-08-23')).toBe(true)
+  })
+
+  it('shouldRetryMutualFundSync: returns false when the held symbol was already fetched today', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: [mutualFundPosition],
+      mutualFundSync: {
+        apiKey: '',
+        heldPrices: {
+          VFIAX: { price: 420, date: '2026-08-23', fetchedAt: '2026-08-23T09:00:00.000Z' }
+        },
+        lastRun: null,
+        callBudget: { date: '2026-08-23', callsUsed: 1 }
+      }
+    })
+
+    expect(shouldRetryMutualFundSync(state, '2026-08-23')).toBe(false)
+  })
+
+  it('shouldRetryMutualFundSync: returns true when the cached price for the held symbol is from yesterday', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: [mutualFundPosition],
+      mutualFundSync: {
+        apiKey: '',
+        heldPrices: {
+          VFIAX: { price: 415, date: '2026-08-22', fetchedAt: '2026-08-22T09:00:00.000Z' }
+        },
+        lastRun: null,
+        callBudget: { date: '2026-08-23', callsUsed: 0 }
+      }
+    })
+
+    expect(shouldRetryMutualFundSync(state, '2026-08-23')).toBe(true)
+  })
+
+  it('shouldRetryMutualFundSync: returns false when there are no held mutual fund symbols', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: [],
+      mutualFundSync: {
+        apiKey: '',
+        heldPrices: {},
+        lastRun: null,
+        callBudget: { date: '2026-08-23', callsUsed: 0 }
+      }
+    })
+
+    expect(shouldRetryMutualFundSync(state, '2026-08-23')).toBe(false)
+  })
+
+  it('shouldRetryMutualFundSync: returns false when today\'s call budget is already exhausted', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: [mutualFundPosition],
+      mutualFundSync: {
+        apiKey: '',
+        heldPrices: {},
+        lastRun: null,
+        callBudget: { date: '2026-08-23', callsUsed: ALPHAVANTAGE_DAILY_CALL_CAP }
+      }
+    })
+
+    expect(shouldRetryMutualFundSync(state, '2026-08-23')).toBe(false)
+  })
+
+  it('shouldRetryMutualFundSync: treats a stale budget date as 0 calls used today', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: [mutualFundPosition],
+      mutualFundSync: {
+        apiKey: '',
+        heldPrices: {},
+        lastRun: null,
+        callBudget: { date: '2026-08-22', callsUsed: ALPHAVANTAGE_DAILY_CALL_CAP }
+      }
+    })
+
+    expect(shouldRetryMutualFundSync(state, '2026-08-23')).toBe(true)
   })
 })

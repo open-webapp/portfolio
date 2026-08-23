@@ -98,7 +98,16 @@ describe('QuotesPage', () => {
 
     const expectedLastUpdated = new Date(1755806400000).toISOString().slice(0, 19).replace('T', ' ') + ' UTC'
 
-    expect(cells).toEqual(['AAPL', 'Apple Inc.', 'OK', '$190.50', 'Yes', expectedLastUpdated, 'Electronic Computers'])
+    expect(cells).toEqual([
+      'AAPL',
+      'Equity',
+      'Apple Inc.',
+      'OK',
+      '$190.50',
+      'Yes',
+      expectedLastUpdated,
+      'Electronic Computers',
+    ])
   })
 
   it('renders "—" for Last Updated instead of crashing when the cached bar has a missing/invalid timestamp', async () => {
@@ -114,7 +123,7 @@ describe('QuotesPage', () => {
     const table = screen.getByRole('table')
     const row = table.querySelector('tbody tr')!
     const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
-    expect(cells[5]).toBe('—')
+    expect(cells[6]).toBe('—')
   })
 
   it('shows "Not found" status with Price "—" when symbol is in notFound and has no heldPrices entry', async () => {
@@ -135,8 +144,8 @@ describe('QuotesPage', () => {
     const row = table.querySelector('tbody tr')!
     const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
     expect(cells[0]).toBe('AAPL')
-    expect(cells[2]).toBe('Not found')
-    expect(cells[3]).toBe('—')
+    expect(cells[3]).toBe('Not found')
+    expect(cells[4]).toBe('—')
   })
 
   it('shows "Not found" status but still shows the stale price when a stale heldPrices entry exists despite being in notFound', async () => {
@@ -157,8 +166,8 @@ describe('QuotesPage', () => {
     const table = screen.getByRole('table')
     const row = table.querySelector('tbody tr')!
     const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
-    expect(cells[2]).toBe('Not found')
-    expect(cells[3]).toBe('$180.25')
+    expect(cells[3]).toBe('Not found')
+    expect(cells[4]).toBe('$180.25')
   })
 
   it('shows "Not found" status for a never-synced held symbol (no heldPrices entry, lastRun null)', async () => {
@@ -173,7 +182,7 @@ describe('QuotesPage', () => {
     const table = screen.getByRole('table')
     const row = table.querySelector('tbody tr')!
     const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
-    expect(cells[2]).toBe('Not found')
+    expect(cells[3]).toBe('Not found')
   })
 
   it('Held column is always "Yes" for every rendered row', async () => {
@@ -193,7 +202,7 @@ describe('QuotesPage', () => {
     expect(rows).toHaveLength(3)
     rows.forEach((row) => {
       const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
-      expect(cells[4]).toBe('Yes')
+      expect(cells[5]).toBe('Yes')
     })
   })
 
@@ -297,5 +306,171 @@ describe('QuotesPage', () => {
     const table = screen.getByRole('table')
     const symbols = Array.from(table.querySelectorAll('tbody tr td:first-child')).map((td) => td.textContent)
     expect(symbols).toEqual(['AAPL', 'MSFT', 'VTI'])
+  })
+
+  describe('mutual fund rows', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+    it('merges a held mutual fund symbol into the alphabetically sorted row list alongside Equity/ETF symbols', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([])
+      const state = initialState()
+      state.positions.push(
+        makePosition({ id: 'p1', symbol: 'MSFT', assetClass: 'Equity' }),
+        makePosition({ id: 'p2', symbol: 'VTSAX', assetClass: 'Mutual Fund' }),
+        makePosition({ id: 'p3', symbol: 'AAPL', assetClass: 'Equity' }),
+      )
+
+      await renderQuotesPage(state)
+
+      const table = screen.getByRole('table')
+      const symbols = Array.from(table.querySelectorAll('tbody tr td:first-child')).map((td) => td.textContent)
+      expect(symbols).toEqual(['AAPL', 'MSFT', 'VTSAX'])
+    })
+
+    it('shows the effective asset class per row: Equity, ETF, and Mutual Fund each shown correctly', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([])
+      const state = initialState()
+      state.positions.push(
+        makePosition({ id: 'p1', symbol: 'AAPL', assetClass: 'Equity' }),
+        makePosition({ id: 'p2', symbol: 'VTI', assetClass: 'ETF' }),
+        makePosition({ id: 'p3', symbol: 'VTSAX', assetClass: 'Mutual Fund' }),
+      )
+
+      await renderQuotesPage(state)
+
+      const table = screen.getByRole('table')
+      const rows = Array.from(table.querySelectorAll('tbody tr'))
+      const bySymbol = new Map(
+        rows.map((row) => {
+          const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
+          return [cells[0], cells[1]]
+        })
+      )
+      expect(bySymbol.get('AAPL')).toBe('Equity')
+      expect(bySymbol.get('VTI')).toBe('ETF')
+      expect(bySymbol.get('VTSAX')).toBe('Mutual Fund')
+    })
+
+    it('shows "Pending" status, non-error styling, when there is no heldPrices entry and symbol is not in notFound', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([])
+      const state = initialState()
+      state.positions.push(makePosition({ id: 'p1', symbol: 'VTSAX', assetClass: 'Mutual Fund' }))
+
+      await renderQuotesPage(state)
+
+      const table = screen.getByRole('table')
+      const row = table.querySelector('tbody tr')!
+      const cells = row.querySelectorAll('td')
+      expect(cells[3].textContent).toBe('Pending')
+      expect((cells[3] as HTMLElement).style.color).not.toBe('rgb(138, 60, 46)')
+    })
+
+    it('shows "Pending" status (not "OK") when the cached heldPrices entry is stale (fetched yesterday)', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([])
+      const state = initialState()
+      state.positions.push(makePosition({ id: 'p1', symbol: 'VTSAX', assetClass: 'Mutual Fund' }))
+      state.mutualFundSync.heldPrices.VTSAX = {
+        price: 120.5,
+        date: yesterday,
+        fetchedAt: `${yesterday}T00:00:00.000Z`,
+      }
+
+      await renderQuotesPage(state)
+
+      const table = screen.getByRole('table')
+      const row = table.querySelector('tbody tr')!
+      const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
+      expect(cells[3]).toBe('Pending')
+    })
+
+    it('shows "Not found" status, red styling, when symbol is in mutualFundSync.lastRun.notFound', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([])
+      const state = initialState()
+      state.positions.push(makePosition({ id: 'p1', symbol: 'VTSAX', assetClass: 'Mutual Fund' }))
+      state.mutualFundSync.lastRun = {
+        at: '2024-01-01T00:00:00.000Z',
+        updatedCount: 0,
+        notFound: ['VTSAX'],
+        marketTickerCount: 50,
+      }
+
+      await renderQuotesPage(state)
+
+      const table = screen.getByRole('table')
+      const row = table.querySelector('tbody tr')!
+      const cells = row.querySelectorAll('td')
+      expect(cells[3].textContent).toBe('Not found')
+      expect((cells[3] as HTMLElement).style.color).toBe('rgb(138, 60, 46)')
+    })
+
+    it('shows "OK" status with the fetched price when heldPrices.fetchedAt is today', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([])
+      const state = initialState()
+      state.positions.push(makePosition({ id: 'p1', symbol: 'VTSAX', assetClass: 'Mutual Fund' }))
+      state.mutualFundSync.heldPrices.VTSAX = {
+        price: 125.75,
+        date: today,
+        fetchedAt: `${today}T12:00:00.000Z`,
+      }
+
+      await renderQuotesPage(state)
+
+      const table = screen.getByRole('table')
+      const row = table.querySelector('tbody tr')!
+      const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
+      expect(cells[3]).toBe('OK')
+      expect(cells[4]).toBe('$125.75')
+    })
+
+    it('mutual fund row shows "—" SIC description (empty cached value), while an Equity/ETF row with a real SIC description still shows it', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([
+        { ticker: 'AAPL', name: 'Apple Inc.', sicDescription: 'Electronic Computers', fetchedAt: '2024-01-01' },
+        { ticker: 'VTSAX', name: 'Vanguard Total Stock Market Index Fund', sicDescription: '', fetchedAt: '2024-01-01' },
+      ])
+      const state = initialState()
+      state.positions.push(
+        makePosition({ id: 'p1', symbol: 'AAPL', assetClass: 'Equity' }),
+        makePosition({ id: 'p2', symbol: 'VTSAX', assetClass: 'Mutual Fund' }),
+      )
+
+      await renderQuotesPage(state)
+
+      const table = screen.getByRole('table')
+      const rows = Array.from(table.querySelectorAll('tbody tr'))
+      const bySymbol = new Map(
+        rows.map((row) => {
+          const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
+          return [cells[0], cells[7]]
+        })
+      )
+      expect(bySymbol.get('AAPL')).toBe('Electronic Computers')
+      expect(bySymbol.get('VTSAX')).toBe('—')
+    })
+
+    it('search for "mutual fund" (case-insensitive) matches the Asset Class column and shows only mutual fund rows', async () => {
+      getAllBarsMock.mockResolvedValue([])
+      getAllTickerOverviewsMock.mockResolvedValue([])
+      const state = initialState()
+      state.positions.push(
+        makePosition({ id: 'p1', symbol: 'AAPL', assetClass: 'Equity' }),
+        makePosition({ id: 'p2', symbol: 'VTI', assetClass: 'ETF' }),
+        makePosition({ id: 'p3', symbol: 'VTSAX', assetClass: 'Mutual Fund' }),
+      )
+
+      await renderQuotesPage(state)
+
+      fireEvent.change(screen.getByPlaceholderText(/Search ticker/), { target: { value: 'mutual fund' } })
+      expect(screen.getByText('VTSAX')).toBeTruthy()
+      expect(screen.queryByText('AAPL')).toBeNull()
+      expect(screen.queryByText('VTI')).toBeNull()
+    })
   })
 })

@@ -143,6 +143,12 @@ function fixtureState(): AppState {
       },
       lastRun: { at: '2024-01-01T00:00:00.000Z', updatedCount: 1, notFound: [], marketTickerCount: 1 },
     },
+    mutualFundSync: {
+      apiKey: '',
+      heldPrices: {},
+      lastRun: null,
+      callBudget: { date: '', callsUsed: 0 },
+    },
 
     // UI state
     view: 'accounts',

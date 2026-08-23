@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react'
 import { SettingsPage, type SettingsPageProps } from './Settings'
 import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
@@ -67,6 +67,18 @@ const mockHandleConnect = vi.fn()
 const mockHandleDisconnect = vi.fn()
 const mockSetSettingsSection = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
+const mockRunMutualFundSyncTrigger = vi.fn()
+
+// The Alphavantage sub-block is a plain <div>, not a labeled landmark, so it
+// has to be located structurally: it's the second `input[type="password"]`
+// on the page (Polygon's is the first), walked up from .field -> the
+// sub-block wrapper div.
+function getMfBlock(container: HTMLElement): HTMLElement {
+  const passwordInputs = container.querySelectorAll('input[type="password"]')
+  const mfInput = passwordInputs[1] as HTMLElement
+  const fieldDiv = mfInput.closest('.field') as HTMLElement
+  return fieldDiv.parentElement as HTMLElement
+}
 
 const notConnectedAuthStatus: driveModule.DriveAuthStatus = {
   connected: false,
@@ -97,6 +109,7 @@ describe('SettingsPage', () => {
     mockPickFile.mockResolvedValue(null)
     mockEnsureFolderPath.mockResolvedValue('folder-portfolio')
     mockRunPriceSyncTrigger.mockResolvedValue(undefined)
+    mockRunMutualFundSyncTrigger.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -130,6 +143,9 @@ describe('SettingsPage', () => {
       settingsSection: 'drive',
       setSettingsSection: mockSetSettingsSection,
       runPriceSyncTrigger: mockRunPriceSyncTrigger,
+      runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
+      tickerOverviewErrors: {},
+      mutualFundSyncErrors: {},
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -1056,9 +1072,161 @@ describe('SettingsPage', () => {
     it('renders "Never run" when lastRun is null', () => {
       const state = initialState()
       state.priceSync.lastRun = null
+      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
+
+      const mfBlock = getMfBlock(container)
+      const neverRunTexts = screen.getAllByText('Never run')
+      expect(neverRunTexts.some((el) => !mfBlock.contains(el))).toBe(true)
+    })
+  })
+
+  describe('Mutual Fund Sync', () => {
+    it('renders the Alphavantage API key input; typing then blurring dispatches SET_MUTUAL_FUND_SYNC_API_KEY', () => {
+      const { container } = renderSettings({ settingsSection: 'priceSync' })
+
+      expect(screen.getByText('Alphavantage API Key (Mutual Funds)')).toBeTruthy()
+      const passwordInputs = container.querySelectorAll('input[type="password"]')
+      expect(passwordInputs.length).toBe(2)
+      const mfKeyInput = passwordInputs[1] as HTMLInputElement
+
+      fireEvent.change(mfKeyInput, { target: { value: 'av-api-key' } })
+      fireEvent.blur(mfKeyInput)
+
+      expect(mockDispatch).toHaveBeenCalledWith({ type: 'SET_MUTUAL_FUND_SYNC_API_KEY', apiKey: 'av-api-key' })
+    })
+
+    it('Fetch mutual fund prices now button is disabled when state.mutualFundSync.apiKey is empty', () => {
+      const state = initialState()
+      state.mutualFundSync.apiKey = ''
       renderSettings({ state, settingsSection: 'priceSync' })
 
-      expect(screen.getByText('Never run')).toBeTruthy()
+      const button = screen.getByRole('button', { name: 'Fetch mutual fund prices now' }) as HTMLButtonElement
+      expect(button.disabled).toBe(true)
+    })
+
+    it('clicking Fetch mutual fund prices now (with apiKey set) calls the runMutualFundSyncTrigger prop', async () => {
+      const state = initialState()
+      state.mutualFundSync.apiKey = 'av-api-key'
+      renderSettings({ state, settingsSection: 'priceSync' })
+
+      const button = screen.getByRole('button', { name: 'Fetch mutual fund prices now' }) as HTMLButtonElement
+      expect(button.disabled).toBe(false)
+      fireEvent.click(button)
+
+      await waitFor(() => {
+        expect(mockRunMutualFundSyncTrigger).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    it('shows "Never run" scoped to the Alphavantage sub-block when mutualFundSync.lastRun is null', () => {
+      const state = initialState()
+      state.mutualFundSync.lastRun = null
+      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
+
+      const mfBlock = getMfBlock(container)
+      expect(within(mfBlock).getByText('Never run')).toBeTruthy()
+    })
+
+    it('renders lastRun updatedCount/notFound in the sub-block, with no "tickers fetched from Polygon" phrase', () => {
+      const state = initialState()
+      state.mutualFundSync.apiKey = 'av-api-key'
+      state.mutualFundSync.lastRun = {
+        at: '2026-08-22T12:00:00.000Z',
+        updatedCount: 2,
+        notFound: ['VTSAX'],
+      }
+      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
+
+      const mfBlock = getMfBlock(container)
+      expect(within(mfBlock).getByText(/2 updated/)).toBeTruthy()
+      expect(within(mfBlock).getByText(/not found: VTSAX/)).toBeTruthy()
+      expect(within(mfBlock).queryByText(/tickers fetched from Polygon/)).toBeNull()
+    })
+
+    it('renders lastRun.error in red within the sub-block', () => {
+      const state = initialState()
+      state.mutualFundSync.apiKey = 'av-api-key'
+      state.mutualFundSync.lastRun = {
+        at: '2026-08-22T12:00:00.000Z',
+        updatedCount: 0,
+        notFound: [],
+        error: 'Alphavantage API error: rate limited',
+      }
+      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
+
+      const mfBlock = getMfBlock(container)
+      const errorEl = within(mfBlock).getByText('Alphavantage API error: rate limited')
+      expect(errorEl.style.color).toBe('rgb(138, 60, 46)')
+    })
+
+    it('renders exactly one input[type="date"] on the page (the Polygon date picker only)', () => {
+      const { container } = renderSettings({ settingsSection: 'priceSync' })
+
+      const dateInputs = container.querySelectorAll('input[type="date"]')
+      expect(dateInputs.length).toBe(1)
+
+      const mfBlock = getMfBlock(container)
+      expect(mfBlock.querySelectorAll('input[type="date"]').length).toBe(0)
+    })
+
+    it('mutualFundSyncErrors renders in the Alphavantage error list, independent of tickerOverviewErrors', () => {
+      const { container, unmount } = renderSettings({
+        settingsSection: 'priceSync',
+        mutualFundSyncErrors: { VTSAX: 'rate limited' },
+        tickerOverviewErrors: {},
+      })
+      const mfBlock = getMfBlock(container)
+      expect(within(mfBlock).getByText('VTSAX: rate limited')).toBeTruthy()
+      unmount()
+
+      // Same symbol/message, but as a tickerOverviewErrors entry instead -
+      // must NOT show up in the mutual fund sub-block's error list.
+      const { container: container2 } = renderSettings({
+        settingsSection: 'priceSync',
+        mutualFundSyncErrors: {},
+        tickerOverviewErrors: { VTSAX: 'rate limited' },
+      })
+      const mfBlock2 = getMfBlock(container2)
+      expect(within(mfBlock2).queryByText('VTSAX: rate limited')).toBeNull()
+    })
+
+    it('tickerOverviewErrors renders in the Polygon error list, independent of mutualFundSyncErrors', () => {
+      const { container, unmount } = renderSettings({
+        settingsSection: 'priceSync',
+        tickerOverviewErrors: { AAPL: 'boom' },
+        mutualFundSyncErrors: {},
+      })
+      const aaplEntry = screen.getByText('AAPL: boom')
+      const mfBlock = getMfBlock(container)
+      expect(mfBlock.contains(aaplEntry)).toBe(false)
+      unmount()
+
+      // Same symbol/message, but as a mutualFundSyncErrors entry instead -
+      // must NOT show up in the Polygon error list (i.e. must not appear
+      // outside the Alphavantage sub-block).
+      const { container: container2 } = renderSettings({
+        settingsSection: 'priceSync',
+        tickerOverviewErrors: {},
+        mutualFundSyncErrors: { AAPL: 'boom' },
+      })
+      const mfBlock2 = getMfBlock(container2)
+      const aaplEntry2 = screen.getByText('AAPL: boom')
+      expect(mfBlock2.contains(aaplEntry2)).toBe(true)
+    })
+
+    it('with both maps non-empty, each error list shows only its own entries', () => {
+      const { container } = renderSettings({
+        settingsSection: 'priceSync',
+        tickerOverviewErrors: { AAPL: 'boom' },
+        mutualFundSyncErrors: { VTSAX: 'rate limited' },
+      })
+
+      const mfBlock = getMfBlock(container)
+      expect(within(mfBlock).getByText('VTSAX: rate limited')).toBeTruthy()
+      expect(within(mfBlock).queryByText('AAPL: boom')).toBeNull()
+
+      const aaplEntry = screen.getByText('AAPL: boom')
+      expect(mfBlock.contains(aaplEntry)).toBe(false)
     })
   })
 

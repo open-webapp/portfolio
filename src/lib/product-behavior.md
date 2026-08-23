@@ -25,6 +25,8 @@ Closed positions are viewable per-account on the Accounts page via a Closed Posi
 
 Settings > "Quotes API Key" tab (alongside Drive Sync and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
 
+Mutual Fund holdings sync separately via Alphavantage — see "## Mutual Fund Price Sync" below.
+
 ### Settings UI
 
 - **API Key field**: masked (password-style) input. Committed on blur (click/tab away), not on every keystroke.
@@ -63,21 +65,55 @@ If a Positions CSV is imported for an account after prices have already synced f
 
 No per-position "last synced/updated" label is shown in the Positions table — planned for a future phase.
 
+## Mutual Fund Price Sync
+
+Settings > "Quotes API Key" tab, second sub-block labeled "Alphavantage API Key (Mutual Funds)" — fetches daily closing prices and display names for held Mutual Fund positions from Alphavantage, independent of the Polygon flow above.
+
+### Settings UI
+
+- **API Key field**: masked (password-style) input, same commit-on-blur behavior as the Polygon key.
+- **"Fetch mutual fund prices now" button**: disabled while a fetch is in progress or when no Alphavantage key is set. No date picker — Alphavantage's TIME_SERIES_DAILY always returns the latest close, so there's no date-targeting like the Polygon flow.
+- **Error list**: this sub-block shows only Alphavantage failures (`mutualFundSyncErrors`); Polygon errors never appear here, and Alphavantage errors never appear in the first (Polygon) sub-block.
+
+### Automatic Fetch (load + tab focus + 60s retry)
+
+Runs after hydration/unlock on app load and on tab focus, same as the Polygon flow. Additionally, a shared 60-second background interval retries either sync (Polygon or Mutual Fund) if it has unfinished work — for Mutual Fund, "unfinished" means at least one held symbol has a stale/missing price and the daily call budget isn't exhausted.
+
+### Manual Fetch
+
+The "Fetch mutual fund prices now" button runs the identical fetch/update logic as the automatic trigger, on demand.
+
+### Name and Price Lookup
+
+- **Name lookup** (Alphavantage SYMBOL_SEARCH): once per symbol, ever. Result is cached in the same `ticker_overviews` store Polygon uses, with an empty SIC description (Alphavantage doesn't provide one).
+- **Price lookup** (Alphavantage TIME_SERIES_DAILY): once per symbol per calendar day.
+- `Position.price` is never updated by this sync (out of scope) — only `Position.name`.
+
+### Daily Budget
+
+At most 25 Alphavantage calls per day (name + price lookups combined), tracked in `mutualFundSync.callBudget` and persisted across reloads. Resets at midnight (calendar day rollover). If the cap is hit mid-run, progress is not reset — the next run picks up where it left off, only the day's used-count resets at rollover.
+
+### Rate Limiting
+
+Alphavantage signals rate limiting via a "Note" or "Information" field in an otherwise-200 response (not an HTTP 429). The app backs off a minute and retries — same silent-until-surfaced-in-Settings failure handling as the Polygon flow. Mutual fund sync errors show only in Settings, never on the Quotes page.
+
 ## Quotes
 
-Nav has a "Quotes" tab next to "Accounts". Full-page, read-only table of currently-held Equity/ETF tickers.
+Nav has a "Quotes" tab next to "Accounts". Full-page, read-only table of currently-held Equity/ETF and Mutual Fund tickers, merged into one symbol-sorted table.
 
-- **Row set**: one row per unique symbol currently held across all accounts, Equity/ETF only (effective class = manual override if set, else asset class). A symbol disappears once fully sold/closed and appears immediately when bought — independent of whether a price sync has run for it.
+- **Row set**: one row per unique symbol currently held across all accounts, Equity/ETF/Mutual Fund only (effective class = manual override if set, else asset class). A symbol disappears once fully sold/closed and appears immediately when bought — independent of whether a price sync has run for it.
 - **Columns**:
   - **Ticker**: the symbol.
-  - **Name**: company name, fetched lazily in the background (see enrichment below); `—` until fetched.
-  - **Status**: "OK" or "Not found" — same meaning as the old Settings table. "Not found" if the symbol is in that day's `notFound` list from the last sync, OR if there's simply no `heldPrices` entry yet (never synced).
-  - **Price**: last synced price, else last cached daily bar close as fallback, else `—`.
+  - **Name**: company/fund name, fetched lazily in the background (see enrichment below); `—` until fetched.
+  - **Asset Class**: Equity, ETF, or Mutual Fund.
+  - **Status**: "OK" (priced today), "Pending" (Mutual Fund only — fetched but not yet priced today, or never priced), or "Not found" (red — no match this run: Polygon's `notFound` list for Equity/ETF, or no Alphavantage SYMBOL_SEARCH match for Mutual Fund).
+  - **Price**: last synced price, else last cached daily bar close as fallback (Equity/ETF only), else `—`. Mutual Fund rows never fall back to bar-cache pricing — there is none for them.
   - **Held**: always "Yes" on this page (row set is holdings-only).
-  - **Last Updated (UTC)**: the exact UTC timestamp Polygon reported for that day's cached bar, else `—` if no cached bar yet or the cached bar's timestamp is missing/invalid.
-  - **SIC Description**: industry classification from the ticker overview fetch; `—` if not yet fetched.
+  - **Last Updated (UTC)**: the exact UTC timestamp Polygon reported for that day's cached bar (Equity/ETF only), else `—` if no cached bar yet, the timestamp is missing/invalid, or the row is a Mutual Fund.
+  - **SIC Description**: industry classification from the ticker overview fetch; `—` if not yet fetched or if the row is a Mutual Fund (Alphavantage doesn't provide one).
 - **Search box**: live filter across ticker, name, status, and SIC description, case-insensitive, every keystroke.
-- **Empty state**: "No holdings to show." when there are no currently-held Equity/ETF positions.
+- **Empty state**: "No holdings to show." when there are no currently-held Equity/ETF/Mutual Fund positions.
+- Mutual fund sync errors (`mutualFundSyncErrors`) are not shown on this page — only in Settings, next to the Alphavantage key.
 
 ### Name/SIC Enrichment
 
