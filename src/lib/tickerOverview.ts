@@ -1,6 +1,15 @@
 import type { Position } from './types'
 import { getTickerOverview, putTickerOverview } from './marketDataDb'
 
+/** Thrown when Polygon rate-limits the ticker overview request (429) — the
+ *  caller stops the sync loop entirely rather than treating it like a
+ *  per-ticker failure, since continuing would just draw more 429s. */
+export class TickerOverviewRateLimitError extends Error {
+  constructor() {
+    super('Polygon ticker overview error: 429 (rate limited)')
+  }
+}
+
 /** Fetch one ticker's name + SIC description from Polygon's Ticker Overview
  *  endpoint. Throws on network error, non-2xx, or a malformed/missing
  *  results.name / results.sic_description — caller catches. */
@@ -11,6 +20,7 @@ export async function fetchTickerOverview(
   const res = await fetch(
     `https://api.polygon.io/v3/reference/tickers/${ticker}?apiKey=${apiKey}`
   )
+  if (res.status === 429) throw new TickerOverviewRateLimitError()
   if (!res.ok) throw new Error(`Polygon ticker overview error: ${res.status}`)
   const json = await res.json()
   const name = json?.results?.name
@@ -52,6 +62,12 @@ export async function syncTickerOverviews(
       }
       onSuccess?.(ticker)
     } catch (err) {
+      if (err instanceof TickerOverviewRateLimitError) {
+        // Rate-limited: stop hammering Polygon for the remaining held symbols.
+        // A failed ticker is never cached, so it's retried on the next trigger.
+        onError(ticker, err.message)
+        break
+      }
       onError(ticker, err instanceof Error ? err.message : 'Could not fetch name')
     }
   }

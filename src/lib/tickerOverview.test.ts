@@ -181,6 +181,26 @@ describe('tickerOverview', () => {
       expect(dispatchedTypes.some((t) => typeof t === 'string' && /priceSync/i.test(t))).toBe(false)
     })
 
+    it('429 rate limit: stops the loop instead of hammering remaining held symbols', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, false, 429))
+      vi.stubGlobal('fetch', fetchMock)
+      const dispatch = vi.fn()
+      const onError = vi.fn()
+      const positions = [
+        makePosition({ id: 'pos-a', symbol: 'AAA' }),
+        makePosition({ id: 'pos-b', symbol: 'BBB' }),
+        makePosition({ id: 'pos-c', symbol: 'CCC' }),
+      ]
+
+      await syncTickerOverviews(['AAA', 'BBB', 'CCC'], 'key', positions, dispatch, onError)
+
+      // Only the first (rate-limited) ticker is fetched — the loop stops there
+      // rather than firing requests for BBB and CCC too.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(onError).toHaveBeenCalledTimes(1)
+      expect(onError).toHaveBeenCalledWith('AAA', expect.stringMatching(/429/))
+    })
+
     it('handles multiple symbols with mixed cache-hit/cache-miss/failure independently', async () => {
       await putTickerOverview({
         ticker: 'CACHED',

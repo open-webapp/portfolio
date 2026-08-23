@@ -67,9 +67,12 @@ each held Equity/ETF symbol found in the response → (unawaited) `tickerOvervie
 already in the `ticker_overviews` `marketDataDb` cache, fetches Polygon's Ticker Overview endpoint
 (`GET /v3/reference/tickers/{ticker}`), caches `{ name, sicDescription }` via `putTickerOverview`, and
 dispatches `UPDATE_POSITION` (`patch: { name }`) for every matching held position; per-ticker fetch/parse
-failures are caught and never rethrown (so the loop always completes), never touch `priceSync` state, and
-are surfaced only via `tickerOverviewErrors` — `App.tsx` local state (`Record<ticker, message>`) passed as a
-prop to `QuotesPage.tsx` for its failure banner.
+failures are caught and never rethrown, never touch `priceSync` state, and are surfaced only via
+`tickerOverviewErrors` — `App.tsx` local state (`Record<ticker, message>`) passed as a prop to
+`QuotesPage.tsx` for its failure banner. A 429 (`TickerOverviewRateLimitError`) is treated differently from
+other per-ticker failures: it still reports via `onError`, but breaks the loop instead of continuing to the
+remaining held symbols, since a failed ticker is never cached and is retried on the next trigger (mount/tab
+focus) anyway — continuing would just draw more 429s and pile up `tickerOverviewErrors` state updates.
 
 `marketDataDb`'s `DailyBar` also carries `t` (Unix ms — Polygon aggregate bar's end-of-window timestamp),
 passed through unchanged from `PolygonGroupedBarsResponse.results[].t` by `runPriceSync`'s bar mapping;
