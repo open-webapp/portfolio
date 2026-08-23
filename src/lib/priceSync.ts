@@ -29,7 +29,7 @@ export function seedLastFetchedDate(today: Date = new Date()): string {
 
 /** Raw Polygon response shape (subset used). */
 export interface PolygonGroupedBarsResponse {
-  results?: { T: string; c: number; h: number; l: number }[]
+  results?: { T: string; c: number; h: number; l: number; t: number }[]
   resultsCount?: number
   status?: string
 }
@@ -147,6 +147,7 @@ export async function runPriceSync(
     high: r.h,
     low: r.l,
     date: targetDate,
+    t: r.t,
   }))
   await putBars(bars)
 

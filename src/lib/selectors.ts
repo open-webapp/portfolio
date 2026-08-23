@@ -265,6 +265,22 @@ export function acctAssetClassOptions(positions: AssetClassed[]): string[] {
 }
 
 /**
+ * Distinct symbols among held positions whose effective asset class is Equity or ETF.
+ */
+export function heldEquityEtfSymbols(state: AppState): string[] {
+  return Array.from(
+    new Set(
+      state.positions
+        .filter((p) => {
+          const cls = p.assetClassManualOverride || p.assetClass
+          return cls === 'Equity' || cls === 'ETF'
+        })
+        .map((p) => p.symbol)
+    )
+  )
+}
+
+/**
  * Accounts page positions further filtered by acctAssetClassFilter and acctPosSearch.
  */
 export function acctFilteredPositions(state: AppState): Position[] {

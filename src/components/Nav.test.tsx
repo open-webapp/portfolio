@@ -22,13 +22,14 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
 }
 
 describe('Nav', () => {
-  // Test case 1: Accounts is the only main nav tab
-  it('renders exactly one main nav tab, labeled Accounts', () => {
+  // Test case 1: Accounts and Quotes are the main nav tabs
+  it('renders exactly two main nav tabs, labeled Accounts and Quotes', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
-    expect(screen.getAllByRole('radio')).toHaveLength(1)
+    expect(screen.getAllByRole('radio')).toHaveLength(2)
     expect(screen.getByRole('radio', { name: /Accounts/i })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: /Quotes/i })).toBeTruthy()
     expect(screen.queryByText('Dashboard')).toBeFalsy()
   })
 
@@ -57,6 +58,26 @@ describe('Nav', () => {
 
     fireEvent.click(screen.getByLabelText('Accounts'))
     expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'accounts' })
+  })
+
+  // Test case 5a: state.view = 'quotes'
+  it('state.view = "quotes" → Quotes tab is checked, Accounts tab is not checked', () => {
+    const props = makeProps({ state: { view: 'quotes' } as any })
+    render(<Nav {...props} />)
+
+    const quotesRadio = screen.getByRole('radio', { name: /Quotes/i }) as HTMLInputElement
+    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
+    expect(quotesRadio.checked).toBe(true)
+    expect(accountsRadio.checked).toBe(false)
+  })
+
+  // Test case 5b: Clicking Quotes tab
+  it('clicking Quotes tab dispatches { type: "SET_VIEW", view: "quotes" }', () => {
+    const props = makeProps({ state: { view: 'accounts' } as any })
+    render(<Nav {...props} />)
+
+    fireEvent.click(screen.getByLabelText('Quotes'))
+    expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'quotes' })
   })
 
   // Test case 6a: driveReady = true → sync icon renders

@@ -11,7 +11,8 @@ import {
   acctFilteredPositions,
   acctScopedClosedPositions,
   acctFilteredClosedPositions,
-  acctAllocationTitle
+  acctAllocationTitle,
+  heldEquityEtfSymbols
 } from './selectors'
 import { AppState, initialState } from './state'
 import { Account, Position, Transaction, ClosedPosition } from './types'
@@ -1041,5 +1042,120 @@ describe('selectors', () => {
     // Only acc-1 should be included
     expect(card.accountCount).toBe(1)
     expect(card.accounts[0].id).toBe('acc-1')
+  })
+
+  // === heldEquityEtfSymbols() tests ===
+
+  it('heldEquityEtfSymbols: dedupes the same symbol held across multiple accounts', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 100,
+        avgCost: 150,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      },
+      {
+        id: 'pos-2',
+        accountId: 'acc-2',
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        assetClass: 'Equity',
+        shares: 50,
+        avgCost: 140,
+        price: 200,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions
+    })
+
+    expect(heldEquityEtfSymbols(state)).toEqual(['AAPL'])
+  })
+
+  it('heldEquityEtfSymbols: excludes non-Equity/ETF asset classes', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'BND',
+        name: 'Bond Fund',
+        assetClass: 'Fixed Income',
+        shares: 50,
+        avgCost: 100,
+        price: 105,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions
+    })
+
+    expect(heldEquityEtfSymbols(state)).toEqual([])
+  })
+
+  it('heldEquityEtfSymbols: includes a position when manual override is ETF, even if base assetClass is not', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'VBTLX',
+        name: 'Vanguard Total Bond',
+        assetClass: 'Mutual Fund',
+        assetClassManualOverride: 'ETF',
+        shares: 10,
+        avgCost: 10,
+        price: 10,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions
+    })
+
+    expect(heldEquityEtfSymbols(state)).toEqual(['VBTLX'])
+  })
+
+  it('heldEquityEtfSymbols: includes a position with base assetClass ETF and no override', () => {
+    const positions: Position[] = [
+      {
+        id: 'pos-1',
+        accountId: 'acc-1',
+        symbol: 'VTI',
+        name: 'Total Market ETF',
+        assetClass: 'ETF',
+        shares: 20,
+        avgCost: 200,
+        price: 250,
+        lastImportedAt: '2026-08-08'
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions
+    })
+
+    expect(heldEquityEtfSymbols(state)).toEqual(['VTI'])
+  })
+
+  it('heldEquityEtfSymbols: returns empty array when there are no positions', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      positions: []
+    })
+
+    expect(heldEquityEtfSymbols(state)).toEqual([])
   })
 })

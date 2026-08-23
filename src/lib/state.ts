@@ -24,7 +24,7 @@ export interface AppState {
   priceSync: PriceSyncState
 
   // UI state
-  view: 'settings' | 'accounts'
+  view: 'settings' | 'accounts' | 'quotes'
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   txTypeFilter: string // 'All' or specific type like 'Buy'
@@ -384,7 +384,7 @@ export function addCustomInstitution(state: AppState, name: string): AppState {
 /**
  * Set the current view (to be implemented in reducer cases).
  */
-export function setView(state: AppState, view: 'settings' | 'accounts'): AppState {
+export function setView(state: AppState, view: 'settings' | 'accounts' | 'quotes'): AppState {
   return {
     ...state,
     view,

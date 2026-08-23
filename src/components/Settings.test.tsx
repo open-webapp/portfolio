@@ -6,7 +6,6 @@ import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
 import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
-import { fmtUSD } from '../lib/computations'
 
 // Mock functions for drive.project('app').pickFile(), referenced by the
 // hoisted vi.mock('../lib/drive', ...) factory below.
@@ -957,7 +956,7 @@ describe('SettingsPage', () => {
     it('clicking the Price Sync tab shows the API key input and Fetch prices now button, and hides Drive/Encryption sections', () => {
       renderSettings({ settingsSection: 'drive' })
 
-      const priceSyncInput = screen.getByLabelText('Price Sync') as HTMLInputElement
+      const priceSyncInput = screen.getByLabelText('Quotes API Key') as HTMLInputElement
       fireEvent.click(priceSyncInput)
 
       expect(mockSetSettingsSection).toHaveBeenCalledWith('priceSync')
@@ -966,7 +965,7 @@ describe('SettingsPage', () => {
     it('settingsSection="priceSync" shows the Price Sync card only', () => {
       const { container } = renderSettings({ settingsSection: 'priceSync' })
 
-      expect(screen.getAllByText('Price Sync').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('Quotes API Key').length).toBeGreaterThan(0)
       expect(screen.getByText('Polygon.io API Key')).toBeTruthy()
       expect(container.querySelector('input[type="password"]')).toBeTruthy()
       expect(screen.getByRole('button', { name: 'Fetch prices now' })).toBeTruthy()
@@ -1063,180 +1062,4 @@ describe('SettingsPage', () => {
     })
   })
 
-  describe('Price Sync table', () => {
-    it('renders "No prices fetched yet." and no search box/table when there are no held prices and no not-found symbols', () => {
-      const state = initialState()
-      state.priceSync.heldPrices = {}
-      state.priceSync.lastRun = null
-      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
-
-      expect(screen.getByText('No prices fetched yet.')).toBeTruthy()
-      expect(screen.queryByPlaceholderText('Search ticker or status...')).toBeNull()
-      expect(container.querySelector('table')).toBeNull()
-    })
-
-    it('shows a market-only ticker (not held, not in lastRun.notFound) from the local bar cache with status "Market" and "Held" = No', async () => {
-      const { putBars } = await import('../lib/marketDataDb')
-      await putBars([{ ticker: 'RANDCO', close: 42.5, high: 43, low: 41, date: '2026-08-21' }])
-
-      const state = initialState()
-      state.priceSync.heldPrices = {
-        AAPL: { price: 100, date: '2026-08-20', fetchedAt: '2026-08-21T10:00:00.000Z' },
-      }
-      state.priceSync.lastRun = { at: '2026-08-22T12:00:00.000Z', updatedCount: 1, notFound: [], marketTickerCount: 2 }
-      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
-
-      await waitFor(() => {
-        const table = container.querySelector('table') as HTMLTableElement
-        expect(Array.from(table.querySelectorAll('tbody tr')).some((tr) => tr.textContent?.includes('RANDCO'))).toBe(
-          true
-        )
-      })
-
-      const table = container.querySelector('table') as HTMLTableElement
-      const row = Array.from(table.querySelectorAll('tbody tr')).find((tr) =>
-        tr.textContent?.includes('RANDCO')
-      ) as HTMLTableRowElement
-      const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
-      expect(cells[0]).toBe('RANDCO')
-      expect(cells[1]).toBe(fmtUSD(42.5))
-      expect(cells[2]).toBe('Market')
-      expect(cells[3]).toBe('No')
-    })
-
-    it('renders an OK row with formatted price/trading date/fetched at for a symbol only in heldPrices', () => {
-      const state = initialState()
-      state.priceSync.heldPrices = {
-        AAPL: { price: 123.456, date: '2026-08-20', fetchedAt: '2026-08-21T10:15:00.000Z' },
-      }
-      state.priceSync.lastRun = null
-      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
-
-      const table = container.querySelector('table') as HTMLTableElement
-      expect(table).toBeTruthy()
-
-      const row = Array.from(table.querySelectorAll('tbody tr')).find((tr) =>
-        tr.textContent?.includes('AAPL')
-      ) as HTMLTableRowElement
-      expect(row).toBeTruthy()
-
-      const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
-      const expectedPrice = fmtUSD(123.456)
-      const expectedDate = new Date('2026-08-20').toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-      const expectedFetchedAt = new Date('2026-08-21T10:15:00.000Z').toLocaleString()
-
-      expect(cells[0]).toBe('AAPL')
-      expect(cells[1]).toBe(expectedPrice)
-      expect(cells[2]).toBe('OK')
-      expect(cells[3]).toBe('Yes')
-      expect(cells[4]).toBe(expectedDate)
-      expect(cells[5]).toBe(expectedFetchedAt)
-    })
-
-    it('renders a "Not found" row with all dashes for a symbol only in lastRun.notFound', () => {
-      const state = initialState()
-      state.priceSync.heldPrices = {}
-      state.priceSync.lastRun = { at: '2026-08-22T12:00:00.000Z', updatedCount: 0, notFound: ['ZZZZ'], marketTickerCount: 0 }
-      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
-
-      const table = container.querySelector('table') as HTMLTableElement
-      expect(table).toBeTruthy()
-
-      const row = Array.from(table.querySelectorAll('tbody tr')).find((tr) =>
-        tr.textContent?.includes('ZZZZ')
-      ) as HTMLTableRowElement
-      expect(row).toBeTruthy()
-
-      const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent)
-      expect(cells[0]).toBe('ZZZZ')
-      expect(cells[1]).toBe('—')
-      expect(cells[2]).toBe('Not found')
-      expect(cells[3]).toBe('Yes')
-      expect(cells[4]).toBe('—')
-      expect(cells[5]).toBe('—')
-    })
-
-    it('a symbol with a stale heldPrices entry that is also in lastRun.notFound renders exactly one row with Status "Not found" but shows the stale values', () => {
-      const state = initialState()
-      state.priceSync.heldPrices = {
-        MSFT: { price: 300, date: '2026-08-15', fetchedAt: '2026-08-16T09:00:00.000Z' },
-      }
-      state.priceSync.lastRun = { at: '2026-08-22T12:00:00.000Z', updatedCount: 0, notFound: ['MSFT'], marketTickerCount: 0 }
-      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
-
-      const table = container.querySelector('table') as HTMLTableElement
-      const rows = Array.from(table.querySelectorAll('tbody tr')).filter((tr) =>
-        tr.textContent?.includes('MSFT')
-      )
-      expect(rows.length).toBe(1)
-
-      const cells = Array.from(rows[0].querySelectorAll('td')).map((td) => td.textContent)
-      const expectedPrice = fmtUSD(300)
-      const expectedDate = new Date('2026-08-15').toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-      const expectedFetchedAt = new Date('2026-08-16T09:00:00.000Z').toLocaleString()
-
-      expect(cells[0]).toBe('MSFT')
-      expect(cells[1]).toBe(expectedPrice)
-      expect(cells[2]).toBe('Not found')
-      expect(cells[3]).toBe('Yes')
-      expect(cells[4]).toBe(expectedDate)
-      expect(cells[5]).toBe(expectedFetchedAt)
-    })
-
-    it('filters rows live by ticker or status substring, case-insensitively', () => {
-      const state = initialState()
-      state.priceSync.heldPrices = {
-        AAPL: { price: 100, date: '2026-08-20', fetchedAt: '2026-08-21T10:00:00.000Z' },
-        GOOG: { price: 200, date: '2026-08-20', fetchedAt: '2026-08-21T10:00:00.000Z' },
-      }
-      state.priceSync.lastRun = { at: '2026-08-22T12:00:00.000Z', updatedCount: 0, notFound: ['ZZZZ'], marketTickerCount: 0 }
-      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
-
-      const search = screen.getByPlaceholderText('Search ticker or status...') as HTMLInputElement
-
-      function visibleTickers() {
-        const table = container.querySelector('table') as HTMLTableElement
-        return Array.from(table.querySelectorAll('tbody tr')).map(
-          (tr) => tr.querySelector('td')?.textContent
-        )
-      }
-
-      // Substring match on ticker, case-insensitive.
-      fireEvent.change(search, { target: { value: 'aapl' } })
-      expect(visibleTickers()).toEqual(['AAPL'])
-
-      // Substring match on status text "Not found".
-      fireEvent.change(search, { target: { value: 'not found' } })
-      expect(visibleTickers()).toEqual(['ZZZZ'])
-
-      // Substring match on status text "OK".
-      fireEvent.change(search, { target: { value: 'ok' } })
-      expect(visibleTickers().sort()).toEqual(['AAPL', 'GOOG'])
-    })
-
-    it('sorts rows alphabetically by ticker regardless of insertion order', () => {
-      const state = initialState()
-      state.priceSync.heldPrices = {
-        ZETA: { price: 1, date: '2026-08-20', fetchedAt: '2026-08-21T10:00:00.000Z' },
-        ALPHA: { price: 2, date: '2026-08-20', fetchedAt: '2026-08-21T10:00:00.000Z' },
-        MID: { price: 3, date: '2026-08-20', fetchedAt: '2026-08-21T10:00:00.000Z' },
-      }
-      state.priceSync.lastRun = null
-      const { container } = renderSettings({ state, settingsSection: 'priceSync' })
-
-      const table = container.querySelector('table') as HTMLTableElement
-      const tickers = Array.from(table.querySelectorAll('tbody tr')).map(
-        (tr) => tr.querySelector('td')?.textContent
-      )
-      expect(tickers).toEqual(['ALPHA', 'MID', 'ZETA'])
-    })
-  })
 })

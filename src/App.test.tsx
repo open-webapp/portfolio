@@ -209,14 +209,16 @@ describe('view switching (accounts vs settings)', () => {
     expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
   })
 
-  it('renders exactly one main nav tab (no Dashboard tab)', async () => {
+  it('renders the expected main nav tabs (no Dashboard tab)', async () => {
     await renderUnlockedApp()
 
     const mainViewLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
       (label) => label.querySelector('input[name="mainView"]') !== null
     )
-    expect(mainViewLabels).toHaveLength(1)
-    expect(mainViewLabels[0].textContent).toContain('Accounts')
+    expect(mainViewLabels).toHaveLength(2)
+    const labelText = mainViewLabels.map((label) => label.textContent)
+    expect(labelText.some((text) => text?.includes('Accounts'))).toBe(true)
+    expect(labelText.some((text) => text?.includes('Quotes'))).toBe(true)
     expect(screen.queryByText('Dashboard')).toBeFalsy()
   })
 

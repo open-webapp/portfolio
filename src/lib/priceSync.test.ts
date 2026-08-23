@@ -12,11 +12,12 @@ import type { PriceSyncState } from './types'
 
 const DB_NAME = 'portfolio_market_data_v1'
 const STORE_NAME = 'daily_bars'
+const OVERVIEW_STORE_NAME = 'ticker_overviews'
 
 async function clearDatabase() {
   try {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, 1)
+      const request = indexedDB.open(DB_NAME, 2)
       request.onerror = () => reject(request.error)
       request.onsuccess = () => resolve(request.result)
       request.onupgradeneeded = (event) => {
@@ -24,15 +25,18 @@ async function clearDatabase() {
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, { keyPath: 'ticker' })
         }
+        if (!db.objectStoreNames.contains(OVERVIEW_STORE_NAME)) {
+          db.createObjectStore(OVERVIEW_STORE_NAME, { keyPath: 'ticker' })
+        }
       }
     })
 
-    const transaction = db.transaction(STORE_NAME, 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
+    const transaction = db.transaction([STORE_NAME, OVERVIEW_STORE_NAME], 'readwrite')
     await new Promise<void>((resolve, reject) => {
-      const request = store.clear()
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve()
+      transaction.objectStore(STORE_NAME).clear()
+      transaction.objectStore(OVERVIEW_STORE_NAME).clear()
+      transaction.onerror = () => reject(transaction.error)
+      transaction.oncomplete = () => resolve()
     })
     db.close()
   } catch {
@@ -78,7 +82,7 @@ describe('priceSync', () => {
 
   describe('fetchGroupedDailyBars', () => {
     it('happy path returns results array unchanged', async () => {
-      const results = [{ T: 'AAPL', c: 190, h: 191, l: 189 }]
+      const results = [{ T: 'AAPL', c: 190, h: 191, l: 189, t: 1755806400000 }]
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ results })))
 
       const out = await fetchGroupedDailyBars('2026-08-21', 'key')
@@ -148,8 +152,8 @@ describe('priceSync', () => {
 
     it('happy path updates found symbol, reports not-found, writes all bars to marketDataDb', async () => {
       const results = [
-        { T: 'AAPL', c: 195.5, h: 196, l: 194, T2: undefined },
-        { T: 'GOOG', c: 150, h: 151, l: 149 },
+        { T: 'AAPL', c: 195.5, h: 196, l: 194, T2: undefined, t: 1755806400000 },
+        { T: 'GOOG', c: 150, h: 151, l: 149, t: 1755806400000 },
       ]
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ results })))
 
@@ -176,8 +180,39 @@ describe('priceSync', () => {
       // ALL bars from the response were written, not just held symbols
       const aapl = await getCachedBar('AAPL')
       const goog = await getCachedBar('GOOG')
-      expect(aapl).toEqual({ ticker: 'AAPL', close: 195.5, high: 196, low: 194, date: '2026-08-21' })
-      expect(goog).toEqual({ ticker: 'GOOG', close: 150, high: 151, low: 149, date: '2026-08-21' })
+      expect(aapl).toEqual({
+        ticker: 'AAPL',
+        close: 195.5,
+        high: 196,
+        low: 194,
+        date: '2026-08-21',
+        t: 1755806400000,
+      })
+      expect(goog).toEqual({
+        ticker: 'GOOG',
+        close: 150,
+        high: 151,
+        low: 149,
+        date: '2026-08-21',
+        t: 1755806400000,
+      })
+    })
+
+    it('happy path writes the Polygon-provided t (bar timestamp) unchanged to the cached bar', async () => {
+      const results = [{ T: 'AAPL', c: 195.5, h: 196, l: 194, t: 1755892800000 }]
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ results })))
+
+      const priceSync: PriceSyncState = {
+        apiKey: 'key',
+        lastFetchedDate: '2026-08-20',
+        heldPrices: {},
+        lastRun: null,
+      }
+
+      await runPriceSync(priceSync, ['AAPL'])
+
+      const aapl = await getCachedBar('AAPL')
+      expect(aapl?.t).toBe(1755892800000)
     })
 
     it('empty/error response leaves lastFetchedDate/heldPrices unchanged, all symbols not found', async () => {
@@ -280,7 +315,7 @@ describe('priceSync', () => {
     })
 
     it('overrideDate bypasses lastFetchedDate-based computation and fetches that date directly', async () => {
-      const results = [{ T: 'AAPL', c: 100, h: 101, l: 99 }]
+      const results = [{ T: 'AAPL', c: 100, h: 101, l: 99, t: 1754784000000 }]
       const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ results }))
       vi.stubGlobal('fetch', fetchMock)
 

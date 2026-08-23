@@ -205,6 +205,12 @@ describe('state helpers', () => {
       const toAccounts = setView(toSettings, 'accounts')
       expect(toAccounts.view).toBe('accounts')
     })
+
+    it('sets view to "quotes"', () => {
+      const state = initialState()
+      const toQuotes = setView(state, 'quotes')
+      expect(toQuotes.view).toBe('quotes')
+    })
   })
 
   describe('closePosition', () => {

@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import { getDriveAuthStatus, syncBackup } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
-import { fmtUSD } from '../lib/computations'
-import { getAllBars, type DailyBar } from '../lib/marketDataDb'
 import { DriveRestorePanel } from './DriveRestorePanel'
 
 export interface SettingsPageProps {
@@ -58,21 +56,7 @@ export function SettingsPage({
   const [apiKeyInput, setApiKeyInput] = useState(state.priceSync.apiKey)
   const [fetchingPrices, setFetchingPrices] = useState(false)
   const [fetchDateInput, setFetchDateInput] = useState('')
-  const [priceSyncSearch, setPriceSyncSearch] = useState('')
-  const [allBars, setAllBars] = useState<DailyBar[]>([])
   const priceSync = state.priceSync
-
-  // marketDataDb caches every ticker Polygon returns (not just held symbols) —
-  // reload it whenever a new sync run completes so the table below stays current.
-  useEffect(() => {
-    let cancelled = false
-    getAllBars().then((bars) => {
-      if (!cancelled) setAllBars(bars)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [priceSync.lastRun?.at])
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
@@ -172,7 +156,7 @@ export function SettingsPage({
             readOnly
             onClick={() => setSettingsSection('priceSync')}
           />
-          Price Sync
+          Quotes API Key
         </label>
       </div>
       <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
@@ -255,7 +239,7 @@ export function SettingsPage({
       {/* Price Sync section */}
       {settingsSection === 'priceSync' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
-        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Price Sync</div>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Quotes API Key</div>
         <div className="field">
           <label>Polygon.io API Key</label>
           <input
@@ -300,88 +284,6 @@ export function SettingsPage({
         ) : (
           <p>Never run</p>
         )}
-        {(() => {
-          const notFoundSet = new Set(priceSync.lastRun?.notFound ?? [])
-          const barsByTicker = new Map(allBars.map((b) => [b.ticker, b]))
-          const symbols = Array.from(new Set([
-            ...Object.keys(priceSync.heldPrices),
-            ...(priceSync.lastRun?.notFound ?? []),
-            ...allBars.map((b) => b.ticker),
-          ])).sort((a, b) => a.localeCompare(b))
-
-          if (symbols.length === 0) {
-            return <p>No prices fetched yet.</p>
-          }
-
-          const rows = symbols.map((symbol) => {
-            const held = priceSync.heldPrices[symbol]
-            const bar = barsByTicker.get(symbol)
-            const isHeld = symbol in priceSync.heldPrices || notFoundSet.has(symbol)
-            const status = notFoundSet.has(symbol) ? 'Not found' : isHeld ? 'OK' : 'Market'
-            const price = held?.price ?? bar?.close
-            const tradingDate = held?.date ?? bar?.date
-            return {
-              symbol,
-              status,
-              held: isHeld ? 'Yes' : 'No',
-              price: price !== undefined ? fmtUSD(price) : '—',
-              tradingDate: tradingDate
-                ? new Date(tradingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                : '—',
-              fetchedAt: held ? new Date(held.fetchedAt).toLocaleString() : '—',
-            }
-          })
-
-          const q = priceSyncSearch.trim().toLowerCase()
-          const filteredRows = q
-            ? rows.filter(
-                (r) =>
-                  r.symbol.toLowerCase().includes(q) ||
-                  r.status.toLowerCase().includes(q) ||
-                  r.held.toLowerCase().includes(q)
-              )
-            : rows
-
-          return (
-            <>
-              <div className="field" style={{ marginTop: 'var(--space-4)' }}>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="Search ticker or status..."
-                  value={priceSyncSearch}
-                  onChange={(e) => setPriceSyncSearch(e.target.value)}
-                />
-              </div>
-              <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 480px)', marginTop: 'var(--space-3)' }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Ticker</th>
-                      <th>Price</th>
-                      <th>Status</th>
-                      <th>Held</th>
-                      <th>Trading Date</th>
-                      <th>Fetched At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRows.map((r) => (
-                      <tr key={r.symbol}>
-                        <td>{r.symbol}</td>
-                        <td>{r.price}</td>
-                        <td style={r.status === 'Not found' ? { color: '#8a3c2e' } : undefined}>{r.status}</td>
-                        <td>{r.held}</td>
-                        <td>{r.tradingDate}</td>
-                        <td>{r.fetchedAt}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )
-        })()}
       </section>
       )}
     </div>

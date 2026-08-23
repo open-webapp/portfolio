@@ -5,9 +5,12 @@ import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
 import { Nav } from './components/Nav'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
+import { QuotesPage } from './components/QuotesPage'
 import { PasswordGate } from './components/PasswordGate'
 import { drive, getDriveAuthStatus, getBackupFileId, syncBackup, ensureFreshConnection } from './lib/drive'
 import { runPriceSync } from './lib/priceSync'
+import { heldEquityEtfSymbols } from './lib/selectors'
+import { syncTickerOverviews } from './lib/tickerOverview'
 import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
 
@@ -35,6 +38,7 @@ function App() {
   const [driveReady, setDriveReady] = useState(false)
   const [driveEmail, setDriveEmail] = useState<string | null>(null)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
+  const [tickerOverviewErrors, setTickerOverviewErrors] = useState<Record<string, string>>({})
 
   // Which section of the Settings page is active
   const [settingsSection, setSettingsSection] = useState<'drive' | 'encryption' | 'priceSync'>('drive')
@@ -107,16 +111,7 @@ function App() {
   const runPriceSyncTrigger = useCallback(async (overrideDate?: string) => {
     const current = latestStateRef.current
     if (!current.priceSync.apiKey) return
-    const heldSymbols = [
-      ...new Set(
-        current.positions
-          .filter((p) => {
-            const cls = p.assetClassManualOverride || p.assetClass
-            return cls === 'Equity' || cls === 'ETF'
-          })
-          .map((p) => p.symbol)
-      ),
-    ]
+    const heldSymbols = heldEquityEtfSymbols(current)
     const { patch, updatedPrices } = await runPriceSync(current.priceSync, heldSymbols, overrideDate)
     dispatch({ type: 'RECORD_PRICE_SYNC_RUN', patch })
     for (const [symbol, price] of Object.entries(updatedPrices)) {
@@ -125,6 +120,19 @@ function App() {
         dispatch({ type: 'UPDATE_POSITION', positionId: id, patch: { price } })
       }
     }
+
+    syncTickerOverviews(
+      heldSymbols,
+      current.priceSync.apiKey,
+      current.positions,
+      dispatch,
+      (ticker, message) => setTickerOverviewErrors((prev) => ({ ...prev, [ticker]: message })),
+      (ticker) => setTickerOverviewErrors((prev) => {
+        const next = { ...prev }
+        delete next[ticker]
+        return next
+      })
+    ).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -348,6 +356,11 @@ function App() {
           /* Accounts page view */
           <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
             <AccountsPage state={state} dispatch={dispatch} />
+          </div>
+        ) : state.view === 'quotes' ? (
+          /* Quotes page view */
+          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
+            <QuotesPage state={state} dispatch={dispatch} tickerOverviewErrors={tickerOverviewErrors} />
           </div>
         ) : (
           /* Settings page view */

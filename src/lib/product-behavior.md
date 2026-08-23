@@ -23,7 +23,7 @@ Closed positions are viewable per-account on the Accounts page via a Closed Posi
 
 ## Price Sync
 
-Settings > Price Sync tab (alongside Drive Sync and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
+Settings > "Quotes API Key" tab (alongside Drive Sync and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
 
 ### Settings UI
 
@@ -31,7 +31,7 @@ Settings > Price Sync tab (alongside Drive Sync and Change Encryption Password) 
 - **"Fetch prices now" button**: disabled while a fetch is in progress or when no API key is set. Label reads "Fetching prices..." while running.
 - **Date input** (next to the button): optional `YYYY-MM-DD` date picker. Empty (default): fetch uses the normal auto-computed next-business-day date. A date entered here fetches that exact date instead, bypassing the auto-computed date entirely — for backfilling a missed day or re-checking a specific date.
 - **Status text**: last run date/time, then either an error message (API request failed, e.g. invalid/unauthorized API key) or the total number of tickers Polygon returned for that day (market-wide, not just held symbols) plus the count of positions updated plus a "not found" list of held symbols absent from that day's data. Shows "Never run" before the first fetch.
-- **Price table**: lists every ticker cached locally from Polygon responses (market-wide — thousands of tickers, not just held positions), each tagged "Held" Yes/No; see `src/lib/design.md` for the row-merge logic.
+- **Price table**: the API Key/Fetch/status controls live under a tab now labeled "Quotes API Key" (same `settingsSection === 'priceSync'` tab as before, relabeled). The price/name table itself has moved to the new Quotes page — see "## Quotes" below.
 - No automatic or manual fetch happens at all until an API key is entered.
 
 ### Automatic Fetch (load + tab focus)
@@ -47,6 +47,7 @@ The "Fetch prices now" button runs the identical fetch/update logic as the autom
 - Held Equity or ETF positions whose symbol is found in that day's price data: price is updated to the new value.
 - Symbols not found in the response: left untouched, listed under "not found" in the status text — expected (e.g. delisted symbol, data gap), not shown as an error.
 - Other asset classes (Fixed Income, Cash, Crypto, etc.) are never touched by price sync.
+- After every successful fetch (automatic or manual), name/SIC enrichment for held Equity/ETF symbols also runs in the background — see "## Quotes" below for details.
 
 ### On a Failed Fetch (HTTP error, e.g. invalid/unauthorized API key)
 
@@ -61,6 +62,28 @@ If a Positions CSV is imported for an account after prices have already synced f
 ### Out of Scope (this phase)
 
 No per-position "last synced/updated" label is shown in the Positions table — planned for a future phase.
+
+## Quotes
+
+Nav has a "Quotes" tab next to "Accounts". Full-page, read-only table of currently-held Equity/ETF tickers.
+
+- **Row set**: one row per unique symbol currently held across all accounts, Equity/ETF only (effective class = manual override if set, else asset class). A symbol disappears once fully sold/closed and appears immediately when bought — independent of whether a price sync has run for it.
+- **Columns**:
+  - **Ticker**: the symbol.
+  - **Name**: company name, fetched lazily in the background (see enrichment below); `—` until fetched.
+  - **Status**: "OK" or "Not found" — same meaning as the old Settings table. "Not found" if the symbol is in that day's `notFound` list from the last sync, OR if there's simply no `heldPrices` entry yet (never synced).
+  - **Price**: last synced price, else last cached daily bar close as fallback, else `—`.
+  - **Held**: always "Yes" on this page (row set is holdings-only).
+  - **Last Updated (UTC)**: the exact UTC timestamp Polygon reported for that day's cached bar, else `—` if no cached bar yet.
+  - **SIC Description**: industry classification from the ticker overview fetch; `—` if not yet fetched.
+- **Search box**: live filter across ticker, name, status, and SIC description, case-insensitive, every keystroke.
+- **Empty state**: "No holdings to show." when there are no currently-held Equity/ETF positions.
+
+### Name/SIC Enrichment
+
+- Runs automatically in the background after every price sync (automatic or manual) — fetches Polygon's Ticker Overview for each held Equity/ETF symbol not already cached.
+- Fetched once per ticker, never re-fetched once successful (names/SIC don't change).
+- Failures (bad key, rate limit, network issue) are silent everywhere else in the app — not shown as a price-sync error in Settings — but surface as a small note on the Quotes page itself: "Could not fetch name for: XYZ". A failed ticker stays uncached, so it's retried automatically on the next sync.
 
 ## Google Drive Sync
 

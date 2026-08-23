@@ -22,6 +22,7 @@ export function Nav({
 }: NavProps) {
   const mainNavTabs = [
     { value: 'accounts', label: 'Accounts' },
+    { value: 'quotes', label: 'Quotes' },
   ]
 
   return (
