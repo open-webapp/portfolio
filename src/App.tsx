@@ -45,6 +45,11 @@ function App() {
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // Guards against overlapping syncTickerOverviews runs: it now paces/retries
+  // on its own timers until every held symbol is resolved, which can take
+  // minutes for a large portfolio, so a mount+focus retrigger mid-run must
+  // no-op rather than starting a second overlapping loop.
+  const tickerSyncInFlightRef = useRef(false)
   // Latest state + hydration flag, so a flush-on-unmount can save even when the debounce hasn't fired
   const latestStateRef = useRef(state)
   latestStateRef.current = state
@@ -121,18 +126,25 @@ function App() {
       }
     }
 
-    syncTickerOverviews(
-      heldSymbols,
-      current.priceSync.apiKey,
-      current.positions,
-      dispatch,
-      (ticker, message) => setTickerOverviewErrors((prev) => ({ ...prev, [ticker]: message })),
-      (ticker) => setTickerOverviewErrors((prev) => {
-        const next = { ...prev }
-        delete next[ticker]
-        return next
-      })
-    ).catch(() => {})
+    if (!tickerSyncInFlightRef.current) {
+      tickerSyncInFlightRef.current = true
+      syncTickerOverviews(
+        heldSymbols,
+        current.priceSync.apiKey,
+        current.positions,
+        dispatch,
+        (ticker, message) => setTickerOverviewErrors((prev) => ({ ...prev, [ticker]: message })),
+        (ticker) => setTickerOverviewErrors((prev) => {
+          const next = { ...prev }
+          delete next[ticker]
+          return next
+        })
+      )
+        .catch(() => {})
+        .finally(() => {
+          tickerSyncInFlightRef.current = false
+        })
+    }
   }, [])
 
   useEffect(() => {

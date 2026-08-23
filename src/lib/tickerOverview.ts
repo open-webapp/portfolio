@@ -1,9 +1,21 @@
 import type { Position } from './types'
 import { getTickerOverview, putTickerOverview } from './marketDataDb'
 
-/** Thrown when Polygon rate-limits the ticker overview request (429) — the
- *  caller stops the sync loop entirely rather than treating it like a
- *  per-ticker failure, since continuing would just draw more 429s. */
+/** Polygon free tier allows ~5 req/min for this endpoint. Space requests out
+ *  under that limit so the sync loop doesn't draw 429s in the first place. */
+export const REQUEST_SPACING_MS = 12_500
+
+/** If a 429 slips through anyway (e.g. the key is also in use elsewhere),
+ *  wait a full rate-limit window before retrying the same ticker. */
+export const RATE_LIMIT_BACKOFF_MS = 60_000
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Thrown when Polygon rate-limits the ticker overview request (429) —
+ *  the caller backs off and retries the same ticker rather than treating
+ *  it like a per-ticker failure to skip past. */
 export class TickerOverviewRateLimitError extends Error {
   constructor() {
     super('Polygon ticker overview error: 429 (rate limited)')
@@ -34,9 +46,16 @@ export async function fetchTickerOverview(
 /**
  * Best-effort, cache-aware enrichment: for each held symbol not already
  * cached, fetches its overview, caches it, and syncs Position.name for
- * every matching held position. Never throws — per-ticker failures are
- * reported via onError and otherwise ignored (retried automatically on
- * a future call, since a failed ticker is never cached).
+ * every matching held position. Never throws — non-rate-limit per-ticker
+ * failures are reported via onError and otherwise ignored (retried
+ * automatically on a future call, since a failed ticker is never cached).
+ *
+ * Requests are spaced by REQUEST_SPACING_MS to stay under Polygon's rate
+ * limit. If a 429 happens anyway, the same ticker is retried on a
+ * RATE_LIMIT_BACKOFF_MS timer — still within the rate limit — until it
+ * succeeds (or fails for a non-rate-limit reason), so one call to this
+ * function drives every held symbol to completion rather than stopping
+ * at the first rate-limited ticker.
  */
 export async function syncTickerOverviews(
   heldSymbols: string[],
@@ -44,31 +63,40 @@ export async function syncTickerOverviews(
   positions: Position[],
   dispatch: (action: any) => void,
   onError: (ticker: string, message: string) => void,
-  onSuccess?: (ticker: string) => void
+  onSuccess?: (ticker: string) => void,
+  sleep: (ms: number) => Promise<void> = defaultSleep
 ): Promise<void> {
+  let needsSpacing = false
   for (const ticker of heldSymbols) {
     const cached = await getTickerOverview(ticker)
     if (cached) continue
-    try {
-      const overview = await fetchTickerOverview(ticker, apiKey)
-      await putTickerOverview({
-        ticker,
-        name: overview.name,
-        sicDescription: overview.sicDescription,
-        fetchedAt: new Date().toISOString(),
-      })
-      for (const p of positions.filter((p) => p.symbol === ticker)) {
-        dispatch({ type: 'UPDATE_POSITION', positionId: p.id, patch: { name: overview.name } })
-      }
-      onSuccess?.(ticker)
-    } catch (err) {
-      if (err instanceof TickerOverviewRateLimitError) {
-        // Rate-limited: stop hammering Polygon for the remaining held symbols.
-        // A failed ticker is never cached, so it's retried on the next trigger.
-        onError(ticker, err.message)
+
+    if (needsSpacing) await sleep(REQUEST_SPACING_MS)
+    needsSpacing = true
+
+    for (;;) {
+      try {
+        const overview = await fetchTickerOverview(ticker, apiKey)
+        await putTickerOverview({
+          ticker,
+          name: overview.name,
+          sicDescription: overview.sicDescription,
+          fetchedAt: new Date().toISOString(),
+        })
+        for (const p of positions.filter((p) => p.symbol === ticker)) {
+          dispatch({ type: 'UPDATE_POSITION', positionId: p.id, patch: { name: overview.name } })
+        }
+        onSuccess?.(ticker)
+        break
+      } catch (err) {
+        if (err instanceof TickerOverviewRateLimitError) {
+          onError(ticker, err.message)
+          await sleep(RATE_LIMIT_BACKOFF_MS)
+          continue
+        }
+        onError(ticker, err instanceof Error ? err.message : 'Could not fetch name')
         break
       }
-      onError(ticker, err instanceof Error ? err.message : 'Could not fetch name')
     }
   }
 }

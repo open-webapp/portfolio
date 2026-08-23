@@ -63,16 +63,21 @@ App load/tab-focus (or Settings "Fetch prices now") → `App.tsx`'s `runPriceSyn
 local cache, separate from `persist.ts`/Drive, readable in full via `marketDataDb.getAllBars()`) + `RECORD_PRICE_SYNC_RUN` dispatch (advances `lastFetchedDate` +
 `heldPrices` + `lastRun.marketTickerCount` (total tickers in the Polygon response, 0 on empty/error) only on non-empty response) → `UPDATE_POSITION` dispatch for
 each held Equity/ETF symbol found in the response → (unawaited) `tickerOverview.ts`'s
-`syncTickerOverviews(heldSymbols, apiKey, positions, dispatch, onError, onSuccess?)`: for each held symbol not
-already in the `ticker_overviews` `marketDataDb` cache, fetches Polygon's Ticker Overview endpoint
+`syncTickerOverviews(heldSymbols, apiKey, positions, dispatch, onError, onSuccess?, sleep?)`: for each held
+symbol not already in the `ticker_overviews` `marketDataDb` cache, fetches Polygon's Ticker Overview endpoint
 (`GET /v3/reference/tickers/{ticker}`), caches `{ name, sicDescription }` via `putTickerOverview`, and
 dispatches `UPDATE_POSITION` (`patch: { name }`) for every matching held position; per-ticker fetch/parse
 failures are caught and never rethrown, never touch `priceSync` state, and are surfaced only via
 `tickerOverviewErrors` — `App.tsx` local state (`Record<ticker, message>`) passed as a prop to
-`QuotesPage.tsx` for its failure banner. A 429 (`TickerOverviewRateLimitError`) is treated differently from
-other per-ticker failures: it still reports via `onError`, but breaks the loop instead of continuing to the
-remaining held symbols, since a failed ticker is never cached and is retried on the next trigger (mount/tab
-focus) anyway — continuing would just draw more 429s and pile up `tickerOverviewErrors` state updates.
+`QuotesPage.tsx` for its failure banner. Successive tickers are paced `REQUEST_SPACING_MS` (12.5s) apart to
+stay under Polygon's ~5 req/min free-tier limit proactively. A 429 (`TickerOverviewRateLimitError`) is
+treated differently from other per-ticker failures: instead of moving on, the same ticker is retried after
+`RATE_LIMIT_BACKOFF_MS` (60s, still within the rate limit) in a loop until it succeeds or fails for a
+non-rate-limit reason — so one call drives every held symbol to completion rather than stopping at the first
+rate-limited ticker. `sleep` is injectable (defaults to a real `setTimeout`-based wait) purely for test
+determinism. `App.tsx` guards against overlapping runs via `tickerSyncInFlightRef` — since a run can now take
+minutes for a large portfolio, a mount/tab-focus retrigger mid-run is a no-op rather than starting a second
+overlapping loop.
 
 `marketDataDb`'s `DailyBar` also carries `t` (Unix ms — Polygon aggregate bar's end-of-window timestamp),
 passed through unchanged from `PolygonGroupedBarsResponse.results[].t` by `runPriceSync`'s bar mapping;

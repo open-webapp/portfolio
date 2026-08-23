@@ -1,8 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { fetchTickerOverview, syncTickerOverviews } from './tickerOverview'
+import {
+  fetchTickerOverview,
+  syncTickerOverviews,
+  REQUEST_SPACING_MS,
+  RATE_LIMIT_BACKOFF_MS,
+} from './tickerOverview'
 import { getTickerOverview, putTickerOverview } from './marketDataDb'
 import type { Position } from './types'
+
+/** No-op sleep for tests: resolves immediately but still records timing calls,
+ *  so tests never wait out the real REQUEST_SPACING_MS/RATE_LIMIT_BACKOFF_MS delays. */
+function fastSleep() {
+  return vi.fn().mockResolvedValue(undefined)
+}
 
 const DB_NAME = 'portfolio_market_data_v1'
 const STORE_NAME = 'daily_bars'
@@ -181,24 +192,53 @@ describe('tickerOverview', () => {
       expect(dispatchedTypes.some((t) => typeof t === 'string' && /priceSync/i.test(t))).toBe(false)
     })
 
-    it('429 rate limit: stops the loop instead of hammering remaining held symbols', async () => {
-      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, false, 429))
+    it('429 rate limit: backs off and retries the same ticker on a timer until it succeeds', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({}, false, 429))
+        .mockResolvedValueOnce(jsonResponse({}, false, 429))
+        .mockResolvedValueOnce(
+          jsonResponse({ results: { name: 'Apple Inc.', sic_description: 'Electronic Computers' } })
+        )
       vi.stubGlobal('fetch', fetchMock)
       const dispatch = vi.fn()
       const onError = vi.fn()
-      const positions = [
-        makePosition({ id: 'pos-a', symbol: 'AAA' }),
-        makePosition({ id: 'pos-b', symbol: 'BBB' }),
-        makePosition({ id: 'pos-c', symbol: 'CCC' }),
-      ]
+      const onSuccess = vi.fn()
+      const sleep = fastSleep()
 
-      await syncTickerOverviews(['AAA', 'BBB', 'CCC'], 'key', positions, dispatch, onError)
+      await syncTickerOverviews(['AAPL'], 'key', [makePosition({})], dispatch, onError, onSuccess, sleep)
 
-      // Only the first (rate-limited) ticker is fetched — the loop stops there
-      // rather than firing requests for BBB and CCC too.
-      expect(fetchMock).toHaveBeenCalledTimes(1)
-      expect(onError).toHaveBeenCalledTimes(1)
-      expect(onError).toHaveBeenCalledWith('AAA', expect.stringMatching(/429/))
+      // Retried the same ticker across both 429s until the third attempt succeeded.
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(onError).toHaveBeenCalledTimes(2)
+      expect(onError).toHaveBeenNthCalledWith(1, 'AAPL', expect.stringMatching(/429/))
+      expect(onSuccess).toHaveBeenCalledWith('AAPL')
+      const cached = await getTickerOverview('AAPL')
+      expect(cached).toMatchObject({ ticker: 'AAPL', name: 'Apple Inc.' })
+
+      // Backed off a full rate-limit window before each retry, not the tight
+      // between-ticker spacing.
+      expect(sleep).toHaveBeenCalledTimes(2)
+      expect(sleep).toHaveBeenCalledWith(RATE_LIMIT_BACKOFF_MS)
+    })
+
+    it('paces successive tickers by REQUEST_SPACING_MS to stay under the rate limit proactively', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        jsonResponse({ results: { name: 'Corp.', sic_description: 'Widgets' } })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const dispatch = vi.fn()
+      const onError = vi.fn()
+      const sleep = fastSleep()
+      const positions = [makePosition({ id: 'pos-a', symbol: 'AAA' }), makePosition({ id: 'pos-b', symbol: 'BBB' })]
+
+      await syncTickerOverviews(['AAA', 'BBB'], 'key', positions, dispatch, onError, undefined, sleep)
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      // One spacing sleep between the two tickers, none before the first.
+      expect(sleep).toHaveBeenCalledTimes(1)
+      expect(sleep).toHaveBeenCalledWith(REQUEST_SPACING_MS)
+      expect(onError).not.toHaveBeenCalled()
     })
 
     it('handles multiple symbols with mixed cache-hit/cache-miss/failure independently', async () => {
@@ -231,7 +271,7 @@ describe('tickerOverview', () => {
         makePosition({ id: 'pos-cached', symbol: 'CACHED' }),
       ]
 
-      await syncTickerOverviews(['CACHED', 'OK', 'FAIL'], 'key', positions, dispatch, onError, onSuccess)
+      await syncTickerOverviews(['CACHED', 'OK', 'FAIL'], 'key', positions, dispatch, onError, onSuccess, fastSleep())
 
       // cached ticker: no fetch, no dispatch for it
       expect(fetchMock).toHaveBeenCalledTimes(2)
