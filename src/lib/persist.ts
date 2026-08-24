@@ -54,7 +54,23 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     customInstitutions: loaded.customInstitutions ?? defaults.customInstitutions,
     priceSync: loaded.priceSync ?? defaults.priceSync,
     mutualFundSync: loaded.mutualFundSync ?? defaults.mutualFundSync,
-    balanceEntries: loaded.balanceEntries ?? defaults.balanceEntries,
+    balanceEntries: (loaded.balanceEntries ?? defaults.balanceEntries).map((entry) => {
+      const legacy = entry as unknown as {
+        activityType?: string
+        activityAmount?: number
+        note?: string
+        activities?: { type: string; amount: number; note: string }[]
+      }
+      if (legacy.activities) {
+        return entry
+      }
+      const { activityType, activityAmount, note, ...rest } = legacy
+      const activities =
+        activityType && activityType !== 'None'
+          ? [{ type: activityType as any, amount: activityAmount ?? 0, note: note ?? '' }]
+          : []
+      return { ...rest, activities } as typeof entry
+    }),
 
     // UI state with existing values or defaults.
     // `view` is whitelisted rather than defaulted: blobs written before the

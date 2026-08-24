@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { AppState } from '../lib/state'
+import type { BalanceEntry } from '../lib/types'
 import { registerCategoryCards, registerAllAccountsTotal } from '../lib/selectors'
-import { accountLedger, scopeLedger, registerChartSeries } from '../lib/register'
+import { accountLedger, scopeLedger, registerChartSeries, ACTIVITY_SIGN } from '../lib/register'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR } from '../lib/computations'
 import { RegisterBalanceDialog } from './RegisterBalanceDialog'
 
@@ -29,6 +30,17 @@ const fmtDate = (dateStr: string): string => {
  */
 export function RegisterPage({ state, dispatch }: RegisterPageProps) {
   const [balanceDialogOpen, setBalanceDialogOpen] = useState(false)
+  const [editingEntry, setEditingEntry] = useState<BalanceEntry | null>(null)
+
+  const openEditDialog = (entry: BalanceEntry) => {
+    setEditingEntry(entry)
+    setBalanceDialogOpen(true)
+  }
+
+  const closeBalanceDialog = () => {
+    setBalanceDialogOpen(false)
+    setEditingEntry(null)
+  }
   const categoryCards = registerCategoryCards(state)
   const allTotalStr = registerAllAccountsTotal(state)
 
@@ -392,7 +404,12 @@ export function RegisterPage({ state, dispatch }: RegisterPageProps) {
         </div>
 
         {balanceDialogOpen && (
-          <RegisterBalanceDialog state={state} dispatch={dispatch} onClose={() => setBalanceDialogOpen(false)} />
+          <RegisterBalanceDialog
+            state={state}
+            dispatch={dispatch}
+            onClose={closeBalanceDialog}
+            editingEntry={editingEntry ?? undefined}
+          />
         )}
 
         <table className="table">
@@ -410,9 +427,9 @@ export function RegisterPage({ state, dispatch }: RegisterPageProps) {
           <tbody>
             {rows.map((r) => {
               const acct = state.accounts.find((a) => a.id === r.accountId)
-              const hasActivity = r.activityType !== 'None' && r.activityAmount > 0
+              const hasActivity = r.activities.length > 0
               return (
-                <tr key={r.id}>
+                <tr key={r.id} onClick={() => openEditDialog(r)} style={{ cursor: 'pointer' }}>
                   <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</td>
                   <td>
                     <div style={{ fontWeight: 600 }}>{acct ? acct.name : '—'}</div>
@@ -432,19 +449,26 @@ export function RegisterPage({ state, dispatch }: RegisterPageProps) {
                   </td>
                   <td>
                     {hasActivity ? (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <span className="tag tag-accent" style={{ fontSize: '10px' }}>
-                            {r.activityType}
-                          </span>
-                          <span style={{ fontSize: '12px' }}>{fmtSigned(r.attributed)}</span>
-                        </div>
-                        {r.note && (
-                          <div className="text-muted" style={{ fontSize: '11px', marginTop: '4px' }}>
-                            {r.note}
-                          </div>
-                        )}
-                      </>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {r.activities.map((a, i) => {
+                          const signedAmount = (ACTIVITY_SIGN[a.type] ?? 0) * a.amount
+                          return (
+                            <div key={i}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span className="tag tag-accent" style={{ fontSize: '10px' }}>
+                                  {a.type}
+                                </span>
+                                <span style={{ fontSize: '12px' }}>{fmtSigned(signedAmount)}</span>
+                              </div>
+                              {a.note && (
+                                <div className="text-muted" style={{ fontSize: '11px', marginTop: '2px' }}>
+                                  {a.note}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
                     ) : (
                       <span className="text-muted" style={{ fontSize: '11px' }}>
                         Not attributed
@@ -464,7 +488,10 @@ export function RegisterPage({ state, dispatch }: RegisterPageProps) {
                       type="button"
                       className="btn-icon"
                       title="Delete entry"
-                      onClick={() => handleDelete(r.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDelete(r.id)
+                      }}
                       style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text)', opacity: 0.6, padding: '4px' }}
                     >
                       <svg

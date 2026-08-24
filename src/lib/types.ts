@@ -77,9 +77,7 @@ export interface BalanceEntry {
   accountId: string
   date: string           // YYYY-MM-DD
   balance: number
-  activityType: ActivityType
-  activityAmount: number // always >= 0; sign applied via ACTIVITY_SIGN
-  note: string
+  activities: { type: ActivityType; amount: number; note: string }[]
 }
 
 export const POSITIONS_REQUIRED_FIELDS = [

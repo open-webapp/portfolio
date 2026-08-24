@@ -64,14 +64,17 @@ Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong
 - `ACTIVITY_TYPES: ActivityType[]` — the 7 activity types (`None` first).
 - `ACTIVITY_SIGN: Partial<Record<ActivityType, 1 | -1>>` — sign per type; `None` absent (treated as 0 by callers via `?? 0`).
 - `BALANCE_FIELD_HINTS` — `{ key, hints[] }[]` for paste-mode column-mapping.
-- `accountLedger(entries, accountId)` — filters to one account, sorts date-asc, returns `LedgerRow[]` (`BalanceEntry` + `change`/`attributed`/`unexplained`).
+- `accountLedger(entries, accountId)` — filters to one account, sorts date-asc, returns `LedgerRow[]` (`BalanceEntry` + `change`/`attributed`/`unexplained`); `attributed` sums `ACTIVITY_SIGN[type] * amount` across each entry's `activities` array.
 - `latestBalance(entries, accountId)` — most recent `BalanceEntry` by date, or `null`.
 - `scopeLedger(entries, scopeAccountIds, activityFilter)` — unions `accountLedger` across accounts, optional `'With Activity'` filter, sorted date-desc then accountId.
 - `registerChartSeries(entries, scopeAccountIds)` — builds `RegisterChartSeries` (SVG `points`/`area`/`dots`/`yLabels`/`xLabels`) for the balance-over-time chart.
 - `matchAccountId`, `matchActivityType`, `normalizeDateInput` — paste-mode field-matching/normalization helpers.
-- `emptyDraftRow`, `isDraftRowValid` — `DraftRow` helpers for the manual-entry dialog.
+- `emptyDraftRow`, `isDraftRowValid` — `DraftRow` helpers for the manual-entry dialog; `DraftRow.activities: DraftActivity[]` holds the row's activity lines, `emptyDraftRow()` seeds `activities: []`.
+- `DraftActivity` — `{ key: string; type: string; amount: string; note: string }`, one activity line within a `DraftRow`.
 
 `selectors.ts`'s `registerCategoryCards(state)`/`registerAllAccountsTotal(state)` call `latestBalance(state.balanceEntries, accountId)` against `state.accounts`/`state.balanceEntries` to build the Register page's left-column cards and "All Accounts" total — `register.ts` itself never imports `AppState`; all `AppState` reads happen in `selectors.ts`, which passes plain `BalanceEntry[]`/`accountId` args in. `RegisterPage.tsx` reads only the derived selector/register.ts output, never raw `state.balanceEntries` directly.
+
+`state.ts`'s `updateBalanceEntry(state, entry)` upserts a `BalanceEntry` by id (updates in place if the id exists, else appends), dropping any other entry that collides on the same `(accountId, date)` with a different id. `reducer.ts`'s `UPDATE_BALANCE_ENTRY { entry: BalanceEntry }` action dispatches to it — the save path for the manual-entry dialog (new and edited register rows).
 
 ### Price Sync
 

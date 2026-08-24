@@ -9,6 +9,7 @@ import {
   setMutualFundSyncApiKey,
   recordMutualFundSyncRun,
   addBalanceEntries,
+  updateBalanceEntry,
   deleteBalanceEntry,
   setRegAccount,
   toggleRegCategoryExpanded,
@@ -302,6 +303,73 @@ describe('appReducer', () => {
 
       expect(resultFromReducer.balanceEntries).toEqual(resultDirect.balanceEntries)
       expect(resultFromReducer.balanceEntries).toHaveLength(1)
+    })
+  })
+
+  describe('UPDATE_BALANCE_ENTRY', () => {
+    it('dispatches to updateBalanceEntry state action for an existing id', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          {
+            id: 'be1',
+            accountId: 'acc1',
+            date: '2024-02-01',
+            balance: 1000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          },
+        ],
+      }
+      const entry: BalanceEntry = {
+        id: 'be1',
+        accountId: 'acc1',
+        date: '2024-02-01',
+        balance: 2000,
+        activityType: 'Contribution',
+        activityAmount: 1000,
+        note: 'updated',
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'UPDATE_BALANCE_ENTRY', entry })
+      const resultDirect = updateBalanceEntry(state, entry)
+
+      expect(resultFromReducer.balanceEntries).toEqual(resultDirect.balanceEntries)
+      expect(resultFromReducer.balanceEntries).toHaveLength(1)
+      expect(resultFromReducer.balanceEntries[0].balance).toBe(2000)
+    })
+
+    it('appends the entry when the id does not exist in state', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          {
+            id: 'be1',
+            accountId: 'acc1',
+            date: '2024-02-01',
+            balance: 1000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          },
+        ],
+      }
+      const entry: BalanceEntry = {
+        id: 'be2',
+        accountId: 'acc1',
+        date: '2024-03-01',
+        balance: 3000,
+        activityType: 'None',
+        activityAmount: 0,
+        note: '',
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'UPDATE_BALANCE_ENTRY', entry })
+      const resultDirect = updateBalanceEntry(state, entry)
+
+      expect(resultFromReducer.balanceEntries).toEqual(resultDirect.balanceEntries)
+      expect(resultFromReducer.balanceEntries).toHaveLength(2)
     })
   })
 

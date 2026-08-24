@@ -15,6 +15,7 @@ import {
   recordMutualFundSyncRun,
   addBalanceEntries,
   deleteBalanceEntry,
+  updateBalanceEntry,
   setRegAccount,
   toggleRegCategoryExpanded,
   setRegActivityFilter,
@@ -857,6 +858,82 @@ describe('state helpers', () => {
       const updated = deleteBalanceEntry(state, 'nonexistent')
       expect(updated.balanceEntries).toHaveLength(1)
       expect(updated.balanceEntries[0].id).toBe('bal1')
+    })
+  })
+
+  describe('updateBalanceEntry', () => {
+    const entry = (overrides: Partial<BalanceEntry>): BalanceEntry => ({
+      id: 'bal1',
+      accountId: 'acc1',
+      date: '2024-01-01',
+      balance: 1000,
+      activities: [],
+      ...overrides,
+    })
+
+    it('updates an existing entry by id: length unchanged, values replaced', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [entry({ id: 'bal1', balance: 1000, activities: [] })],
+      }
+
+      const updated = updateBalanceEntry(
+        state,
+        entry({
+          id: 'bal1',
+          balance: 1500,
+          activities: [{ type: 'Deposit', amount: 500, note: 'raise' }],
+        })
+      )
+
+      expect(updated.balanceEntries).toHaveLength(1)
+      expect(updated.balanceEntries[0].balance).toBe(1500)
+      expect(updated.balanceEntries[0].activities).toEqual([
+        { type: 'Deposit', amount: 500, note: 'raise' },
+      ])
+    })
+
+    it('moving entry to a colliding (accountId, date) drops the other entry occupying that slot', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          entry({ id: 'bal1', accountId: 'acc1', date: '2024-01-01' }),
+          entry({ id: 'bal2', accountId: 'acc1', date: '2024-02-01', balance: 2000 }),
+        ],
+      }
+
+      const updated = updateBalanceEntry(
+        state,
+        entry({ id: 'bal1', accountId: 'acc1', date: '2024-02-01', balance: 1234 })
+      )
+
+      expect(updated.balanceEntries).toHaveLength(1)
+      expect(updated.balanceEntries[0].id).toBe('bal1')
+      expect(updated.balanceEntries[0].date).toBe('2024-02-01')
+      expect(updated.balanceEntries[0].balance).toBe(1234)
+      expect(updated.balanceEntries.find((b) => b.id === 'bal2')).toBeUndefined()
+    })
+
+    it('moving entry to a non-colliding (accountId, date): length unchanged, no dangling duplicate', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          entry({ id: 'bal1', accountId: 'acc1', date: '2024-01-01' }),
+          entry({ id: 'bal-untouched', accountId: 'acc1', date: '2024-02-01', balance: 999 }),
+        ],
+      }
+
+      const updated = updateBalanceEntry(
+        state,
+        entry({ id: 'bal1', accountId: 'acc1', date: '2024-03-01', balance: 1234 })
+      )
+
+      expect(updated.balanceEntries).toHaveLength(2)
+      expect(updated.balanceEntries.filter((b) => b.id === 'bal1')).toHaveLength(1)
+      const moved = updated.balanceEntries.find((b) => b.id === 'bal1')
+      expect(moved?.date).toBe('2024-03-01')
+      expect(moved?.balance).toBe(1234)
+      expect(updated.balanceEntries.find((b) => b.id === 'bal-untouched')).toBeDefined()
     })
   })
 

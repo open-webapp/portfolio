@@ -32,6 +32,7 @@ export type AppAction =
   | { type: 'SET_MUTUAL_FUND_SYNC_API_KEY'; apiKey: string }
   | { type: 'RECORD_MUTUAL_FUND_SYNC_RUN'; patch: any }
   | { type: 'ADD_BALANCE_ENTRIES'; entries: BalanceEntry[] }
+  | { type: 'UPDATE_BALANCE_ENTRY'; entry: BalanceEntry }
   | { type: 'DELETE_BALANCE_ENTRY'; id: string }
   | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
   | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
@@ -138,6 +139,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     // Register page
     case 'ADD_BALANCE_ENTRIES':
       return StateActions.addBalanceEntries(state, action.entries)
+
+    case 'UPDATE_BALANCE_ENTRY':
+      return StateActions.updateBalanceEntry(state, action.entry)
 
     case 'DELETE_BALANCE_ENTRY':
       return StateActions.deleteBalanceEntry(state, action.id)

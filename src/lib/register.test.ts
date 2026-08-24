@@ -19,9 +19,7 @@ function mkEntry(overrides: Partial<BalanceEntry>): BalanceEntry {
     accountId: 'acc-1',
     date: '2026-01-01',
     balance: 1000,
-    activityType: 'None',
-    activityAmount: 0,
-    note: '',
+    activities: [],
     ...overrides,
   }
 }
@@ -52,10 +50,10 @@ describe('accountLedger', () => {
     expect(rows[0].attributed).toBe(0)
   })
 
-  it('two entries, activityType None -> attributed=0, unexplained=change', () => {
+  it('two entries, no activities -> attributed=0, unexplained=change', () => {
     const entries = [
-      mkEntry({ id: 'e1', date: '2026-01-01', balance: 1000, activityType: 'None' }),
-      mkEntry({ id: 'e2', date: '2026-02-01', balance: 1100, activityType: 'None' }),
+      mkEntry({ id: 'e1', date: '2026-01-01', balance: 1000, activities: [] }),
+      mkEntry({ id: 'e2', date: '2026-02-01', balance: 1100, activities: [] }),
     ]
     const rows = accountLedger(entries, 'acc-1')
     expect(rows[1].change).toBe(100)
@@ -66,7 +64,12 @@ describe('accountLedger', () => {
   it('two entries with Contribution -> attributed = amount, unexplained = change - amount', () => {
     const entries = [
       mkEntry({ id: 'e1', date: '2026-01-01', balance: 1000 }),
-      mkEntry({ id: 'e2', date: '2026-02-01', balance: 1150, activityType: 'Contribution', activityAmount: 100 }),
+      mkEntry({
+        id: 'e2',
+        date: '2026-02-01',
+        balance: 1150,
+        activities: [{ type: 'Contribution', amount: 100, note: '' }],
+      }),
     ]
     const rows = accountLedger(entries, 'acc-1')
     expect(rows[1].change).toBe(150)
@@ -79,7 +82,12 @@ describe('accountLedger', () => {
     expect(ACTIVITY_SIGN.Fee).toBe(-1)
     const entries = [
       mkEntry({ id: 'e1', date: '2026-01-01', balance: 1000 }),
-      mkEntry({ id: 'e2', date: '2026-02-01', balance: 900, activityType: 'Withdrawal', activityAmount: 150 }),
+      mkEntry({
+        id: 'e2',
+        date: '2026-02-01',
+        balance: 900,
+        activities: [{ type: 'Withdrawal', amount: 150, note: '' }],
+      }),
     ]
     const rows = accountLedger(entries, 'acc-1')
     expect(rows[1].attributed).toBe(-150)
@@ -87,11 +95,58 @@ describe('accountLedger', () => {
 
     const feeEntries = [
       mkEntry({ id: 'e3', date: '2026-01-01', balance: 1000 }),
-      mkEntry({ id: 'e4', date: '2026-02-01', balance: 995, activityType: 'Fee', activityAmount: 5 }),
+      mkEntry({ id: 'e4', date: '2026-02-01', balance: 995, activities: [{ type: 'Fee', amount: 5, note: '' }] }),
     ]
     const feeRows = accountLedger(feeEntries, 'acc-1')
     expect(feeRows[1].attributed).toBe(-5)
     expect(feeRows[1].unexplained).toBe(0)
+  })
+
+  it('two activities of opposite sign -> attributed = net sum, unexplained = change - attributed', () => {
+    const entries = [
+      mkEntry({ id: 'e1', date: '2026-01-01', balance: 1000 }),
+      mkEntry({
+        id: 'e2',
+        date: '2026-02-01',
+        balance: 1050,
+        activities: [
+          { type: 'Contribution', amount: 200, note: '' },
+          { type: 'Withdrawal', amount: 50, note: '' },
+        ],
+      }),
+    ]
+    const rows = accountLedger(entries, 'acc-1')
+    expect(rows[1].change).toBe(50)
+    expect(rows[1].attributed).toBe(150)
+    expect(rows[1].unexplained).toBe(-100)
+  })
+
+  it('empty activities array -> attributed=0, unexplained=change', () => {
+    const entries = [
+      mkEntry({ id: 'e1', date: '2026-01-01', balance: 1000 }),
+      mkEntry({ id: 'e2', date: '2026-02-01', balance: 1100, activities: [] }),
+    ]
+    const rows = accountLedger(entries, 'acc-1')
+    expect(rows[1].attributed).toBe(0)
+    expect(rows[1].unexplained).toBe(rows[1].change)
+  })
+
+  it('activity with unknown type contributes 0, does not throw', () => {
+    const entries = [
+      mkEntry({ id: 'e1', date: '2026-01-01', balance: 1000 }),
+      mkEntry({
+        id: 'e2',
+        date: '2026-02-01',
+        balance: 1100,
+        activities: [
+          { type: 'None', amount: 25, note: '' },
+          { type: 'Contribution', amount: 100, note: '' },
+        ],
+      }),
+    ]
+    expect(() => accountLedger(entries, 'acc-1')).not.toThrow()
+    const rows = accountLedger(entries, 'acc-1')
+    expect(rows[1].attributed).toBe(100)
   })
 })
 
@@ -122,15 +177,14 @@ describe('scopeLedger', () => {
     expect(rows).toHaveLength(2)
   })
 
-  it('With Activity filter drops None rows', () => {
+  it('With Activity filter drops rows with no activities', () => {
     const entries = [
-      mkEntry({ id: 'e1', accountId: 'acc-1', date: '2026-01-01', activityType: 'None' }),
+      mkEntry({ id: 'e1', accountId: 'acc-1', date: '2026-01-01', activities: [] }),
       mkEntry({
         id: 'e2',
         accountId: 'acc-1',
         date: '2026-02-01',
-        activityType: 'Contribution',
-        activityAmount: 50,
+        activities: [{ type: 'Contribution', amount: 50, note: '' }],
       }),
     ]
     const rows = scopeLedger(entries, ['acc-1'], 'With Activity')
@@ -254,9 +308,7 @@ describe('isDraftRowValid', () => {
     date: '2026-01-01',
     accountId: 'acc-1',
     balance: '1000',
-    activityType: 'None',
-    activityAmount: '',
-    note: '',
+    activities: [],
   }
 
   it('valid row -> true', () => {

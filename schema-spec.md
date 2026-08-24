@@ -91,13 +91,15 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | `accountId` | `string` | FK → `Account.id` |
 | `date` | `string` | `YYYY-MM-DD` |
 | `balance` | `number` | Account balance as of `date` |
-| `activityType` | `ActivityType` | `'None' \| 'Contribution' \| 'Withdrawal' \| 'Transfer In' \| 'Transfer Out' \| 'Dividend' \| 'Fee'` |
-| `activityAmount` | `number` | Always `>= 0` (stored via `Math.abs`); the +/- sign is applied at read time via `ACTIVITY_SIGN[activityType]` (`+1`: Contribution/Transfer In/Dividend; `-1`: Withdrawal/Transfer Out/Fee; unsigned/0 for `'None'`) |
-| `note` | `string` | Free text, may be empty |
+| `activities` | `{ type: ActivityType; amount: number; note: string }[]` | 0..N per entry; no persisted id per item; array order = insertion order; `amount` always `>= 0` (stored via `Math.abs`), sign applied at read time via `ACTIVITY_SIGN[type]` |
+
+`ActivityType` = `'None' \| 'Contribution' \| 'Withdrawal' \| 'Transfer In' \| 'Transfer Out' \| 'Dividend' \| 'Fee'`. `ACTIVITY_SIGN`: `+1` (Contribution/Transfer In/Dividend), `-1` (Withdrawal/Transfer Out/Fee), unsigned/0 for `'None'`.
+
+**Legacy shape**: entries stored on disk from before multi-activity support have `activityType`/`activityAmount`/`note` instead of `activities`; `coalesceWithDefaults` (`src/lib/persist.ts`) converts these to the `activities` array shape on load (idempotent), so in-memory `AppState` always sees the current shape.
 
 **Natural key**: `(accountId, date)`. `addBalanceEntries(state, entries)` (`src/lib/state.ts`) drops any pre-existing entry sharing an incoming `(accountId, date)` key, then appends the incoming entries — **replace, not append**, for entries recorded across separate calls. Not deduped *within* a single incoming batch: two entries in the same call sharing a key are both appended.
 
-**Derived, never stored** (`src/lib/register.ts` → `accountLedger`): for a `BalanceEntry` sorted into its account's chronological ledger, `change = balance - previousEntry.balance` (`null` for the first/opening entry), `attributed = ACTIVITY_SIGN[activityType] * activityAmount` (0 if `activityType` has no sign), `unexplained = change - attributed` (`null` when `change` is `null`).
+**Derived, never stored** (`src/lib/register.ts` → `accountLedger`): for a `BalanceEntry` sorted into its account's chronological ledger, `change = balance - previousEntry.balance` (`null` for the first/opening entry), `attributed = sum over entry.activities of (ACTIVITY_SIGN[type] ?? 0) * amount`, `unexplained = change - attributed` (`null` when `change` is `null`).
 
 ## SavedCsvMapping
 
@@ -190,6 +192,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 **Register**
 - `ADD_BALANCE_ENTRIES { entries: BalanceEntry[] }`: Upsert `BalanceEntry` rows into `balanceEntries` by `(accountId, date)` key (replaces any pre-existing entry sharing that key)
+- `UPDATE_BALANCE_ENTRY { entry: BalanceEntry }`: Full replacement of one existing `BalanceEntry`, matched by `id`; also replaces any other entry sharing the incoming `(accountId, date)` key (same collision rule as `ADD_BALANCE_ENTRIES`)
 - `DELETE_BALANCE_ENTRY { id: string }`: Remove one `BalanceEntry` by id
 - `SET_REG_ACCOUNT { accountId: string | null }`: Set `regAccountId` (RegisterPage scope selection)
 - `TOGGLE_REG_CATEGORY_EXPANDED { categoryKey: string }`: Toggle one key in `regExpanded`

@@ -9,6 +9,7 @@ import {
   matchAccountId,
   matchActivityType,
   normalizeDateInput,
+  type DraftActivity,
   type DraftRow,
 } from '../lib/register'
 import { tableToCsv, type PastedClipboard } from '../lib/pastedTable'
@@ -18,11 +19,29 @@ export interface RegisterBalanceDialogProps {
   state: AppState
   dispatch: (action: any) => void
   onClose: () => void
+  editingEntry?: BalanceEntry
 }
 
 const todayLocal = (): string => {
   const d = new Date()
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}
+
+/** Build a single-row draft (with fresh local activity keys) from an existing BalanceEntry,
+ * for the "edit" flow of RegisterBalanceDialog. */
+function draftRowFromEntry(entry: BalanceEntry): DraftRow {
+  return {
+    key: uid('brow'),
+    date: entry.date,
+    accountId: entry.accountId,
+    balance: String(entry.balance),
+    activities: entry.activities.map((a) => ({
+      key: uid('bact'),
+      type: a.type,
+      amount: String(a.amount),
+      note: a.note,
+    })),
+  }
 }
 
 /** Map a pasted-table field key to the DraftRow field it corresponds to, running the
@@ -31,6 +50,7 @@ function cellToDraftField(
   fieldKey: string,
   rawValue: string,
   accounts: AppState['accounts'],
+  draft: DraftRow,
 ): Partial<DraftRow> {
   switch (fieldKey) {
     case 'date':
@@ -40,11 +60,17 @@ function cellToDraftField(
     case 'balance':
       return { balance: rawValue.trim() }
     case 'activityType':
-      return { activityType: matchActivityType(rawValue) }
     case 'activityAmount':
-      return { activityAmount: rawValue.trim() }
-    case 'note':
-      return { note: rawValue.trim() }
+    case 'note': {
+      // Paste stays single-activity: merge onto the row's one (possibly not-yet-created)
+      // activity rather than extending to a multi-activity paste format.
+      const existing: DraftActivity = draft.activities[0] ?? { key: uid('bact'), type: 'None', amount: '', note: '' }
+      const updated: DraftActivity = { ...existing }
+      if (fieldKey === 'activityType') updated.type = matchActivityType(rawValue)
+      if (fieldKey === 'activityAmount') updated.amount = rawValue.trim()
+      if (fieldKey === 'note') updated.note = rawValue.trim()
+      return { activities: [updated] }
+    }
     default:
       return {}
   }
@@ -71,23 +97,29 @@ function mapPastedHeaders(headers: string[]): Record<string, string> {
  * via tableToCsv and mapped to fields via BALANCE_FIELD_HINTS). Save dispatches
  * ADD_BALANCE_ENTRIES with valid rows only; local draft state is discarded on Cancel.
  */
-export function RegisterBalanceDialog({ state, dispatch, onClose }: RegisterBalanceDialogProps) {
+export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }: RegisterBalanceDialogProps) {
   const [mode, setMode] = useState<'manual' | 'paste'>('manual')
-  const [rows, setRows] = useState<DraftRow[]>(() => [
-    { ...emptyDraftRow(), date: todayLocal(), accountId: state.regAccountId ?? '' },
-  ])
+  const [rows, setRows] = useState<DraftRow[]>(() =>
+    editingEntry
+      ? [draftRowFromEntry(editingEntry)]
+      : [{ ...emptyDraftRow(), date: todayLocal(), accountId: state.regAccountId ?? '' }],
+  )
   const [pasteHeaderText, setPasteHeaderText] = useState('')
   const [pasteValuesText, setPasteValuesText] = useState('')
   const [parseError, setParseError] = useState('')
 
   const resetAndClose = useCallback(() => {
     setMode('manual')
-    setRows([{ ...emptyDraftRow(), date: todayLocal(), accountId: state.regAccountId ?? '' }])
+    setRows(
+      editingEntry
+        ? [draftRowFromEntry(editingEntry)]
+        : [{ ...emptyDraftRow(), date: todayLocal(), accountId: state.regAccountId ?? '' }],
+    )
     setPasteHeaderText('')
     setPasteValuesText('')
     setParseError('')
     onClose()
-  }, [onClose, state.regAccountId])
+  }, [onClose, state.regAccountId, editingEntry])
 
   const updateRow = (key: string, patch: Partial<DraftRow>) => {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
@@ -99,6 +131,34 @@ export function RegisterBalanceDialog({ state, dispatch, onClose }: RegisterBala
 
   const addRow = () => {
     setRows((prev) => [...prev, emptyDraftRow()])
+  }
+
+  const addActivity = (rowKey: string) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.key === rowKey
+          ? { ...r, activities: [...r.activities, { key: uid('bact'), type: 'None', amount: '', note: '' }] }
+          : r,
+      ),
+    )
+  }
+
+  const updateActivity = (rowKey: string, activityKey: string, patch: Partial<DraftActivity>) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.key === rowKey
+          ? { ...r, activities: r.activities.map((a) => (a.key === activityKey ? { ...a, ...patch } : a)) }
+          : r,
+      ),
+    )
+  }
+
+  const removeActivity = (rowKey: string, activityKey: string) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.key === rowKey ? { ...r, activities: r.activities.filter((a) => a.key !== activityKey) } : r,
+      ),
+    )
   }
 
   const rebuildPaste = useCallback((headerText: string, valuesText: string) => {
@@ -120,7 +180,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose }: RegisterBala
     const draftRows: DraftRow[] = parsed.rows.map((row) => {
       const draft = emptyDraftRow()
       for (const [header, fieldKey] of Object.entries(headerFieldMap)) {
-        Object.assign(draft, cellToDraftField(fieldKey, row[header] ?? '', state.accounts))
+        Object.assign(draft, cellToDraftField(fieldKey, row[header] ?? '', state.accounts, draft))
       }
       return draft
     })
@@ -143,19 +203,46 @@ export function RegisterBalanceDialog({ state, dispatch, onClose }: RegisterBala
 
   const validRows = rows.filter(isDraftRowValid)
 
+  const draftRowToActivities = (r: DraftRow) =>
+    r.activities.map((a) => ({
+      type: matchActivityType(a.type) || 'None',
+      amount: Math.abs(parseFloat(a.amount)) || 0,
+      note: a.note,
+    }))
+
   const handleSave = () => {
     if (validRows.length === 0) return
+    if (editingEntry) {
+      const r = validRows[0]
+      const entry: BalanceEntry = {
+        id: editingEntry.id,
+        accountId: r.accountId,
+        date: r.date,
+        balance: parseFloat(r.balance),
+        activities: draftRowToActivities(r),
+      }
+      dispatch({ type: 'UPDATE_BALANCE_ENTRY', entry })
+      resetAndClose()
+      return
+    }
     const entries: BalanceEntry[] = validRows.map((r) => ({
       id: uid('bal'),
       accountId: r.accountId,
       date: r.date,
       balance: parseFloat(r.balance),
-      activityType: matchActivityType(r.activityType) || 'None',
-      activityAmount: Math.abs(parseFloat(r.activityAmount)) || 0,
-      note: r.note,
+      activities: draftRowToActivities(r),
     }))
     dispatch({ type: 'ADD_BALANCE_ENTRIES', entries })
     resetAndClose()
+  }
+
+  const handleDelete = () => {
+    if (!editingEntry) return
+    const confirmed = window.confirm('Delete this balance entry? This cannot be undone.')
+    if (confirmed) {
+      dispatch({ type: 'DELETE_BALANCE_ENTRY', id: editingEntry.id })
+      onClose()
+    }
   }
 
   return (
@@ -187,16 +274,18 @@ export function RegisterBalanceDialog({ state, dispatch, onClose }: RegisterBala
           </button>
         </div>
 
-        <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%', marginBottom: 'var(--space-4)' }}>
-          <label className="seg-opt">
-            <input type="radio" name="regBalMode" checked={mode === 'manual'} onChange={() => setMode('manual')} />
-            <span>Enter manually</span>
-          </label>
-          <label className="seg-opt">
-            <input type="radio" name="regBalMode" checked={mode === 'paste'} onChange={() => setMode('paste')} />
-            <span>Copy-Paste</span>
-          </label>
-        </div>
+        {!editingEntry && (
+          <div className="seg" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', width: '100%', marginBottom: 'var(--space-4)' }}>
+            <label className="seg-opt">
+              <input type="radio" name="regBalMode" checked={mode === 'manual'} onChange={() => setMode('manual')} />
+              <span>Enter manually</span>
+            </label>
+            <label className="seg-opt">
+              <input type="radio" name="regBalMode" checked={mode === 'paste'} onChange={() => setMode('paste')} />
+              <span>Copy-Paste</span>
+            </label>
+          </div>
+        )}
 
         {mode === 'paste' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
@@ -304,35 +393,61 @@ export function RegisterBalanceDialog({ state, dispatch, onClose }: RegisterBala
                         placeholder="e.g. 12500.00"
                       />
                     </td>
-                    <td>
-                      <select
-                        className="input"
-                        value={row.activityType}
-                        onChange={(e) => updateRow(row.key, { activityType: e.target.value })}
-                      >
-                        {ACTIVITY_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
+                    <td colSpan={3}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                        {row.activities.map((activity) => (
+                          <div
+                            key={activity.key}
+                            style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 'var(--space-2)', alignItems: 'center' }}
+                          >
+                            <select
+                              className="input"
+                              value={activity.type}
+                              onChange={(e) => updateActivity(row.key, activity.key, { type: e.target.value })}
+                            >
+                              {ACTIVITY_TYPES.map((t) => (
+                                <option key={t} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              className="input"
+                              value={activity.amount}
+                              onChange={(e) => updateActivity(row.key, activity.key, { amount: e.target.value })}
+                              placeholder="0.00"
+                            />
+                            <input
+                              type="text"
+                              className="input"
+                              value={activity.note}
+                              onChange={(e) => updateActivity(row.key, activity.key, { note: e.target.value })}
+                              placeholder="Note"
+                            />
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              title="Remove activity"
+                              onClick={() => removeActivity(row.key, activity.key)}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text)', opacity: 0.6, padding: '4px' }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                                <path d="M18 6 6 18"></path>
+                                <path d="m6 6 12 12"></path>
+                              </svg>
+                            </button>
+                          </div>
                         ))}
-                      </select>
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        className="input"
-                        value={row.activityAmount}
-                        onChange={(e) => updateRow(row.key, { activityAmount: e.target.value })}
-                        placeholder="0.00"
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        className="input"
-                        value={row.note}
-                        onChange={(e) => updateRow(row.key, { note: e.target.value })}
-                      />
+                        <button
+                          type="button"
+                          className="btn btn-secondary blueprint"
+                          onClick={() => addActivity(row.key)}
+                          style={{ alignSelf: 'flex-start', fontSize: '11px', padding: '2px 8px' }}
+                        >
+                          + Add activity
+                        </button>
+                      </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <button
@@ -355,18 +470,28 @@ export function RegisterBalanceDialog({ state, dispatch, onClose }: RegisterBala
           </table>
         </div>
 
-        {mode === 'manual' && (
+        {mode === 'manual' && !editingEntry && (
           <button type="button" className="btn btn-secondary blueprint" onClick={addRow} style={{ alignSelf: 'flex-start' }}>
             + Add row
           </button>
         )}
 
         <div className="dialog-actions">
+          {editingEntry && (
+            <button
+              type="button"
+              className="btn btn-secondary blueprint"
+              onClick={handleDelete}
+              style={{ color: '#8a3c2e', marginRight: 'auto' }}
+            >
+              Delete
+            </button>
+          )}
           <button type="button" className="btn btn-secondary blueprint" onClick={resetAndClose}>
             Cancel
           </button>
           <button type="button" className="btn btn-primary" disabled={validRows.length === 0} onClick={handleSave}>
-            Save {validRows.length} {validRows.length === 1 ? 'entry' : 'entries'}
+            {editingEntry ? 'Save changes' : `Save ${validRows.length} ${validRows.length === 1 ? 'entry' : 'entries'}`}
           </button>
         </div>
       </div>

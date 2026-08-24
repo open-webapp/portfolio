@@ -130,7 +130,7 @@ Manual balance tracking for accounts, independent of Positions/Transactions. `re
 ### Ledger Math
 
 - `change = balance - previous entry's balance` (per account, sorted date-asc). First entry in an account: `change` is `null`.
-- `attributed = (sign for activityType, or 0 if None/unmapped) * activityAmount`. Signs: `Contribution`/`Transfer In`/`Dividend` = `+1`; `Withdrawal`/`Transfer Out`/`Fee` = `-1`; `None` = `0`.
+- `attributed = sum over entry.activities of (ACTIVITY_SIGN[activity.type] ?? 0) * activity.amount`. Signs: `Contribution`/`Transfer In`/`Dividend` = `+1`; `Withdrawal`/`Transfer Out`/`Fee` = `-1`; `None`/unmapped = `0`.
 - `unexplained = change - attributed`. `null` when `change` is `null` (first entry).
 
 ### Chart (Balance Over Time)
@@ -144,6 +144,7 @@ Manual balance tracking for accounts, independent of Positions/Transactions. `re
 - Pasted column headers are matched to register fields (date, accountId, balance, activityType, activityAmount, note) by exact header match first; if no exact match, a substring/hint match against `BALANCE_FIELD_HINTS` (e.g. a header containing "balance"/"value"/"total" maps to the balance field).
 - Account name/number matching (`matchAccountId`): tries account id, name, account number, and "institution — name" exact matches (case-insensitive), then partial name-substring match either direction; no match → empty string (row flagged invalid, not silently mis-assigned).
 - Activity type matching (`matchActivityType`): exact case-insensitive match against `ACTIVITY_TYPES`, then prefix match; no match (or empty input) → `'None'`.
+- A pasted row still maps to 0-or-1 activities (single activityType/activityAmount pair → `entry.activities` array of length 0 or 1); multi-activity paste is out of scope.
 
 ### Replace, Not Append
 

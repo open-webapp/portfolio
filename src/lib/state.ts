@@ -454,6 +454,22 @@ export function deleteBalanceEntry(state: AppState, id: string): AppState {
 }
 
 /**
+ * Upsert a balance entry by ID. If the entry's (accountId, date) collides
+ * with a different existing entry, that other entry is dropped.
+ */
+export function updateBalanceEntry(state: AppState, entry: BalanceEntry): AppState {
+  const retained = state.balanceEntries.filter(
+    (b) =>
+      !(b.accountId === entry.accountId && b.date === entry.date && b.id !== entry.id) &&
+      b.id !== entry.id
+  )
+  return {
+    ...state,
+    balanceEntries: [...retained, entry],
+  }
+}
+
+/**
  * Set the selected account on RegisterPage.
  */
 export function setRegAccount(state: AppState, accountId: string | null): AppState {

@@ -7,6 +7,7 @@ import {
   loadPersistedApp,
   savePersistedApp,
   clearPersistedApp,
+  coalesceWithDefaults,
 } from './persist'
 import { deriveKey, generateSalt } from './crypto'
 import { initialState } from './state'
@@ -830,6 +831,111 @@ describe('IndexedDB persistence', () => {
       await savePersistedApp(minimalState as AppState, key, salt)
       const encryptedLoaded = await loadPersistedApp(key)
       expect(encryptedLoaded?.priceSync).toEqual(initialState().priceSync)
+    })
+  })
+
+  describe('coalesceWithDefaults migrates legacy balanceEntries shape to activities[]', () => {
+    it('maps a legacy entry with a non-None activityType into a single-element activities array', () => {
+      const loaded: Partial<AppState> = {
+        balanceEntries: [
+          {
+            id: 'be1',
+            accountId: 'acc1',
+            date: '2024-01-01',
+            balance: 1000,
+            activityType: 'Contribution',
+            activityAmount: 500,
+            note: 'x',
+          } as any,
+        ],
+      }
+
+      const result = coalesceWithDefaults(loaded)
+
+      expect(result.balanceEntries).toEqual([
+        {
+          id: 'be1',
+          accountId: 'acc1',
+          date: '2024-01-01',
+          balance: 1000,
+          activities: [{ type: 'Contribution', amount: 500, note: 'x' }],
+        },
+      ])
+    })
+
+    it('maps a legacy entry with activityType "None" into an empty activities array', () => {
+      const loaded: Partial<AppState> = {
+        balanceEntries: [
+          {
+            id: 'be2',
+            accountId: 'acc1',
+            date: '2024-01-02',
+            balance: 2000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          } as any,
+        ],
+      }
+
+      const result = coalesceWithDefaults(loaded)
+
+      expect(result.balanceEntries).toEqual([
+        {
+          id: 'be2',
+          accountId: 'acc1',
+          date: '2024-01-02',
+          balance: 2000,
+          activities: [],
+        },
+      ])
+    })
+
+    it('is idempotent: running coalesceWithDefaults again on already-migrated output leaves activities unchanged', () => {
+      const loaded: Partial<AppState> = {
+        balanceEntries: [
+          {
+            id: 'be1',
+            accountId: 'acc1',
+            date: '2024-01-01',
+            balance: 1000,
+            activityType: 'Contribution',
+            activityAmount: 500,
+            note: 'x',
+          } as any,
+        ],
+      }
+
+      const firstPass = coalesceWithDefaults(loaded)
+      const secondPass = coalesceWithDefaults(firstPass)
+
+      expect(secondPass.balanceEntries).toEqual(firstPass.balanceEntries)
+    })
+
+    it('passes through a new-shape entry with activities already present unchanged', () => {
+      const loaded: Partial<AppState> = {
+        balanceEntries: [
+          {
+            id: 'be3',
+            accountId: 'acc1',
+            date: '2024-01-03',
+            balance: 3000,
+            activities: [],
+          },
+        ],
+      }
+
+      const result = coalesceWithDefaults(loaded)
+
+      expect(result.balanceEntries).toEqual([
+        {
+          id: 'be3',
+          accountId: 'acc1',
+          date: '2024-01-03',
+          balance: 3000,
+          activities: [],
+        },
+      ])
     })
   })
 

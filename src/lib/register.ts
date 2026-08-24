@@ -36,14 +36,19 @@ export interface LedgerRow extends BalanceEntry {
   unexplained: number | null
 }
 
+export interface DraftActivity {
+  key: string
+  type: string
+  amount: string
+  note: string
+}
+
 export interface DraftRow {
   key: string
   date: string
   accountId: string
   balance: string
-  activityType: ActivityType | string
-  activityAmount: string
-  note: string
+  activities: DraftActivity[]
 }
 
 export function accountLedger(entries: BalanceEntry[], accountId: string): LedgerRow[] {
@@ -53,7 +58,10 @@ export function accountLedger(entries: BalanceEntry[], accountId: string): Ledge
     .sort((a, b) => a.date.localeCompare(b.date))
   return rows.map((e, i) => {
     const change = i === 0 ? null : e.balance - rows[i - 1].balance
-    const attributed = (ACTIVITY_SIGN[e.activityType] ?? 0) * (e.activityAmount || 0)
+    const attributed = e.activities.reduce(
+      (sum, a) => sum + (ACTIVITY_SIGN[a.type as ActivityType] ?? 0) * (a.amount || 0),
+      0,
+    )
     return { ...e, change, attributed, unexplained: change === null ? null : change - attributed }
   })
 }
@@ -75,7 +83,7 @@ export function scopeLedger(
   scopeAccountIds.forEach((id) => {
     rows = rows.concat(accountLedger(entries, id))
   })
-  if (activityFilter === 'With Activity') rows = rows.filter((r) => r.activityType !== 'None')
+  if (activityFilter === 'With Activity') rows = rows.filter((r) => r.activities.length > 0)
   return rows.sort((a, b) => b.date.localeCompare(a.date) || a.accountId.localeCompare(b.accountId))
 }
 
@@ -186,7 +194,7 @@ export function normalizeDateInput(value: string): string {
 }
 
 export function emptyDraftRow(): DraftRow {
-  return { key: uid('brow'), date: '', accountId: '', balance: '', activityType: 'None', activityAmount: '', note: '' }
+  return { key: uid('brow'), date: '', accountId: '', balance: '', activities: [] }
 }
 
 export function isDraftRowValid(row: DraftRow): boolean {

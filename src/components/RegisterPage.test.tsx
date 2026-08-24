@@ -28,9 +28,7 @@ function makeBalanceEntry(overrides: Partial<BalanceEntry> = {}): BalanceEntry {
     accountId: overrides.accountId ?? 'acc-1',
     date: overrides.date ?? '2024-01-01',
     balance: overrides.balance ?? 1000,
-    activityType: overrides.activityType ?? 'None',
-    activityAmount: overrides.activityAmount ?? 0,
-    note: overrides.note ?? '',
+    activities: overrides.activities ?? [],
     ...overrides,
   }
 }
@@ -101,18 +99,17 @@ describe('RegisterPage', () => {
     expect(currentBalanceText()).toBe('$1,200.00')
   })
 
-  it('activity filter toggle to "With Activity" hides rows where activityType is None', () => {
+  it('activity filter toggle to "With Activity" hides rows with no activities', () => {
     const state: AppState = { ...initialState() }
     state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
     state.balanceEntries.push(
-      makeBalanceEntry({ id: 'b1', accountId: 'acc-1', date: '2024-01-01', balance: 1000, activityType: 'None' }),
+      makeBalanceEntry({ id: 'b1', accountId: 'acc-1', date: '2024-01-01', balance: 1000 }),
       makeBalanceEntry({
         id: 'b2',
         accountId: 'acc-1',
         date: '2024-02-01',
         balance: 1200,
-        activityType: 'Contribution',
-        activityAmount: 200,
+        activities: [{ type: 'Contribution', amount: 200, note: '' }],
       }),
     )
 
@@ -159,5 +156,62 @@ describe('RegisterPage', () => {
     expect(screen.getByText('No balance entries recorded for this scope yet.')).toBeTruthy()
     const table = screen.getByRole('table')
     expect(within(table).getAllByRole('row')).toHaveLength(1) // header row only, no data rows
+  })
+
+  it('clicking a table row opens the balance dialog pre-filled with that entry', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+    state.balanceEntries.push(makeBalanceEntry({ id: 'b1', accountId: 'acc-1', date: '2024-01-01', balance: 1234 }))
+
+    render(<RegisterPage state={state} dispatch={vi.fn()} />)
+
+    const table = screen.getByRole('table')
+    const dataRow = within(table).getAllByRole('row')[1]
+    fireEvent.click(dataRow)
+
+    // Editing mode: dialog shows "Save changes" and pre-fills the clicked entry's balance
+    expect(screen.getByText('Save changes')).toBeTruthy()
+    expect(screen.getByDisplayValue('1234')).toBeTruthy()
+  })
+
+  it('clicking the trash icon does not open the balance dialog', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+    state.balanceEntries.push(makeBalanceEntry({ id: 'b1', accountId: 'acc-1', date: '2024-01-01', balance: 1000 }))
+
+    const dispatch = vi.fn()
+    render(<RegisterPage state={state} dispatch={dispatch} />)
+
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
+    fireEvent.click(screen.getByTitle('Delete entry'))
+
+    expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_BALANCE_ENTRY', id: 'b1' })
+    expect(screen.queryByText('Save changes')).toBeNull()
+  })
+
+  it('renders one stacked block per activity, and "Not attributed" when there are none', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+    state.balanceEntries.push(
+      makeBalanceEntry({
+        id: 'b1',
+        accountId: 'acc-1',
+        date: '2024-01-01',
+        balance: 1000,
+        activities: [
+          { type: 'Contribution', amount: 200, note: 'first' },
+          { type: 'Fee', amount: 10, note: 'second' },
+        ],
+      }),
+      makeBalanceEntry({ id: 'b2', accountId: 'acc-1', date: '2024-02-01', balance: 1500, activities: [] }),
+    )
+
+    render(<RegisterPage state={state} dispatch={vi.fn()} />)
+
+    expect(screen.getByText('Contribution')).toBeTruthy()
+    expect(screen.getByText('Fee')).toBeTruthy()
+    expect(screen.getByText('first')).toBeTruthy()
+    expect(screen.getByText('second')).toBeTruthy()
+    expect(screen.getByText('Not attributed')).toBeTruthy()
   })
 })

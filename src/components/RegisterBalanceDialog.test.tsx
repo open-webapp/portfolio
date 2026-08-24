@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { RegisterPage } from './RegisterPage'
+import { RegisterBalanceDialog } from './RegisterBalanceDialog'
 import { initialState, type AppState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
 import { normalizeDateInput } from '../lib/register'
@@ -30,9 +31,7 @@ function makeBalanceEntry(overrides: Partial<BalanceEntry> = {}): BalanceEntry {
     accountId: overrides.accountId ?? 'acc-1',
     date: overrides.date ?? '2024-01-01',
     balance: overrides.balance ?? 1000,
-    activityType: overrides.activityType ?? 'None',
-    activityAmount: overrides.activityAmount ?? 0,
-    note: overrides.note ?? '',
+    activities: overrides.activities ?? [],
     ...overrides,
   }
 }
@@ -101,8 +100,7 @@ describe('RegisterBalanceDialog', () => {
             accountId: 'acc-1',
             date: todayLocal(),
             balance: 1500.5,
-            activityType: 'None',
-            activityAmount: 0,
+            activities: [],
           }),
         ],
       })
@@ -194,5 +192,300 @@ describe('RegisterBalanceDialog', () => {
 
     expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ADD_BALANCE_ENTRIES' }))
     expect(screen.queryByText('Cancel')).toBeNull()
+  })
+
+  it('manual mode: adding two activities on a row and filling them dispatches an entry with both activities', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+
+    const dispatch = vi.fn()
+    openDialog(state, dispatch)
+
+    const dateInput = screen.getByDisplayValue(todayLocal()) as HTMLInputElement
+    const row = dateInput.closest('tr')!
+    const [accountSelect] = within(row).getAllByRole('combobox')
+    fireEvent.change(accountSelect, { target: { value: 'acc-1' } })
+    const balanceInput = within(row).getByPlaceholderText('e.g. 12500.00')
+    fireEvent.change(balanceInput, { target: { value: '1000' } })
+
+    const addActivityBtn = within(row).getByText('+ Add activity')
+    fireEvent.click(addActivityBtn)
+    fireEvent.click(addActivityBtn)
+
+    const amountInputs = within(row).getAllByPlaceholderText('0.00')
+    expect(amountInputs).toHaveLength(2)
+    const noteInputs = within(row).getAllByPlaceholderText('Note')
+    expect(noteInputs).toHaveLength(2)
+    // Combobox order in the row: account select, then one select per activity.
+    const selects = within(row).getAllByRole('combobox')
+    expect(selects).toHaveLength(3)
+
+    fireEvent.change(selects[1], { target: { value: 'Contribution' } })
+    fireEvent.change(amountInputs[0], { target: { value: '100' } })
+    fireEvent.change(noteInputs[0], { target: { value: 'first' } })
+
+    fireEvent.change(selects[2], { target: { value: 'Fee' } })
+    fireEvent.change(amountInputs[1], { target: { value: '25' } })
+    fireEvent.change(noteInputs[1], { target: { value: 'second' } })
+
+    fireEvent.click(screen.getByText('Save 1 entry'))
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ADD_BALANCE_ENTRIES',
+        entries: [
+          expect.objectContaining({
+            accountId: 'acc-1',
+            activities: [
+              { type: 'Contribution', amount: 100, note: 'first' },
+              { type: 'Fee', amount: 25, note: 'second' },
+            ],
+          }),
+        ],
+      })
+    )
+  })
+
+  it('manual mode: removing one of two activities before Save leaves only the remaining activity', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+
+    const dispatch = vi.fn()
+    openDialog(state, dispatch)
+
+    const dateInput = screen.getByDisplayValue(todayLocal()) as HTMLInputElement
+    const row = dateInput.closest('tr')!
+    const [accountSelect] = within(row).getAllByRole('combobox')
+    fireEvent.change(accountSelect, { target: { value: 'acc-1' } })
+    const balanceInput = within(row).getByPlaceholderText('e.g. 12500.00')
+    fireEvent.change(balanceInput, { target: { value: '1000' } })
+
+    const addActivityBtn = within(row).getByText('+ Add activity')
+    fireEvent.click(addActivityBtn)
+    fireEvent.click(addActivityBtn)
+
+    let amountInputs = within(row).getAllByPlaceholderText('0.00')
+    fireEvent.change(amountInputs[0], { target: { value: '100' } })
+    fireEvent.change(amountInputs[1], { target: { value: '25' } })
+
+    const removeActivityBtns = within(row).getAllByTitle('Remove activity')
+    expect(removeActivityBtns).toHaveLength(2)
+    fireEvent.click(removeActivityBtns[0])
+
+    amountInputs = within(row).getAllByPlaceholderText('0.00')
+    expect(amountInputs).toHaveLength(1)
+    expect((amountInputs[0] as HTMLInputElement).value).toBe('25')
+
+    fireEvent.click(screen.getByText('Save 1 entry'))
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ADD_BALANCE_ENTRIES',
+        entries: [
+          expect.objectContaining({
+            activities: [expect.objectContaining({ amount: 25 })],
+          }),
+        ],
+      })
+    )
+    const dispatched = dispatch.mock.calls[0][0]
+    expect(dispatched.entries[0].activities).toHaveLength(1)
+  })
+
+  it('manual mode: a row with no activities added is still valid to save, dispatching activities: []', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+
+    const dispatch = vi.fn()
+    openDialog(state, dispatch)
+
+    const dateInput = screen.getByDisplayValue(todayLocal()) as HTMLInputElement
+    const row = dateInput.closest('tr')!
+    const [accountSelect] = within(row).getAllByRole('combobox')
+    fireEvent.change(accountSelect, { target: { value: 'acc-1' } })
+    const balanceInput = within(row).getByPlaceholderText('e.g. 12500.00')
+    fireEvent.change(balanceInput, { target: { value: '1000' } })
+
+    const saveBtn = screen.getByText('Save 1 entry')
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(saveBtn)
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ADD_BALANCE_ENTRIES',
+        entries: [expect.objectContaining({ activities: [] })],
+      })
+    )
+  })
+
+  describe('edit mode (editingEntry set)', () => {
+    function openEditDialog(entry: BalanceEntry, dispatch: (action: any) => void = vi.fn(), state?: AppState) {
+      const s: AppState = state ?? { ...initialState() }
+      const utils = render(
+        <RegisterBalanceDialog state={s} dispatch={dispatch} onClose={vi.fn()} editingEntry={entry} />
+      )
+      return { ...utils, state: s }
+    }
+
+    function baseState(): AppState {
+      const s: AppState = { ...initialState() }
+      s.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+      return s
+    }
+
+    it('renders one prefilled draft row with 2 activities and no mode toggle / no + Add row button', () => {
+      const state = baseState()
+      const entry = makeBalanceEntry({
+        id: 'bal-1',
+        accountId: 'acc-1',
+        date: '2024-02-15',
+        balance: 4200.75,
+        activities: [
+          { type: 'Contribution', amount: 100, note: 'first' },
+          { type: 'Fee', amount: 25, note: 'second' },
+        ],
+      })
+      openEditDialog(entry, vi.fn(), state)
+
+      const dateInput = screen.getByDisplayValue('2024-02-15') as HTMLInputElement
+      const row = dateInput.closest('tr')!
+      const selects = within(row).getAllByRole('combobox')
+      expect((selects[0] as HTMLSelectElement).value).toBe('acc-1')
+      expect(within(row).getByDisplayValue('4200.75')).toBeTruthy()
+
+      const amountInputs = within(row).getAllByPlaceholderText('0.00')
+      expect(amountInputs).toHaveLength(2)
+      expect((amountInputs[0] as HTMLInputElement).value).toBe('100')
+      expect((amountInputs[1] as HTMLInputElement).value).toBe('25')
+      const noteInputs = within(row).getAllByPlaceholderText('Note')
+      expect((noteInputs[0] as HTMLInputElement).value).toBe('first')
+      expect((noteInputs[1] as HTMLInputElement).value).toBe('second')
+      expect((selects[1] as HTMLSelectElement).value).toBe('Contribution')
+      expect((selects[2] as HTMLSelectElement).value).toBe('Fee')
+
+      expect(screen.queryByText('Enter manually')).toBeNull()
+      expect(screen.queryByText('Copy-Paste')).toBeNull()
+      expect(screen.queryByText('+ Add row')).toBeNull()
+    })
+
+    it('editing the balance and clicking Save changes dispatches UPDATE_BALANCE_ENTRY with the full replacement entry', () => {
+      const state = baseState()
+      const entry = makeBalanceEntry({
+        id: 'bal-1',
+        accountId: 'acc-1',
+        date: '2024-02-15',
+        balance: 4200.75,
+        activities: [{ type: 'Contribution', amount: 100, note: 'first' }],
+      })
+      const dispatch = vi.fn()
+      openEditDialog(entry, dispatch, state)
+
+      const dateInput = screen.getByDisplayValue('2024-02-15') as HTMLInputElement
+      const row = dateInput.closest('tr')!
+      const balanceInput = within(row).getByPlaceholderText('e.g. 12500.00')
+      fireEvent.change(balanceInput, { target: { value: '5000' } })
+
+      const saveBtn = screen.getByText('Save changes')
+      fireEvent.click(saveBtn)
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BALANCE_ENTRY',
+        entry: {
+          id: 'bal-1',
+          accountId: 'acc-1',
+          date: '2024-02-15',
+          balance: 5000,
+          activities: [{ type: 'Contribution', amount: 100, note: 'first' }],
+        },
+      })
+    })
+
+    it('adding then removing an activity before Save results in activities reflecting only final state', () => {
+      const state = baseState()
+      const entry = makeBalanceEntry({
+        id: 'bal-1',
+        accountId: 'acc-1',
+        date: '2024-02-15',
+        balance: 1000,
+        activities: [{ type: 'Contribution', amount: 100, note: 'first' }],
+      })
+      const dispatch = vi.fn()
+      openEditDialog(entry, dispatch, state)
+
+      const dateInput = screen.getByDisplayValue('2024-02-15') as HTMLInputElement
+      const row = dateInput.closest('tr')!
+
+      fireEvent.click(within(row).getByText('+ Add activity'))
+      let removeBtns = within(row).getAllByTitle('Remove activity')
+      expect(removeBtns).toHaveLength(2)
+      fireEvent.click(removeBtns[1])
+
+      fireEvent.click(screen.getByText('Save changes'))
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BALANCE_ENTRY',
+        entry: {
+          id: 'bal-1',
+          accountId: 'acc-1',
+          date: '2024-02-15',
+          balance: 1000,
+          activities: [{ type: 'Contribution', amount: 100, note: 'first' }],
+        },
+      })
+    })
+
+    it('clicking Delete with confirm=true dispatches DELETE_BALANCE_ENTRY and closes the dialog', () => {
+      const state = baseState()
+      const entry = makeBalanceEntry({ id: 'bal-1', accountId: 'acc-1', date: '2024-02-15', balance: 1000 })
+      const dispatch = vi.fn()
+      const onClose = vi.fn()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      render(<RegisterBalanceDialog state={state} dispatch={dispatch} onClose={onClose} editingEntry={entry} />)
+
+      fireEvent.click(screen.getByText('Delete'))
+
+      expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_BALANCE_ENTRY', id: 'bal-1' })
+      expect(onClose).toHaveBeenCalled()
+    })
+
+    it('clicking Delete with confirm=false does not dispatch and keeps the dialog open', () => {
+      const state = baseState()
+      const entry = makeBalanceEntry({ id: 'bal-1', accountId: 'acc-1', date: '2024-02-15', balance: 1000 })
+      const dispatch = vi.fn()
+      const onClose = vi.fn()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+      render(<RegisterBalanceDialog state={state} dispatch={dispatch} onClose={onClose} editingEntry={entry} />)
+
+      fireEvent.click(screen.getByText('Delete'))
+
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(onClose).not.toHaveBeenCalled()
+      expect(screen.getByText('Delete')).toBeTruthy()
+    })
+
+    it('Cancel after adding/removing activities discards all local changes without dispatching', () => {
+      const state = baseState()
+      const entry = makeBalanceEntry({
+        id: 'bal-1',
+        accountId: 'acc-1',
+        date: '2024-02-15',
+        balance: 1000,
+        activities: [{ type: 'Contribution', amount: 100, note: 'first' }],
+      })
+      const dispatch = vi.fn()
+      const onClose = vi.fn()
+
+      render(<RegisterBalanceDialog state={state} dispatch={dispatch} onClose={onClose} editingEntry={entry} />)
+
+      const dateInput = screen.getByDisplayValue('2024-02-15') as HTMLInputElement
+      const row = dateInput.closest('tr')!
+      fireEvent.click(within(row).getByText('+ Add activity'))
+
+      fireEvent.click(screen.getByText('Cancel'))
+
+      expect(dispatch).not.toHaveBeenCalled()
+    })
   })
 })
