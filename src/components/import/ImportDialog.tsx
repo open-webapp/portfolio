@@ -419,8 +419,12 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     // Determine the account ID
     let accountId = importAccountKey
 
-    // If new account mode, create the account first
-    if (importAccountKey === '__new__') {
+    // New-account mode: the account select defaults to '' (unselected), which the rest
+    // of this component already treats as "new account" (see isStep1Complete,
+    // accountLabel, categoryLabel, isExistingAccountSelected below) — match that here too,
+    // otherwise leaving the dropdown untouched imports positions with accountId: ''
+    // instead of creating the account.
+    if (importAccountKey === '__new__' || importAccountKey === '') {
       const newAccount: Account = {
         id: uid('acc'),
         accountNumber: formNumber.trim(),

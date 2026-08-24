@@ -1114,6 +1114,44 @@ describe('ImportDialog (2-step wizard)', () => {
     expect(calls.find((a) => a.type === 'IMPORT_POSITIONS')!.mode).toBe('merge')
   })
 
+  // Regression: the account <select> defaults to the unselected '' option, which every
+  // other new-account check in this component (isStep1Complete, accountLabel,
+  // isExistingAccountSelected) already treats as "creating a new account" — a user who
+  // fills in the name/number fields without explicitly picking "+ Add new account…"
+  // must still get ADD_ACCOUNT dispatched and positions attached to the new account's id,
+  // not accountId: ''.
+  it('35c. manual entry with the account select left on its default blank value still creates the account', async () => {
+    render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
+    openDialog()
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), {
+      target: { value: 'New Brokerage' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: '5555' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Enter manually' }))
+    await continueEnabled()
+    clickContinue()
+    await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
+
+    setAssetClassHeaderValue('Equity')
+    const firstRowInputs = document.querySelectorAll('tbody tr:first-child input') as NodeListOf<HTMLInputElement>
+    fireEvent.change(firstRowInputs[0], { target: { value: 'AAPL' } })
+    fireEvent.change(firstRowInputs[2], { target: { value: '100' } })
+    fireEvent.change(firstRowInputs[3], { target: { value: '150' } })
+    fireEvent.change(firstRowInputs[5], { target: { value: '180' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+    const calls = dispatch.mock.calls.map((c) => c[0])
+    const addAccount = calls.find((a) => a.type === 'ADD_ACCOUNT')
+    expect(addAccount).toBeTruthy()
+    expect(addAccount.account.name).toBe('New Brokerage')
+
+    const importPositions = calls.find((a) => a.type === 'IMPORT_POSITIONS')
+    expect(importPositions.accountId).toBe(addAccount.account.id)
+    expect(importPositions.accountId).not.toBe('')
+  })
+
   it("13d. CSV-upload import dispatches IMPORT_POSITIONS with mode: 'replace'", async () => {
     await mockCsv(POS_HEADERS, POS_ROWS)
     render(<ImportDialog state={createState()} dispatch={dispatch} onClose={vi.fn()} />)
