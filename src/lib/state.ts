@@ -10,6 +10,7 @@ import type {
   MutualFundSyncState,
   HeldSymbolPrice,
   PriceSyncLastRun,
+  BalanceEntry,
 } from './types'
 import { uid } from './seed'
 
@@ -24,9 +25,10 @@ export interface AppState {
   customInstitutions: string[]
   priceSync: PriceSyncState
   mutualFundSync: MutualFundSyncState
+  balanceEntries: BalanceEntry[]
 
   // UI state
-  view: 'settings' | 'accounts' | 'quotes'
+  view: 'settings' | 'accounts' | 'quotes' | 'register'
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   txTypeFilter: string // 'All' or specific type like 'Buy'
@@ -36,6 +38,9 @@ export interface AppState {
   expandedCategories: Record<string, boolean> // category expansion state
   acctAssetClassFilter: string // asset class filter on AccountsPage
   acctPosSearch: string // position search text on AccountsPage
+  regAccountId: string | null // selected account on RegisterPage
+  regExpanded: Record<string, boolean> // category expansion state on RegisterPage
+  regActivityFilter: 'All' | 'With Activity' // activity filter on RegisterPage
   pendingImport?: {
     kind: 'positions' | 'transactions'
     profileId: string
@@ -64,6 +69,7 @@ export function initialState(): AppState {
       lastRun: null,
     },
     mutualFundSync: { apiKey: '', heldPrices: {}, lastRun: null, callBudget: { date: '', callsUsed: 0 } },
+    balanceEntries: [],
 
     // UI state
     view: 'accounts',
@@ -76,6 +82,9 @@ export function initialState(): AppState {
     expandedCategories: {},
     acctAssetClassFilter: 'All',
     acctPosSearch: '',
+    regAccountId: null,
+    regExpanded: {},
+    regActivityFilter: 'All',
   }
 }
 
@@ -117,6 +126,7 @@ export function deleteAccount(state: AppState, accountId: string): AppState {
     transactions: state.transactions.filter((t) => t.accountId !== accountId),
     snapshots: state.snapshots.filter((s) => s.accountId !== accountId),
     csvMappings: state.csvMappings.filter((m) => m.accountId !== accountId),
+    balanceEntries: state.balanceEntries.filter((b) => b.accountId !== accountId),
   }
 }
 
@@ -410,10 +420,69 @@ export function addCustomInstitution(state: AppState, name: string): AppState {
 /**
  * Set the current view (to be implemented in reducer cases).
  */
-export function setView(state: AppState, view: 'settings' | 'accounts' | 'quotes'): AppState {
+export function setView(state: AppState, view: 'settings' | 'accounts' | 'quotes' | 'register'): AppState {
   return {
     ...state,
     view,
+  }
+}
+
+/**
+ * Upsert balance entries by (accountId, date) key: any incoming entry
+ * replaces an existing entry sharing the same (accountId, date); new
+ * (accountId, date) combinations are appended.
+ */
+export function addBalanceEntries(state: AppState, entries: BalanceEntry[]): AppState {
+  const incomingKeys = new Set(entries.map((e) => `${e.accountId}|${e.date}`))
+  const retained = state.balanceEntries.filter(
+    (b) => !incomingKeys.has(`${b.accountId}|${b.date}`)
+  )
+  return {
+    ...state,
+    balanceEntries: [...retained, ...entries],
+  }
+}
+
+/**
+ * Delete a balance entry by ID.
+ */
+export function deleteBalanceEntry(state: AppState, id: string): AppState {
+  return {
+    ...state,
+    balanceEntries: state.balanceEntries.filter((b) => b.id !== id),
+  }
+}
+
+/**
+ * Set the selected account on RegisterPage.
+ */
+export function setRegAccount(state: AppState, accountId: string | null): AppState {
+  return {
+    ...state,
+    regAccountId: accountId,
+  }
+}
+
+/**
+ * Toggle category expansion state on RegisterPage.
+ */
+export function toggleRegCategoryExpanded(state: AppState, categoryKey: string): AppState {
+  return {
+    ...state,
+    regExpanded: {
+      ...state.regExpanded,
+      [categoryKey]: !state.regExpanded[categoryKey],
+    },
+  }
+}
+
+/**
+ * Set the activity filter on RegisterPage.
+ */
+export function setRegActivityFilter(state: AppState, filter: string): AppState {
+  return {
+    ...state,
+    regActivityFilter: filter as AppState['regActivityFilter'],
   }
 }
 

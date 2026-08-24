@@ -70,6 +70,18 @@ export interface PortfolioSnapshot {
   value: number
 }
 
+export type ActivityType = 'None' | 'Contribution' | 'Withdrawal' | 'Transfer In' | 'Transfer Out' | 'Dividend' | 'Fee'
+
+export interface BalanceEntry {
+  id: string
+  accountId: string
+  date: string           // YYYY-MM-DD
+  balance: number
+  activityType: ActivityType
+  activityAmount: number // always >= 0; sign applied via ACTIVITY_SIGN
+  note: string
+}
+
 export const POSITIONS_REQUIRED_FIELDS = [
   'symbol',
   'assetClass',

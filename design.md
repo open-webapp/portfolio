@@ -25,15 +25,21 @@ src/
     accounts.ts               # empty stub retained for future use
     positionsImport.ts        # replace/merge mode + closed-position diff + snapshot upsert
     transactionsImport.ts     # dedup-by-natural-key insert
-    computations.ts           # computePosition, allocationByAssetClass, fmtUSD, fmtPct
+    computations.ts           # computePosition, allocationByAssetClass, fmtUSD, fmtPct, GAIN_COLOR/LOSS_COLOR
+    aggregateRows.ts           # grouping helpers for the Accounts page's aggregate positions table
     sort.ts                   # generic sortBy<T>
-    selectors.ts               # visibleTransactions/categoryCards/closedPositionsCard/acct*/etc.
+    selectors.ts               # visibleTransactions/categoryCards/closedPositionsCard/acct*/register*/held*Symbols/shouldRetry*/etc.
     importPreview.ts           # applyFieldMap / validatePreviewRow / isBlankRow / isReviewValid
     seed.ts                    # uid(prefix)
-    pastedTable.ts              # tableToCsv(headersClipboard, valuesClipboard): clipboard-paste → CSV/rows/headers parser, used by ImportDialog's Copy-Paste entry mode
+    pastedTable.ts              # tableToCsv(headersClipboard, valuesClipboard): clipboard-paste → CSV/rows/headers parser, used by ImportDialog's Copy-Paste entry mode and RegisterBalanceDialog's paste mode
+    register.ts                 # pure Register-page math/paste helpers (no AppState coupling): ACTIVITY_TYPES, ACTIVITY_SIGN, BALANCE_FIELD_HINTS, accountLedger, latestBalance, scopeLedger, registerChartSeries, matchAccountId, matchActivityType, normalizeDateInput, emptyDraftRow, isDraftRowValid
+    priceSync.ts                # runPriceSync: Polygon.io grouped-daily-bars fetch + held-price/lastRun patch
+    mutualFundSync.ts           # runMutualFundSync: Alphavantage per-symbol NAV fetch + held-price/lastRun/callBudget patch
+    tickerOverview.ts           # syncTickerOverviews: Polygon ticker-name/SIC enrichment for held symbols
+    marketDataDb.ts             # IndexedDB cache of market-wide daily bars + ticker overviews (separate from the encrypted AppState envelope)
   components/
     PasswordGate.tsx           # full-replacement gate screen: set-password (first-run) with optional "Restore from Drive" tab, enter-password (returning encrypted), reset-app escape hatch
-    Nav.tsx                    # nav-brand, Accounts seg tab, SVG sync/gear icons
+    Nav.tsx                    # logo mark + brand, 3 main-nav pills (Positions/Register/Quotes), sync + settings icon buttons
     AccountsPage.tsx           # 2-column layout: left category cards (Taxable/Non-Taxable/Tax-Deferred/Closed Positions), right panel with allocation chart + positions table (open) or closed-positions table; row click on open-positions opens PositionGroupOverlay
     AllocationChart.tsx         # asset allocation bar list (positions, title); used on the Accounts page
     PositionGroupOverlay.tsx    # dialog overlay: displays positions from a caller-supplied list with editable fields and inline account/symbol/shares/price cells
@@ -42,7 +48,10 @@ src/
     AssetClassOverrideSelect.tsx
     InstitutionSelect.tsx                       # { value: string, accounts: Account[], onChange: (value: string) => void } — seeded list ∪ in-use values with free-type "Add X" affordance
     DriveRestorePanel.tsx        # shared Drive connect/disconnect/restore UI: connect button, disconnect link, Google Picker-based restore ("Pick a file" dialog, the only restore entry point), cross-password retry prompt with its own fallback picker; used by both PasswordGate restore tab and SettingsPage
-    Settings.tsx                  # two-tab page: Google Drive Sync (renders DriveRestorePanel) + Change Encryption Password
+    Settings.tsx                  # three-tab page: Google Drive Sync (renders DriveRestorePanel) + Change Encryption Password + Price Sync
+    QuotesPage.tsx                 # read-only table of held Equity/ETF + mutual fund symbols with cached price-sync price, ticker overview (name, SIC), last-updated bar timestamp; search filters symbol/name/status/SIC
+    RegisterPage.tsx               # balance-history tracker: left scope picker (All Accounts + expandable tax-category cards), right stats strip + SVG balance-over-time chart + activity table; opens RegisterBalanceDialog
+    RegisterBalanceDialog.tsx      # "Record Balances" dialog: manual entry (editable draft-row table) and copy-paste modes, draft-row validation, commits via ADD_BALANCE_ENTRIES
     import/
       ImportDialog.tsx          # 2-step positions/transactions import wizard (Setup → Review); 3 entry modes for positions: upload/paste/manual
       index.ts
@@ -63,16 +72,20 @@ Single `useReducer(appReducer, initialState())` in `App.tsx`. No Redux/Zustand/C
 
 ```ts
 interface AppState {
-  // Data collections (6)
+  // Data collections (10)
   accounts: Account[]
   positions: Position[]
   closedPositions: ClosedPosition[]
   transactions: Transaction[]
   snapshots: PortfolioSnapshot[]
   csvMappings: SavedCsvMapping[]
+  customInstitutions: string[]
+  priceSync: PriceSyncState
+  mutualFundSync: MutualFundSyncState
+  balanceEntries: BalanceEntry[]
 
   // UI state
-  view: 'settings' | 'accounts'
+  view: 'settings' | 'accounts' | 'quotes' | 'register'
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   txTypeFilter: string
@@ -82,16 +95,22 @@ interface AppState {
   expandedCategories: Record<string, boolean>
   acctAssetClassFilter: string
   acctPosSearch: string
+  regAccountId: string | null           // selected account on RegisterPage
+  regExpanded: Record<string, boolean>  // category expansion state on RegisterPage
+  regActivityFilter: 'All' | 'With Activity'
+  pendingImport?: { kind: 'positions' | 'transactions'; profileId: string; rows: Record<string, string>[]; fileName: string }
 }
 ```
 
-- `src/lib/state.ts` — `AppState` interface (6 data collections + 10 UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `closePosition`, `deleteClosedPosition`, `setSort`, `toggleSort`, `setTransactionsSearch`, `setTransactionTypeFilter`, `upsertCsvMapping`, `selectAccount(accountId, categoryKey?)`, `toggleCategoryExpanded`, `setAcctAssetClassFilter`, `setAcctPosSearch`). `selectAccount` now accepts an optional `categoryKey` parameter to set `selectedCategoryKey` to a tax category or `'closedPositions'`.
+- `src/lib/state.ts` — `AppState` interface (10 data collections + UI fields) and one pure helper per mutation (`addAccount`, `updateAccount`, `deleteAccount`, `updatePosition`, `closePosition`, `deleteClosedPosition`, `restoreClosedPosition`, `setSort`, `toggleSort`, `setTransactionsSearch`, `setTransactionTypeFilter`, `upsertCsvMapping`, `addCustomInstitution`, `selectAccount(accountId, categoryKey?)`, `toggleCategoryExpanded`, `setAcctAssetClassFilter`, `setAcctPosSearch`, `setView`, `setPriceSyncApiKey`, `recordPriceSyncRun`, `setMutualFundSyncApiKey`, `recordMutualFundSyncRun`, `addBalanceEntries`, `deleteBalanceEntry`, `setRegAccount`, `toggleRegCategoryExpanded`, `setRegActivityFilter`). `selectAccount` accepts an optional `categoryKey` parameter to set `selectedCategoryKey` to a tax category or `'closedPositions'`. `deleteAccount` cascades `balanceEntries` alongside positions/closedPositions/transactions/snapshots/csvMappings. `addBalanceEntries(state, entries)` upserts by `(accountId, date)` key: any incoming entry replaces an existing entry sharing that key; new keys are appended.
 - `src/lib/reducer.ts` — `appReducer(state, action)` switches on `action.type` (string) and calls the matching `state.ts` helper, or the import logic in `positionsImport.ts`/`transactionsImport.ts`. `default: return state`. Special case `__SET_STATE` replaces the whole state (used by hydration).
 - Components never mutate state directly; they `dispatch({ type: '...', ...payload })`.
 
 ### Action types (reducer.ts)
 
-`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `CLOSE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `DELETE_CLOSED_POSITION`, `SET_SORT`, `TOGGLE_SORT`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `UPSERT_CSV_MAPPING`, `SET_VIEW`, `SELECT_ACCOUNT`, `TOGGLE_CATEGORY_EXPANDED`, `SET_ACCT_ASSET_CLASS_FILTER`, `SET_ACCT_POS_SEARCH`. Note: `SELECT_ACCOUNT` payload carries `accountId` and optional `categoryKey` (a tax category name or `'closedPositions'`).
+`__SET_STATE`, `ADD_ACCOUNT`, `UPDATE_ACCOUNT`, `DELETE_ACCOUNT`, `UPDATE_POSITION`, `SET_ASSET_CLASS_OVERRIDE`, `CLOSE_POSITION`, `DELETE_CLOSED_POSITION`, `RESTORE_CLOSED_POSITION`, `SET_SORT`, `TOGGLE_SORT`, `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`, `SET_VIEW`, `IMPORT_POSITIONS`, `IMPORT_TRANSACTIONS`, `UPSERT_CSV_MAPPING`, `ADD_CUSTOM_INSTITUTION`, `SELECT_ACCOUNT`, `TOGGLE_CATEGORY_EXPANDED`, `SET_ACCT_ASSET_CLASS_FILTER`, `SET_ACCT_POS_SEARCH`, `SET_PRICE_SYNC_API_KEY`, `RECORD_PRICE_SYNC_RUN`, `SET_MUTUAL_FUND_SYNC_API_KEY`, `RECORD_MUTUAL_FUND_SYNC_RUN`, `ADD_BALANCE_ENTRIES`, `DELETE_BALANCE_ENTRY`, `SET_REG_ACCOUNT`, `TOGGLE_REG_CATEGORY_EXPANDED`, `SET_REG_ACTIVITY_FILTER`. Note: `SELECT_ACCOUNT` payload carries `accountId` and optional `categoryKey` (a tax category name or `'closedPositions'`).
+
+Register-specific payload shapes: `ADD_BALANCE_ENTRIES { entries: BalanceEntry[] }` (upsert by `(accountId, date)`), `DELETE_BALANCE_ENTRY { id: string }`, `SET_REG_ACCOUNT { accountId: string | null }`, `TOGGLE_REG_CATEGORY_EXPANDED { categoryKey: string }`, `SET_REG_ACTIVITY_FILTER { filter: string }`.
 
 ## Component tree
 
@@ -101,21 +120,28 @@ App
   [sessionKey === null]
     PasswordGate               (shape, onUnlock, onReset, driveReady, driveEmail, backupFileId, syncing, setSyncing, handleConnect, handleDisconnect) — replaces the entire tree below until unlocked; when shape='absent', offers tab-seg for New Setup vs. Restore from Drive; restore tab renders DriveRestorePanel
   [sessionKey set, !isHydrated] — "Loading..." (brief, between onUnlock and hydration dispatch)
-  Nav                         (state, dispatch, driveReady, syncing, handleSync, onOpenSettings)  — renders on both accounts and settings views. nav-brand 'Ledger' + always-rendered `.seg` with a single "Accounts" tab (active when `state.view === 'accounts'`, inactive when `state.view === 'settings'`), whose `onClick` dispatches `SET_VIEW` + conditional sync-icon button (refresh icon, `title="Sync now"`, shown only when `driveReady`, disabled while `syncing`, calls `handleSync`) + SVG gear icon that calls `onOpenSettings` (dispatches view change to settings, resets `settingsSection` to `'drive'`)
+  Nav                         (state, dispatch, driveReady, syncing, handleSync, onOpenSettings)  — renders on every view. Logo mark (accent-filled box + plus-icon SVG) + 'Ledger' brand, then 3 always-rendered div-based nav pills in order Positions (`view: 'accounts'`) / Register (`view: 'register'`) / Quotes (`view: 'quotes'`), each with a grid icon; active pill (`state.view === tab.value`) gets accent text/background, `onClick` dispatches `SET_VIEW`. (No Settings pill — Settings is reached only via the gear icon, not part of `state.view`'s main-nav pill set even though it is a `view` value.) Conditional sync-icon button (refresh icon, `title="Sync now"`, shown only when `driveReady`, disabled while `syncing`, calls `handleSync`) + SVG gear icon that calls `onOpenSettings` (dispatches view change to settings, resets `settingsSection` to `'drive'`)
   [view === 'accounts']
     AccountsPage              (state, dispatch) — 2-column layout: left collapsible category cards (Taxable, Non-Taxable, Tax-Deferred, plus optional 4th Closed Positions card when any exist), right panel switches between (allocation chart + asset-class filter + aggregate positions table for open positions) and (closed positions table when closed-positions category selected). Category card click sets `selectedAccountId` and `selectedCategoryKey`; opening open-positions category dispatches `PositionGroupOverlay` with that category's positions, but closed-positions category shows `ClosedPositionsTable` instead (no overlay).
       ImportDialog            (state, dispatch)  — renders the Import button trigger in the filter row; open state is component-local (isOpen)
       ClosedPositionsTable    (state, dispatch, positions)  — when the Closed Positions category is selected
       PositionGroupOverlay  (positions, title, accounts, dispatch, onClose, existingAssetClasses, state, sortPositions?)  — when a row is clicked in AccountsPage's aggregate positions table; lists positions supplied by caller. 11-column table: Account (two-line dropdown: line 1 shows institution+name, line 2 shows tax category+retirement), Symbol, Tracking Symbol, Name, Shares, Avg Cost, Current Price, Market Value, % of Portfolio, Override (asset class), Delete (trash-icon button, `window.confirm` then dispatches `CLOSE_POSITION`, converting the position to a `ClosedPosition` rather than removing it outright). All editable fields use independent inline-edit UI with component-local state: click → input → Enter or blur commits via `UPDATE_POSITION` dispatch, Escape cancels/reverts (no dispatch). Editable cells: Symbol (`<input type="text">`, empty reverts silently), Tracking Symbol (`<input type="text">`, empty clears the override so grouping/display falls back to `symbol`), Account (dropdown; selecting one dispatches `UPDATE_POSITION` with `patch: { accountId }`), Shares/AvgCost/Price (`<input type="number">`; invalid/empty revert silently). Editing Symbol, Tracking Symbol, Account, or deleting a position changes position's `buildGroupKey()` result (grouping key is `trackingSymbol || symbol` + effective asset class) or removes the position → position row disappears from currently-open overlay on next render (overlay itself stays open; no special wiring needed, natural re-render side effect).
         AssetClassOverrideSelect (position, dispatch)  — per underlying position, inside the overlay
+  [view === 'register']
+    RegisterPage               (state, dispatch) — 2-column layout: left scope picker (an "All Accounts" card + expandable tax-category cards, each listing accounts with entry count + as-of date via `registerCategoryCards`/`registerAllAccountsTotal`); right column stats strip (Current balance / Net change recorded / From activity / Unexplained, derived from `accountLedger`) + SVG balance-over-time line chart (`registerChartSeries`) + activity filter (`All` / `With Activity`, dispatches `SET_REG_ACTIVITY_FILTER`) + "Record Balances" button (opens `RegisterBalanceDialog`, dialog-open state component-local) + activity table (`scopeLedger`: Date, Account, Balance, Change, Attributed activity, Unexplained, Delete). Row delete prompts `window.confirm('Delete this balance entry? This cannot be undone.')` then dispatches `DELETE_BALANCE_ENTRY`. Clicking the "All Accounts" card or a category-card account row dispatches `SET_REG_ACCOUNT`; clicking a category header dispatches `TOGGLE_REG_CATEGORY_EXPANDED`.
+      RegisterBalanceDialog    (state, dispatch, onClose) — "Record Balances" dialog. Mode `.seg` (`Enter manually` / `Copy-Paste`, component-local). Manual mode: editable draft-row table (`DraftRow[]`, component-local), add/remove row. Copy-Paste mode: Headers/Values paste zones parsed via `tableToCsv()` and mapped to fields via `BALANCE_FIELD_HINTS` (exact-key then hint-substring match) + `cellToDraftField` per-field normalizers (`matchAccountId`, `matchActivityType`, `normalizeDateInput`). "Save N entries" button (disabled when 0 valid rows via `isDraftRowValid`) dispatches `ADD_BALANCE_ENTRIES` with `activityAmount: Math.abs(parseFloat(...))` (always non-negative) then closes; Cancel/✕/backdrop-click discards local draft state.
+  [view === 'quotes']
+    QuotesPage                 (state, dispatch, tickerOverviewErrors) — read-only table of held Equity/ETF + mutual fund symbols with cached price-sync price (`marketDataDb.getAllBars`/`getAllTickerOverviews`), ticker overview (name, SIC description), and last-updated bar timestamp; free-text search filters symbol/name/status/SIC description. `dispatch` unused (read-only page).
   [view === 'settings']
-    SettingsPage              (state, dispatch, sessionKey, sessionSalt, onKeyChange, driveReady, driveEmail, backupFileId, syncing, setSyncing, handleConnect, handleDisconnect, settingsSection, setSettingsSection)  — renders tab-seg ("Google Drive" / "Encryption") at the top (active per `settingsSection`, each `onClick` dispatches `setSettingsSection`), followed by `.hr` divider, then conditionally the Google Drive Sync card (renders DriveRestorePanel) when `settingsSection === 'drive'` or the Change Encryption Password card when `settingsSection === 'encryption'`.
+    SettingsPage              (state, dispatch, sessionKey, sessionSalt, onKeyChange, driveReady, driveEmail, backupFileId, syncing, setSyncing, handleConnect, handleDisconnect, settingsSection, setSettingsSection, runPriceSyncTrigger, runMutualFundSyncTrigger, tickerOverviewErrors, mutualFundSyncErrors)  — renders tab-seg ("Google Drive" / "Encryption" / "Price Sync") at the top (active per `settingsSection: 'drive' | 'encryption' | 'priceSync'`, each `onClick` dispatches `setSettingsSection`), followed by `.hr` divider, then conditionally the Google Drive Sync card (renders DriveRestorePanel) when `settingsSection === 'drive'`, the Change Encryption Password card when `settingsSection === 'encryption'`, or the Price Sync card (Polygon/Alphavantage API keys, manual fetch triggers, last-run summary, price table) when `settingsSection === 'priceSync'` — see product-behavior.md's Settings page section for full Price Sync behavior.
       DriveRestorePanel      (driveReady, driveEmail, backupFileId, syncing, setSyncing, handleConnect, handleDisconnect, restoreKey, restoreSalt, onRestored) — shared Drive panel used here and on PasswordGate's restore tab
 ```
 
-Props convention: most components take `{ state: AppState, dispatch }`; narrower props for focused components: `AssetClassOverrideSelect` (`position`, `dispatch`), `PositionGroupOverlay` (`positions`, `title`, `accounts`, `dispatch`, `onClose`, `existingAssetClasses`, `state`, `sortPositions?`), `PasswordGate` (`shape`, `onUnlock`, `onReset`, `driveReady?`, `driveEmail?`, `backupFileId?`, `syncing?`, `setSyncing?`, `handleConnect?`, `handleDisconnect?`), `Nav` (`state`, `dispatch`, `driveReady`, `syncing`, `handleSync`, `onOpenSettings`), `SettingsPage` (`state`, `dispatch`, `sessionKey`, `sessionSalt`, `onKeyChange`, `driveReady`, `driveEmail`, `backupFileId`, `syncing`, `setSyncing`, `handleConnect`, `handleDisconnect`, `settingsSection`, `setSettingsSection`), `DriveRestorePanel` (`driveReady`, `driveEmail`, `backupFileId`, `syncing`, `setSyncing`, `handleConnect`, `handleDisconnect`, `restoreKey`, `restoreSalt`, `onRestored`), `AllocationChart` (`positions: Position[]`, `title: string`), `AccountsPage` (`state`, `dispatch`). `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
+Props convention: most components take `{ state: AppState, dispatch }`; narrower props for focused components: `AssetClassOverrideSelect` (`position`, `dispatch`), `PositionGroupOverlay` (`positions`, `title`, `accounts`, `dispatch`, `onClose`, `existingAssetClasses`, `state`, `sortPositions?`), `PasswordGate` (`shape`, `onUnlock`, `onReset`, `driveReady?`, `driveEmail?`, `backupFileId?`, `syncing?`, `setSyncing?`, `handleConnect?`, `handleDisconnect?`), `Nav` (`state`, `dispatch`, `driveReady`, `syncing`, `handleSync`, `onOpenSettings`), `SettingsPage` (`state`, `dispatch`, `sessionKey`, `sessionSalt`, `onKeyChange`, `driveReady`, `driveEmail`, `backupFileId`, `syncing`, `setSyncing`, `handleConnect`, `handleDisconnect`, `settingsSection`, `setSettingsSection`), `DriveRestorePanel` (`driveReady`, `driveEmail`, `backupFileId`, `syncing`, `setSyncing`, `handleConnect`, `handleDisconnect`, `restoreKey`, `restoreSalt`, `onRestored`), `AllocationChart` (`positions: Position[]`, `title: string`), `AccountsPage` (`state`, `dispatch`), `RegisterPage` (`state`, `dispatch`), `RegisterBalanceDialog` (`state`, `dispatch`, `onClose`), `QuotesPage` (`state`, `dispatch`, `tickerOverviewErrors`). `dispatch` is typed `(action: any) => void` throughout — action payloads are not statically checked against `reducer.ts`'s cases.
 
 ## Data flow
+
+**Register** — `RegisterBalanceDialog`'s draft rows (`DraftRow[]`, both manual and paste modes) live entirely in component-local state, never `AppState`. "Save" converts valid draft rows to `BalanceEntry[]` and dispatches `ADD_BALANCE_ENTRIES`, the single write path into `state.balanceEntries`. `RegisterPage` never reads component-local dialog state directly — after the dispatch, `selectors.ts`'s `registerCategoryCards`/`registerAllAccountsTotal` and `register.ts`'s `accountLedger`/`scopeLedger`/`registerChartSeries` re-derive the ledger rows, stats strip, and chart from the updated `state.balanceEntries` on next render, the same "selectors re-derive from raw collections" pattern used elsewhere.
 
 **CSV import** — synchronous 2-step wizard inside `ImportDialog` (positions or transactions). Dialog-open state is component-local (`isOpen`), not in `AppState`. Paste mode maintains additional component-local state: `pasteHeaderClipboard`, `pasteValuesClipboard`, `pasteIssues`.
 1. **Setup** (`step === 1`): pick data type (`.seg`: Transactions / Positions — default Positions), destination account (existing `<select>` or new-account form: name, number, category, retirement checkbox), and entry mode for positions (`upload`/`paste`/`manual`, default `upload`). Upload mode uses `.csv` file parsing (`parseCsvFile` from `csv.ts` -> `{ headers, rows }`). Paste mode feeds two clipboard paste zones (headers + values) into `tableToCsv()` (`pastedTable.ts`) to produce the same `csvHeaders`/`csvRows` state as upload, then shares Step 2's mapping/prefill/commit logic with no changes. Manual mode enters Step 2 with blank rows (no CSV parsing). Continue requires account resolution; upload and paste modes additionally require ≥1 parsed row, manual mode does not.
@@ -158,10 +184,12 @@ All steps are **synchronous**; no async queue beyond the debounce-save to Indexe
 - `acctAssetClassOptions(positions)` — distinct effective asset classes among the given positions (used with `acctScopedPositions` to build the Accounts page's asset-class filter options).
 - `acctFilteredPositions(state)` — `acctScopedPositions(state)` further filtered by `state.acctAssetClassFilter`/`state.acctPosSearch`; denominator for the Accounts page's `% of Selection` display.
 - `acctAllocationTitle(state)` — `"Allocation — {account.name}"` or `"Allocation — All Accounts"`, based on `state.selectedAccountId`.
+- `registerCategoryCards(state)` — one card per tax category for RegisterPage's left column: per-account `totalStr`/`asOfStr`/`entryCount`/selection state (via `latestBalance`), category `totalStr`, `expanded` from `state.regExpanded`, `hasAccounts`.
+- `registerAllAccountsTotal(state)` — `fmtUSD` sum of every account's latest `BalanceEntry.balance` (via `latestBalance`), for RegisterPage's "All Accounts" card.
 
 ## Key Invariants
 
-- **Account cascade delete**: Deleting an `Account` cascade-deletes all its `Position`s, `ClosedPosition`s, `Transaction`s, `PortfolioSnapshot`s, and `SavedCsvMapping`s.
+- **Account cascade delete**: Deleting an `Account` cascade-deletes all its `Position`s, `ClosedPosition`s, `Transaction`s, `PortfolioSnapshot`s, `SavedCsvMapping`s, and `BalanceEntry`s.
 - **importPositions replace vs merge mode**: `importPositions(state, accountId, mappedRows, importDate, mode)` (`mode: 'replace' | 'merge'`, default `'replace'`). `'replace'` (CSV-upload, a full broker export) replaces the account's entire position list; symbols missing from the new rows become `ClosedPosition`s. `'merge'` (manual entry / Copy-Paste, inherently partial batches) upserts new rows by symbol into the account's existing positions — untouched symbols are left alone and nothing is closed. `ImportDialog` dispatches `mode: entryMode === 'upload' ? 'replace' : 'merge'`.
 - **Position delete = close, not hard delete**: deleting a position from `PositionGroupOverlay` (`CLOSE_POSITION` action) converts it to a `ClosedPosition` with `realizedGL: null`, `realizedGLBasis: 'unknown'` (never transaction-matched, unlike the reimport-driven auto-close path in `positionsImport.ts`) — same target shape, different trigger and always-unknown basis.
 

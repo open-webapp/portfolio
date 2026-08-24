@@ -8,8 +8,13 @@ import {
   recordPriceSyncRun,
   setMutualFundSyncApiKey,
   recordMutualFundSyncRun,
+  addBalanceEntries,
+  deleteBalanceEntry,
+  setRegAccount,
+  toggleRegCategoryExpanded,
+  setRegActivityFilter,
 } from './state'
-import type { AppState } from './types'
+import type { AppState, BalanceEntry } from './types'
 
 describe('appReducer', () => {
   describe('CLOSE_POSITION', () => {
@@ -274,6 +279,100 @@ describe('appReducer', () => {
       const resultDirect = recordMutualFundSyncRun(state, patch)
 
       expect(resultFromReducer.mutualFundSync).toEqual(resultDirect.mutualFundSync)
+    })
+  })
+
+  describe('ADD_BALANCE_ENTRIES', () => {
+    it('dispatches to addBalanceEntries state action', () => {
+      const state: AppState = { ...initialState() }
+      const entries: BalanceEntry[] = [
+        {
+          id: 'be1',
+          accountId: 'acc1',
+          date: '2024-02-01',
+          balance: 1000,
+          activityType: 'Contribution',
+          activityAmount: 100,
+          note: '',
+        },
+      ]
+
+      const resultFromReducer = appReducer(state, { type: 'ADD_BALANCE_ENTRIES', entries })
+      const resultDirect = addBalanceEntries(state, entries)
+
+      expect(resultFromReducer.balanceEntries).toEqual(resultDirect.balanceEntries)
+      expect(resultFromReducer.balanceEntries).toHaveLength(1)
+    })
+  })
+
+  describe('DELETE_BALANCE_ENTRY', () => {
+    it('dispatches to deleteBalanceEntry state action', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          {
+            id: 'be1',
+            accountId: 'acc1',
+            date: '2024-02-01',
+            balance: 1000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          },
+        ],
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'DELETE_BALANCE_ENTRY', id: 'be1' })
+      const resultDirect = deleteBalanceEntry(state, 'be1')
+
+      expect(resultFromReducer.balanceEntries).toEqual(resultDirect.balanceEntries)
+      expect(resultFromReducer.balanceEntries).toHaveLength(0)
+    })
+  })
+
+  describe('SET_REG_ACCOUNT', () => {
+    it('dispatches to setRegAccount state action', () => {
+      const state: AppState = { ...initialState(), regAccountId: null }
+
+      const resultFromReducer = appReducer(state, { type: 'SET_REG_ACCOUNT', accountId: 'acc1' })
+      const resultDirect = setRegAccount(state, 'acc1')
+
+      expect(resultFromReducer.regAccountId).toBe(resultDirect.regAccountId)
+      expect(resultFromReducer.regAccountId).toBe('acc1')
+    })
+
+    it('supports clearing to null', () => {
+      const state: AppState = { ...initialState(), regAccountId: 'acc1' }
+
+      const resultFromReducer = appReducer(state, { type: 'SET_REG_ACCOUNT', accountId: null })
+      const resultDirect = setRegAccount(state, null)
+
+      expect(resultFromReducer.regAccountId).toBe(resultDirect.regAccountId)
+      expect(resultFromReducer.regAccountId).toBeNull()
+    })
+  })
+
+  describe('TOGGLE_REG_CATEGORY_EXPANDED', () => {
+    it('dispatches to toggleRegCategoryExpanded state action', () => {
+      const state: AppState = { ...initialState(), regExpanded: { categoryA: false } }
+
+      const resultFromReducer = appReducer(state, { type: 'TOGGLE_REG_CATEGORY_EXPANDED', categoryKey: 'categoryA' })
+      const resultDirect = toggleRegCategoryExpanded(state, 'categoryA')
+
+      expect(resultFromReducer.regExpanded).toEqual(resultDirect.regExpanded)
+      expect(resultFromReducer.regExpanded.categoryA).toBe(true)
+    })
+  })
+
+  describe('SET_REG_ACTIVITY_FILTER', () => {
+    it('dispatches to setRegActivityFilter state action', () => {
+      const state: AppState = { ...initialState(), regActivityFilter: 'All' }
+
+      const resultFromReducer = appReducer(state, { type: 'SET_REG_ACTIVITY_FILTER', filter: 'With Activity' })
+      const resultDirect = setRegActivityFilter(state, 'With Activity')
+
+      expect(resultFromReducer.regActivityFilter).toBe(resultDirect.regActivityFilter)
+      expect(resultFromReducer.regActivityFilter).toBe('With Activity')
     })
   })
 })

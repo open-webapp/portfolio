@@ -123,6 +123,32 @@ Nav has a "Quotes" tab next to "Accounts". Full-page, read-only table of current
 - Other failures (bad key, network issue) are silent everywhere else in the app — not shown as a price-sync error in Settings — but surface as a small note on the Quotes page itself: "Could not fetch name for: XYZ". A failed ticker stays uncached, so it's retried automatically on the next sync.
 - Rate-limited (429) requests back off and retry the same ticker on a timer until they succeed or fail for a non-rate-limit reason, so one sync call drives every held symbol to completion.
 
+## Balance Register
+
+Manual balance tracking for accounts, independent of Positions/Transactions. `register.ts` holds the pure math; `state.ts`'s `addBalanceEntries` holds persistence rules.
+
+### Ledger Math
+
+- `change = balance - previous entry's balance` (per account, sorted date-asc). First entry in an account: `change` is `null`.
+- `attributed = (sign for activityType, or 0 if None/unmapped) * activityAmount`. Signs: `Contribution`/`Transfer In`/`Dividend` = `+1`; `Withdrawal`/`Transfer Out`/`Fee` = `-1`; `None` = `0`.
+- `unexplained = change - attributed`. `null` when `change` is `null` (first entry).
+
+### Chart (Balance Over Time)
+
+- X axis scaled by real elapsed time between the first and last entry date in scope (calendar-day span), not by index/point count — unevenly-spaced entries render proportionally to their actual date gaps.
+- Single entry in scope: point renders centered (no meaningful time span).
+- Y-axis range padding: 15% of the value range (max − min) added above and below; if range is 0 (flat balance), pads by 5% of the max value instead (so a flat line still shows visible headroom).
+
+### Paste-Mode Field Matching
+
+- Pasted column headers are matched to register fields (date, accountId, balance, activityType, activityAmount, note) by exact header match first; if no exact match, a substring/hint match against `BALANCE_FIELD_HINTS` (e.g. a header containing "balance"/"value"/"total" maps to the balance field).
+- Account name/number matching (`matchAccountId`): tries account id, name, account number, and "institution — name" exact matches (case-insensitive), then partial name-substring match either direction; no match → empty string (row flagged invalid, not silently mis-assigned).
+- Activity type matching (`matchActivityType`): exact case-insensitive match against `ACTIVITY_TYPES`, then prefix match; no match (or empty input) → `'None'`.
+
+### Replace, Not Append
+
+Saving balance entries for an account/date combination that already has an entry replaces it rather than creating a duplicate — natural key is `(accountId, date)`, same replace-on-reimport pattern as Positions (see `src/lib/design.md`).
+
 ## Google Drive Sync
 
 ### Drive Connection Persistence

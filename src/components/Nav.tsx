@@ -10,7 +10,7 @@ export interface NavProps {
 }
 
 /**
- * Nav component: Accounts tab, sync + settings buttons.
+ * Nav component: main nav tabs (Positions/Register/Quotes), sync + settings buttons.
  */
 export function Nav({
   state,
@@ -22,6 +22,7 @@ export function Nav({
 }: NavProps) {
   const mainNavTabs = [
     { value: 'accounts', label: 'Positions' },
+    { value: 'register', label: 'Register' },
     { value: 'quotes', label: 'Quotes' },
   ]
 
@@ -31,28 +32,88 @@ export function Nav({
       style={{
         borderBottom: '1px solid var(--color-divider)',
         background: 'var(--color-surface)',
-        padding: 'var(--space-3) var(--space-6)',
+        padding: 'var(--space-4) var(--space-6)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-6)',
       }}
     >
-      <div className="nav-brand" style={{ marginRight: 'var(--space-5)' }}>Ledger</div>
-
-      {/* Main navigation tab (Positions) */}
-      <div className="seg">
-        {mainNavTabs.map((tab) => (
-          <label
-            key={tab.value}
-            className="seg-opt"
-            onClick={() => dispatch({ type: 'SET_VIEW', view: tab.value })}
+      {/* Logo mark + brand */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--color-accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            width="17"
+            height="17"
+            role="img"
+            aria-label="Ledger logo"
           >
-            <input
-              type="radio"
-              name="mainView"
-              checked={state.view === tab.value}
-              readOnly
-            />
-            <span>{tab.label}</span>
-          </label>
-        ))}
+            <path d="M12 2v20"></path>
+            <path d="M2 12h20"></path>
+          </svg>
+        </div>
+        <span className="nav-brand">Ledger</span>
+      </div>
+
+      {/* Main navigation tabs (Positions / Register / Quotes) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+        {mainNavTabs.map((tab) => {
+          const active = state.view === tab.value
+          const activeBg = 'var(--color-accent-100)'
+          const inactiveBg = 'transparent'
+          return (
+            <div
+              key={tab.value}
+              onClick={() => dispatch({ type: 'SET_VIEW', view: tab.value })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 14px',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 600,
+                color: active ? 'var(--color-accent-700)' : 'var(--color-text-secondary)',
+                background: active ? activeBg : inactiveBg,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = activeBg)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = active ? activeBg : inactiveBg)}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                width="16"
+                height="16"
+              >
+                <rect x="3" y="3" width="7" height="9" rx="1.5"></rect>
+                <rect x="14" y="3" width="7" height="5" rx="1.5"></rect>
+                <rect x="14" y="12" width="7" height="9" rx="1.5"></rect>
+                <rect x="3" y="16" width="7" height="5" rx="1.5"></rect>
+              </svg>
+              <span>{tab.label}</span>
+            </div>
+          )
+        })}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>

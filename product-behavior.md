@@ -6,16 +6,20 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Two views: **Accounts** and **Settings**. Accounts view, top to bottom: `Nav` → 2-column layout with collapsible category cards (left, 360px) and a flexible right panel holding the allocation chart, asset-class filter + "Import" button row, and the aggregate positions table (or the closed-positions table) — see "Accounts page" below. Settings view: `Nav` → centered settings card (max-width 560px).
+Four views: **Accounts** (nav label "Positions"), **Register**, **Quotes**, and **Settings**. Accounts view, top to bottom: `Nav` → 2-column layout with collapsible category cards (left, 360px) and a flexible right panel holding the allocation chart, asset-class filter + "Import" button row, and the aggregate positions table (or the closed-positions table) — see "Accounts page" below. Register view: `Nav` → 2-column layout with a scope picker (left, 360px) and stats/chart/activity table (right) — see "Register" below. Settings view: `Nav` → centered settings card (max-width 560px).
 
 **Default landing page**: Accounts. A fresh install opens there; thereafter the last-viewed view is persisted, so an app locked on Settings reopens on Settings. A backup written by an older build that recorded a now-retired view opens on Accounts rather than failing to render.
 
 ## Nav
 
-Nav renders on all views (accounts, settings). Single always-visible `.seg` with one tab:
+Nav renders on every view. Logo mark (accent-filled square with a plus-icon SVG) + "Ledger" brand, followed by 3 always-visible div-based pills (not radio-input `.seg`):
 
-- **Brand**: `.nav-brand` "Ledger".
-- **Accounts tab**: labeled "Accounts", the only main-nav tab. Active when `state.view === 'accounts'`, inactive while viewing Settings; dispatches `SET_VIEW` on click.
+- **Positions** — the Accounts page. Active when `state.view === 'accounts'`.
+- **Register** — the balance-history tracker. Active when `state.view === 'register'`.
+- **Quotes** — read-only held-symbol price table. Active when `state.view === 'quotes'`.
+
+Each pill shows a grid icon + label; clicking dispatches `SET_VIEW` for that pill's view. The active pill gets accent text color and background; inactive pills are muted with a hover highlight. Settings has no nav pill — it's reached only via the gear icon (below) and is not part of this 3-tab row even though `'settings'` is itself a `view` value.
+
 - **Sync Now icon button** (refresh icon, `title="Sync now"`): shown only when Drive is connected (`driveReady`); disabled while a sync is in progress (`syncing`). Triggers a backup sync to Google Drive.
 - **Settings gear** (SVG icon): navigates to the Settings page (resets `settingsSection` to "Google Drive" on every open).
 
@@ -32,12 +36,12 @@ Reusable `.card.blueprint.elev-sm` component taking `positions: Position[]` and 
 
 - Type filter tags (`All` + every distinct `Transaction.type` currently in state, alphabetical) + free-text search (symbol or date substring, case-insensitive).
 - Always sorted by date descending — no user-controlled sort.
-- Columns: Date (formatted `MMM D, YYYY`), Symbol, Type (colored tag: Buy=accent, Sell=outline, Dividend=neutral, anything else=neutral), Shares, Cost Basis, Amount Invested, Taxes (formatted USD or `—` if null), Position Link.
+- Columns: Date (formatted `MMM D, YYYY`), Symbol, Type (colored tag: Buy=accent, Sell=outline, Dividend=neutral, anything else=neutral), Shares, Cost Basis, Amount Invested, Position Link.
 - **Position Link**: shows an "UNMATCHED" outline tag (with a tooltip explaining "likely fully sold or removed") when the transaction's symbol has no corresponding open `Position`; otherwise shows plain "Linked" text. This is purely derived per render — no stored flag.
 
 ## Accounts page
 
-2-column layout accessed via the "Accounts" tab in the Nav. Left panel (360px fixed width) shows collapsible category cards; right panel (flexible) shows allocation chart, filter controls, and aggregate positions table.
+2-column layout accessed via the "Positions" tab in the Nav. Left panel (360px fixed width) shows collapsible category cards; right panel (flexible) shows allocation chart, filter controls, and aggregate positions table.
 
 **Left panel — Category cards** (Taxable / Non-Taxable / Tax-Deferred / Closed Positions order):
 - **Card header** (click to toggle expanded state): category/collection label + account-count badge (`.tag.tag-neutral`, unfiltered count for category cards; for Closed Positions, badge is fixed at account count of those with ≥1 closed position).
@@ -60,6 +64,34 @@ Reusable `.card.blueprint.elev-sm` component taking `positions: Position[]` and 
 **Two-card overlap**: an account with both open and closed positions appears in two cards — one in its tax-category card (Taxable/Non-Taxable/Tax-Deferred) and one in the Closed Positions card. Selecting the account under one card sets `state.selectedAccountId` globally, but the visual selection highlight is scoped to the card it was selected from — the account does not highlight under the other card simultaneously. Switching to view the account's data (in the right panel) toggles between open-positions view (when selected from a tax-category card) and closed-positions view (when selected from Closed Positions card).
 
 **No longer shown**: "Subtotal row", "Cash/Investment/Total" column split, 3-section (Taxable/Non-Taxable/Tax-Deferred) table layout, dividers between sections. **Account CRUD**: remains in CSV import flow only (new-account form at import time).
+
+## Register
+
+Accessed via the Nav's "Register" tab. A manually-recorded balance-history tracker, independent of imported Positions/Transactions — data comes only from user-entered `BalanceEntry` rows via the "Record Balances" dialog.
+
+**Layout**: 2-column, left scope picker (360px) + right balance-history panel.
+
+**Left panel — Scope picker**:
+- **"All Accounts" card** (always first, always visible): shows the sum of every account's latest recorded balance (`registerAllAccountsTotal`). Click selects the "All Accounts" scope (`SET_REG_ACCOUNT` with `accountId: null`); highlighted when no account is selected.
+- **Category cards** (one per tax category — Taxable/Non-Taxable/Tax-Deferred, via `registerCategoryCards`): header (click toggles expand via `TOGGLE_REG_CATEGORY_EXPANDED`) shows category label, account-count badge, and category total (sum of member accounts' latest balances). Expanded: one row per account showing institution—name, that account's latest balance, an "N entries" tag, and an "As of {date}" tag; empty categories show "No accounts in this category." Clicking an account row selects it (`SET_REG_ACCOUNT`) as the scope; selected row is highlighted.
+- Scope selection is a single global `state.regAccountId` (not a toggle — clicking an already-selected row does not deselect; only clicking "All Accounts" or a different account changes scope). Category expand/collapse state is per-category (`state.regExpanded`), independent of scope selection.
+
+**Right panel — Balance history** (scoped to the selected account, or every account when scope is "All Accounts"):
+- **Title**: `"{institution} — {name}"` for a single account, or `"All Accounts — Balance History"`.
+- **Stats strip** (4 cells, derived from the scoped ledger via `accountLedger`): Current balance (latest recorded balance, summed across scope accounts); Net change recorded (sum of period-over-period balance deltas, `null`/opening entries excluded); From activity (sum of each entry's `activityAmount` signed by `ACTIVITY_SIGN`); Unexplained (Net change minus From activity, i.e. the portion of each balance change not attributed to a recorded activity type). Net change / From activity / Unexplained are signed (`+`/`-`) and colored gain/loss green/red by sign.
+- **Balance-over-time chart**: SVG line+area chart plotting the scoped total balance at each recorded date (carrying forward each account's last-known balance between its own entries), with Y-axis USD gridline labels and up to 6 X-axis date-tick labels. Each point has a hover tooltip (`{date} — {balance}`). Single-point series render a centered flat line.
+- **Activity filter**: `.seg` radio, `All` / `With Activity` (dispatches `SET_REG_ACTIVITY_FILTER`) — `With Activity` hides entries whose `activityType === 'None'`.
+- **"Record Balances" button**: opens the Record Balances dialog (below); dialog-open state is component-local.
+- **Activity table** (newest-first, then by accountId; scoped + filtered via `scopeLedger`): Date, Account (name + institution), Balance, Change (`+`/`-` USD, or "Opening" for an account's first-ever entry), Attributed activity (activity-type tag + signed amount + optional note, or "Not attributed" when `activityType === 'None'` or `activityAmount === 0`), Unexplained (signed USD, or `—` for an opening entry), Delete.
+- **Delete**: trash-icon button per row; `window.confirm('Delete this balance entry? This cannot be undone.')`, then dispatches `DELETE_BALANCE_ENTRY`.
+- **Empty state**: "No balance entries recorded for this scope yet." when the filtered/scoped row list is empty.
+
+**Record Balances dialog** (`RegisterBalanceDialog`): mode `.seg` — **Enter manually** (default) or **Copy-Paste**.
+- **Manual mode**: an editable draft-row table (Date, Account select, Balance, Activity select, Amount, Note, remove-row button), seeded with one blank row (account pre-filled from the current Register scope if one is selected, date pre-filled to today). "+ Add row" appends another blank row.
+- **Copy-Paste mode**: two paste zones (Headers, Values), parsed via the same `tableToCsv()` clipboard parser CSV import uses, then mapped to fields by header-hint matching (`BALANCE_FIELD_HINTS`: date/account/balance/activityType/activityAmount/note) — account values are fuzzy-matched to an existing `Account` by id/name/number/institution—name (`matchAccountId`), activity values matched by exact or prefix match against the 7 activity types (`matchActivityType`, defaulting to `None`), dates normalized to `YYYY-MM-DD` (`normalizeDateInput`). Pasting rebuilds the draft-row table from the parsed result; an inline error shows if either zone is empty or parsing yields no headers/rows.
+- **Row validity**: a row is valid (`isDraftRowValid`) once it has a date, an account, and a numeric balance — activity fields are optional. Invalid required cells get a red border. Save is disabled at 0 valid rows; its label reads "Save N entries"/"Save 1 entry".
+- **Commit**: Save converts valid draft rows to `BalanceEntry[]` (`activityAmount` always stored as `Math.abs(...)`, i.e. non-negative — sign is derived at read time via `ACTIVITY_SIGN`) and dispatches `ADD_BALANCE_ENTRIES`, then closes and discards local draft state. Cancel/✕/backdrop-click closes without saving.
+- **Replace semantics**: recording a new entry for an `(accountId, date)` pair that already has an existing entry **replaces** it — existing entries matching an incoming `(accountId, date)` key are dropped before the new entries are appended, so re-recording a date does not create a duplicate point. This dedup only applies against *pre-existing* entries: if a single save batch itself contains two draft rows with the same `(accountId, date)`, both are appended (not merged) — the UI doesn't prevent entering duplicate rows within one dialog session.
 
 ## CSV import (Positions / Transactions)
 
@@ -109,7 +141,7 @@ A dedicated page accessed via the gear button in the Nav. Three mutually-exclusi
 - **Change Password** (`settingsSection === 'encryption'`): "Current Password", "New Password", "Confirm New Password" fields + a "Change Password" button. Verifies the current password by attempting a real decrypt of the stored data; wrong current password shows "Current password is incorrect" and stops. New password follows the same 6-char-minimum/must-match rules as the set-password screen. On success: generates a **fresh salt** (rotated on every change, never reused), re-derives a key, re-encrypts and saves the local IndexedDB copy under the new key+salt, then — only if Google Drive is currently connected — re-syncs the Drive backup under the new key too. If that Drive re-sync fails, a non-blocking inline warning is shown ("Password changed locally, but Drive re-sync failed... Sync manually...") but **the local password change is not rolled back**. On success the app adopts the new key as the session-wide key going forward.
 - **Price Sync** (`settingsSection === 'priceSync'`): Polygon.io API Key field (`type="password"`, commits to state on blur, not on every keystroke). **Fetch prices now** button (`.btn.btn-primary`, disabled while a fetch is in flight or no API key set) + adjacent optional `<input type="date">` date-override (disabled while fetching) for fetching a specific trading date instead of latest. **Last run** summary below: `Never run` if no run yet; otherwise timestamp + either the error in red (`#8a3c2e`) or `{marketTickerCount} tickers fetched from Polygon` (total tickers in that day's market-wide response, not just held symbols) plus `{updatedCount} updated` plus `, not found: {symbols}` when any. **Price table** (below the summary): row set = union of every ticker cached locally (`marketDataDb.getAllBars()`, market-wide — thousands of tickers, loaded async and refreshed after each run), `state.priceSync.heldPrices` keys, and the latest run's `notFound` symbols, deduped, sorted ascending by ticker (no sortable headers). Columns: Ticker, Price, Status, Held, Trading Date, Fetched At. Status is "Not found" (red, `#8a3c2e`) if the symbol is in the latest run's `notFound` list — wins even over a stale held-price entry for that symbol — "OK" if it's a held symbol found in the response, otherwise "Market" for a non-held ticker present only in the local bar cache. Held is "Yes" for a symbol that is (or was) a held Equity/ETF position, "No" for a market-only ticker. Price/Trading Date come from the symbol's held-price entry when one exists, else from its cached bar; Fetched At only ever comes from the held-price entry (the bar cache doesn't track a fetch timestamp) and shows "—" for market-only tickers. All show "—" when no data exists. A live, case-insensitive search box above the table filters rows by ticker substring, status text, or "Yes"/"No" — no submit button, no debounce. Table sits in a scrollable container (`overflowY: auto`, `maxHeight: calc(100vh - 480px)`). Empty state: if there are no held prices, no recorded not-found symbols, and no cached bars, the search box and table are replaced by "No prices fetched yet."
 
-Navigation back to the Accounts page occurs via the Nav's Accounts tab (no separate Back button or navigation affordance in Settings page content).
+Navigation back to the Accounts page occurs via the Nav's Positions tab (no separate Back button or navigation affordance in Settings page content).
 
 ## Formatting conventions
 

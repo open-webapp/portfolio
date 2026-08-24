@@ -5,6 +5,7 @@ import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
 import { Nav } from './components/Nav'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
+import { RegisterPage } from './components/RegisterPage'
 import { QuotesPage } from './components/QuotesPage'
 import { PasswordGate } from './components/PasswordGate'
 import { drive, getDriveAuthStatus, getBackupFileId, syncBackup, ensureFreshConnection } from './lib/drive'
@@ -430,6 +431,11 @@ function App() {
           /* Accounts page view */
           <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
             <AccountsPage state={state} dispatch={dispatch} />
+          </div>
+        ) : state.view === 'register' ? (
+          /* Register page view */
+          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
+            <RegisterPage state={state} dispatch={dispatch} />
           </div>
         ) : state.view === 'quotes' ? (
           /* Quotes page view */

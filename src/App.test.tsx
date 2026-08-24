@@ -94,10 +94,20 @@ async function renderUnlockedApp() {
   await waitFor(() => {
     expect(screen.queryByText('Loading...')).toBeFalsy()
     // The Nav's Positions tab is present on every post-unlock view.
-    expect(screen.getByLabelText('Positions')).toBeTruthy()
+    expect(screen.getByText('Positions')).toBeTruthy()
   })
 
   return utils
+}
+
+/**
+ * Returns the clickable pill <div> for a main nav tab, given its visible label text
+ * (e.g. 'Positions', 'Register', 'Quotes'). The Nav renders each tab as a plain
+ * `<div onClick>` wrapping an icon + a `<span>{label}</span>` — no ARIA role or label
+ * association, so tests locate the tab by its label text and walk up to the div.
+ */
+function navTab(label: string): HTMLElement {
+  return screen.getByText(label).closest('div') as HTMLElement
 }
 
 describe('pending import processing', () => {
@@ -201,9 +211,8 @@ describe('view switching (accounts vs settings)', () => {
     expect(screen.getByText('Non-Taxable')).toBeTruthy()
     expect(screen.getByText('Tax-Deferred')).toBeTruthy()
 
-    // The Positions nav tab is the checked one.
-    const accountsInput = screen.getByLabelText('Positions') as HTMLInputElement
-    expect(accountsInput.checked).toBe(true)
+    // The Positions nav tab is the active (highlighted) one.
+    expect(navTab('Positions').style.background).toBe('var(--color-accent-100)')
 
     // Settings content is not rendered.
     expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
@@ -212,14 +221,22 @@ describe('view switching (accounts vs settings)', () => {
   it('renders the expected main nav tabs (no Dashboard tab)', async () => {
     await renderUnlockedApp()
 
-    const mainViewLabels = Array.from(document.querySelectorAll('label.seg-opt')).filter(
-      (label) => label.querySelector('input[name="mainView"]') !== null
-    )
-    expect(mainViewLabels).toHaveLength(2)
-    const labelText = mainViewLabels.map((label) => label.textContent)
-    expect(labelText.some((text) => text?.includes('Positions'))).toBe(true)
-    expect(labelText.some((text) => text?.includes('Quotes'))).toBe(true)
+    // The Nav renders exactly the expected main tabs (Positions, Register, Quotes)
+    // and nothing else (no Dashboard tab).
+    expect(screen.getByText('Positions')).toBeTruthy()
+    expect(screen.getByText('Register')).toBeTruthy()
+    expect(screen.getByText('Quotes')).toBeTruthy()
     expect(screen.queryByText('Dashboard')).toBeFalsy()
+  })
+
+  it('should switch to register page when the Register tab is clicked', async () => {
+    await renderUnlockedApp()
+
+    fireEvent.click(navTab('Register'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Record Balances')).toBeTruthy()
+    })
   })
 
   it('should switch to settings page when gear button is clicked', async () => {
@@ -234,10 +251,9 @@ describe('view switching (accounts vs settings)', () => {
       expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     })
 
-    // Positions content is gone, and the Positions tab is no longer checked.
+    // Positions content is gone, and the Positions tab is no longer active.
     expect(screen.queryByText('Tax-Deferred')).toBeFalsy()
-    const accountsInput = screen.getByLabelText('Positions') as HTMLInputElement
-    expect(accountsInput.checked).toBe(false)
+    expect(navTab('Positions').style.background).toBe('transparent')
   })
 
   it('should return to the Positions page when the Positions tab is clicked from settings', async () => {
@@ -248,7 +264,7 @@ describe('view switching (accounts vs settings)', () => {
       expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByLabelText('Positions'))
+    fireEvent.click(navTab('Positions'))
 
     await waitFor(() => {
       expect(screen.getByText('Tax-Deferred')).toBeTruthy()
@@ -271,7 +287,7 @@ describe('password gate', () => {
     })
 
     // The main app tree must not be rendered underneath/alongside the gate.
-    expect(screen.queryByLabelText('Positions')).toBeFalsy()
+    expect(screen.queryByText('Positions')).toBeFalsy()
     expect(screen.queryByText('Tax-Deferred')).toBeFalsy()
   })
 
@@ -397,7 +413,7 @@ describe('Drive-sync activation', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).toBeFalsy()
-      expect(screen.getByLabelText('Positions')).toBeTruthy()
+      expect(screen.getByText('Positions')).toBeTruthy()
     })
 
     // After unlock, getBackupFileId SHOULD have been called
@@ -501,7 +517,7 @@ describe('Drive-sync activation', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).toBeFalsy()
-      expect(screen.getByLabelText('Positions')).toBeTruthy()
+      expect(screen.getByText('Positions')).toBeTruthy()
     })
 
     // No console errors should have occurred

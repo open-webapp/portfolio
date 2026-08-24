@@ -22,33 +22,38 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
 }
 
 describe('Nav', () => {
-  // Test case 1: Positions and Quotes are the main nav tabs
-  it('renders exactly two main nav tabs, labeled Positions and Quotes', () => {
+  // Test case 1: Positions, Register and Quotes are the main nav tabs, in order
+  it('renders exactly three main nav tabs, labeled Positions, Register and Quotes, in that order', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
-    expect(screen.getAllByRole('radio')).toHaveLength(2)
-    expect(screen.getByRole('radio', { name: /Positions/i })).toBeTruthy()
-    expect(screen.getByRole('radio', { name: /Quotes/i })).toBeTruthy()
+    expect(screen.getByText('Positions')).toBeTruthy()
+    expect(screen.getByText('Register')).toBeTruthy()
+    expect(screen.getByText('Quotes')).toBeTruthy()
     expect(screen.queryByText('Dashboard')).toBeFalsy()
+
+    const labels = Array.from(document.querySelectorAll('.nav span')).map((el) => el.textContent)
+    const order = ['Positions', 'Register', 'Quotes'].map((label) => labels.indexOf(label))
+    expect(order[0]).toBeLessThan(order[1])
+    expect(order[1]).toBeLessThan(order[2])
   })
 
-  // Test case 2: state.view = 'accounts'
-  it('state.view = "accounts" → Positions tab is checked', () => {
+  // Test case 2: state.view = 'accounts' → Positions tab is active (accent-100 background)
+  it('state.view = "accounts" → Positions tab has active styling', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
-    const accountsRadio = screen.getByRole('radio', { name: /Positions/i }) as HTMLInputElement
-    expect(accountsRadio.checked).toBe(true)
+    const positionsPill = screen.getByText('Positions').closest('div') as HTMLElement
+    expect(positionsPill.style.background).toBe('var(--color-accent-100)')
   })
 
-  // Test case 3: state.view = 'settings'
-  it('state.view = "settings" → Positions tab is not checked', () => {
+  // Test case 3: state.view = 'settings' → Positions tab is not active
+  it('state.view = "settings" → Positions tab is not active', () => {
     const props = makeProps({ state: { view: 'settings' } as any })
     render(<Nav {...props} />)
 
-    const accountsRadio = screen.getByRole('radio', { name: /Positions/i }) as HTMLInputElement
-    expect(accountsRadio.checked).toBe(false)
+    const positionsPill = screen.getByText('Positions').closest('div') as HTMLElement
+    expect(positionsPill.style.background).not.toBe('var(--color-accent-100)')
   })
 
   // Test case 4: Clicking Positions tab
@@ -56,19 +61,19 @@ describe('Nav', () => {
     const props = makeProps({ state: { view: 'settings' } as any })
     render(<Nav {...props} />)
 
-    fireEvent.click(screen.getByLabelText('Positions'))
+    fireEvent.click(screen.getByText('Positions'))
     expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'accounts' })
   })
 
-  // Test case 5a: state.view = 'quotes'
-  it('state.view = "quotes" → Quotes tab is checked, Positions tab is not checked', () => {
+  // Test case 5a: state.view = 'quotes' → Quotes tab active, Positions tab not active
+  it('state.view = "quotes" → Quotes tab has active styling, Positions tab does not', () => {
     const props = makeProps({ state: { view: 'quotes' } as any })
     render(<Nav {...props} />)
 
-    const quotesRadio = screen.getByRole('radio', { name: /Quotes/i }) as HTMLInputElement
-    const accountsRadio = screen.getByRole('radio', { name: /Positions/i }) as HTMLInputElement
-    expect(quotesRadio.checked).toBe(true)
-    expect(accountsRadio.checked).toBe(false)
+    const quotesPill = screen.getByText('Quotes').closest('div') as HTMLElement
+    const positionsPill = screen.getByText('Positions').closest('div') as HTMLElement
+    expect(quotesPill.style.background).toBe('var(--color-accent-100)')
+    expect(positionsPill.style.background).not.toBe('var(--color-accent-100)')
   })
 
   // Test case 5b: Clicking Quotes tab
@@ -76,8 +81,38 @@ describe('Nav', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
-    fireEvent.click(screen.getByLabelText('Quotes'))
+    fireEvent.click(screen.getByText('Quotes'))
     expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'quotes' })
+  })
+
+  // Test case 5c: Clicking Register tab
+  it('clicking Register tab dispatches { type: "SET_VIEW", view: "register" }', () => {
+    const props = makeProps({ state: { view: 'accounts' } as any })
+    render(<Nav {...props} />)
+
+    fireEvent.click(screen.getByText('Register'))
+    expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'register' })
+  })
+
+  // Test case 5d: state.view = 'register' → Register tab active, others not
+  it('state.view = "register" → Register tab has active styling, Positions and Quotes do not', () => {
+    const props = makeProps({ state: { view: 'register' } as any })
+    render(<Nav {...props} />)
+
+    const registerPill = screen.getByText('Register').closest('div') as HTMLElement
+    const positionsPill = screen.getByText('Positions').closest('div') as HTMLElement
+    const quotesPill = screen.getByText('Quotes').closest('div') as HTMLElement
+    expect(registerPill.style.background).toBe('var(--color-accent-100)')
+    expect(positionsPill.style.background).not.toBe('var(--color-accent-100)')
+    expect(quotesPill.style.background).not.toBe('var(--color-accent-100)')
+  })
+
+  // Test case: logo mark renders
+  it('renders the logo mark (plus-icon SVG)', () => {
+    const props = makeProps()
+    render(<Nav {...props} />)
+
+    expect(screen.getByRole('img', { name: /Ledger logo/i })).toBeTruthy()
   })
 
   // Test case 6a: driveReady = true → sync icon renders

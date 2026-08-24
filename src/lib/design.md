@@ -57,6 +57,22 @@ DriveRestorePanel → [Restore from Drive button clicked] → showPicker = true 
 
 Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong backup-password submit), the cross-password prompt renders its own `DriveFilePickerDialog` ("Pick a file" button) inline — picking a file there re-attempts `restoreBackupFromFileId` with the newly picked file id, chaining into a fresh cross-password prompt if that also decrypts wrong. The original dialog's `showPicker` is cleared before this fallback appears (see above), so only one "Pick a file" button is ever on screen at a time.
 
+### Balance Register
+
+`register.ts` — pure data-in/data-out module (no `AppState` coupling), consumed by `selectors.ts` and `RegisterPage.tsx`/`RegisterBalanceDialog.tsx` (not detailed here):
+
+- `ACTIVITY_TYPES: ActivityType[]` — the 7 activity types (`None` first).
+- `ACTIVITY_SIGN: Partial<Record<ActivityType, 1 | -1>>` — sign per type; `None` absent (treated as 0 by callers via `?? 0`).
+- `BALANCE_FIELD_HINTS` — `{ key, hints[] }[]` for paste-mode column-mapping.
+- `accountLedger(entries, accountId)` — filters to one account, sorts date-asc, returns `LedgerRow[]` (`BalanceEntry` + `change`/`attributed`/`unexplained`).
+- `latestBalance(entries, accountId)` — most recent `BalanceEntry` by date, or `null`.
+- `scopeLedger(entries, scopeAccountIds, activityFilter)` — unions `accountLedger` across accounts, optional `'With Activity'` filter, sorted date-desc then accountId.
+- `registerChartSeries(entries, scopeAccountIds)` — builds `RegisterChartSeries` (SVG `points`/`area`/`dots`/`yLabels`/`xLabels`) for the balance-over-time chart.
+- `matchAccountId`, `matchActivityType`, `normalizeDateInput` — paste-mode field-matching/normalization helpers.
+- `emptyDraftRow`, `isDraftRowValid` — `DraftRow` helpers for the manual-entry dialog.
+
+`selectors.ts`'s `registerCategoryCards(state)`/`registerAllAccountsTotal(state)` call `latestBalance(state.balanceEntries, accountId)` against `state.accounts`/`state.balanceEntries` to build the Register page's left-column cards and "All Accounts" total — `register.ts` itself never imports `AppState`; all `AppState` reads happen in `selectors.ts`, which passes plain `BalanceEntry[]`/`accountId` args in. `RegisterPage.tsx` reads only the derived selector/register.ts output, never raw `state.balanceEntries` directly.
+
 ### Price Sync
 
 App load/tab-focus (or Settings "Fetch prices now") → `App.tsx`'s `runPriceSyncTrigger(overrideDate?)` → `priceSync.ts`'s

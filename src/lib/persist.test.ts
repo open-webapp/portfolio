@@ -150,6 +150,8 @@ function fixtureState(): AppState {
       callBudget: { date: '', callsUsed: 0 },
     },
 
+    balanceEntries: [],
+
     // UI state
     view: 'accounts',
     sortKey: 'symbol',
@@ -161,6 +163,9 @@ function fixtureState(): AppState {
     expandedCategories: { taxable: true },
     acctAssetClassFilter: 'Equities',
     acctPosSearch: 'aapl',
+    regAccountId: null,
+    regExpanded: {},
+    regActivityFilter: 'All',
   }
 }
 
@@ -699,6 +704,42 @@ describe('IndexedDB persistence', () => {
 
       expect(loaded).not.toBeNull()
       expect(loaded?.selectedCategoryKey).toBe(null)
+    })
+
+    it('backfills missing balanceEntries/regAccountId/regExpanded/regActivityFilter with defaults from an empty blob', async () => {
+      await putRaw({})
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded).not.toBeNull()
+      expect(loaded?.balanceEntries).toEqual([])
+      expect(loaded?.regAccountId).toBe(null)
+      expect(loaded?.regExpanded).toEqual({})
+      expect(loaded?.regActivityFilter).toBe('All')
+    })
+
+    it('preserves view: "quotes" (regression test: quotes was previously missing from the view whitelist)', async () => {
+      await putRaw({ view: 'quotes' })
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded?.view).toBe('quotes')
+    })
+
+    it('preserves view: "register"', async () => {
+      await putRaw({ view: 'register' })
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded?.view).toBe('register')
+    })
+
+    it('falls back to the default view for an unknown/legacy view value', async () => {
+      await putRaw({ view: 'dashboard' })
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded?.view).toBe(initialState().view)
     })
   })
 

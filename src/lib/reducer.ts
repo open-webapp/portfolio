@@ -2,6 +2,7 @@ import type { AppState } from './state'
 import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
+import type { BalanceEntry } from './types'
 
 export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
@@ -30,6 +31,11 @@ export type AppAction =
   | { type: 'RECORD_PRICE_SYNC_RUN'; patch: any }
   | { type: 'SET_MUTUAL_FUND_SYNC_API_KEY'; apiKey: string }
   | { type: 'RECORD_MUTUAL_FUND_SYNC_RUN'; patch: any }
+  | { type: 'ADD_BALANCE_ENTRIES'; entries: BalanceEntry[] }
+  | { type: 'DELETE_BALANCE_ENTRY'; id: string }
+  | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
+  | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
+  | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
 
 /**
  * Reducer function that handles all state mutations.
@@ -128,6 +134,22 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'RECORD_MUTUAL_FUND_SYNC_RUN':
       return StateActions.recordMutualFundSyncRun(state, action.patch)
+
+    // Register page
+    case 'ADD_BALANCE_ENTRIES':
+      return StateActions.addBalanceEntries(state, action.entries)
+
+    case 'DELETE_BALANCE_ENTRY':
+      return StateActions.deleteBalanceEntry(state, action.id)
+
+    case 'SET_REG_ACCOUNT':
+      return StateActions.setRegAccount(state, action.accountId)
+
+    case 'TOGGLE_REG_CATEGORY_EXPANDED':
+      return StateActions.toggleRegCategoryExpanded(state, action.categoryKey)
+
+    case 'SET_REG_ACTIVITY_FILTER':
+      return StateActions.setRegActivityFilter(state, action.filter)
 
     default:
       return state

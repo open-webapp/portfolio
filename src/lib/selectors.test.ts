@@ -5,6 +5,8 @@ import {
   filteredPortfolioTotal,
   assetClassOptions,
   categoryCards,
+  registerCategoryCards,
+  registerAllAccountsTotal,
   closedPositionsCard,
   acctScopedPositions,
   acctAssetClassOptions,
@@ -18,7 +20,7 @@ import {
   shouldRetryMutualFundSync
 } from './selectors'
 import { AppState, initialState } from './state'
-import { Account, Position, Transaction, ClosedPosition } from './types'
+import { Account, Position, Transaction, ClosedPosition, BalanceEntry } from './types'
 
 describe('selectors', () => {
   // Helper to create a test state
@@ -491,6 +493,133 @@ describe('selectors', () => {
 
     const cards = categoryCards(state)
     expect(cards[0].accounts[0].selected).toBe(false)
+  })
+
+  // === registerCategoryCards() / registerAllAccountsTotal() tests ===
+
+  it('registerCategoryCards: zero accounts in a category - noAccounts true, totalStr matches fmtUSD(0)', () => {
+    const state = createTestState({
+      accounts: [testAccount1], // taxable only
+      balanceEntries: []
+    })
+
+    const cards = registerCategoryCards(state)
+    const nonTaxable = cards.find((c) => c.key === 'nonTaxable')!
+
+    expect(nonTaxable.hasAccounts).toBe(false)
+    expect(nonTaxable.noAccounts).toBe(true)
+    expect(nonTaxable.accounts).toEqual([])
+    expect(nonTaxable.totalStr).toBe('$0.00')
+  })
+
+  it('registerCategoryCards: account with no balance entries shows "—"/"never"/0', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      balanceEntries: []
+    })
+
+    const cards = registerCategoryCards(state)
+    const acct = cards.find((c) => c.key === 'taxable')!.accounts[0]
+
+    expect(acct.totalStr).toBe('—')
+    expect(acct.asOfStr).toBe('never')
+    expect(acct.entryCount).toBe(0)
+  })
+
+  it('registerCategoryCards: account with entries reflects latest balance/date/count', () => {
+    const balanceEntries: BalanceEntry[] = [
+      {
+        id: 'bal-1',
+        accountId: 'acc-1',
+        date: '2026-08-01',
+        balance: 1000,
+        activityType: 'None',
+        activityAmount: 0,
+        note: ''
+      },
+      {
+        id: 'bal-2',
+        accountId: 'acc-1',
+        date: '2026-08-15',
+        balance: 1500,
+        activityType: 'None',
+        activityAmount: 0,
+        note: ''
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1],
+      balanceEntries
+    })
+
+    const cards = registerCategoryCards(state)
+    const acct = cards.find((c) => c.key === 'taxable')!.accounts[0]
+
+    expect(acct.totalStr).toBe('$1,500.00')
+    expect(acct.asOfStr).toBe('Aug 15, 2026')
+    expect(acct.entryCount).toBe(2)
+
+    const taxable = cards.find((c) => c.key === 'taxable')!
+    expect(taxable.totalStr).toBe('$1,500.00')
+  })
+
+  it('registerCategoryCards: expanded/selected follow reg* state, not expandedCategories/selectedAccountId', () => {
+    const state = createTestState({
+      accounts: [testAccount1],
+      // Positions page state deliberately set differently
+      expandedCategories: { taxable: false },
+      selectedAccountId: null,
+      selectedCategoryKey: null,
+      // Register page state
+      regExpanded: { taxable: true },
+      regAccountId: 'acc-1'
+    })
+
+    const cards = registerCategoryCards(state)
+    const taxable = cards.find((c) => c.key === 'taxable')!
+
+    expect(taxable.expanded).toBe(true)
+    expect(taxable.accounts[0].selected).toBe(true)
+  })
+
+  it('registerAllAccountsTotal: sums latest balances across all accounts', () => {
+    const balanceEntries: BalanceEntry[] = [
+      {
+        id: 'bal-1',
+        accountId: 'acc-1',
+        date: '2026-08-01',
+        balance: 1000,
+        activityType: 'None',
+        activityAmount: 0,
+        note: ''
+      },
+      {
+        id: 'bal-2',
+        accountId: 'acc-2',
+        date: '2026-08-10',
+        balance: 2500,
+        activityType: 'None',
+        activityAmount: 0,
+        note: ''
+      }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      balanceEntries
+    })
+
+    expect(registerAllAccountsTotal(state)).toBe('$3,500.00')
+  })
+
+  it('registerAllAccountsTotal: account with no entries contributes 0', () => {
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      balanceEntries: []
+    })
+
+    expect(registerAllAccountsTotal(state)).toBe('$0.00')
   })
 
   // === acctScopedPositions() / acctAssetClassOptions() / acctFilteredPositions() / acctAllocationTitle() tests ===

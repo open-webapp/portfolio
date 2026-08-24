@@ -2,7 +2,7 @@
 
 See also: [design.md](design.md), [product-behavior.md](product-behavior.md)
 
-All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `import` (ImportSession), `mapping` (SavedCsvMapping).
+All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `mapping` (SavedCsvMapping), `bal` (BalanceEntry).
 
 ## Account
 
@@ -21,16 +21,15 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('pos')`. Regenerated fresh on every import — **not** stable across re-imports of the same `(accountId, symbol)` |
-| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which CSV import created this row. |
 | `accountId` | `string` | FK → `Account.id` |
 | `symbol` | `string` | |
 | `name` | `string \| null` | `null` if the CSV has no `name` column mapped. Never required (`name` not in `POSITIONS_REQUIRED_FIELDS`). UI falls back to `symbol` when null. |
+| `trackingSymbol?` | `string` | Optional override symbol used for grouping/display in place of `symbol` (e.g. mapping a share class to its common ticker); empty/unset falls back to `symbol` |
 | `assetClass` | `string` | From CSV mapping; not a closed enum in storage |
 | `assetClassManualOverride?` | `string` | If set, wins over `assetClass` everywhere (filtering, grouping, display) |
 | `shares` | `number` | `parseCsvNumber` of mapped `shares` column |
 | `avgCost` | `number` | Direct from mapped `avgCost` column, or `purchaseAmount / shares` if `avgCost` unmapped/invalid |
 | `price` | `number` | Direct from mapped `price` column, or `marketValue / shares` if `price` unmapped/invalid. Frozen "as of last import" — never live |
-| `taxes` | `number \| null` | `parseCsvNumber` of mapped `taxes` column if present and truthy, else `null`. Imported only, never computed; excluded from all cost-basis/G-L/allocation math |
 | `lastImportedAt` | `string` | ISO date of the Positions import that set `shares`/`price` |
 
 **Computed, never stored** (`src/lib/computations.ts` → `computePosition`): `marketValue = shares * price`, `costBasis = shares * avgCost`, `gl = marketValue - costBasis`, `glPct = costBasis === 0 ? 0 : (gl / costBasis) * 100`.
@@ -40,12 +39,16 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('closed')` |
-| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which import created this closed position. |
 | `accountId` | `string` | |
 | `symbol` | `string` | |
 | `name` | `string \| null` | Inherited verbatim from the `Position` that closed (preserves `null`) |
-| `closedDate` | `string` | ISO date of the import that first showed this symbol missing |
+| `closedDate` | `string` | ISO date of the import (or `CLOSE_POSITION` dispatch) that closed this position |
 | `assetClass` | `string` | Inherited from the closed `Position` (base class, not the override) |
+| `assetClassManualOverride?` | `string` | Inherited from the closed `Position`'s override, if any |
+| `shares` | `number` | Inherited from the closed `Position` |
+| `avgCost` | `number` | Inherited from the closed `Position` |
+| `price` | `number` | Inherited from the closed `Position` |
+| `lastImportedAt` | `string` | Inherited from the closed `Position` |
 | `realizedGL` | `number \| null` | Computed from matching `Sell` transactions if any exist for `(accountId, symbol)`; `null` if none exist. **Never approximated/fabricated.** |
 | `realizedGLBasis` | `'transactions' \| 'unknown'` | `'transactions'` iff `realizedGL` was computed; `'unknown'` otherwise |
 
@@ -56,7 +59,6 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('tx')` |
-| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which CSV import created this row. |
 | `accountId` | `string` | |
 | `date` | `string` | ISO date, from CSV mapping |
 | `symbol` | `string` | |
@@ -64,10 +66,9 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | `shares` | `number` | `parseCsvNumber` |
 | `price` | `number` | `parseCsvNumber` |
 | `amount` | `number` | `parseCsvNumber` of mapped `amount` column (required, not derived at import time — display code falls back to `shares * price` only if `amount` is nullish) |
-| `taxes` | `number \| null` | Same rules as `Position.taxes` — optional, imported only |
 | `importedAt` | `string` | ISO timestamp this row was inserted (audit only, not part of the dedup key) |
 
-**Natural key** (dedup, per-account): `` `${date}|${symbol}|${type}|${shares}|${price}` `` — computed with `shares`/`price` re-parsed via `parseCsvNumber` so `"150.0"` and `"150"` collide. `amount` and `taxes` are **not** part of the key — two rows differing only in `amount`/`taxes` are treated as duplicates and the second is dropped.
+**Natural key** (dedup, per-account): `` `${date}|${symbol}|${type}|${shares}|${price}` `` — computed with `shares`/`price` re-parsed via `parseCsvNumber` so `"150.0"` and `"150"` collide. `amount` is **not** part of the key — two rows differing only in `amount` are treated as duplicates and the second is dropped.
 
 **Numeric parsing** (`parseCsvNumber` in `src/lib/csv.ts`): strips `$`, `,`, and whitespace before `parseFloat`, so brokerage-formatted cells like `"$3.79 "` or `"45,000"` parse correctly instead of yielding `NaN` or silently truncating at the comma. Used everywhere a raw CSV cell is converted to a number during import (positions and transactions).
 
@@ -76,23 +77,27 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('snap')` |
-| `importSessionId` | `string` | FK → `ImportSession.id`. Tags which import created this snapshot. |
 | `accountId` | `string` | One snapshot per account per import |
 | `date` | `string` | ISO calendar date of the Positions import (not a timestamp) |
 | `value` | `number` | Sum of `shares * price` across that account's positions at import time |
 
 **Natural key**: `(accountId, date)`. Re-importing the same account on the same calendar date **replaces** the prior snapshot for that key (upsert, not append). A CSV spanning multiple accounts produces one snapshot per resolved account, not one combined snapshot. Whole-portfolio series are derived, never stored — see `selectors.totalValueSeries`.
 
-## ImportSession
+## BalanceEntry
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | `string` | `uid('import')` |
-| `importedAt` | `string` | ISO timestamp when the CSV was processed |
-| `kind` | `'positions' \| 'transactions'` | Type of data imported in this session |
-| `fileName` | `string` | Name of the uploaded CSV file |
-| `accountIds` | `string[]` | Array of `Account.id`s involved in this import (one or more if file spanned multiple accounts) |
-| `rowCount` | `number` | Number of rows successfully imported in this session |
+| `id` | `string` | `uid('bal')` |
+| `accountId` | `string` | FK → `Account.id` |
+| `date` | `string` | `YYYY-MM-DD` |
+| `balance` | `number` | Account balance as of `date` |
+| `activityType` | `ActivityType` | `'None' \| 'Contribution' \| 'Withdrawal' \| 'Transfer In' \| 'Transfer Out' \| 'Dividend' \| 'Fee'` |
+| `activityAmount` | `number` | Always `>= 0` (stored via `Math.abs`); the +/- sign is applied at read time via `ACTIVITY_SIGN[activityType]` (`+1`: Contribution/Transfer In/Dividend; `-1`: Withdrawal/Transfer Out/Fee; unsigned/0 for `'None'`) |
+| `note` | `string` | Free text, may be empty |
+
+**Natural key**: `(accountId, date)`. `addBalanceEntries(state, entries)` (`src/lib/state.ts`) drops any pre-existing entry sharing an incoming `(accountId, date)` key, then appends the incoming entries — **replace, not append**, for entries recorded across separate calls. Not deduped *within* a single incoming batch: two entries in the same call sharing a key are both appended.
+
+**Derived, never stored** (`src/lib/register.ts` → `accountLedger`): for a `BalanceEntry` sorted into its account's chronological ledger, `change = balance - previousEntry.balance` (`null` for the first/opening entry), `attributed = ACTIVITY_SIGN[activityType] * activityAmount` (0 if `activityType` has no sign), `unexplained = change - attributed` (`null` when `change` is `null`).
 
 ## SavedCsvMapping
 
@@ -118,12 +123,12 @@ POSITIONS_REQUIRED_FIELDS = [
 ]
 AVGCOST_FIELDS = ['avgCost', 'purchaseAmount']
 PRICE_FIELDS = ['price', 'marketValue']
-POSITIONS_OPTIONAL_FIELDS = ['name', 'taxes']
+POSITIONS_OPTIONAL_FIELDS = ['name', 'trackingSymbol']
 TRANSACTIONS_REQUIRED_FIELDS = ['date', 'symbol', 'type', 'shares', 'price', 'amount']
-TRANSACTIONS_OPTIONAL_FIELDS = ['taxes']
+TRANSACTIONS_OPTIONAL_FIELDS = []
 ```
 
-Optional fields (`name` for positions; `taxes` for both kinds) are never required — unmapped → `null`. The import Review step renders the mapping table in required-then-optional order: required fields carry a `*` next to their label, optional fields don't. `avgCost`/`purchaseAmount` and `price`/`marketValue` are validated as alternative pairs (at least one of each pair suffices) and the mapping `<select>` headers show cross-hints for them.
+Optional fields (`name`/`trackingSymbol` for positions; none for transactions) are never required — unmapped `name`/`trackingSymbol` → `null`/`undefined`. The import Review step renders the mapping table in required-then-optional order: required fields carry a `*` next to their label, optional fields don't. `avgCost`/`purchaseAmount` and `price`/`marketValue` are validated as alternative pairs (at least one of each pair suffices) and the mapping `<select>` headers show cross-hints for them.
 
 ### Import validation (`src/lib/importPreview.ts`)
 
@@ -167,35 +172,47 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 **Accounts**
 - `ADD_ACCOUNT`: Add new `Account` to state
 - `UPDATE_ACCOUNT`: Patch fields on an `Account`
-- `DELETE_ACCOUNT`: Remove `Account` and cascade-delete its positions/transactions
+- `DELETE_ACCOUNT`: Remove `Account` and cascade-delete its positions/closedPositions/transactions/snapshots/csvMappings/balanceEntries
+- `ADD_CUSTOM_INSTITUTION`: Add a free-typed institution name to `customInstitutions` (no-op if blank or already present)
 
 **Positions**
 - `UPDATE_POSITION`: Patch fields on a `Position`
 - `SET_ASSET_CLASS_OVERRIDE`: Set/clear `assetClassManualOverride` on a `Position`
+- `CLOSE_POSITION`: Move a `Position` to `closedPositions` (`realizedGL: null`, `realizedGLBasis: 'unknown'`)
 - `DELETE_CLOSED_POSITION`: Remove a `ClosedPosition` from state
+- `RESTORE_CLOSED_POSITION`: Move a `ClosedPosition` back to `positions` (fresh id), optionally replacing an existing open position
 
 **Filters & UI**
 - `SET_SORT`, `TOGGLE_SORT`
 - `SET_TRANSACTIONS_SEARCH`, `SET_TRANSACTION_TYPE_FILTER`
-- `SET_VIEW`: Switch between the `'accounts'` and `'settings'` views
+- `SET_VIEW`: Switch between the `'accounts'`, `'register'`, `'quotes'`, and `'settings'` views
 - `SELECT_ACCOUNT`, `TOGGLE_CATEGORY_EXPANDED`, `SET_ACCT_ASSET_CLASS_FILTER`, `SET_ACCT_POS_SEARCH`
+
+**Register**
+- `ADD_BALANCE_ENTRIES { entries: BalanceEntry[] }`: Upsert `BalanceEntry` rows into `balanceEntries` by `(accountId, date)` key (replaces any pre-existing entry sharing that key)
+- `DELETE_BALANCE_ENTRY { id: string }`: Remove one `BalanceEntry` by id
+- `SET_REG_ACCOUNT { accountId: string | null }`: Set `regAccountId` (RegisterPage scope selection)
+- `TOGGLE_REG_CATEGORY_EXPANDED { categoryKey: string }`: Toggle one key in `regExpanded`
+- `SET_REG_ACTIVITY_FILTER { filter: string }`: Set `regActivityFilter` (`'All'` or `'With Activity'`)
 
 **Imports**
 - `IMPORT_POSITIONS`: Merge/replace positions for an account (calls `importPositions` helper)
 - `IMPORT_TRANSACTIONS`: Merge transactions for an account (calls `importTransactions` helper)
-- `ADD_IMPORT_SESSION`: Add an `ImportSession` (newest-first, capped at 50)
-- `DELETE_IMPORT_SESSION`: Remove an `ImportSession` and all rows tagged with its id
 - `UPSERT_CSV_MAPPING`: Upsert a `SavedCsvMapping` for (accountId, kind)
+
+**Price sync**
+- `SET_PRICE_SYNC_API_KEY`, `RECORD_PRICE_SYNC_RUN`: Polygon.io Equity/ETF price-sync API key + run result
+- `SET_MUTUAL_FUND_SYNC_API_KEY`, `RECORD_MUTUAL_FUND_SYNC_RUN`: Alphavantage mutual-fund NAV-sync API key + run result
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
-`view: 'settings' | 'accounts'` (defaults to `'accounts'`), `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `txTypeFilter: string`, `txSearch: string`, `selectedAccountId: string | null`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`, `expandedCategories: Record<string, boolean>`, `acctAssetClassFilter: string`, `acctPosSearch: string`.
+`view: 'settings' | 'accounts' | 'quotes' | 'register'` (defaults to `'accounts'`), `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `txTypeFilter: string`, `txSearch: string`, `selectedAccountId: string | null`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`, `expandedCategories: Record<string, boolean>`, `acctAssetClassFilter: string`, `acctPosSearch: string`, `regAccountId: string | null` (selected account on RegisterPage), `regExpanded: Record<string, boolean>` (category expansion state on RegisterPage), `regActivityFilter: 'All' | 'With Activity'`.
 
-On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
+On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 
 ## Persistence envelope
 
-The entire `AppState` (all 7 collections + all UI fields) is wrapped in an `EncryptedEnvelope` shape (`src/lib/crypto.ts`) for every write — both local IndexedDB and Google Drive:
+The entire `AppState` (all 10 collections + all UI fields) is wrapped in an `EncryptedEnvelope` shape (`src/lib/crypto.ts`) for every write — both local IndexedDB and Google Drive:
 
 ```ts
 interface EncryptedEnvelope {

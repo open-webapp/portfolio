@@ -54,12 +54,23 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     customInstitutions: loaded.customInstitutions ?? defaults.customInstitutions,
     priceSync: loaded.priceSync ?? defaults.priceSync,
     mutualFundSync: loaded.mutualFundSync ?? defaults.mutualFundSync,
+    balanceEntries: loaded.balanceEntries ?? defaults.balanceEntries,
 
     // UI state with existing values or defaults.
     // `view` is whitelisted rather than defaulted: blobs written before the
     // Dashboard was removed carry `view: 'dashboard'`, which is no longer a
     // renderable view. Anything unrecognized falls back to the default.
-    view: loaded.view === 'accounts' || loaded.view === 'settings' ? loaded.view : defaults.view,
+    // Whitelist covers all four current views (accounts, settings, quotes,
+    // register); `quotes` was previously missing from this whitelist, which
+    // meant a stored `view: 'quotes'` incorrectly fell back to the default —
+    // fixed here alongside adding `register`.
+    view:
+      loaded.view === 'accounts' ||
+      loaded.view === 'settings' ||
+      loaded.view === 'quotes' ||
+      loaded.view === 'register'
+        ? loaded.view
+        : defaults.view,
     sortKey: loaded.sortKey ?? defaults.sortKey,
     sortDir: loaded.sortDir ?? defaults.sortDir,
     txTypeFilter: loaded.txTypeFilter ?? defaults.txTypeFilter,
@@ -69,6 +80,9 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     expandedCategories: loaded.expandedCategories ?? defaults.expandedCategories,
     acctAssetClassFilter: loaded.acctAssetClassFilter ?? defaults.acctAssetClassFilter,
     acctPosSearch: loaded.acctPosSearch ?? defaults.acctPosSearch,
+    regAccountId: loaded.regAccountId ?? defaults.regAccountId,
+    regExpanded: loaded.regExpanded ?? defaults.regExpanded,
+    regActivityFilter: loaded.regActivityFilter ?? defaults.regActivityFilter,
   }
 }
 

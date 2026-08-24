@@ -13,8 +13,14 @@ import {
   recordPriceSyncRun,
   setMutualFundSyncApiKey,
   recordMutualFundSyncRun,
+  addBalanceEntries,
+  deleteBalanceEntry,
+  setRegAccount,
+  toggleRegCategoryExpanded,
+  setRegActivityFilter,
 } from './state'
 import type { AppState } from './types'
+import type { BalanceEntry } from './types'
 
 describe('state helpers', () => {
   describe('initialState', () => {
@@ -117,6 +123,54 @@ describe('state helpers', () => {
       expect(updated.csvMappings).toHaveLength(1)
       expect(updated.csvMappings[0].id).toBe('mapping2')
       expect(updated.csvMappings[0].accountId).toBe('acc2')
+    })
+
+    it('cascade-deletes balanceEntries for the deleted account, leaving other accounts untouched', () => {
+      const state: AppState = {
+        ...initialState(),
+        accounts: [
+          {
+            id: 'acc1',
+            accountNumber: '123456',
+            name: 'Account 1',
+            retirement: false,
+            createdAt: '2024-01-01T10:00:00Z',
+          },
+          {
+            id: 'acc2',
+            accountNumber: '234567',
+            name: 'Account 2',
+            retirement: true,
+            createdAt: '2024-01-01T10:00:00Z',
+          },
+        ],
+        balanceEntries: [
+          {
+            id: 'bal1',
+            accountId: 'acc1',
+            date: '2024-01-01',
+            balance: 1000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          },
+          {
+            id: 'bal2',
+            accountId: 'acc2',
+            date: '2024-01-01',
+            balance: 2000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          },
+        ],
+      }
+
+      const updated = deleteAccount(state, 'acc1')
+
+      expect(updated.balanceEntries).toHaveLength(1)
+      expect(updated.balanceEntries[0].id).toBe('bal2')
+      expect(updated.balanceEntries[0].accountId).toBe('acc2')
     })
   })
 
@@ -689,6 +743,163 @@ describe('state helpers', () => {
         lastRun: null,
         callBudget: { date: '', callsUsed: 0 },
       })
+    })
+  })
+
+  describe('initialState register fields', () => {
+    it('defaults balanceEntries/regAccountId/regExpanded/regActivityFilter', () => {
+      const state = initialState()
+      expect(state.balanceEntries).toEqual([])
+      expect(state.regAccountId).toBeNull()
+      expect(state.regExpanded).toEqual({})
+      expect(state.regActivityFilter).toBe('All')
+    })
+  })
+
+  describe('addBalanceEntries', () => {
+    const entry = (overrides: Partial<BalanceEntry>): BalanceEntry => ({
+      id: 'bal1',
+      accountId: 'acc1',
+      date: '2024-01-01',
+      balance: 1000,
+      activityType: 'None',
+      activityAmount: 0,
+      note: '',
+      ...overrides,
+    })
+
+    it('appends an entry for a new (accountId, date)', () => {
+      const state = initialState()
+      const updated = addBalanceEntries(state, [entry({})])
+
+      expect(updated.balanceEntries).toHaveLength(1)
+      expect(updated.balanceEntries[0].id).toBe('bal1')
+    })
+
+    it('replaces an existing entry sharing (accountId, date): length unchanged, new values present, old gone', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [entry({ id: 'bal1', balance: 1000 })],
+      }
+
+      const updated = addBalanceEntries(state, [
+        entry({ id: 'bal2', balance: 1500 }),
+      ])
+
+      expect(updated.balanceEntries).toHaveLength(1)
+      expect(updated.balanceEntries[0].id).toBe('bal2')
+      expect(updated.balanceEntries[0].balance).toBe(1500)
+      expect(updated.balanceEntries.find((b) => b.id === 'bal1')).toBeUndefined()
+    })
+
+    it('one call with one replacing entry and one brand-new entry: both land correctly', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          entry({ id: 'bal1', accountId: 'acc1', date: '2024-01-01', balance: 1000 }),
+          entry({ id: 'bal-untouched', accountId: 'acc1', date: '2024-02-01', balance: 999 }),
+        ],
+      }
+
+      const updated = addBalanceEntries(state, [
+        entry({ id: 'bal1-new', accountId: 'acc1', date: '2024-01-01', balance: 1100 }),
+        entry({ id: 'bal-new', accountId: 'acc2', date: '2024-01-01', balance: 500 }),
+      ])
+
+      expect(updated.balanceEntries).toHaveLength(3)
+      expect(updated.balanceEntries.find((b) => b.id === 'bal1')).toBeUndefined()
+      const replaced = updated.balanceEntries.find((b) => b.accountId === 'acc1' && b.date === '2024-01-01')
+      expect(replaced?.id).toBe('bal1-new')
+      expect(replaced?.balance).toBe(1100)
+      expect(updated.balanceEntries.find((b) => b.id === 'bal-untouched')).toBeDefined()
+      expect(updated.balanceEntries.find((b) => b.id === 'bal-new')).toBeDefined()
+    })
+  })
+
+  describe('deleteBalanceEntry', () => {
+    it('removes the entry by id', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          {
+            id: 'bal1',
+            accountId: 'acc1',
+            date: '2024-01-01',
+            balance: 1000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          },
+        ],
+      }
+
+      const updated = deleteBalanceEntry(state, 'bal1')
+      expect(updated.balanceEntries).toHaveLength(0)
+    })
+
+    it('no-op when id not found', () => {
+      const state: AppState = {
+        ...initialState(),
+        balanceEntries: [
+          {
+            id: 'bal1',
+            accountId: 'acc1',
+            date: '2024-01-01',
+            balance: 1000,
+            activityType: 'None',
+            activityAmount: 0,
+            note: '',
+          },
+        ],
+      }
+
+      expect(() => deleteBalanceEntry(state, 'nonexistent')).not.toThrow()
+      const updated = deleteBalanceEntry(state, 'nonexistent')
+      expect(updated.balanceEntries).toHaveLength(1)
+      expect(updated.balanceEntries[0].id).toBe('bal1')
+    })
+  })
+
+  describe('setRegAccount', () => {
+    it('sets and clears the selected register account', () => {
+      const state = initialState()
+      expect(state.regAccountId).toBeNull()
+
+      const selected = setRegAccount(state, 'acc1')
+      expect(selected.regAccountId).toBe('acc1')
+
+      const cleared = setRegAccount(selected, null)
+      expect(cleared.regAccountId).toBeNull()
+    })
+  })
+
+  describe('toggleRegCategoryExpanded', () => {
+    it('toggles false -> true -> false for a key, leaving other keys untouched', () => {
+      let state = initialState()
+      expect(state.regExpanded['cat1']).toBeUndefined()
+
+      state = toggleRegCategoryExpanded(state, 'cat1')
+      expect(state.regExpanded['cat1']).toBe(true)
+
+      state = toggleRegCategoryExpanded(state, 'cat1')
+      expect(state.regExpanded['cat1']).toBe(false)
+
+      state = toggleRegCategoryExpanded(state, 'cat2')
+      expect(state.regExpanded['cat1']).toBe(false)
+      expect(state.regExpanded['cat2']).toBe(true)
+    })
+  })
+
+  describe('setRegActivityFilter', () => {
+    it('sets and round-trips the activity filter', () => {
+      const state = initialState()
+      expect(state.regActivityFilter).toBe('All')
+
+      const updated = setRegActivityFilter(state, 'With Activity')
+      expect(updated.regActivityFilter).toBe('With Activity')
+
+      const reverted = setRegActivityFilter(updated, 'All')
+      expect(reverted.regActivityFilter).toBe('All')
     })
   })
 })

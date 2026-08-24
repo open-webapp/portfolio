@@ -2,6 +2,7 @@ import type { AppState } from './state'
 import type { Position, ClosedPosition, Transaction, TaxCategory } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './computations'
+import { latestBalance } from './register'
 
 /**
  * Map tax category keys to display labels.
@@ -149,6 +150,90 @@ export function categoryCards(state: AppState): Array<{
       noAccounts: accounts.length === 0
     }
   })
+}
+
+/**
+ * Format a 'YYYY-MM-DD' date string for display without timezone-shift artifacts
+ * (avoids `new Date('YYYY-MM-DD')` being interpreted as UTC midnight).
+ */
+function fmtDateLocal(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+}
+
+/**
+ * Generate category-card data for the Register page's left column.
+ * Mirrors categoryCards structure but sources balances from balanceEntries (via latestBalance)
+ * instead of position totals, and reflects Register-page-scoped expand/select state.
+ */
+export function registerCategoryCards(state: AppState): Array<{
+  key: TaxCategory
+  label: string
+  totalStr: string
+  accountCount: number
+  expanded: boolean
+  accounts: Array<{
+    id: string
+    institution: string
+    name: string
+    totalStr: string
+    asOfStr: string
+    entryCount: number
+    selected: boolean
+  }>
+  hasAccounts: boolean
+  noAccounts: boolean
+}> {
+  const catKeys = Object.keys(CATEGORY_LABEL) as TaxCategory[]
+
+  return catKeys.map((catKey) => {
+    const accountsInCategory = state.accounts.filter((a) => a.taxCategory === catKey)
+
+    let categoryTotal = 0
+    const accounts = accountsInCategory.map((account) => {
+      const latest = latestBalance(state.balanceEntries, account.id)
+      const total = latest ? latest.balance : 0
+      categoryTotal += total
+      const entryCount = state.balanceEntries.filter((b) => b.accountId === account.id).length
+
+      return {
+        id: account.id,
+        institution: account.institution || '',
+        name: account.name,
+        totalStr: latest ? fmtUSD(latest.balance) : '—',
+        asOfStr: latest ? fmtDateLocal(latest.date) : 'never',
+        entryCount,
+        selected: state.regAccountId === account.id
+      }
+    })
+
+    return {
+      key: catKey,
+      label: CATEGORY_LABEL[catKey],
+      totalStr: fmtUSD(categoryTotal),
+      accountCount: accounts.length,
+      expanded: !!state.regExpanded[catKey],
+      accounts,
+      hasAccounts: accounts.length > 0,
+      noAccounts: accounts.length === 0
+    }
+  })
+}
+
+/**
+ * Sum of each account's latest balance across all accounts, for the Register page's
+ * "All Accounts" pill total.
+ */
+export function registerAllAccountsTotal(state: AppState): string {
+  const total = state.accounts.reduce((sum, account) => {
+    const latest = latestBalance(state.balanceEntries, account.id)
+    return sum + (latest ? latest.balance : 0)
+  }, 0)
+  return fmtUSD(total)
 }
 
 /**
