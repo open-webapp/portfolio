@@ -81,7 +81,7 @@ afterEach(cleanup)
 /**
  * Renders <App/>, waits for the (mocked) password gate to appear, and clicks through
  * it — mirroring what a real unlock via PasswordGate's onUnlock would do — leaving the
- * Accounts page (the default view) rendered.
+ * Positions page (the default view) rendered.
  */
 async function renderUnlockedApp() {
   const utils = render(<App />)
@@ -93,8 +93,8 @@ async function renderUnlockedApp() {
 
   await waitFor(() => {
     expect(screen.queryByText('Loading...')).toBeFalsy()
-    // The Nav's Accounts tab is present on every post-unlock view.
-    expect(screen.getByLabelText('Accounts')).toBeTruthy()
+    // The Nav's Positions tab is present on every post-unlock view.
+    expect(screen.getByLabelText('Positions')).toBeTruthy()
   })
 
   return utils
@@ -193,7 +193,7 @@ describe('view switching (accounts vs settings)', () => {
     vi.mocked(savePersistedApp).mockClear()
   })
 
-  it('should render the Accounts page by default', async () => {
+  it('should render the Positions page by default', async () => {
     await renderUnlockedApp()
 
     // AccountsPage left column renders one card per tax category plus Closed Positions.
@@ -201,8 +201,8 @@ describe('view switching (accounts vs settings)', () => {
     expect(screen.getByText('Non-Taxable')).toBeTruthy()
     expect(screen.getByText('Tax-Deferred')).toBeTruthy()
 
-    // The Accounts nav tab is the checked one.
-    const accountsInput = screen.getByLabelText('Accounts') as HTMLInputElement
+    // The Positions nav tab is the checked one.
+    const accountsInput = screen.getByLabelText('Positions') as HTMLInputElement
     expect(accountsInput.checked).toBe(true)
 
     // Settings content is not rendered.
@@ -217,7 +217,7 @@ describe('view switching (accounts vs settings)', () => {
     )
     expect(mainViewLabels).toHaveLength(2)
     const labelText = mainViewLabels.map((label) => label.textContent)
-    expect(labelText.some((text) => text?.includes('Accounts'))).toBe(true)
+    expect(labelText.some((text) => text?.includes('Positions'))).toBe(true)
     expect(labelText.some((text) => text?.includes('Quotes'))).toBe(true)
     expect(screen.queryByText('Dashboard')).toBeFalsy()
   })
@@ -225,7 +225,7 @@ describe('view switching (accounts vs settings)', () => {
   it('should switch to settings page when gear button is clicked', async () => {
     await renderUnlockedApp()
 
-    // Accounts content is initially visible.
+    // Positions content is initially visible.
     expect(screen.getByText('Tax-Deferred')).toBeTruthy()
 
     fireEvent.click(screen.getByTitle('Settings'))
@@ -234,13 +234,13 @@ describe('view switching (accounts vs settings)', () => {
       expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     })
 
-    // Accounts content is gone, and the Accounts tab is no longer checked.
+    // Positions content is gone, and the Positions tab is no longer checked.
     expect(screen.queryByText('Tax-Deferred')).toBeFalsy()
-    const accountsInput = screen.getByLabelText('Accounts') as HTMLInputElement
+    const accountsInput = screen.getByLabelText('Positions') as HTMLInputElement
     expect(accountsInput.checked).toBe(false)
   })
 
-  it('should return to the Accounts page when the Accounts tab is clicked from settings', async () => {
+  it('should return to the Positions page when the Positions tab is clicked from settings', async () => {
     await renderUnlockedApp()
 
     fireEvent.click(screen.getByTitle('Settings'))
@@ -248,7 +248,7 @@ describe('view switching (accounts vs settings)', () => {
       expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByLabelText('Accounts'))
+    fireEvent.click(screen.getByLabelText('Positions'))
 
     await waitFor(() => {
       expect(screen.getByText('Tax-Deferred')).toBeTruthy()
@@ -263,7 +263,7 @@ describe('password gate', () => {
     vi.mocked(savePersistedApp).mockClear()
   })
 
-  it('renders PasswordGate instead of the Nav/Accounts tree before unlock', async () => {
+  it('renders PasswordGate instead of the Nav/Positions tree before unlock', async () => {
     render(<App />)
 
     await waitFor(() => {
@@ -271,11 +271,11 @@ describe('password gate', () => {
     })
 
     // The main app tree must not be rendered underneath/alongside the gate.
-    expect(screen.queryByLabelText('Accounts')).toBeFalsy()
+    expect(screen.queryByLabelText('Positions')).toBeFalsy()
     expect(screen.queryByText('Tax-Deferred')).toBeFalsy()
   })
 
-  it('renders the Accounts page after unlock and saves via savePersistedApp with the session key on subsequent state changes', async () => {
+  it('renders the Positions page after unlock and saves via savePersistedApp with the session key on subsequent state changes', async () => {
     await renderUnlockedApp()
 
     vi.mocked(savePersistedApp).mockClear()
@@ -392,12 +392,12 @@ describe('Drive-sync activation', () => {
     // Verify getBackupFileId was NOT called yet (it should only be called after unlock)
     expect(getBackupFileIdMock).not.toHaveBeenCalled()
 
-    // Now click unlock and verify the Accounts page renders
+    // Now click unlock and verify the Positions page renders
     fireEvent.click(screen.getByText('MockUnlock'))
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).toBeFalsy()
-      expect(screen.getByLabelText('Accounts')).toBeTruthy()
+      expect(screen.getByLabelText('Positions')).toBeTruthy()
     })
 
     // After unlock, getBackupFileId SHOULD have been called
@@ -496,12 +496,12 @@ describe('Drive-sync activation', () => {
 
     warnSpy.mockRestore()
 
-    // Click unlock and verify the Accounts page renders with no errors
+    // Click unlock and verify the Positions page renders with no errors
     fireEvent.click(screen.getByText('MockUnlock'))
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).toBeFalsy()
-      expect(screen.getByLabelText('Accounts')).toBeTruthy()
+      expect(screen.getByLabelText('Positions')).toBeTruthy()
     })
 
     // No console errors should have occurred

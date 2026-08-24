@@ -21,7 +21,7 @@ export function Nav({
   onOpenSettings,
 }: NavProps) {
   const mainNavTabs = [
-    { value: 'accounts', label: 'Accounts' },
+    { value: 'accounts', label: 'Positions' },
     { value: 'quotes', label: 'Quotes' },
   ]
 
@@ -36,7 +36,7 @@ export function Nav({
     >
       <div className="nav-brand" style={{ marginRight: 'var(--space-5)' }}>Ledger</div>
 
-      {/* Main navigation tab (Accounts) */}
+      {/* Main navigation tab (Positions) */}
       <div className="seg">
         {mainNavTabs.map((tab) => (
           <label

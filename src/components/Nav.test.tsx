@@ -22,51 +22,51 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
 }
 
 describe('Nav', () => {
-  // Test case 1: Accounts and Quotes are the main nav tabs
-  it('renders exactly two main nav tabs, labeled Accounts and Quotes', () => {
+  // Test case 1: Positions and Quotes are the main nav tabs
+  it('renders exactly two main nav tabs, labeled Positions and Quotes', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
     expect(screen.getAllByRole('radio')).toHaveLength(2)
-    expect(screen.getByRole('radio', { name: /Accounts/i })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: /Positions/i })).toBeTruthy()
     expect(screen.getByRole('radio', { name: /Quotes/i })).toBeTruthy()
     expect(screen.queryByText('Dashboard')).toBeFalsy()
   })
 
   // Test case 2: state.view = 'accounts'
-  it('state.view = "accounts" → Accounts tab is checked', () => {
+  it('state.view = "accounts" → Positions tab is checked', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
-    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
+    const accountsRadio = screen.getByRole('radio', { name: /Positions/i }) as HTMLInputElement
     expect(accountsRadio.checked).toBe(true)
   })
 
   // Test case 3: state.view = 'settings'
-  it('state.view = "settings" → Accounts tab is not checked', () => {
+  it('state.view = "settings" → Positions tab is not checked', () => {
     const props = makeProps({ state: { view: 'settings' } as any })
     render(<Nav {...props} />)
 
-    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
+    const accountsRadio = screen.getByRole('radio', { name: /Positions/i }) as HTMLInputElement
     expect(accountsRadio.checked).toBe(false)
   })
 
-  // Test case 4: Clicking Accounts tab
-  it('clicking Accounts tab dispatches { type: "SET_VIEW", view: "accounts" }', () => {
+  // Test case 4: Clicking Positions tab
+  it('clicking Positions tab dispatches { type: "SET_VIEW", view: "accounts" }', () => {
     const props = makeProps({ state: { view: 'settings' } as any })
     render(<Nav {...props} />)
 
-    fireEvent.click(screen.getByLabelText('Accounts'))
+    fireEvent.click(screen.getByLabelText('Positions'))
     expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'accounts' })
   })
 
   // Test case 5a: state.view = 'quotes'
-  it('state.view = "quotes" → Quotes tab is checked, Accounts tab is not checked', () => {
+  it('state.view = "quotes" → Quotes tab is checked, Positions tab is not checked', () => {
     const props = makeProps({ state: { view: 'quotes' } as any })
     render(<Nav {...props} />)
 
     const quotesRadio = screen.getByRole('radio', { name: /Quotes/i }) as HTMLInputElement
-    const accountsRadio = screen.getByRole('radio', { name: /Accounts/i }) as HTMLInputElement
+    const accountsRadio = screen.getByRole('radio', { name: /Positions/i }) as HTMLInputElement
     expect(quotesRadio.checked).toBe(true)
     expect(accountsRadio.checked).toBe(false)
   })
