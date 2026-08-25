@@ -348,18 +348,16 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
                 <th>Date</th>
                 <th>Account</th>
                 <th>Balance</th>
-                <th>Activity</th>
-                <th>Amount</th>
-                <th>Note</th>
                 <th style={{ width: '32px' }}></th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => {
                 const valid = isDraftRowValid(row)
-                return (
+
+                const balanceTr = (
                   <tr key={row.key}>
-                    <td>
+                    <td style={{ borderBottom: 'none' }}>
                       <input
                         type="date"
                         className="input"
@@ -368,7 +366,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
                         onChange={(e) => updateRow(row.key, { date: e.target.value })}
                       />
                     </td>
-                    <td>
+                    <td style={{ borderBottom: 'none' }}>
                       <select
                         className="input"
                         value={row.accountId}
@@ -383,7 +381,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
                         ))}
                       </select>
                     </td>
-                    <td>
+                    <td style={{ borderBottom: 'none' }}>
                       <input
                         type="text"
                         className="input"
@@ -393,63 +391,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
                         placeholder="e.g. 12500.00"
                       />
                     </td>
-                    <td colSpan={3}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                        {row.activities.map((activity) => (
-                          <div
-                            key={activity.key}
-                            style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 'var(--space-2)', alignItems: 'center' }}
-                          >
-                            <select
-                              className="input"
-                              value={activity.type}
-                              onChange={(e) => updateActivity(row.key, activity.key, { type: e.target.value })}
-                            >
-                              {ACTIVITY_TYPES.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              type="text"
-                              className="input"
-                              value={activity.amount}
-                              onChange={(e) => updateActivity(row.key, activity.key, { amount: e.target.value })}
-                              placeholder="0.00"
-                            />
-                            <input
-                              type="text"
-                              className="input"
-                              value={activity.note}
-                              onChange={(e) => updateActivity(row.key, activity.key, { note: e.target.value })}
-                              placeholder="Note"
-                            />
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              title="Remove activity"
-                              onClick={() => removeActivity(row.key, activity.key)}
-                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text)', opacity: 0.6, padding: '4px' }}
-                            >
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-                                <path d="M18 6 6 18"></path>
-                                <path d="m6 6 12 12"></path>
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          className="btn btn-secondary blueprint"
-                          onClick={() => addActivity(row.key)}
-                          style={{ alignSelf: 'flex-start', fontSize: '11px', padding: '2px 8px' }}
-                        >
-                          + Add activity
-                        </button>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'center', borderBottom: 'none' }}>
                       <button
                         type="button"
                         className="btn-icon"
@@ -465,6 +407,85 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
                     </td>
                   </tr>
                 )
+
+                const activityTrs = row.activities.map((activity) => (
+                  <tr key={activity.key}>
+                    <td
+                      colSpan={4}
+                      style={{
+                        borderBottom: 'none',
+                        paddingLeft: 'calc(var(--space-2) + 24px)',
+                        background: 'var(--color-neutral-100)',
+                      }}
+                    >
+                      <div
+                        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 'var(--space-2)', alignItems: 'center' }}
+                      >
+                        <select
+                          className="input"
+                          value={activity.type}
+                          onChange={(e) => updateActivity(row.key, activity.key, { type: e.target.value })}
+                        >
+                          {ACTIVITY_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          className="input"
+                          value={activity.amount}
+                          onChange={(e) => updateActivity(row.key, activity.key, { amount: e.target.value })}
+                          placeholder="0.00"
+                        />
+                        <input
+                          type="text"
+                          className="input"
+                          value={activity.note}
+                          onChange={(e) => updateActivity(row.key, activity.key, { note: e.target.value })}
+                          placeholder="Note"
+                        />
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          title="Remove activity"
+                          onClick={() => removeActivity(row.key, activity.key)}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text)', opacity: 0.6, padding: '4px' }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                            <path d="M18 6 6 18"></path>
+                            <path d="m6 6 12 12"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+
+                const addActivityTr = (
+                  <tr key={`${row.key}-add`}>
+                    <td
+                      colSpan={4}
+                      style={{
+                        paddingLeft: 'calc(var(--space-2) + 24px)',
+                        background: 'var(--color-neutral-100)',
+                        borderBottom: '1px solid var(--color-divider)',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="btn btn-secondary blueprint"
+                        onClick={() => addActivity(row.key)}
+                        style={{ alignSelf: 'flex-start', fontSize: '11px', padding: '2px 8px' }}
+                      >
+                        + Add activity
+                      </button>
+                    </td>
+                  </tr>
+                )
+
+                return [balanceTr, ...activityTrs, addActivityTr]
               })}
             </tbody>
           </table>
