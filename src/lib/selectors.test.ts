@@ -7,6 +7,7 @@ import {
   categoryCards,
   registerCategoryCards,
   registerAllAccountsTotal,
+  acctAllAccountsTotal,
   closedPositionsCard,
   acctScopedPositions,
   acctAssetClassOptions,
@@ -19,7 +20,7 @@ import {
   shouldRetryPolygonSync,
   shouldRetryMutualFundSync
 } from './selectors'
-import { AppState, initialState } from './state'
+import { AppState, initialState, clearAccountSelection } from './state'
 import { Account, Position, Transaction, ClosedPosition, BalanceEntry } from './types'
 
 describe('selectors', () => {
@@ -622,6 +623,55 @@ describe('selectors', () => {
     expect(registerAllAccountsTotal(state)).toBe('$0.00')
   })
 
+  // === acctAllAccountsTotal() tests ===
+
+  it('acctAllAccountsTotal: sums shares*price across all positions, unscoped by account/category filters', () => {
+    const positions: Position[] = [
+      { id: 'pos-1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 10, avgCost: 100, price: 150, lastImportedAt: '2026-08-08' },
+      { id: 'pos-2', accountId: 'acc-2', symbol: 'BND', name: 'Bond', assetClass: 'Fixed Income', shares: 20, avgCost: 50, price: 55, lastImportedAt: '2026-08-08' }
+    ]
+
+    const state = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      selectedAccountId: 'acc-1',
+      selectedCategoryKey: 'taxable'
+    })
+
+    // 10*150 + 20*55 = 1500 + 1100 = 2600
+    expect(acctAllAccountsTotal(state)).toBe('$2,600.00')
+
+    // Not scoped: changing selectedAccountId/selectedCategoryKey doesn't change the result
+    const stateOtherFilters = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      selectedAccountId: 'acc-2',
+      selectedCategoryKey: 'taxDeferred'
+    })
+    expect(acctAllAccountsTotal(stateOtherFilters)).toBe('$2,600.00')
+
+    const stateNoFilters = createTestState({
+      accounts: [testAccount1, testAccount2],
+      positions,
+      selectedAccountId: null,
+      selectedCategoryKey: null
+    })
+    expect(acctAllAccountsTotal(stateNoFilters)).toBe('$2,600.00')
+  })
+
+  it('acctAllAccountsTotal: empty positions returns $0.00', () => {
+    const state = createTestState({ accounts: [testAccount1], positions: [] })
+    expect(acctAllAccountsTotal(state)).toBe('$0.00')
+  })
+
+  it('acctAllAccountsTotal: closedPositions never contribute, even when positions is empty', () => {
+    const closedPositions: ClosedPosition[] = [
+      { id: 'cp-1', accountId: 'acc-1', symbol: 'TSLA', name: 'Tesla', closedDate: '2026-07-01', assetClass: 'Equity', shares: 5, avgCost: 200, price: 250, lastImportedAt: '2026-07-01' }
+    ]
+    const state = createTestState({ accounts: [testAccount1], positions: [], closedPositions })
+    expect(acctAllAccountsTotal(state)).toBe('$0.00')
+  })
+
   // === acctScopedPositions() / acctAssetClassOptions() / acctFilteredPositions() / acctAllocationTitle() tests ===
 
   it('acctScopedPositions: selected account returns only its positions', () => {
@@ -724,6 +774,12 @@ describe('selectors', () => {
   it('acctAllocationTitle: no selection returns "Allocation — All Accounts"', () => {
     const state = createTestState({ accounts: [testAccount1], selectedAccountId: null })
     expect(acctAllocationTitle(state)).toBe('Allocation — All Accounts')
+  })
+
+  it('acctAllocationTitle: after clearAccountSelection returns "Allocation — All Accounts"', () => {
+    const state = createTestState({ accounts: [testAccount1], selectedAccountId: 'acc-1' })
+    const cleared = clearAccountSelection(state)
+    expect(acctAllocationTitle(cleared)).toBe('Allocation — All Accounts')
   })
 
   // === acctScopedClosedPositions() / acctFilteredClosedPositions() tests ===

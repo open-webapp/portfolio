@@ -6,6 +6,7 @@ import {
   setView,
   closePosition,
   selectAccount,
+  clearAccountSelection,
   toggleCategoryExpanded,
   setAcctAssetClassFilter,
   setAcctPosSearch,
@@ -522,6 +523,38 @@ describe('state helpers', () => {
       const toggled = selectAccount(updated, 'acc1', 'closedPositions')
       expect(toggled.selectedAccountId).toBeNull()
       expect(toggled.selectedCategoryKey).toBeNull()
+    })
+  })
+
+  describe('clearAccountSelection', () => {
+    it('happy path: clears a non-null selection back to null and leaves other fields untouched', () => {
+      const state = {
+        ...initialState(),
+        selectedAccountId: 'acc1',
+        selectedCategoryKey: 'taxable',
+      }
+      const originalAccounts = state.accounts
+      const originalPositions = state.positions
+
+      const updated = clearAccountSelection(state)
+
+      expect(updated.selectedAccountId).toBeNull()
+      expect(updated.selectedCategoryKey).toBeNull()
+      expect(updated.accounts).toBe(originalAccounts)
+      expect(updated.positions).toBe(originalPositions)
+    })
+
+    it('edge: no-op when selection is already null', () => {
+      const state = initialState()
+      expect(state.selectedAccountId).toBeNull()
+      expect(state.selectedCategoryKey).toBeNull()
+
+      const updated = clearAccountSelection(state)
+
+      expect(updated.selectedAccountId).toBeNull()
+      expect(updated.selectedCategoryKey).toBeNull()
+      expect(updated.accounts).toBe(state.accounts)
+      expect(updated.positions).toBe(state.positions)
     })
   })
 

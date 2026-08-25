@@ -11,6 +11,7 @@ import {
   acctAssetClassOptions,
   acctAllocationTitle,
   assetClassOptions,
+  acctAllAccountsTotal,
 } from '../lib/selectors'
 import { buildAggregateRows, AGGREGATE_SORT_FIELD, type AggregateRow } from '../lib/aggregateRows'
 import { sortBy } from '../lib/sort'
@@ -64,6 +65,29 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
     <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 'var(--space-6)', alignItems: 'start' }}>
       {/* Category cards */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div
+          className="card blueprint elev-sm"
+          onClick={() => dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })}
+          style={{
+            padding: 'var(--space-4)',
+            cursor: 'pointer',
+            background: state.selectedAccountId ? undefined : 'var(--color-accent-100)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+            <span style={{
+              fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '13px',
+              padding: '6px 14px', borderRadius: '999px',
+              background: 'var(--color-accent)', color: '#fff',
+            }}>
+              All Accounts
+            </span>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '15px', whiteSpace: 'nowrap' }}>
+              {acctAllAccountsTotal(state)}
+            </span>
+          </div>
+        </div>
+
         {cards.map((cat) => (
           <div key={cat.key} className="card blueprint elev-sm" style={{ padding: 0 }}>
             <div

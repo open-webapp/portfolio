@@ -349,6 +349,13 @@ export function selectAccount(state: AppState, accountId: string, categoryKey: T
 }
 
 /**
+ * Clear the AccountsPage selection back to "All Accounts" (no toggle logic).
+ */
+export function clearAccountSelection(state: AppState): AppState {
+  return { ...state, selectedAccountId: null, selectedCategoryKey: null }
+}
+
+/**
  * Toggle category expansion state on AccountsPage.
  */
 export function toggleCategoryExpanded(state: AppState, categoryKey: string): AppState {

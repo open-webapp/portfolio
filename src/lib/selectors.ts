@@ -237,6 +237,16 @@ export function registerAllAccountsTotal(state: AppState): string {
 }
 
 /**
+ * Sum of shares*price across every open position, regardless of any account/category
+ * filter state, for the Positions/Accounts page's "All Accounts" pill total.
+ * Unscoped: ignores selectedAccountId/selectedCategoryKey and never includes closedPositions.
+ */
+export function acctAllAccountsTotal(state: AppState): string {
+  const total = state.positions.reduce((sum, p) => sum + p.shares * p.price, 0)
+  return fmtUSD(total)
+}
+
+/**
  * Generate closed-positions card data for the Accounts page's left column.
  * Mirrors categoryCards structure but shows closed positions across all accounts.
  * One card labeled "Closed Positions", listing only accounts with ≥1 closed position,

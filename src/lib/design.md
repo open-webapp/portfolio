@@ -32,6 +32,7 @@ SELECT_ACCOUNT (accountId, categoryKey) → selectAccount (state.ts) → sets se
 - Same account + categoryKey clicked again → toggle: clear selection (both null).
 - Different account or categoryKey → replace selection.
 - Null selection → main panel shows portfolio-level view.
+- `CLEAR_ACCOUNT_SELECTION` → `clearAccountSelection` (state.ts) is a second, unconditional (non-toggle) path to the same null state (`selectedAccountId`/`selectedCategoryKey` both set to `null` regardless of current selection) — used by the Accounts page's "All Accounts" pill.
 
 ### Drive Connection Persistence
 

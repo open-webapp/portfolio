@@ -25,6 +25,7 @@ export type AppAction =
   | { type: 'UPSERT_CSV_MAPPING'; accountId: string; kind: any; fieldMap: any }
   | { type: 'ADD_CUSTOM_INSTITUTION'; name: string }
   | { type: 'SELECT_ACCOUNT'; accountId: string; categoryKey: string }
+  | { type: 'CLEAR_ACCOUNT_SELECTION' }
   | { type: 'TOGGLE_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_ACCT_ASSET_CLASS_FILTER'; filter: string }
   | { type: 'SET_ACCT_POS_SEARCH'; search: string }
@@ -115,6 +116,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SELECT_ACCOUNT':
       return StateActions.selectAccount(state, action.accountId, action.categoryKey as any)
+
+    case 'CLEAR_ACCOUNT_SELECTION':
+      return StateActions.clearAccountSelection(state)
 
     case 'TOGGLE_CATEGORY_EXPANDED':
       return StateActions.toggleCategoryExpanded(state, action.categoryKey)

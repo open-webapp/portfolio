@@ -1,9 +1,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { useReducer } from 'react'
 import { AccountsPage } from './AccountsPage'
 import { appReducer, type AppAction } from '../lib/reducer'
 import { initialState, type AppState } from '../lib/state'
+import { acctAllAccountsTotal } from '../lib/selectors'
 
 afterEach(cleanup)
 
@@ -574,6 +575,48 @@ describe('AccountsPage', () => {
 
       // Should show empty-state message
       expect(screen.getByText('No positions to show.')).toBeTruthy()
+    })
+  })
+
+  describe('All Accounts pill', () => {
+    it('renders highlighted with the correct total when no account is selected', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 1 })
+      state.selectedAccountId = null
+      render(<AccountsPage state={state} dispatch={vi.fn()} />)
+
+      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
+      expect(pill.getAttribute('style')).toContain('--color-accent-100')
+      expect(within(pill).getByText(acctAllAccountsTotal(state))).toBeTruthy()
+    })
+
+    it('is not highlighted when an account is selected', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
+      state.selectedAccountId = 'acc-1'
+      render(<AccountsPage state={state} dispatch={vi.fn()} />)
+
+      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
+      expect(pill.getAttribute('style')).not.toContain('--color-accent-100')
+    })
+
+    it('clicking it dispatches CLEAR_ACCOUNT_SELECTION', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
+      state.selectedAccountId = 'acc-1'
+      const dispatch = vi.fn()
+      render(<AccountsPage state={state} dispatch={dispatch} />)
+
+      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
+      fireEvent.click(pill)
+
+      expect(dispatch).toHaveBeenCalledTimes(1)
+      expect(dispatch).toHaveBeenCalledWith({ type: 'CLEAR_ACCOUNT_SELECTION' })
+    })
+
+    it('renders with zero-USD total and no crash when portfolio is empty', () => {
+      const state = initialState()
+      render(<AccountsPage state={state} dispatch={vi.fn()} />)
+
+      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
+      expect(within(pill).getByText('$0.00')).toBeTruthy()
     })
   })
 })

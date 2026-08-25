@@ -3,6 +3,7 @@ import { appReducer } from './reducer'
 import {
   closePosition,
   restoreClosedPosition,
+  clearAccountSelection,
   initialState,
   setPriceSyncApiKey,
   recordPriceSyncRun,
@@ -181,6 +182,28 @@ describe('appReducer', () => {
       const state: AppState = { ...initialState(), selectedAccountId: 'acc1', selectedCategoryKey: 'taxable' }
 
       const result = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acc1', categoryKey: 'taxable' })
+
+      expect(result.selectedAccountId).toBeNull()
+      expect(result.selectedCategoryKey).toBeNull()
+    })
+  })
+
+  describe('CLEAR_ACCOUNT_SELECTION', () => {
+    it('clears selectedAccountId and selectedCategoryKey to null', () => {
+      const state: AppState = { ...initialState(), selectedAccountId: 'acc1', selectedCategoryKey: 'taxable' }
+
+      const resultFromReducer = appReducer(state, { type: 'CLEAR_ACCOUNT_SELECTION' })
+      const resultDirect = clearAccountSelection(state)
+
+      expect(resultFromReducer.selectedAccountId).toBeNull()
+      expect(resultFromReducer.selectedCategoryKey).toBeNull()
+      expect(resultFromReducer).toEqual(resultDirect)
+    })
+
+    it('is a no-op when nothing is selected', () => {
+      const state: AppState = { ...initialState(), selectedAccountId: null, selectedCategoryKey: null }
+
+      const result = appReducer(state, { type: 'CLEAR_ACCOUNT_SELECTION' })
 
       expect(result.selectedAccountId).toBeNull()
       expect(result.selectedCategoryKey).toBeNull()

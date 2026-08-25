@@ -6,7 +6,7 @@ Local-first, single-user portfolio tracker. No live price feed — all values co
 
 ## Layout
 
-Four views: **Accounts** (nav label "Positions"), **Register**, **Quotes**, and **Settings**. Accounts view, top to bottom: `Nav` → 2-column layout with collapsible category cards (left, 360px) and a flexible right panel holding the allocation chart, asset-class filter + "Import" button row, and the aggregate positions table (or the closed-positions table) — see "Accounts page" below. Register view: `Nav` → 2-column layout with a scope picker (left, 360px) and stats/chart/activity table (right) — see "Register" below. Settings view: `Nav` → centered settings card (max-width 560px).
+Four views: **Accounts** (nav label "Positions"), **Register**, **Quotes**, and **Settings**. Accounts view, top to bottom: `Nav` → 2-column layout with an "All Accounts" card + collapsible category cards (left, 360px) and a flexible right panel holding the allocation chart, asset-class filter + "Import" button row, and the aggregate positions table (or the closed-positions table) — see "Accounts page" below. Register view: `Nav` → 2-column layout with a scope picker (left, 360px) and stats/chart/activity table (right) — see "Register" below. Settings view: `Nav` → centered settings card (max-width 560px).
 
 **Default landing page**: Accounts. A fresh install opens there; thereafter the last-viewed view is persisted, so an app locked on Settings reopens on Settings. A backup written by an older build that recorded a now-retired view opens on Accounts rather than failing to render.
 
@@ -41,7 +41,9 @@ Reusable `.card.blueprint.elev-sm` component taking `positions: Position[]` and 
 
 ## Accounts page
 
-2-column layout accessed via the "Positions" tab in the Nav. Left panel (360px fixed width) shows collapsible category cards; right panel (flexible) shows allocation chart, filter controls, and aggregate positions table.
+2-column layout accessed via the "Positions" tab in the Nav. Left panel (360px fixed width) shows an "All Accounts" card followed by collapsible category cards; right panel (flexible) shows allocation chart, filter controls, and aggregate positions table.
+
+- **"All Accounts" card** (always first, always visible): shows the sum of market value across ALL positions, unscoped by category/account/filters (`acctAllAccountsTotal`). Click dispatches `CLEAR_ACCOUNT_SELECTION`; highlighted when `state.selectedAccountId === null`.
 
 **Left panel — Category cards** (Taxable / Non-Taxable / Tax-Deferred / Closed Positions order):
 - **Card header** (click to toggle expanded state): category/collection label + account-count badge (`.tag.tag-neutral`, unfiltered count for category cards; for Closed Positions, badge is fixed at account count of those with ≥1 closed position).
