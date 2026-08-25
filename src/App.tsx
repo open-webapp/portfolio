@@ -49,7 +49,7 @@ function App() {
   const [mutualFundSyncErrors, setMutualFundSyncErrors] = useState<Record<string, string>>({})
 
   // Which section of the Settings page is active
-  const [settingsSection, setSettingsSection] = useState<'drive' | 'encryption' | 'priceSync'>('drive')
+  const [settingsSection, setSettingsSection] = useState<'drive' | 'importExport' | 'encryption' | 'priceSync'>('drive')
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)

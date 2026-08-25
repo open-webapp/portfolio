@@ -13,6 +13,7 @@ import type {
   BalanceEntry,
 } from './types'
 import { uid } from './seed'
+import type { ExportableState } from './importExport'
 
 export interface AppState {
   // Data collections
@@ -499,6 +500,36 @@ export function setRegActivityFilter(state: AppState, filter: string): AppState 
   return {
     ...state,
     regActivityFilter: filter as AppState['regActivityFilter'],
+  }
+}
+
+/**
+ * Replace the imported-backup subset of state (data collections plus
+ * priceSync/mutualFundSync apiKey+lastRun) with data from a restored
+ * backup. Preserves cached price data (heldPrices, lastFetchedDate,
+ * callBudget) and all UI-state fields untouched.
+ */
+export function replaceImportedState(state: AppState, data: ExportableState): AppState {
+  return {
+    ...state,
+    accounts: data.accounts,
+    positions: data.positions,
+    closedPositions: data.closedPositions,
+    transactions: data.transactions,
+    snapshots: data.snapshots,
+    csvMappings: data.csvMappings,
+    customInstitutions: data.customInstitutions,
+    balanceEntries: data.balanceEntries,
+    priceSync: {
+      ...state.priceSync,
+      apiKey: data.priceSync.apiKey,
+      lastRun: data.priceSync.lastRun,
+    },
+    mutualFundSync: {
+      ...state.mutualFundSync,
+      apiKey: data.mutualFundSync.apiKey,
+      lastRun: data.mutualFundSync.lastRun,
+    },
   }
 }
 

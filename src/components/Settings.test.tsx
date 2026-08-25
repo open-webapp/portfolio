@@ -5,7 +5,16 @@ import { SettingsPage, type SettingsPageProps } from './Settings'
 import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
+import * as importExportModule from '../lib/importExport'
 import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
+
+// Partial mock: keep exportBackup/buildExportableState real (they run
+// against the real crypto module), but stub downloadEnvelopeAsFile since it
+// touches browser download APIs (Blob/URL/anchor click) not needed here.
+vi.mock('../lib/importExport', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/importExport')>()
+  return { ...actual, downloadEnvelopeAsFile: vi.fn() }
+})
 
 // Mock functions for drive.project('app').pickFile(), referenced by the
 // hoisted vi.mock('../lib/drive', ...) factory below.
@@ -1256,6 +1265,157 @@ describe('SettingsPage', () => {
 
       const aaplEntry = screen.getByText('AAPL: boom')
       expect(mfBlock.contains(aaplEntry)).toBe(false)
+    })
+  })
+
+  describe('Import/Export', () => {
+    it('settingsSection="importExport" shows the Import/Export card only, with a Download Backup button', () => {
+      renderSettings({ settingsSection: 'importExport' })
+
+      expect(screen.getByText('Import / Export')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Download Backup' })).toBeTruthy()
+      expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
+      expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
+    })
+
+    it('clicking Download Backup exports the current state and triggers a download with a dated filename', async () => {
+      const state = initialState()
+
+      renderSettings({ state, settingsSection: 'importExport' })
+
+      const downloadButton = screen.getByRole('button', { name: 'Download Backup' })
+      fireEvent.click(downloadButton)
+
+      await waitFor(() => {
+        expect(importExportModule.downloadEnvelopeAsFile).toHaveBeenCalledTimes(1)
+      })
+
+      const [envelope, filename] = vi.mocked(importExportModule.downloadEnvelopeAsFile).mock.calls[0]
+      expect(envelope).toMatchObject({
+        version: expect.anything(),
+        salt: expect.any(String),
+        iv: expect.any(String),
+        ciphertext: expect.any(String),
+      })
+      expect(filename).toMatch(/^ledger-backup-\d{4}-\d{2}-\d{2}\.json$/)
+    })
+
+    describe('Restore from Backup File', () => {
+      async function buildBackupFile(password: string, state = initialState()) {
+        const salt = generateSalt()
+        const key = await deriveKey(password, salt)
+        const envelope = await encryptState(state, key, salt)
+        return {
+          file: new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' }),
+          state,
+        }
+      }
+
+      function getFileInput(container: HTMLElement): HTMLInputElement {
+        return container.querySelector('input[type="file"]') as HTMLInputElement
+      }
+
+      it('happy path: uploading a valid backup, entering the correct password, and confirming dispatches REPLACE_IMPORTED_STATE', async () => {
+        const backupState = initialState()
+        backupState.accounts = [
+          {
+            id: 'acc-import-1',
+            accountNumber: '777',
+            name: 'Imported Account',
+            retirement: false,
+            createdAt: '2024-01-01',
+          },
+        ]
+        const { file } = await buildBackupFile('correct-password', backupState)
+        vi.mocked(global.confirm).mockReturnValue(true)
+
+        const { container } = renderSettings({ settingsSection: 'importExport' })
+
+        fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+        const passwordInput = await screen.findByPlaceholderText('Backup password')
+        fireEvent.change(passwordInput, { target: { value: 'correct-password' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+        await waitFor(() => {
+          expect(mockDispatch).toHaveBeenCalledWith({
+            type: 'REPLACE_IMPORTED_STATE',
+            data: expect.objectContaining({
+              accounts: backupState.accounts,
+            }),
+          })
+        })
+
+        await waitFor(() => {
+          expect(screen.getByText('Import complete.')).toBeTruthy()
+        })
+      })
+
+      it('wrong password: shows "Incorrect password", does not dispatch REPLACE_IMPORTED_STATE, keeps the prompt open', async () => {
+        const { file } = await buildBackupFile('correct-password')
+
+        const { container } = renderSettings({ settingsSection: 'importExport' })
+
+        fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+        const passwordInput = await screen.findByPlaceholderText('Backup password')
+        fireEvent.change(passwordInput, { target: { value: 'wrong-password' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+        await waitFor(() => {
+          expect(screen.getByText('Incorrect password')).toBeTruthy()
+        })
+
+        expect(mockDispatch).not.toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'REPLACE_IMPORTED_STATE' })
+        )
+        expect(screen.getByPlaceholderText('Backup password')).toBeTruthy()
+      })
+
+      it('malformed file: shows "This file isn\'t a valid backup", no password prompt, no dispatch', async () => {
+        const file = new File(['not json{{'], 'backup.json', { type: 'application/json' })
+
+        const { container } = renderSettings({ settingsSection: 'importExport' })
+
+        fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+        await waitFor(() => {
+          expect(screen.getByText("This file isn't a valid backup")).toBeTruthy()
+        })
+
+        expect(screen.queryByPlaceholderText('Backup password')).toBeFalsy()
+        expect(mockDispatch).not.toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'REPLACE_IMPORTED_STATE' })
+        )
+      })
+
+      it('confirm declined: correct password but window.confirm returns false clears the prompt without dispatching or showing success', async () => {
+        const { file } = await buildBackupFile('correct-password')
+        vi.mocked(global.confirm).mockReturnValue(false)
+
+        const { container } = renderSettings({ settingsSection: 'importExport' })
+
+        fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+        const passwordInput = await screen.findByPlaceholderText('Backup password')
+        fireEvent.change(passwordInput, { target: { value: 'correct-password' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+        await waitFor(() => {
+          expect(global.confirm).toHaveBeenCalledWith(
+            'This will replace your current positions and register data. Continue?'
+          )
+        })
+
+        await waitFor(() => {
+          expect(screen.queryByPlaceholderText('Backup password')).toBeFalsy()
+        })
+
+        expect(mockDispatch).not.toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'REPLACE_IMPORTED_STATE' })
+        )
+        expect(screen.queryByText('Import complete.')).toBeFalsy()
+      })
     })
   })
 

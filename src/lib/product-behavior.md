@@ -23,7 +23,7 @@ Closed positions are viewable per-account on the Accounts page via a Closed Posi
 
 ## Price Sync
 
-Settings > "Quotes API Key" tab (alongside Drive Sync and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
+Settings > "Quotes API Key" tab (alongside Drive Sync, Import/Export, and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
 
 Mutual Fund holdings sync separately via Alphavantage — see "## Mutual Fund Price Sync" below.
 
@@ -171,3 +171,25 @@ When the user clicks "Restore from Drive" on the Restore tab (PasswordGate) or S
 - **No automatic file lookup, ever**: The app never automatically probes for a backup file by name, neither on app startup nor on Restore click. Picker is always the mechanism for choosing which file to restore.
 - **Picker cancellation**: If the user closes the Picker dialog without selecting a file, the Picker can be reopened by clicking "Restore from Drive" again.
 - **OAuth + API key required**: Picker needs both a valid Google OAuth token and a configured Picker API key (`VITE_GOOGLE_PICKER_API_KEY`) to open. If a valid cached OAuth token exists, no auth window appears — Picker opens directly with the cached token. If the token is expired, the standard Google auth flow runs before Picker opens. A missing API key surfaces as an explicit error in the Picker fallback UI, not a silent failure.
+
+## Import/Export
+
+Settings > "Import/Export" tab (between Google Drive and Encryption). Fully local file download/upload — no Google Drive interaction, independent of Drive sync/auth state.
+
+### Download
+
+- Single "Download Backup" button. Silent — no password prompt, no confirm dialog.
+- Downloads `ledger-backup-YYYY-MM-DD.json` (today's local date, zero-padded).
+- File content is an `EncryptedEnvelope` (`{version, salt, iv, ciphertext}`), encrypted with the current session's key/salt (the user's currently-unlocked encryption password).
+
+### Upload
+
+- File input (`accept=".json,application/json"`) below the download button.
+- Selected file is parsed/validated (`parseImportFile`) *before* any password is requested.
+  - Not valid JSON, or not shaped like an encrypted backup envelope → inline error "This file isn't a valid backup"; no password prompt appears at all.
+- Valid envelope → inline password prompt always appears, even if the currently-unlocked session password would work — import decrypts using the *file's own embedded salt*, not the session's salt/key.
+  - Wrong password → inline error "Incorrect password", prompt stays open, retryable (re-enter password without re-selecting the file).
+  - Correct password → `window.confirm` with exact text: "This will replace your current positions and register data. Continue?"
+    - Cancel → nothing happens: decrypted data discarded, no state change, prompt/errors cleared.
+    - Confirm → full replace (not merge) of `accounts`, `positions`, `closedPositions`, `transactions`, `snapshots`, `csvMappings`, `customInstitutions`, `balanceEntries`, plus `priceSync.apiKey`/`priceSync.lastRun` and `mutualFundSync.apiKey`/`mutualFundSync.lastRun`. Shows "Import complete." File input is reset (same file can be re-selected).
+- **Excluded from import/export** (left completely untouched): `priceSync.heldPrices`, `priceSync.lastFetchedDate`, `priceSync.callBudget`, `mutualFundSync.heldPrices`, `mutualFundSync.lastFetchedDate`, `mutualFundSync.callBudget` (quotes/price caches), and all UI-state fields (view, sort/filter selections, etc.).

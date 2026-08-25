@@ -1,8 +1,16 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { AppState } from '../lib/state'
 import { getDriveAuthStatus, syncBackup } from '../lib/drive'
-import { deriveKey, generateSalt } from '../lib/crypto'
+import { deriveKey, generateSalt, type EncryptedEnvelope } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
+import {
+  exportBackup,
+  downloadEnvelopeAsFile,
+  parseImportFile,
+  decryptImportEnvelope,
+  ImportDecryptError,
+  ImportMalformedFileError,
+} from '../lib/importExport'
 import { DriveRestorePanel } from './DriveRestorePanel'
 
 export interface SettingsPageProps {
@@ -19,8 +27,8 @@ export interface SettingsPageProps {
   setSyncing: (v: boolean) => void
   handleConnect: () => void
   handleDisconnect: () => void
-  settingsSection: 'drive' | 'encryption' | 'priceSync'
-  setSettingsSection: (s: 'drive' | 'encryption' | 'priceSync') => void
+  settingsSection: 'drive' | 'importExport' | 'encryption' | 'priceSync'
+  setSettingsSection: (s: 'drive' | 'importExport' | 'encryption' | 'priceSync') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
   runMutualFundSyncTrigger: () => Promise<void>
   tickerOverviewErrors: Record<string, string>
@@ -68,6 +76,14 @@ export function SettingsPage({
   const [mfApiKeyInput, setMfApiKeyInput] = useState(state.mutualFundSync.apiKey)
   const [fetchingMutualFunds, setFetchingMutualFunds] = useState(false)
   const mutualFundSync = state.mutualFundSync
+
+  // Import/Export local state
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importPasswordPrompt, setImportPasswordPrompt] = useState<EncryptedEnvelope | null>(null)
+  const [importPasswordInput, setImportPasswordInput] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
@@ -145,6 +161,66 @@ export function SettingsPage({
     }
   }, [currentPasswordInput, newPasswordInput, confirmNewPasswordInput, sessionSalt, state, onKeyChange, onPasswordEntryTimeReset])
 
+  const handleImportFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const text = await file.text()
+    try {
+      const envelope = parseImportFile(text)
+      setImportPasswordPrompt(envelope)
+      setImportError(null)
+      setImportSuccess(null)
+    } catch (error) {
+      if (error instanceof ImportMalformedFileError) {
+        console.error('Import file is malformed:', error)
+      } else {
+        console.error('Failed to parse import file:', error)
+      }
+      setImportError("This file isn't a valid backup")
+      setImportPasswordPrompt(null)
+    }
+  }, [])
+
+  const handleImportPasswordSubmit = useCallback(async () => {
+    if (!importPasswordPrompt) return
+    setImportError(null)
+    setImporting(true)
+    try {
+      const decrypted = await decryptImportEnvelope(importPasswordPrompt, importPasswordInput)
+      const confirmed = window.confirm('This will replace your current positions and register data. Continue?')
+      if (!confirmed) {
+        setImportPasswordPrompt(null)
+        setImportPasswordInput('')
+        setImportError(null)
+        return
+      }
+      dispatch({ type: 'REPLACE_IMPORTED_STATE', data: decrypted })
+      setImportPasswordPrompt(null)
+      setImportPasswordInput('')
+      setImportError(null)
+      setImportSuccess('Import complete.')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } catch (error) {
+      if (error instanceof ImportDecryptError) {
+        setImportError('Incorrect password')
+        setImportPasswordInput('')
+      } else {
+        console.error('Unexpected error decrypting import file:', error)
+        setImportError('Failed to import backup')
+      }
+    } finally {
+      setImporting(false)
+    }
+  }, [importPasswordPrompt, importPasswordInput, dispatch])
+
+  const handleImportCancel = useCallback(() => {
+    setImportPasswordPrompt(null)
+    setImportPasswordInput('')
+    setImportError(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [])
+
   return (
     <div>
       {/* Settings tab-seg */}
@@ -158,6 +234,16 @@ export function SettingsPage({
             onClick={() => setSettingsSection('drive')}
           />
           Google Drive
+        </label>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="settingsSection"
+            checked={settingsSection === 'importExport'}
+            readOnly
+            onClick={() => setSettingsSection('importExport')}
+          />
+          Import/Export
         </label>
         <label className="seg-opt">
           <input
@@ -201,6 +287,82 @@ export function SettingsPage({
             onKeyChange(key, salt)
           }}
         />
+      </section>
+      )}
+
+      {/* Import/Export section */}
+      {settingsSection === 'importExport' && (
+      <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Import / Export</div>
+        <button
+          className="btn btn-primary blueprint"
+          onClick={async () => {
+            const envelope = await exportBackup(state, sessionKey, sessionSalt)
+            const now = new Date()
+            const yyyy = now.getFullYear()
+            const mm = String(now.getMonth() + 1).padStart(2, '0')
+            const dd = String(now.getDate()).padStart(2, '0')
+            downloadEnvelopeAsFile(envelope, `ledger-backup-${yyyy}-${mm}-${dd}.json`)
+          }}
+        >
+          Download Backup
+        </button>
+
+        <div className="hr" style={{ marginTop: 'var(--space-5)', marginBottom: 'var(--space-5)' }} />
+
+        <div className="field">
+          <label>Restore from Backup File</label>
+          <input
+            type="file"
+            accept=".json,application/json"
+            className="input"
+            ref={fileInputRef}
+            onChange={handleImportFileChange}
+          />
+        </div>
+
+        {importPasswordPrompt && (
+          <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', backgroundColor: 'var(--color-bg-secondary)', borderRadius: '4px' }}>
+            <p style={{ fontSize: '0.9rem', marginBottom: 'var(--space-3)' }}>
+              Enter the encryption password for this backup file:
+            </p>
+            <input
+              type="password"
+              value={importPasswordInput}
+              onChange={(e) => setImportPasswordInput(e.target.value)}
+              placeholder="Backup password"
+              className="input"
+              style={{ marginBottom: 'var(--space-3)', width: '100%' }}
+              disabled={importing}
+            />
+            {importError && (
+              <p style={{ marginTop: 0, marginBottom: 'var(--space-3)', color: '#8a3c2e' }}>{importError}</p>
+            )}
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <button
+                className="btn btn-primary blueprint"
+                onClick={handleImportPasswordSubmit}
+                disabled={importing}
+              >
+                Submit
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleImportCancel}
+                disabled={importing}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {importError && !importPasswordPrompt && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{importError}</p>
+        )}
+        {importSuccess && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>{importSuccess}</p>
+        )}
       </section>
       )}
 

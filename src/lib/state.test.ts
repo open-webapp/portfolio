@@ -19,9 +19,11 @@ import {
   setRegAccount,
   toggleRegCategoryExpanded,
   setRegActivityFilter,
+  replaceImportedState,
 } from './state'
 import type { AppState } from './types'
 import type { BalanceEntry } from './types'
+import type { ExportableState } from './importExport'
 
 describe('state helpers', () => {
   describe('initialState', () => {
@@ -977,6 +979,199 @@ describe('state helpers', () => {
 
       const reverted = setRegActivityFilter(updated, 'All')
       expect(reverted.regActivityFilter).toBe('All')
+    })
+  })
+
+  describe('replaceImportedState', () => {
+    const sampleData: ExportableState = {
+      accounts: [
+        {
+          id: 'acc-imported',
+          accountNumber: '999999',
+          name: 'Imported Account',
+          institution: 'Fidelity',
+          taxCategory: 'taxable',
+          retirement: false,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      positions: [
+        {
+          id: 'pos-imported',
+          accountId: 'acc-imported',
+          symbol: 'AAPL',
+          name: 'Apple Inc.',
+          assetClass: 'Equity',
+          shares: 10,
+          avgCost: 100,
+          price: 150,
+          lastImportedAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      closedPositions: [
+        {
+          id: 'closed-imported',
+          accountId: 'acc-imported',
+          symbol: 'MSFT',
+          name: 'Microsoft',
+          closedDate: '2025-01-01',
+          assetClass: 'Equity',
+          shares: 5,
+          avgCost: 50,
+          price: 60,
+          lastImportedAt: '2025-01-01T00:00:00Z',
+          realizedGL: 50,
+          realizedGLBasis: 'transactions',
+        },
+      ],
+      transactions: [
+        {
+          id: 'tx-imported',
+          accountId: 'acc-imported',
+          date: '2025-01-01',
+          symbol: 'AAPL',
+          type: 'Buy',
+          shares: 10,
+          price: 100,
+          amount: 1000,
+          importedAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      snapshots: [
+        { id: 'snap-imported', accountId: 'acc-imported', date: '2025-01-01', value: 1500 },
+      ],
+      csvMappings: [
+        {
+          id: 'mapping-imported',
+          accountId: 'acc-imported',
+          kind: 'positions',
+          fieldMap: { Symbol: 'symbol' },
+          updatedAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      customInstitutions: ['Imported Bank'],
+      balanceEntries: [
+        {
+          id: 'bal-imported',
+          accountId: 'acc-imported',
+          date: '2025-01-01',
+          balance: 5000,
+          activities: [],
+        },
+      ],
+      priceSync: {
+        apiKey: 'imported-price-key',
+        lastRun: { at: '2025-01-01T00:00:00Z', updatedCount: 3, notFound: [], marketTickerCount: 100 },
+      },
+      mutualFundSync: {
+        apiKey: 'imported-mf-key',
+        lastRun: { at: '2025-01-01T00:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 0 },
+      },
+    }
+
+    it('replaces the 8 data collections and apiKey/lastRun, preserving cached prices and UI state', () => {
+      const original: AppState = {
+        ...initialState(),
+        accounts: [
+          {
+            id: 'acc-old',
+            accountNumber: '111111',
+            name: 'Old Account',
+            institution: 'Chase',
+            taxCategory: 'taxable',
+            retirement: false,
+            createdAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+        priceSync: {
+          apiKey: 'old-price-key',
+          lastFetchedDate: '2024-06-01',
+          heldPrices: { AAPL: { price: 200, date: '2024-06-01', fetchedAt: '2024-06-01T00:00:00Z' } },
+          lastRun: { at: '2024-06-01T00:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 50 },
+        },
+        mutualFundSync: {
+          apiKey: 'old-mf-key',
+          heldPrices: { VTSAX: { price: 100, date: '2024-06-01', fetchedAt: '2024-06-01T00:00:00Z' } },
+          lastRun: { at: '2024-06-01T00:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 0 },
+          callBudget: { date: '2024-06-01', callsUsed: 5 },
+        },
+        view: 'register',
+        sortKey: 'shares',
+        sortDir: 'desc',
+        selectedAccountId: 'acc-old',
+        selectedCategoryKey: 'taxable',
+      }
+
+      const updated = replaceImportedState(original, sampleData)
+
+      expect(updated.accounts).toEqual(sampleData.accounts)
+      expect(updated.positions).toEqual(sampleData.positions)
+      expect(updated.closedPositions).toEqual(sampleData.closedPositions)
+      expect(updated.transactions).toEqual(sampleData.transactions)
+      expect(updated.snapshots).toEqual(sampleData.snapshots)
+      expect(updated.csvMappings).toEqual(sampleData.csvMappings)
+      expect(updated.customInstitutions).toEqual(sampleData.customInstitutions)
+      expect(updated.balanceEntries).toEqual(sampleData.balanceEntries)
+
+      expect(updated.priceSync.apiKey).toBe(sampleData.priceSync.apiKey)
+      expect(updated.priceSync.lastRun).toEqual(sampleData.priceSync.lastRun)
+      expect(updated.mutualFundSync.apiKey).toBe(sampleData.mutualFundSync.apiKey)
+      expect(updated.mutualFundSync.lastRun).toEqual(sampleData.mutualFundSync.lastRun)
+
+      // Cached price data untouched
+      expect(updated.priceSync.heldPrices).toEqual(original.priceSync.heldPrices)
+      expect(updated.priceSync.lastFetchedDate).toEqual(original.priceSync.lastFetchedDate)
+      expect(updated.mutualFundSync.heldPrices).toEqual(original.mutualFundSync.heldPrices)
+      expect(updated.mutualFundSync.callBudget).toEqual(original.mutualFundSync.callBudget)
+
+      // UI state untouched
+      expect(updated.view).toEqual(original.view)
+      expect(updated.sortKey).toEqual(original.sortKey)
+      expect(updated.sortDir).toEqual(original.sortDir)
+      expect(updated.selectedAccountId).toEqual(original.selectedAccountId)
+      expect(updated.selectedCategoryKey).toEqual(original.selectedCategoryKey)
+    })
+
+    it('fully replaces existing data with an empty backup rather than merging', () => {
+      const original: AppState = {
+        ...initialState(),
+        accounts: sampleData.accounts,
+        positions: sampleData.positions,
+        closedPositions: sampleData.closedPositions,
+        transactions: sampleData.transactions,
+        snapshots: sampleData.snapshots,
+        csvMappings: sampleData.csvMappings,
+        customInstitutions: sampleData.customInstitutions,
+        balanceEntries: sampleData.balanceEntries,
+      }
+
+      const emptyData: ExportableState = {
+        accounts: [],
+        positions: [],
+        closedPositions: [],
+        transactions: [],
+        snapshots: [],
+        csvMappings: [],
+        customInstitutions: [],
+        balanceEntries: [],
+        priceSync: { apiKey: '', lastRun: null },
+        mutualFundSync: { apiKey: '', lastRun: null },
+      }
+
+      const updated = replaceImportedState(original, emptyData)
+
+      expect(updated.accounts).toEqual([])
+      expect(updated.positions).toEqual([])
+      expect(updated.closedPositions).toEqual([])
+      expect(updated.transactions).toEqual([])
+      expect(updated.snapshots).toEqual([])
+      expect(updated.csvMappings).toEqual([])
+      expect(updated.customInstitutions).toEqual([])
+      expect(updated.balanceEntries).toEqual([])
+      expect(updated.priceSync.apiKey).toBe('')
+      expect(updated.priceSync.lastRun).toBeNull()
+      expect(updated.mutualFundSync.apiKey).toBe('')
+      expect(updated.mutualFundSync.lastRun).toBeNull()
     })
   })
 })
