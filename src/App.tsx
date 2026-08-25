@@ -17,6 +17,9 @@ import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
 
 const SYNC_RETRY_POLL_INTERVAL_MS = 60_000
+const LOCK_ABSOLUTE_MS = 2 * 60 * 60 * 1000 // 2h
+const LOCK_IDLE_MS = 5 * 60 * 1000 // 5min
+const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
 
 /**
  * App: Main component that wires everything together.
@@ -66,6 +69,8 @@ function App() {
   sessionKeyRef.current = sessionKey
   const sessionSaltRef = useRef<Uint8Array | null>(sessionSalt)
   sessionSaltRef.current = sessionSalt
+  const lastActivityTimeRef = useRef<number>(Date.now())
+  const passwordEntryTimeRef = useRef<number>(0) // 0 = not unlocked yet
 
   // Determine the password-gate shape on mount (no key needed for this).
   useEffect(() => {
@@ -105,6 +110,21 @@ function App() {
     const dispose = drive.activate()
     return () => {
       dispose()
+    }
+  }, [sessionKey])
+
+  useEffect(() => {
+    if (sessionKey === null) return
+    const onActivity = () => { lastActivityTimeRef.current = Date.now() }
+    document.addEventListener('mousedown', onActivity)
+    document.addEventListener('keydown', onActivity)
+    document.addEventListener('touchstart', onActivity)
+    document.addEventListener('scroll', onActivity)
+    return () => {
+      document.removeEventListener('mousedown', onActivity)
+      document.removeEventListener('keydown', onActivity)
+      document.removeEventListener('touchstart', onActivity)
+      document.removeEventListener('scroll', onActivity)
     }
   }, [sessionKey])
 
@@ -308,6 +328,47 @@ function App() {
     }
   }, [])
 
+  // Locks the app due to inactivity/absolute timeout: flushes the current
+  // state (best-effort) then clears the session, without touching gateShape
+  // or calling clearPersistedApp() — distinct from onReset, this is
+  // non-destructive so the same password unlocks again.
+  const lockNow = useCallback(() => {
+    const key = sessionKeyRef.current
+    const salt = sessionSaltRef.current
+    if (key && salt && isHydratedRef.current) {
+      savePersistedApp(latestStateRef.current, key, salt).catch((error) => {
+        console.error('Failed to flush save before auto-lock:', error)
+      })
+    }
+    setSessionKey(null)
+    setSessionSalt(null)
+    dispatch({ type: '__SET_STATE', newState: initialState() })
+  }, [])
+
+  // Periodically checks whether the session should be auto-locked, using
+  // wall-clock comparisons (not tick-counting) so laptop-sleep/tab-suspend
+  // gaps are handled correctly. Also re-checks on tab re-focus.
+  useEffect(() => {
+    if (sessionKey === null) return
+    const checkAndMaybeLock = () => {
+      const now = Date.now()
+      const overAbsolute = now - passwordEntryTimeRef.current >= LOCK_ABSOLUTE_MS
+      const idleLongEnough = now - lastActivityTimeRef.current >= LOCK_IDLE_MS
+      if (overAbsolute && idleLongEnough) {
+        lockNow()
+      }
+    }
+    const id = setInterval(checkAndMaybeLock, LOCK_CHECK_INTERVAL_MS)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') checkAndMaybeLock()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [sessionKey, lockNow])
+
   // Flush the pending save on page unload/hide so a refresh within the debounce
   // window doesn't lose the latest state (e.g. a just-finished import).
   useEffect(() => {
@@ -383,6 +444,8 @@ function App() {
             dispatch({ type: '__SET_STATE', newState: loadedState })
           }
           setIsHydrated(true)
+          passwordEntryTimeRef.current = Date.now()
+          lastActivityTimeRef.current = Date.now()
         }}
         onReset={() => {
           setGateShape('absent')
@@ -453,6 +516,9 @@ function App() {
               onKeyChange={(newKey, newSalt) => {
                 setSessionKey(newKey)
                 setSessionSalt(newSalt)
+              }}
+              onPasswordEntryTimeReset={() => {
+                passwordEntryTimeRef.current = Date.now()
               }}
               driveReady={driveReady}
               driveEmail={driveEmail}

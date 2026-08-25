@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { importPositions } from './lib/positionsImport'
@@ -18,6 +18,7 @@ const { mockSessionKey, mockSessionSalt, passwordGatePropsCapture, mockUnlockLoa
   passwordGatePropsCapture: {
     driveReady: undefined as boolean | undefined,
     driveEmail: undefined as string | null | undefined,
+    shape: undefined as 'absent' | 'legacy-plaintext' | 'encrypted' | null | undefined,
   },
   // Mutable box so individual tests can make the mocked PasswordGate's onUnlock hand
   // App.tsx a specific loadedState (e.g. one with priceSync.apiKey set), without
@@ -60,14 +61,17 @@ vi.mock('./components/PasswordGate', () => ({
     onUnlock,
     driveReady,
     driveEmail,
+    shape,
   }: {
     onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: unknown) => void
     driveReady?: boolean
     driveEmail?: string | null
+    shape?: 'absent' | 'legacy-plaintext' | 'encrypted' | null
   }) => {
     // Capture props for test verification
     passwordGatePropsCapture.driveReady = driveReady
     passwordGatePropsCapture.driveEmail = driveEmail
+    passwordGatePropsCapture.shape = shape
     return (
       <button onClick={() => onUnlock(mockSessionKey, mockSessionSalt, mockUnlockLoadedState.current)}>
         MockUnlock
@@ -653,5 +657,187 @@ describe('price sync trigger', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(runPriceSyncMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('auto-lock on inactivity', () => {
+  const LOCK_ABSOLUTE_MS = 2 * 60 * 60 * 1000 // 2h
+  const LOCK_IDLE_MS = 5 * 60 * 1000 // 5min
+
+  beforeEach(() => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    mockUnlockLoadedState.current = undefined
+    // shouldAdvanceTime lets real wall-clock time trickle forward too, so
+    // @testing-library's setTimeout-based `waitFor` polling (used while
+    // unlocking via renderUnlockedApp) doesn't hang waiting on a fake
+    // timer that nothing is advancing.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    mockUnlockLoadedState.current = undefined
+    // Undo the visibilityState stub some tests below install on `document`,
+    // so it doesn't leak into other tests in this file.
+    delete (document as { visibilityState?: string }).visibilityState
+  })
+
+  /** True once the app has locked back to the (mocked) password gate. */
+  function isLocked() {
+    return !!screen.queryByText('MockUnlock')
+  }
+
+  /** True while the unlocked dashboard/Nav is showing. */
+  function isUnlocked() {
+    return !!screen.queryByText('Positions')
+  }
+
+  it('stays unlocked after almost 2h with zero activity', async () => {
+    await renderUnlockedApp()
+
+    act(() => {
+      vi.advanceTimersByTime(LOCK_ABSOLUTE_MS - 1000)
+    })
+
+    expect(isUnlocked()).toBe(true)
+    expect(isLocked()).toBe(false)
+  })
+
+  it('stays unlocked past the 2h mark when activity reset the idle clock near the boundary', async () => {
+    await renderUnlockedApp()
+
+    // Advance to just under 2h, then register activity — this resets the
+    // 5-minute idle clock even though the absolute-session clock keeps running.
+    act(() => {
+      vi.advanceTimersByTime(LOCK_ABSOLUTE_MS - 60_000) // 1h59m
+    })
+    act(() => {
+      fireEvent.mouseDown(document)
+    })
+
+    // Now past the 2h absolute mark, but well within 5min of that activity.
+    act(() => {
+      vi.advanceTimersByTime(2 * 60_000) // +2min -> 2h01m total elapsed
+    })
+
+    expect(isUnlocked()).toBe(true)
+    expect(isLocked()).toBe(false)
+  })
+
+  it('locks once past 2h absolute AND 5+min idle with no activity', async () => {
+    await renderUnlockedApp()
+
+    act(() => {
+      vi.advanceTimersByTime(LOCK_ABSOLUTE_MS + LOCK_IDLE_MS + 1000)
+    })
+
+    expect(isLocked()).toBe(true)
+    expect(isUnlocked()).toBe(false)
+  })
+
+  it('locks immediately on visibilitychange after a background gap, without waiting for the next interval tick', async () => {
+    await renderUnlockedApp()
+
+    // Simulate the tab being backgrounded/suspended: jump the system clock
+    // directly instead of advancing fake timers (which would also fire a
+    // few hundred pointless 30s interval ticks and wouldn't isolate the
+    // visibilitychange code path).
+    act(() => {
+      vi.setSystemTime(Date.now() + LOCK_ABSOLUTE_MS + 10 * 60_000) // +2h10m
+    })
+
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(isLocked()).toBe(true)
+    expect(isUnlocked()).toBe(false)
+  })
+
+  it('flushes a pending debounced save before locking, with the still-valid session key/salt', async () => {
+    await renderUnlockedApp()
+
+    vi.mocked(savePersistedApp).mockClear()
+
+    // Dispatch a state change (TOGGLE_CATEGORY_EXPANDED) — schedules the
+    // 500ms-debounced save, matching the pattern used elsewhere in this file.
+    // Advance the lock-triggering time immediately afterward, without first
+    // letting the debounce timer run to completion on its own, so a flush
+    // during lockNow() is the thing under test.
+    act(() => {
+      fireEvent.click(screen.getByText('Taxable'))
+    })
+
+    act(() => {
+      vi.advanceTimersByTime(LOCK_ABSOLUTE_MS + LOCK_IDLE_MS + 1000)
+    })
+
+    expect(isLocked()).toBe(true)
+
+    // savePersistedApp must have been called (either via the debounce timer
+    // firing during the advance, or via lockNow()'s own best-effort flush —
+    // both use the same still-valid session key/salt) with non-null key/salt.
+    expect(savePersistedApp).toHaveBeenCalled()
+    const calls = vi.mocked(savePersistedApp).mock.calls
+    for (const [, key, salt] of calls) {
+      expect(key).toBe(mockSessionKey)
+      expect(salt).toBe(mockSessionSalt)
+    }
+    // The latest flushed state reflects the pending change.
+    const lastCall = calls.at(-1)!
+    expect(lastCall[0].expandedCategories.taxable).toBe(true)
+  })
+
+  it('resets state to initialState() on lock, while gateShape stays "encrypted" (not "absent"/first-run)', async () => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('encrypted')
+
+    let state = initialState()
+    state = appReducer(state, {
+      type: 'ADD_ACCOUNT',
+      account: {
+        id: 'auto-lock-acc-1',
+        accountNumber: '999',
+        name: 'Auto Lock Test Acct',
+        taxCategory: 'taxable',
+        retirement: false,
+        createdAt: '2024-01-01T00:00:00Z',
+      },
+    })
+    // Expand the Taxable category card so the account row (and its name) renders.
+    state = appReducer(state, { type: 'TOGGLE_CATEGORY_EXPANDED', categoryKey: 'taxable' })
+    mockUnlockLoadedState.current = state
+
+    await renderUnlockedApp()
+
+    // Data is present pre-lock.
+    expect(screen.getByText(/Auto Lock Test Acct/)).toBeTruthy()
+
+    // Don't re-inject the loaded state on the next (post-lock) unlock click.
+    mockUnlockLoadedState.current = undefined
+
+    act(() => {
+      vi.advanceTimersByTime(LOCK_ABSOLUTE_MS + LOCK_IDLE_MS + 1000)
+    })
+
+    expect(isLocked()).toBe(true)
+    expect(isUnlocked()).toBe(false)
+
+    // gateShape was left untouched by lockNow() — still 'encrypted', not
+    // reset to 'absent' (which would incorrectly show a first-run/create-
+    // password screen instead of an enter-password screen).
+    expect(passwordGatePropsCapture.shape).toBe('encrypted')
+
+    // Unlock again (no loadedState this time) to observe the state that
+    // lockNow() left behind: it should be initialState(), i.e. the account
+    // added above is gone.
+    fireEvent.click(screen.getByText('MockUnlock'))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading...')).toBeFalsy()
+      expect(screen.getByText('Positions')).toBeTruthy()
+    })
+
+    expect(screen.queryByText(/Auto Lock Test Acct/)).toBeFalsy()
   })
 })

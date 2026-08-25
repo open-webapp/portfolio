@@ -11,6 +11,7 @@ export interface SettingsPageProps {
   sessionKey: CryptoKey
   sessionSalt: Uint8Array
   onKeyChange: (newKey: CryptoKey, newSalt: Uint8Array) => void
+  onPasswordEntryTimeReset: () => void
   driveReady: boolean
   driveEmail: string | null
   backupFileId: string | null
@@ -35,6 +36,7 @@ export function SettingsPage({
   sessionKey,
   sessionSalt,
   onKeyChange,
+  onPasswordEntryTimeReset,
   driveReady,
   driveEmail,
   backupFileId,
@@ -130,6 +132,7 @@ export function SettingsPage({
       }
 
       onKeyChange(newKey, newSalt)
+      onPasswordEntryTimeReset()
       setCurrentPasswordInput('')
       setNewPasswordInput('')
       setConfirmNewPasswordInput('')
@@ -140,7 +143,7 @@ export function SettingsPage({
     } finally {
       setChangingPassword(false)
     }
-  }, [currentPasswordInput, newPasswordInput, confirmNewPasswordInput, sessionSalt, state, onKeyChange])
+  }, [currentPasswordInput, newPasswordInput, confirmNewPasswordInput, sessionSalt, state, onKeyChange, onPasswordEntryTimeReset])
 
   return (
     <div>

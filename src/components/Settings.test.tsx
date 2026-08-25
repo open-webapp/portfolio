@@ -62,6 +62,7 @@ global.confirm = vi.fn()
 
 const mockDispatch = vi.fn()
 const mockOnKeyChange = vi.fn()
+const mockOnPasswordEntryTimeReset = vi.fn()
 const mockSetSyncing = vi.fn()
 const mockHandleConnect = vi.fn()
 const mockHandleDisconnect = vi.fn()
@@ -133,6 +134,7 @@ describe('SettingsPage', () => {
       sessionKey,
       sessionSalt,
       onKeyChange: mockOnKeyChange,
+      onPasswordEntryTimeReset: mockOnPasswordEntryTimeReset,
       driveReady: false,
       driveEmail: null,
       backupFileId: null,
@@ -464,6 +466,32 @@ describe('SettingsPage', () => {
       expect(confirmInput.value).toBe('')
     })
 
+    it('calls onPasswordEntryTimeReset exactly once, right after onKeyChange, on the happy path', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
+      vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
+      const state = initialState()
+
+      const { container } = renderSettings({ state, settingsSection: 'encryption' })
+
+      fillAndSubmitChangePassword(container, {
+        current: 'test-password',
+        next: 'new-password-1',
+        confirm: 'new-password-1',
+      })
+
+      await waitFor(() => {
+        expect(mockOnKeyChange).toHaveBeenCalled()
+      })
+
+      await waitFor(() => {
+        expect(mockOnPasswordEntryTimeReset).toHaveBeenCalledTimes(1)
+      })
+
+      const keyChangeOrder = mockOnKeyChange.mock.invocationCallOrder[0]
+      const resetOrder = mockOnPasswordEntryTimeReset.mock.invocationCallOrder[0]
+      expect(resetOrder).toBeGreaterThan(keyChangeOrder)
+    })
+
     it('shows "Current password is incorrect" and does not save when current password verification fails', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockRejectedValue(new Error('decrypt failed'))
 
@@ -481,6 +509,7 @@ describe('SettingsPage', () => {
 
       expect(persistModule.savePersistedApp).not.toHaveBeenCalled()
       expect(mockOnKeyChange).not.toHaveBeenCalled()
+      expect(mockOnPasswordEntryTimeReset).not.toHaveBeenCalled()
     })
 
     it('shows "Password must be at least 6 characters" and does not save when the new password is too short', async () => {
