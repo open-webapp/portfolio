@@ -159,8 +159,9 @@ describe('RegisterBalanceDialog', () => {
     const [accountSelect] = within(row).getAllByRole('combobox')
     expect((accountSelect as HTMLSelectElement).value).toBe('acc-1')
     expect(within(row).getByDisplayValue('5000')).toBeTruthy()
-    expect(within(row).getByDisplayValue('100')).toBeTruthy()
-    expect(within(row).getByDisplayValue('monthly')).toBeTruthy()
+    const table = row.closest('table')!
+    expect(within(table).getByDisplayValue('100')).toBeTruthy()
+    expect(within(table).getByDisplayValue('monthly')).toBeTruthy()
   })
 
   it('paste mode: missing header or values text shows the error message and keeps Save disabled', () => {
@@ -208,16 +209,17 @@ describe('RegisterBalanceDialog', () => {
     const balanceInput = within(row).getByPlaceholderText('e.g. 12500.00')
     fireEvent.change(balanceInput, { target: { value: '1000' } })
 
-    const addActivityBtn = within(row).getByText('+ Add activity')
+    const table = row.closest('table')!
+    const addActivityBtn = within(table).getByText('+ Add activity')
     fireEvent.click(addActivityBtn)
     fireEvent.click(addActivityBtn)
 
-    const amountInputs = within(row).getAllByPlaceholderText('0.00')
+    const amountInputs = within(table).getAllByPlaceholderText('0.00')
     expect(amountInputs).toHaveLength(2)
-    const noteInputs = within(row).getAllByPlaceholderText('Note')
+    const noteInputs = within(table).getAllByPlaceholderText('Note')
     expect(noteInputs).toHaveLength(2)
-    // Combobox order in the row: account select, then one select per activity.
-    const selects = within(row).getAllByRole('combobox')
+    // Combobox order in the table: account select, then one select per activity (each in its own sibling <tr>).
+    const selects = within(table).getAllByRole('combobox')
     expect(selects).toHaveLength(3)
 
     fireEvent.change(selects[1], { target: { value: 'Contribution' } })
@@ -246,6 +248,61 @@ describe('RegisterBalanceDialog', () => {
     )
   })
 
+  it('manual mode: an added activity renders as a sibling <tr> beneath the balance row, not nested inside it', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+
+    const dispatch = vi.fn()
+    openDialog(state, dispatch)
+
+    const dateInput = screen.getByDisplayValue(todayLocal()) as HTMLInputElement
+    const row = dateInput.closest('tr')!
+    const table = row.closest('table')!
+    const addActivityBtn = within(table).getByText('+ Add activity')
+    fireEvent.click(addActivityBtn)
+
+    expect(row.nextElementSibling).toBeTruthy()
+    expect(row.nextElementSibling!.tagName).toBe('TR')
+    expect(row.parentElement!.contains(row.nextElementSibling)).toBe(true)
+    expect(row.querySelector('tr')).toBeNull()
+  })
+
+  it('manual mode: default single blank row table header has exactly 4 columns', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+
+    openDialog(state)
+
+    const dateInput = screen.getByDisplayValue(todayLocal()) as HTMLInputElement
+    const table = dateInput.closest('table')!
+    const headers = within(table).getAllByRole('columnheader')
+    expect(headers).toHaveLength(4)
+  })
+
+  it('manual mode: two activities render as two sibling <tr>s followed by the "+ Add activity" row', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+
+    const dispatch = vi.fn()
+    openDialog(state, dispatch)
+
+    const dateInput = screen.getByDisplayValue(todayLocal()) as HTMLInputElement
+    const row = dateInput.closest('tr')!
+    const table = row.closest('table')!
+    const addActivityBtn = within(table).getByText('+ Add activity')
+    fireEvent.click(addActivityBtn)
+    fireEvent.click(addActivityBtn)
+
+    const firstActivityRow = row.nextElementSibling as HTMLElement
+    const secondActivityRow = firstActivityRow.nextElementSibling as HTMLElement
+    const addRowTr = secondActivityRow.nextElementSibling as HTMLElement
+
+    expect(firstActivityRow.tagName).toBe('TR')
+    expect(secondActivityRow.tagName).toBe('TR')
+    expect(addRowTr.tagName).toBe('TR')
+    expect(within(addRowTr).getByText('+ Add activity')).toBeTruthy()
+  })
+
   it('manual mode: removing one of two activities before Save leaves only the remaining activity', () => {
     const state: AppState = { ...initialState() }
     state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
@@ -260,19 +317,20 @@ describe('RegisterBalanceDialog', () => {
     const balanceInput = within(row).getByPlaceholderText('e.g. 12500.00')
     fireEvent.change(balanceInput, { target: { value: '1000' } })
 
-    const addActivityBtn = within(row).getByText('+ Add activity')
+    const table = row.closest('table')!
+    const addActivityBtn = within(table).getByText('+ Add activity')
     fireEvent.click(addActivityBtn)
     fireEvent.click(addActivityBtn)
 
-    let amountInputs = within(row).getAllByPlaceholderText('0.00')
+    let amountInputs = within(table).getAllByPlaceholderText('0.00')
     fireEvent.change(amountInputs[0], { target: { value: '100' } })
     fireEvent.change(amountInputs[1], { target: { value: '25' } })
 
-    const removeActivityBtns = within(row).getAllByTitle('Remove activity')
+    const removeActivityBtns = within(table).getAllByTitle('Remove activity')
     expect(removeActivityBtns).toHaveLength(2)
     fireEvent.click(removeActivityBtns[0])
 
-    amountInputs = within(row).getAllByPlaceholderText('0.00')
+    amountInputs = within(table).getAllByPlaceholderText('0.00')
     expect(amountInputs).toHaveLength(1)
     expect((amountInputs[0] as HTMLInputElement).value).toBe('25')
 
@@ -349,15 +407,16 @@ describe('RegisterBalanceDialog', () => {
 
       const dateInput = screen.getByDisplayValue('2024-02-15') as HTMLInputElement
       const row = dateInput.closest('tr')!
-      const selects = within(row).getAllByRole('combobox')
+      const table = screen.getByRole('table')
+      const selects = within(table).getAllByRole('combobox')
       expect((selects[0] as HTMLSelectElement).value).toBe('acc-1')
       expect(within(row).getByDisplayValue('4200.75')).toBeTruthy()
 
-      const amountInputs = within(row).getAllByPlaceholderText('0.00')
+      const amountInputs = within(table).getAllByPlaceholderText('0.00')
       expect(amountInputs).toHaveLength(2)
       expect((amountInputs[0] as HTMLInputElement).value).toBe('100')
       expect((amountInputs[1] as HTMLInputElement).value).toBe('25')
-      const noteInputs = within(row).getAllByPlaceholderText('Note')
+      const noteInputs = within(table).getAllByPlaceholderText('Note')
       expect((noteInputs[0] as HTMLInputElement).value).toBe('first')
       expect((noteInputs[1] as HTMLInputElement).value).toBe('second')
       expect((selects[1] as HTMLSelectElement).value).toBe('Contribution')
@@ -412,11 +471,10 @@ describe('RegisterBalanceDialog', () => {
       const dispatch = vi.fn()
       openEditDialog(entry, dispatch, state)
 
-      const dateInput = screen.getByDisplayValue('2024-02-15') as HTMLInputElement
-      const row = dateInput.closest('tr')!
+      const table = screen.getByRole('table')
 
-      fireEvent.click(within(row).getByText('+ Add activity'))
-      let removeBtns = within(row).getAllByTitle('Remove activity')
+      fireEvent.click(within(table).getByText('+ Add activity'))
+      let removeBtns = within(table).getAllByTitle('Remove activity')
       expect(removeBtns).toHaveLength(2)
       fireEvent.click(removeBtns[1])
 
@@ -479,9 +537,8 @@ describe('RegisterBalanceDialog', () => {
 
       render(<RegisterBalanceDialog state={state} dispatch={dispatch} onClose={onClose} editingEntry={entry} />)
 
-      const dateInput = screen.getByDisplayValue('2024-02-15') as HTMLInputElement
-      const row = dateInput.closest('tr')!
-      fireEvent.click(within(row).getByText('+ Add activity'))
+      const table = screen.getByRole('table')
+      fireEvent.click(within(table).getByText('+ Add activity'))
 
       fireEvent.click(screen.getByText('Cancel'))
 
