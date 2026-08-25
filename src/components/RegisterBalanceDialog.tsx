@@ -13,6 +13,7 @@ import {
   type DraftRow,
 } from '../lib/register'
 import { tableToCsv, type PastedClipboard } from '../lib/pastedTable'
+import { parseCsvNumber } from '../lib/csv'
 import { uid } from '../lib/seed'
 
 export interface RegisterBalanceDialogProps {
@@ -206,7 +207,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
   const draftRowToActivities = (r: DraftRow) =>
     r.activities.map((a) => ({
       type: matchActivityType(a.type) || 'None',
-      amount: Math.abs(parseFloat(a.amount)) || 0,
+      amount: Math.abs(parseCsvNumber(a.amount)) || 0,
       note: a.note,
     }))
 
@@ -218,7 +219,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
         id: editingEntry.id,
         accountId: r.accountId,
         date: r.date,
-        balance: parseFloat(r.balance),
+        balance: parseCsvNumber(r.balance),
         activities: draftRowToActivities(r),
       }
       dispatch({ type: 'UPDATE_BALANCE_ENTRY', entry })
@@ -229,7 +230,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
       id: uid('bal'),
       accountId: r.accountId,
       date: r.date,
-      balance: parseFloat(r.balance),
+      balance: parseCsvNumber(r.balance),
       activities: draftRowToActivities(r),
     }))
     dispatch({ type: 'ADD_BALANCE_ENTRIES', entries })
@@ -386,7 +387,7 @@ export function RegisterBalanceDialog({ state, dispatch, onClose, editingEntry }
                         type="text"
                         className="input"
                         value={row.balance}
-                        style={!valid && (row.balance === '' || isNaN(parseFloat(row.balance))) ? { borderColor: '#8a3c2e' } : undefined}
+                        style={!valid && (row.balance === '' || isNaN(parseCsvNumber(row.balance))) ? { borderColor: '#8a3c2e' } : undefined}
                         onChange={(e) => updateRow(row.key, { balance: e.target.value })}
                         placeholder="e.g. 12500.00"
                       />

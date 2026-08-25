@@ -107,6 +107,40 @@ describe('RegisterBalanceDialog', () => {
     )
   })
 
+  it('manual mode: a balance entered with a thousands comma (e.g. "12,500.50") saves as the full number, not truncated at the comma', () => {
+    const state: AppState = { ...initialState() }
+    state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))
+
+    const dispatch = vi.fn()
+    openDialog(state, dispatch)
+
+    const dateInput = screen.getByDisplayValue(todayLocal()) as HTMLInputElement
+    const row = dateInput.closest('tr')!
+    const [accountSelect] = within(row).getAllByRole('combobox')
+    fireEvent.change(accountSelect, { target: { value: 'acc-1' } })
+
+    const balanceInput = within(row).getByPlaceholderText('e.g. 12500.00')
+    fireEvent.change(balanceInput, { target: { value: '12,500.50' } })
+
+    const saveBtn = screen.getByText('Save 1 entry')
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(saveBtn)
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ADD_BALANCE_ENTRIES',
+        entries: [
+          expect.objectContaining({
+            accountId: 'acc-1',
+            date: todayLocal(),
+            balance: 12500.5,
+            activities: [],
+          }),
+        ],
+      })
+    )
+  })
+
   it('manual mode + integration: recording an entry for an existing (accountId, date) pair results in 1 row not 2 in the activity table', () => {
     const state: AppState = { ...initialState() }
     state.accounts.push(makeAccount({ id: 'acc-1', name: 'Account One', taxCategory: 'taxable' }))

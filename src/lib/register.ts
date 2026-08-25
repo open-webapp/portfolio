@@ -1,5 +1,6 @@
 import type { Account, ActivityType, BalanceEntry } from './types'
 import { fmtUSD } from './computations'
+import { parseCsvNumber } from './csv'
 import { uid } from './seed'
 
 export const ACTIVITY_TYPES: ActivityType[] = [
@@ -198,5 +199,5 @@ export function emptyDraftRow(): DraftRow {
 }
 
 export function isDraftRowValid(row: DraftRow): boolean {
-  return !!row.date && !!row.accountId && row.balance !== '' && !isNaN(parseFloat(row.balance))
+  return !!row.date && !!row.accountId && row.balance !== '' && !isNaN(parseCsvNumber(row.balance))
 }
