@@ -156,9 +156,13 @@ successful name fetch, mirroring `tickerOverview.ts`'s pattern.
   `mutualFundSyncErrors` — `App.tsx` local state (`Record<symbol, message>`), independent of
   `tickerOverviewErrors`, rendered only in `Settings.tsx`'s Alphavantage sub-block (not on `QuotesPage.tsx`).
   A rate-limited response (`AlphavantageRateLimitError`, detected via a truthy `Note`/`Information` field in
-  an otherwise-200 body — Alphavantage doesn't use HTTP 429) is retried after
-  `ALPHAVANTAGE_RATE_LIMIT_BACKOFF_MS` (60s) in a loop, same pattern as Polygon's ticker-overview 429 handling.
-  Successive calls are paced `ALPHAVANTAGE_REQUEST_SPACING_MS` (12.5s) apart.
+  an otherwise-200 body — Alphavantage doesn't use HTTP 429) is treated like any other per-symbol failure:
+  logged via `onError` and given up on for this run, NOT retried in place. (Previously this looped on the same
+  symbol with a 60s backoff between attempts; since each attempt still spent one unit of the shared daily
+  budget, a single persistently-rate-limited symbol could drain the entire day's budget and starve every other
+  held symbol — multiple symbols would show "Pending" for days. Now the symbol is simply left unresolved and
+  retried on the next `SYNC_RETRY_POLL_INTERVAL_MS` tick or daily rollover, so a rate limit on one symbol never
+  blocks the rest of the run.) Successive calls are paced `ALPHAVANTAGE_REQUEST_SPACING_MS` (12.5s) apart.
 - **Shared retry interval**: a single `setInterval` (`SYNC_RETRY_POLL_INTERVAL_MS`, 60s) in `App.tsx` drives
   both syncs' catch-up retries. Each tick calls `selectors.ts`'s `shouldRetryPolygonSync(state,
   tickerOverviewErrors)` (true if the last Polygon run left symbols in `notFound`, or a ticker-overview fetch

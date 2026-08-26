@@ -6,7 +6,6 @@ import {
   runMutualFundSync,
   AlphavantageRateLimitError,
   ALPHAVANTAGE_REQUEST_SPACING_MS,
-  ALPHAVANTAGE_RATE_LIMIT_BACKOFF_MS,
   ALPHAVANTAGE_DAILY_CALL_CAP,
 } from './mutualFundSync'
 import { getTickerOverview, putTickerOverview } from './marketDataDb'
@@ -436,7 +435,7 @@ describe('mutualFundSync', () => {
       expect(patch2.lastRun.notFound).toContain('VTSAX')
     })
 
-    it('rate limit then success on name fetch: retries after backoff sleep', async () => {
+    it('rate limit on name fetch: bails out of the run instead of retry-looping in place', async () => {
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(jsonResponse({ Note: 'Thank you for using Alpha Vantage...' }))
@@ -455,14 +454,57 @@ describe('mutualFundSync', () => {
         heldPrices: { VTSAX: { price: 10, date: today, fetchedAt: new Date().toISOString() } },
       })
 
-      await runMutualFundSync(state, ['VTSAX'], [makePosition('VTSAX')], dispatch, onError, undefined, sleep)
+      const { patch } = await runMutualFundSync(
+        state,
+        ['VTSAX'],
+        [makePosition('VTSAX')],
+        dispatch,
+        onError,
+        undefined,
+        sleep
+      )
 
+      // Bails immediately on the rate-limit response — one call spent, no
+      // in-place retry/backoff sleep, and the name is left unresolved for
+      // the next scheduled retry rather than looping here.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(sleep).not.toHaveBeenCalled()
+      expect(patch.callBudget.callsUsed).toBe(1)
       expect(onError).toHaveBeenCalledTimes(1)
       expect(onError.mock.calls[0][0]).toBe('VTSAX')
       expect(onError.mock.calls[0][1]).toMatch(/rate limited/i)
+      expect(await getTickerOverview('VTSAX')).toBeNull()
+    })
 
-      expect(await getTickerOverview('VTSAX')).toMatchObject({ name: 'Vanguard Total Stock Market Index Fund' })
-      expect(sleep.mock.calls.some((c) => c[0] === ALPHAVANTAGE_RATE_LIMIT_BACKOFF_MS)).toBe(true)
+    it('rate limit on one symbol does not starve the rest of the run', async () => {
+      const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('VTSAX')) return jsonResponse({ Note: 'Thank you for using Alpha Vantage...' })
+        if (url.includes('function=SYMBOL_SEARCH')) {
+          return jsonResponse({
+            bestMatches: [{ '1. symbol': 'VBTLX', '2. name': 'Vanguard Total Bond Market Index Fund' }],
+          })
+        }
+        return jsonResponse({ 'Time Series (Daily)': { '2026-08-21': { '4. close': '55.55' } } })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const dispatch = vi.fn()
+      const onError = vi.fn()
+      const sleep = vi.fn().mockResolvedValue(undefined)
+
+      const { patch } = await runMutualFundSync(
+        makeMutualFundSync(),
+        ['VTSAX', 'VBTLX'],
+        [makePosition('VTSAX'), makePosition('VBTLX')],
+        dispatch,
+        onError,
+        undefined,
+        sleep
+      )
+
+      // VTSAX's rate limit consumed exactly one budget unit and didn't block
+      // VBTLX from being fetched (name + price) in the same run.
+      expect(await getTickerOverview('VBTLX')).toMatchObject({ name: 'Vanguard Total Bond Market Index Fund' })
+      expect(patch.heldPrices.VBTLX).toMatchObject({ price: 55.55 })
     })
 
     it('daily cap enforcement: stops mid-run, resumes from persisted callBudget on a simulated reload', async () => {

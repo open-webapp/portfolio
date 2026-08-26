@@ -9,7 +9,6 @@ import { getTickerOverview, putTickerOverview } from './marketDataDb'
 import type { MutualFundSyncState, HeldSymbolPrice, PriceSyncLastRun, Position } from './types'
 
 export const ALPHAVANTAGE_REQUEST_SPACING_MS = 12_500
-export const ALPHAVANTAGE_RATE_LIMIT_BACKOFF_MS = 60_000
 export const ALPHAVANTAGE_DAILY_CALL_CAP = 25 // must match selectors.ts's constant of the same name
 
 const BASE_URL = 'https://www.alphavantage.co/query'
@@ -134,7 +133,7 @@ export async function runMutualFundSync(
     let needsPrice = !heldPrice || heldPrice.fetchedAt.slice(0, 10) !== today
     if (!needsName && !needsPrice) continue
 
-    while (needsName) {
+    while (needsName && !budgetExhausted) {
       if (budget.callsUsed >= ALPHAVANTAGE_DAILY_CALL_CAP) { budgetExhausted = true; break }
       if (needsSpacing) await sleep(ALPHAVANTAGE_REQUEST_SPACING_MS)
       needsSpacing = true
@@ -154,12 +153,12 @@ export async function runMutualFundSync(
         }
         needsName = false
       } catch (err) {
-        if (err instanceof AlphavantageRateLimitError) {
-          onError(symbol, err.message)
-          await sleep(ALPHAVANTAGE_RATE_LIMIT_BACKOFF_MS)
-          continue
-        }
-        onError(symbol, err instanceof Error ? err.message : 'Could not fetch name')
+        // Don't retry-loop in place on a rate limit — that burns the shared
+        // daily budget (one unit per attempt) on this single symbol and
+        // starves every other symbol in the run. Give up on this symbol for
+        // now like any other error; the retry-interval poll picks it back up.
+        if (err instanceof AlphavantageRateLimitError) onError(symbol, err.message)
+        else onError(symbol, err instanceof Error ? err.message : 'Could not fetch name')
         needsName = false
       }
     }
@@ -180,12 +179,10 @@ export async function runMutualFundSync(
         }
         needsPrice = false
       } catch (err) {
-        if (err instanceof AlphavantageRateLimitError) {
-          onError(symbol, err.message)
-          await sleep(ALPHAVANTAGE_RATE_LIMIT_BACKOFF_MS)
-          continue
-        }
-        onError(symbol, err instanceof Error ? err.message : 'Could not fetch price')
+        // Same rationale as the needsName branch above: give up on this
+        // symbol rather than retry-loop and drain the shared daily budget.
+        if (err instanceof AlphavantageRateLimitError) onError(symbol, err.message)
+        else onError(symbol, err instanceof Error ? err.message : 'Could not fetch price')
         needsPrice = false
       }
     }
