@@ -3,6 +3,8 @@ import type { AppState } from '../lib/state'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadLegacyPlaintextApp, loadPersistedApp, peekStoredSalt, clearPersistedApp } from '../lib/persist'
 import { DriveRestorePanel } from './DriveRestorePanel'
+import { GateRestoreFromFilePanel } from './GateRestoreFromFilePanel'
+import { ResetAppControl } from './ResetAppControl'
 
 export interface PasswordGateProps {
   shape: 'absent' | 'legacy-plaintext' | 'encrypted'
@@ -73,25 +75,6 @@ function GateShell({
   onReset,
   tabControl,
 }: GateShellProps) {
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
-  const [resetConfirmText, setResetConfirmText] = useState('')
-  const [resetting, setResetting] = useState(false)
-  const [resetDone, setResetDone] = useState(false)
-
-  const resetConfirmDisabled = resetConfirmText.trim().toUpperCase() !== 'RESET' || resetting
-
-  const handleConfirmReset = async () => {
-    setResetting(true)
-    try {
-      await onReset()
-      setResetConfirmOpen(false)
-      setResetConfirmText('')
-      setResetDone(true)
-    } finally {
-      setResetting(false)
-    }
-  }
-
   return (
     <div
       style={{
@@ -134,89 +117,9 @@ function GateShell({
             If you do not have the encryption password, you cannot access any of the content that's encrypted. You
             can "Reset" the app, which will wipe out all existing data so you can start over.
           </div>
-          <span
-            onClick={() => {
-              setResetConfirmOpen(true)
-              setResetConfirmText('')
-            }}
-            style={{
-              fontSize: '11px',
-              color: '#8a3c2e',
-              opacity: 0.55,
-              cursor: 'pointer',
-              letterSpacing: '0.03em',
-              textDecoration: 'underline',
-              textUnderlineOffset: '2px',
-            }}
-          >
-            Reset App
-          </span>
+          <ResetAppControl onReset={onReset} />
         </div>
       </div>
-
-      {resetConfirmOpen && (
-        <div className="dialog-backdrop" style={{ zIndex: 1000 }}>
-          <div className="dialog blueprint" style={{ width: 'min(92vw, 420px)', background: 'var(--color-bg)', boxShadow: 'var(--shadow-lg)' }}>
-            <div className="dialog-title" style={{ color: '#8a3c2e' }}>
-              Reset app and erase all data?
-            </div>
-            <div className="dialog-body" style={{ textAlign: 'left' }}>
-              <div className="text-muted" style={{ fontSize: '13px', marginBottom: 'var(--space-4)' }}>
-                This permanently deletes every encrypted account, position and transaction on this device. This
-                cannot be undone.
-              </div>
-              <div className="field">
-                <label>Type RESET to confirm</label>
-                <input
-                  className="input"
-                  placeholder="RESET"
-                  value={resetConfirmText}
-                  onChange={(e) => setResetConfirmText(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="btn btn-secondary blueprint"
-                onClick={() => {
-                  setResetConfirmOpen(false)
-                  setResetConfirmText('')
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn blueprint"
-                disabled={resetConfirmDisabled}
-                onClick={handleConfirmReset}
-                style={{ background: '#8a3c2e', borderColor: '#8a3c2e', color: '#fff' }}
-              >
-                {resetting ? 'Erasing...' : 'Erase Everything'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {resetDone && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 'var(--space-6)',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'var(--color-text)',
-            color: 'var(--color-bg)',
-            padding: '10px 18px',
-            fontSize: '13px',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          App reset. All data wiped.
-        </div>
-      )}
     </div>
   )
 }
@@ -250,7 +153,7 @@ function SetPasswordScreen({
   const [submitting, setSubmitting] = useState(false)
 
   // Tab control for new vs restore (only in 'absent' shape)
-  const [gateTab, setGateTab] = useState<'new' | 'restore'>('new')
+  const [gateTab, setGateTab] = useState<'new' | 'restore' | 'restoreFile'>('new')
 
   // Dummy key/salt for restore panel initialization
   const [dummyKey, setDummyKey] = useState<CryptoKey | null>(null)
@@ -305,11 +208,18 @@ function SetPasswordScreen({
   }
 
   // Conditional title/subtitle based on tab
-  const title = gateTab === 'new' ? 'Set Encryption Password' : 'Restore from Google Drive'
+  const title =
+    gateTab === 'new'
+      ? 'Set Encryption Password'
+      : gateTab === 'restore'
+        ? 'Restore from Google Drive'
+        : 'Restore from Backup File'
   const subtitle =
     gateTab === 'new'
       ? 'Choose a password to encrypt your data on this device.'
-      : 'Load your data stored in Google Drive.'
+      : gateTab === 'restore'
+        ? 'Load your data stored in Google Drive.'
+        : 'Load your data from a backup file exported earlier.'
 
   // Tab control (only in 'absent' shape)
   const tabControl =
@@ -334,6 +244,16 @@ function SetPasswordScreen({
             onClick={() => setGateTab('restore')}
           />
           Restore from Drive
+        </label>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="gateTab"
+            checked={gateTab === 'restoreFile'}
+            readOnly
+            onClick={() => setGateTab('restoreFile')}
+          />
+          Restore from Backup File
         </label>
       </div>
     ) : null
@@ -409,6 +329,13 @@ function SetPasswordScreen({
               Loading restore options...
             </div>
           )}
+        </div>
+      )}
+
+      {/* Restore-from-file Panel - only rendered in 'absent' shape, always mounted, visibility toggled */}
+      {shape === 'absent' && (
+        <div style={{ display: gateTab === 'restoreFile' ? 'block' : 'none' }}>
+          <GateRestoreFromFilePanel onUnlock={onUnlock} />
         </div>
       )}
     </GateShell>

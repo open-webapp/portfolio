@@ -6,6 +6,7 @@ import {
   downloadEnvelopeAsFile,
   parseImportFile,
   decryptImportEnvelope,
+  getEnvelopeSaltBytes,
   ImportDecryptError,
   ImportMalformedFileError,
 } from './importExport'
@@ -184,6 +185,19 @@ describe('parseImportFile', () => {
     expect(() => parseImportFile(JSON.stringify({ foo: 'bar' }))).toThrow(ImportMalformedFileError)
     // legacy-plaintext-shaped blob (a raw AppState, not an envelope)
     expect(() => parseImportFile(JSON.stringify({ accounts: [], positions: [] }))).toThrow(ImportMalformedFileError)
+  })
+})
+
+describe('getEnvelopeSaltBytes', () => {
+  it('decodes the envelope salt to bytes that round-trip back to the original base64', async () => {
+    const state = populatedState()
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+    const envelope = await exportBackup(state, key, salt)
+
+    const saltBytes = getEnvelopeSaltBytes(envelope)
+    const roundTripped = btoa(String.fromCharCode(...saltBytes))
+    expect(roundTripped).toBe(envelope.salt)
   })
 })
 

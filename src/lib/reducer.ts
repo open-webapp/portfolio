@@ -3,7 +3,6 @@ import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
 import type { BalanceEntry } from './types'
-import type { ExportableState } from './importExport'
 
 export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
@@ -39,7 +38,6 @@ export type AppAction =
   | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
   | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
-  | { type: 'REPLACE_IMPORTED_STATE'; data: ExportableState }
 
 /**
  * Reducer function that handles all state mutations.
@@ -160,9 +158,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_REG_ACTIVITY_FILTER':
       return StateActions.setRegActivityFilter(state, action.filter)
-
-    case 'REPLACE_IMPORTED_STATE':
-      return StateActions.replaceImportedState(state, action.data)
 
     default:
       return state

@@ -15,10 +15,8 @@ import {
   setRegAccount,
   toggleRegCategoryExpanded,
   setRegActivityFilter,
-  replaceImportedState,
 } from './state'
 import type { AppState, BalanceEntry } from './types'
-import type { ExportableState } from './importExport'
 
 describe('appReducer', () => {
   describe('CLOSE_POSITION', () => {
@@ -466,36 +464,6 @@ describe('appReducer', () => {
 
       expect(resultFromReducer.regActivityFilter).toBe(resultDirect.regActivityFilter)
       expect(resultFromReducer.regActivityFilter).toBe('With Activity')
-    })
-  })
-
-  describe('REPLACE_IMPORTED_STATE', () => {
-    it('dispatches to replaceImportedState state action', () => {
-      const state: AppState = initialState()
-
-      const data: ExportableState = {
-        accounts: [],
-        positions: [],
-        closedPositions: [],
-        transactions: [],
-        snapshots: [],
-        csvMappings: [],
-        customInstitutions: [],
-        balanceEntries: [],
-        priceSync: {
-          apiKey: '',
-          lastRun: null,
-        },
-        mutualFundSync: {
-          apiKey: '',
-          lastRun: null,
-        },
-      }
-
-      const resultFromReducer = appReducer(state, { type: 'REPLACE_IMPORTED_STATE', data })
-      const resultDirect = replaceImportedState(state, data)
-
-      expect(resultFromReducer).toEqual(resultDirect)
     })
   })
 })
