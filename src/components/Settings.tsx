@@ -1,17 +1,11 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import { getDriveAuthStatus, syncBackup } from '../lib/drive'
-import { deriveKey, generateSalt, type EncryptedEnvelope } from '../lib/crypto'
-import { loadPersistedApp, savePersistedApp } from '../lib/persist'
-import {
-  exportBackup,
-  downloadEnvelopeAsFile,
-  parseImportFile,
-  decryptImportEnvelope,
-  ImportDecryptError,
-  ImportMalformedFileError,
-} from '../lib/importExport'
+import { deriveKey, generateSalt } from '../lib/crypto'
+import { loadPersistedApp, savePersistedApp, clearPersistedApp } from '../lib/persist'
+import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
 import { DriveRestorePanel } from './DriveRestorePanel'
+import { ResetAppControl } from './ResetAppControl'
 
 export interface SettingsPageProps {
   state: AppState
@@ -33,6 +27,7 @@ export interface SettingsPageProps {
   runMutualFundSyncTrigger: () => Promise<void>
   tickerOverviewErrors: Record<string, string>
   mutualFundSyncErrors: Record<string, string>
+  onReset: () => void
 }
 
 /**
@@ -58,6 +53,7 @@ export function SettingsPage({
   runMutualFundSyncTrigger,
   tickerOverviewErrors,
   mutualFundSyncErrors,
+  onReset,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -76,14 +72,6 @@ export function SettingsPage({
   const [mfApiKeyInput, setMfApiKeyInput] = useState(state.mutualFundSync.apiKey)
   const [fetchingMutualFunds, setFetchingMutualFunds] = useState(false)
   const mutualFundSync = state.mutualFundSync
-
-  // Import/Export local state
-  const [importError, setImportError] = useState<string | null>(null)
-  const [importPasswordPrompt, setImportPasswordPrompt] = useState<EncryptedEnvelope | null>(null)
-  const [importPasswordInput, setImportPasswordInput] = useState('')
-  const [importing, setImporting] = useState(false)
-  const [importSuccess, setImportSuccess] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
@@ -161,65 +149,10 @@ export function SettingsPage({
     }
   }, [currentPasswordInput, newPasswordInput, confirmNewPasswordInput, sessionSalt, state, onKeyChange, onPasswordEntryTimeReset])
 
-  const handleImportFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const text = await file.text()
-    try {
-      const envelope = parseImportFile(text)
-      setImportPasswordPrompt(envelope)
-      setImportError(null)
-      setImportSuccess(null)
-    } catch (error) {
-      if (error instanceof ImportMalformedFileError) {
-        console.error('Import file is malformed:', error)
-      } else {
-        console.error('Failed to parse import file:', error)
-      }
-      setImportError("This file isn't a valid backup")
-      setImportPasswordPrompt(null)
-    }
-  }, [])
-
-  const handleImportPasswordSubmit = useCallback(async () => {
-    if (!importPasswordPrompt) return
-    setImportError(null)
-    setImporting(true)
-    try {
-      const decrypted = await decryptImportEnvelope(importPasswordPrompt, importPasswordInput)
-      const confirmed = window.confirm('This will replace your current positions and register data. Continue?')
-      if (!confirmed) {
-        setImportPasswordPrompt(null)
-        setImportPasswordInput('')
-        setImportError(null)
-        return
-      }
-      dispatch({ type: 'REPLACE_IMPORTED_STATE', data: decrypted })
-      setImportPasswordPrompt(null)
-      setImportPasswordInput('')
-      setImportError(null)
-      setImportSuccess('Import complete.')
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    } catch (error) {
-      if (error instanceof ImportDecryptError) {
-        setImportError('Incorrect password')
-        setImportPasswordInput('')
-      } else {
-        console.error('Unexpected error decrypting import file:', error)
-        setImportError('Failed to import backup')
-      }
-    } finally {
-      setImporting(false)
-    }
-  }, [importPasswordPrompt, importPasswordInput, dispatch])
-
-  const handleImportCancel = useCallback(() => {
-    setImportPasswordPrompt(null)
-    setImportPasswordInput('')
-    setImportError(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [])
+  const handleResetApp = useCallback(async () => {
+    await clearPersistedApp()
+    onReset()
+  }, [onReset])
 
   return (
     <div>
@@ -243,7 +176,7 @@ export function SettingsPage({
             readOnly
             onClick={() => setSettingsSection('importExport')}
           />
-          Import/Export
+          Download
         </label>
         <label className="seg-opt">
           <input
@@ -293,7 +226,7 @@ export function SettingsPage({
       {/* Import/Export section */}
       {settingsSection === 'importExport' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
-        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Import / Export</div>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Download</div>
         <button
           className="btn btn-primary blueprint"
           onClick={async () => {
@@ -307,62 +240,6 @@ export function SettingsPage({
         >
           Download Backup
         </button>
-
-        <div className="hr" style={{ marginTop: 'var(--space-5)', marginBottom: 'var(--space-5)' }} />
-
-        <div className="field">
-          <label>Restore from Backup File</label>
-          <input
-            type="file"
-            accept=".json,application/json"
-            className="input"
-            ref={fileInputRef}
-            onChange={handleImportFileChange}
-          />
-        </div>
-
-        {importPasswordPrompt && (
-          <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', backgroundColor: 'var(--color-bg-secondary)', borderRadius: '4px' }}>
-            <p style={{ fontSize: '0.9rem', marginBottom: 'var(--space-3)' }}>
-              Enter the encryption password for this backup file:
-            </p>
-            <input
-              type="password"
-              value={importPasswordInput}
-              onChange={(e) => setImportPasswordInput(e.target.value)}
-              placeholder="Backup password"
-              className="input"
-              style={{ marginBottom: 'var(--space-3)', width: '100%' }}
-              disabled={importing}
-            />
-            {importError && (
-              <p style={{ marginTop: 0, marginBottom: 'var(--space-3)', color: '#8a3c2e' }}>{importError}</p>
-            )}
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-              <button
-                className="btn btn-primary blueprint"
-                onClick={handleImportPasswordSubmit}
-                disabled={importing}
-              >
-                Submit
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={handleImportCancel}
-                disabled={importing}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {importError && !importPasswordPrompt && (
-          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{importError}</p>
-        )}
-        {importSuccess && (
-          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>{importSuccess}</p>
-        )}
       </section>
       )}
 
@@ -416,6 +293,18 @@ export function SettingsPage({
         {driveSyncWarning && (
           <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
         )}
+      </section>
+      )}
+
+      {/* Danger Zone section */}
+      {settingsSection === 'encryption' && (
+      <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Danger Zone</div>
+        <p className="text-muted" style={{ fontSize: '13px', marginBottom: 'var(--space-4)' }}>
+          This permanently deletes every encrypted account, position and transaction on this device. This cannot be
+          undone.
+        </p>
+        <ResetAppControl onReset={handleResetApp} />
       </section>
       )}
 

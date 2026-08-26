@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { PasswordGate } from './PasswordGate'
-import { initialState } from '../lib/state'
+import { initialState, replaceImportedState } from '../lib/state'
+import { buildExportableState } from '../lib/importExport'
 import * as cryptoModule from '../lib/crypto'
 import * as persistModule from '../lib/persist'
 import * as driveModule from '../lib/drive'
@@ -11,6 +12,24 @@ vi.mock('../lib/crypto', () => ({
   generateSalt: vi.fn(),
   decryptState: vi.fn(),
   encryptState: vi.fn(),
+  // Pure structural check (no crypto involved) — hand-written to mirror the
+  // real implementation in crypto.ts, since GateRestoreFromFilePanel's
+  // parseImportFile (via ../lib/importExport) depends on it to recognize a
+  // valid backup envelope.
+  detectEnvelopeShape: (value: unknown): 'absent' | 'legacy-plaintext' | 'encrypted' => {
+    if (value === undefined || value === null) return 'absent'
+    if (typeof value !== 'object') return 'legacy-plaintext'
+    const obj = value as Record<string, unknown>
+    if (
+      obj.version === 1 &&
+      typeof obj.salt === 'string' &&
+      typeof obj.iv === 'string' &&
+      typeof obj.ciphertext === 'string'
+    ) {
+      return 'encrypted'
+    }
+    return 'legacy-plaintext'
+  },
 }))
 
 vi.mock('../lib/persist', () => ({
@@ -298,11 +317,12 @@ describe('PasswordGate', () => {
   })
 
   describe('shape: absent — restore tab', () => {
-    it('renders tab-seg with "New Setup" and "Restore from Drive" tabs', () => {
+    it('renders tab-seg with "New Setup", "Restore from Drive" and "Restore from Backup File" tabs', () => {
       renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
       expect(screen.getByLabelText('New Setup')).toBeTruthy()
       expect(screen.getByLabelText('Restore from Drive')).toBeTruthy()
+      expect(screen.getByLabelText('Restore from Backup File')).toBeTruthy()
     })
 
     it('tab-seg is absent when shape="legacy-plaintext"', () => {
@@ -584,6 +604,162 @@ describe('PasswordGate', () => {
         expect(persistModule.clearPersistedApp).toHaveBeenCalled()
         expect(onReset).toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('shape: absent — restore-from-file tab', () => {
+    // A plausibly-shaped (but not actually encrypted) envelope: detectEnvelopeShape
+    // (hand-stubbed above) only checks structural shape, and deriveKey/decryptState
+    // are mocked per-test below, so no real crypto is involved.
+    function fakeEnvelope() {
+      return {
+        version: 1 as const,
+        salt: btoa('salt-bytes'),
+        iv: btoa('iv-bytes'),
+        ciphertext: btoa('ciphertext-bytes'),
+      }
+    }
+
+    function getFileInput(container: HTMLElement): HTMLInputElement {
+      return container.querySelector('input[type="file"]') as HTMLInputElement
+    }
+
+    it('clicking "Restore from Backup File" tab swaps title/subtitle and hides both other panels', () => {
+      renderPasswordGate({ shape: 'absent', onUnlock, onReset })
+
+      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+
+      // Both the tab label and the h1 title read "Restore from Backup File".
+      expect(screen.getByRole('heading', { name: 'Restore from Backup File' })).toBeTruthy()
+      expect(screen.getByText('Load your data from a backup file exported earlier.')).toBeTruthy()
+      expect(screen.queryByText('Set Encryption Password')).toBeFalsy()
+      expect(screen.queryByText('Restore from Google Drive')).toBeFalsy()
+    })
+
+    it('uploading a valid backup + correct password calls onUnlock(key, salt, mergedState) and never shows a confirm dialog', async () => {
+      const mockOnUnlock = vi.fn()
+      const confirmSpy = vi.spyOn(window, 'confirm')
+      const envelope = fakeEnvelope()
+      const restoredState = initialState()
+      restoredState.accounts = [
+        {
+          id: 'restored-acc',
+          accountNumber: '999',
+          name: 'Restored Account',
+          retirement: false,
+          createdAt: '2024-01-01',
+        },
+      ]
+      const exportable = buildExportableState(restoredState)
+      const backupKey = { fakeKeyFor: 'correct-password' } as unknown as CryptoKey
+
+      vi.mocked(cryptoModule.deriveKey).mockImplementation(async (password: string) => {
+        return { fakeKeyFor: password } as unknown as CryptoKey
+      })
+      vi.mocked(cryptoModule.decryptState).mockImplementation(async (_envelope, key) => {
+        if ((key as unknown as { fakeKeyFor: string }).fakeKeyFor === 'correct-password') {
+          return exportable as any
+        }
+        const err = new Error('bad key')
+        err.name = 'OperationError'
+        throw err
+      })
+
+      const { container } = renderPasswordGate({ shape: 'absent', onUnlock: mockOnUnlock, onReset })
+
+      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+
+      const file = new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' })
+      fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+      const passwordInput = await screen.findByPlaceholderText('Backup password')
+      fireEvent.change(passwordInput, { target: { value: 'correct-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+      await waitFor(() => {
+        expect(mockOnUnlock).toHaveBeenCalledTimes(1)
+      })
+
+      const [key, salt, mergedState] = mockOnUnlock.mock.calls[0]
+      expect(key).toEqual(backupKey)
+      expect(salt).toBeInstanceOf(Uint8Array)
+      const expectedMerged = replaceImportedState(initialState(), exportable)
+      expect(mergedState).toEqual(expectedMerged)
+      expect(confirmSpy).not.toHaveBeenCalled()
+    })
+
+    it('wrong password shows inline error and is retryable', async () => {
+      const envelope = fakeEnvelope()
+
+      vi.mocked(cryptoModule.deriveKey).mockImplementation(async (password: string) => {
+        return { fakeKeyFor: password } as unknown as CryptoKey
+      })
+      vi.mocked(cryptoModule.decryptState).mockImplementation(async (_envelope, key) => {
+        if ((key as unknown as { fakeKeyFor: string }).fakeKeyFor === 'correct-password') {
+          return initialState() as any
+        }
+        const err = new Error('bad key')
+        err.name = 'OperationError'
+        throw err
+      })
+
+      const { container } = renderPasswordGate({ shape: 'absent', onUnlock, onReset })
+
+      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+
+      const file = new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' })
+      fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+      const passwordInput = await screen.findByPlaceholderText('Backup password')
+      fireEvent.change(passwordInput, { target: { value: 'wrong-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+      expect(await screen.findByText('Incorrect password')).toBeTruthy()
+      expect(onUnlock).not.toHaveBeenCalled()
+
+      // Retry with the correct password.
+      const retryInput = screen.getByPlaceholderText('Backup password') as HTMLInputElement
+      fireEvent.change(retryInput, { target: { value: 'correct-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+      await waitFor(() => {
+        expect(onUnlock).toHaveBeenCalled()
+      })
+    })
+
+    it('malformed file shows inline error and no password prompt', async () => {
+      const { container } = renderPasswordGate({ shape: 'absent', onUnlock, onReset })
+
+      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+
+      const file = new File(['not json{{'], 'backup.json', { type: 'application/json' })
+      fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+      expect(await screen.findByText("This file isn't a valid backup")).toBeTruthy()
+      expect(screen.queryByPlaceholderText('Backup password')).toBeFalsy()
+      expect(onUnlock).not.toHaveBeenCalled()
+    })
+
+    it('tab-switching away and back preserves in-progress uploaded file/password state', async () => {
+      const envelope = fakeEnvelope()
+      const { container } = renderPasswordGate({ shape: 'absent', onUnlock, onReset })
+
+      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+
+      const file = new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' })
+      fireEvent.change(getFileInput(container), { target: { files: [file] } })
+
+      const passwordInput = await screen.findByPlaceholderText('Backup password')
+      fireEvent.change(passwordInput, { target: { value: 'in-progress-password' } })
+
+      // Switch to another tab and back.
+      fireEvent.click(screen.getByLabelText('New Setup'))
+      expect(screen.getByText('Set Encryption Password')).toBeTruthy()
+
+      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+
+      const restoredPasswordInput = screen.getByPlaceholderText('Backup password') as HTMLInputElement
+      expect(restoredPasswordInput.value).toBe('in-progress-password')
     })
   })
 })

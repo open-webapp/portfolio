@@ -134,6 +134,13 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 /**
+ * Decodes an envelope's base64 salt into raw bytes.
+ */
+export function getEnvelopeSaltBytes(envelope: EncryptedEnvelope): Uint8Array {
+  return base64ToBytes(envelope.salt)
+}
+
+/**
  * Derives the key from the given password and the envelope's own embedded
  * salt, then decrypts the envelope back into an ExportableState. Coalesces
  * every field against its default so an older/partial export file can't
@@ -143,7 +150,7 @@ function base64ToBytes(b64: string): Uint8Array {
  * rethrows any other decryption error unchanged.
  */
 export async function decryptImportEnvelope(envelope: EncryptedEnvelope, password: string): Promise<ExportableState> {
-  const saltBytes = base64ToBytes(envelope.salt)
+  const saltBytes = getEnvelopeSaltBytes(envelope)
   const key = await deriveKey(password, saltBytes)
 
   let decrypted: Partial<ExportableState>

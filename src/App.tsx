@@ -311,6 +311,14 @@ function App() {
     }
   }, [])
 
+  const handleBounceToGate = useCallback(() => {
+    setGateShape('absent')
+    setSessionKey(null)
+    setSessionSalt(null)
+    dispatch({ type: '__SET_STATE', newState: initialState() })
+    setIsHydrated(false)
+  }, [])
+
   const handleDisconnect = useCallback(async () => {
     setSyncing(true)
     try {
@@ -447,13 +455,7 @@ function App() {
           passwordEntryTimeRef.current = Date.now()
           lastActivityTimeRef.current = Date.now()
         }}
-        onReset={() => {
-          setGateShape('absent')
-          setSessionKey(null)
-          setSessionSalt(null)
-          dispatch({ type: '__SET_STATE', newState: initialState() })
-          setIsHydrated(false)
-        }}
+        onReset={handleBounceToGate}
         driveReady={driveReady}
         driveEmail={driveEmail}
         backupFileId={backupFileId}
@@ -520,6 +522,7 @@ function App() {
               onPasswordEntryTimeReset={() => {
                 passwordEntryTimeRef.current = Date.now()
               }}
+              onReset={handleBounceToGate}
               driveReady={driveReady}
               driveEmail={driveEmail}
               backupFileId={backupFileId}

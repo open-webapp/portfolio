@@ -23,7 +23,7 @@ Closed positions are viewable per-account on the Accounts page via a Closed Posi
 
 ## Price Sync
 
-Settings > "Quotes API Key" tab (alongside Drive Sync, Import/Export, and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
+Settings > "Quotes API Key" tab (alongside Drive Sync, Download, and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
 
 Mutual Fund holdings sync separately via Alphavantage — see "## Mutual Fund Price Sync" below.
 
@@ -174,7 +174,7 @@ When the user clicks "Restore from Drive" on the Restore tab (PasswordGate) or S
 
 ## Import/Export
 
-Settings > "Import/Export" tab (between Google Drive and Encryption). Fully local file download/upload — no Google Drive interaction, independent of Drive sync/auth state.
+Settings > "Download" tab (between Google Drive and Encryption; module code is `importExport.ts`, internal `settingsSection` value `'importExport'`). Fully local file download — no Google Drive interaction, independent of Drive sync/auth state.
 
 ### Download
 
@@ -184,12 +184,4 @@ Settings > "Import/Export" tab (between Google Drive and Encryption). Fully loca
 
 ### Upload
 
-- File input (`accept=".json,application/json"`) below the download button.
-- Selected file is parsed/validated (`parseImportFile`) *before* any password is requested.
-  - Not valid JSON, or not shaped like an encrypted backup envelope → inline error "This file isn't a valid backup"; no password prompt appears at all.
-- Valid envelope → inline password prompt always appears, even if the currently-unlocked session password would work — import decrypts using the *file's own embedded salt*, not the session's salt/key.
-  - Wrong password → inline error "Incorrect password", prompt stays open, retryable (re-enter password without re-selecting the file).
-  - Correct password → `window.confirm` with exact text: "This will replace your current positions and register data. Continue?"
-    - Cancel → nothing happens: decrypted data discarded, no state change, prompt/errors cleared.
-    - Confirm → full replace (not merge) of `accounts`, `positions`, `closedPositions`, `transactions`, `snapshots`, `csvMappings`, `customInstitutions`, `balanceEntries`, plus `priceSync.apiKey`/`priceSync.lastRun` and `mutualFundSync.apiKey`/`mutualFundSync.lastRun`. Shows "Import complete." File input is reset (same file can be re-selected).
-- **Excluded from import/export** (left completely untouched): `priceSync.heldPrices`, `priceSync.lastFetchedDate`, `priceSync.callBudget`, `mutualFundSync.heldPrices`, `mutualFundSync.lastFetchedDate`, `mutualFundSync.callBudget` (quotes/price caches), and all UI-state fields (view, sort/filter selections, etc.).
+Restore-from-file moved to the pre-unlock password gate ("Restore from Backup File" tab) — no longer in Settings. See root `product-behavior.md`'s `## Password gate` section for current behavior.

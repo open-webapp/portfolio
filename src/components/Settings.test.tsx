@@ -59,10 +59,12 @@ vi.mock('../lib/drive', () => {
 })
 
 // Mock the persist module (used by the Change Password flow to verify the
-// current password and to save the re-encrypted blob under the new key)
+// current password and to save the re-encrypted blob under the new key, and
+// by the Reset App flow to wipe the local encrypted store)
 vi.mock('../lib/persist', () => ({
   loadPersistedApp: vi.fn(),
   savePersistedApp: vi.fn(),
+  clearPersistedApp: vi.fn(),
 }))
 
 // Mock window.alert and window.confirm
@@ -78,6 +80,7 @@ const mockHandleDisconnect = vi.fn()
 const mockSetSettingsSection = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
 const mockRunMutualFundSyncTrigger = vi.fn()
+const mockOnReset = vi.fn()
 
 // The Alphavantage sub-block is a plain <div>, not a labeled landmark, so it
 // has to be located structurally: it's the second `input[type="password"]`
@@ -157,6 +160,7 @@ describe('SettingsPage', () => {
       runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
       tickerOverviewErrors: {},
       mutualFundSyncErrors: {},
+      onReset: mockOnReset,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -1269,10 +1273,10 @@ describe('SettingsPage', () => {
   })
 
   describe('Import/Export', () => {
-    it('settingsSection="importExport" shows the Import/Export card only, with a Download Backup button', () => {
+    it('settingsSection="importExport" shows the Download card only, with a Download Backup button', () => {
       renderSettings({ settingsSection: 'importExport' })
 
-      expect(screen.getByText('Import / Export')).toBeTruthy()
+      expect(screen.getAllByText('Download').length).toBeGreaterThan(0)
       expect(screen.getByRole('button', { name: 'Download Backup' })).toBeTruthy()
       expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
       expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
@@ -1300,121 +1304,53 @@ describe('SettingsPage', () => {
       expect(filename).toMatch(/^ledger-backup-\d{4}-\d{2}-\d{2}\.json$/)
     })
 
-    describe('Restore from Backup File', () => {
-      async function buildBackupFile(password: string, state = initialState()) {
-        const salt = generateSalt()
-        const key = await deriveKey(password, salt)
-        const envelope = await encryptState(state, key, salt)
-        return {
-          file: new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' }),
-          state,
-        }
-      }
+    it('no longer renders a file input on the Download section (upload UI removed)', () => {
+      const { container } = renderSettings({ settingsSection: 'importExport' })
 
-      function getFileInput(container: HTMLElement): HTMLInputElement {
-        return container.querySelector('input[type="file"]') as HTMLInputElement
-      }
+      expect(container.querySelector('input[type="file"]')).toBeFalsy()
+    })
+  })
 
-      it('happy path: uploading a valid backup, entering the correct password, and confirming dispatches REPLACE_IMPORTED_STATE', async () => {
-        const backupState = initialState()
-        backupState.accounts = [
-          {
-            id: 'acc-import-1',
-            accountNumber: '777',
-            name: 'Imported Account',
-            retirement: false,
-            createdAt: '2024-01-01',
-          },
-        ]
-        const { file } = await buildBackupFile('correct-password', backupState)
-        vi.mocked(global.confirm).mockReturnValue(true)
+  describe('Danger Zone / Reset App', () => {
+    it('renders the Danger Zone card below Change Encryption Password on the encryption tab', () => {
+      const { container } = renderSettings({ settingsSection: 'encryption' })
 
-        const { container } = renderSettings({ settingsSection: 'importExport' })
+      expect(screen.getByText('Danger Zone')).toBeTruthy()
 
-        fireEvent.change(getFileInput(container), { target: { files: [file] } })
+      const sections = Array.from(container.querySelectorAll('section.card'))
+      const encryptionSectionIndex = sections.findIndex((s) =>
+        within(s as HTMLElement).queryAllByText('Change Encryption Password').length > 0
+      )
+      const dangerZoneIndex = sections.findIndex((s) =>
+        within(s as HTMLElement).queryByText('Danger Zone')
+      )
+      expect(encryptionSectionIndex).toBeGreaterThanOrEqual(0)
+      expect(dangerZoneIndex).toBeGreaterThan(encryptionSectionIndex)
+    })
 
-        const passwordInput = await screen.findByPlaceholderText('Backup password')
-        fireEvent.change(passwordInput, { target: { value: 'correct-password' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    it('reset flow: clicking Reset App, typing RESET, and confirming clears persisted app, calls onReset, and shows the toast', async () => {
+      vi.mocked(persistModule.clearPersistedApp).mockResolvedValue()
 
-        await waitFor(() => {
-          expect(mockDispatch).toHaveBeenCalledWith({
-            type: 'REPLACE_IMPORTED_STATE',
-            data: expect.objectContaining({
-              accounts: backupState.accounts,
-            }),
-          })
-        })
+      renderSettings({ settingsSection: 'encryption' })
 
-        await waitFor(() => {
-          expect(screen.getByText('Import complete.')).toBeTruthy()
-        })
+      fireEvent.click(screen.getByText('Reset App'))
+
+      const confirmInput = screen.getByPlaceholderText('RESET')
+      fireEvent.change(confirmInput, { target: { value: 'RESET' } })
+
+      const eraseButton = screen.getByRole('button', { name: 'Erase Everything' })
+      fireEvent.click(eraseButton)
+
+      await waitFor(() => {
+        expect(persistModule.clearPersistedApp).toHaveBeenCalledTimes(1)
       })
 
-      it('wrong password: shows "Incorrect password", does not dispatch REPLACE_IMPORTED_STATE, keeps the prompt open', async () => {
-        const { file } = await buildBackupFile('correct-password')
-
-        const { container } = renderSettings({ settingsSection: 'importExport' })
-
-        fireEvent.change(getFileInput(container), { target: { files: [file] } })
-
-        const passwordInput = await screen.findByPlaceholderText('Backup password')
-        fireEvent.change(passwordInput, { target: { value: 'wrong-password' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
-
-        await waitFor(() => {
-          expect(screen.getByText('Incorrect password')).toBeTruthy()
-        })
-
-        expect(mockDispatch).not.toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'REPLACE_IMPORTED_STATE' })
-        )
-        expect(screen.getByPlaceholderText('Backup password')).toBeTruthy()
+      await waitFor(() => {
+        expect(mockOnReset).toHaveBeenCalledTimes(1)
       })
 
-      it('malformed file: shows "This file isn\'t a valid backup", no password prompt, no dispatch', async () => {
-        const file = new File(['not json{{'], 'backup.json', { type: 'application/json' })
-
-        const { container } = renderSettings({ settingsSection: 'importExport' })
-
-        fireEvent.change(getFileInput(container), { target: { files: [file] } })
-
-        await waitFor(() => {
-          expect(screen.getByText("This file isn't a valid backup")).toBeTruthy()
-        })
-
-        expect(screen.queryByPlaceholderText('Backup password')).toBeFalsy()
-        expect(mockDispatch).not.toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'REPLACE_IMPORTED_STATE' })
-        )
-      })
-
-      it('confirm declined: correct password but window.confirm returns false clears the prompt without dispatching or showing success', async () => {
-        const { file } = await buildBackupFile('correct-password')
-        vi.mocked(global.confirm).mockReturnValue(false)
-
-        const { container } = renderSettings({ settingsSection: 'importExport' })
-
-        fireEvent.change(getFileInput(container), { target: { files: [file] } })
-
-        const passwordInput = await screen.findByPlaceholderText('Backup password')
-        fireEvent.change(passwordInput, { target: { value: 'correct-password' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
-
-        await waitFor(() => {
-          expect(global.confirm).toHaveBeenCalledWith(
-            'This will replace your current positions and register data. Continue?'
-          )
-        })
-
-        await waitFor(() => {
-          expect(screen.queryByPlaceholderText('Backup password')).toBeFalsy()
-        })
-
-        expect(mockDispatch).not.toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'REPLACE_IMPORTED_STATE' })
-        )
-        expect(screen.queryByText('Import complete.')).toBeFalsy()
+      await waitFor(() => {
+        expect(screen.getByText('App reset. All data wiped.')).toBeTruthy()
       })
     })
   })
