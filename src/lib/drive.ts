@@ -346,6 +346,38 @@ export async function getBackupFileId(): Promise<string | null> {
 }
 
 /**
+ * Status probe for a Drive backup file, addressed by id. Thin wrapper over
+ * drive-sync's `files.status` (via `withTimeout`) that returns only the
+ * display-relevant subset: whether the file still exists, its remote modified
+ * time, when it was last restored locally, and whether it has changed since
+ * that restore.
+ *
+ * Display only — the UI shows this next to the backup link; it never gates a
+ * sync or restore. `files.status` throwing (expired token, permission issue)
+ * propagates; the caller in App swallows it with `.catch(() => null)`.
+ */
+export async function getBackupFileStatus(fileId: string): Promise<{
+  exists: boolean
+  remoteModifiedTime?: string
+  lastRestoredAt?: string
+  changedSinceRestore: boolean
+}> {
+  const status = await withTimeout(
+    driveSync.project(APP_PROJECT_ID).files.status(fileId),
+    DRIVE_IO_TIMEOUT_MS,
+    'files.status'
+  )
+  return {
+    exists: status.exists,
+    remoteModifiedTime: status.remoteModifiedTime,
+    // drive-sync types `lastRestoredAt` as epoch-ms | null; surfaced verbatim
+    // for display, with null normalized to "not set".
+    lastRestoredAt: (status.lastRestoredAt ?? undefined) as string | undefined,
+    changedSinceRestore: status.changedSinceRestore,
+  }
+}
+
+/**
  * Reads a Drive file by id and decrypts it into an AppState. Used by
  * `restoreBackupFromFileId` (the file id comes from the user's Google
  * Picker selection — see `drive.project(id).pickFile()` above) so restore
@@ -439,6 +471,64 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
     console.error('Failed to restore backup from picked Drive file:', error)
     throw error
   }
+}
+
+/**
+ * Resolve a Drive-vs-local conflict by taking the remote backup wholesale:
+ * read the file at `fileId`, decrypt it, and hand back the resulting
+ * `AppState` for the caller to write locally. This is the "overwrite local
+ * with remote" resolution path — it deliberately does not consult
+ * `files.status`, so it works regardless of whether drive-sync would have
+ * reported the file as `remote-changed` or `never-restored`.
+ *
+ * Delegates the read + decrypt to the private `readAndDecryptFile`, which
+ * also advances the restore baseline (via `files.read`) and maps a
+ * wrong-password auth-tag mismatch to `DriveDecryptError`.
+ *
+ * @throws {DriveDecryptError} If the backup decrypts with an auth-tag
+ *   mismatch (wrong password/key) — propagated unchanged.
+ * @throws Throws if the Drive connection fails, the read fails, or the file
+ *   is empty/unreadable.
+ */
+export async function overwriteLocalWithRemote(fileId: string, key: CryptoKey): Promise<AppState> {
+  await ensureFreshConnection()
+  const restored = await readAndDecryptFile(fileId, key)
+  if (!restored) {
+    throw new Error('Drive backup is empty or unreadable')
+  }
+  return restored
+}
+
+/**
+ * Resolve a Drive-vs-local conflict by taking the local state wholesale and
+ * pushing it over the remote backup. The sole purpose of the `files.read` here
+ * is to adopt the remote's current version as the new restore baseline, so the
+ * subsequent `syncBackup` write is diffed against an up-to-date base rather
+ * than the stale one that triggered the conflict; the read content itself is
+ * discarded.
+ *
+ * `syncBackup` is reused verbatim — it re-lists the folder and writes with the
+ * freshly-adopted baseline. If it STILL throws `RemoteChangedError` (the remote
+ * moved again between this read and the write), that propagates unchanged:
+ * there is no retry loop, the caller decides what to do next.
+ *
+ * @throws {import('@open-webapp/drive-sync').RemoteChangedError} If the write
+ *   still races a concurrent remote change — propagated unchanged, not retried.
+ * @throws Throws if the Drive connection fails or the read/write fails.
+ */
+export async function overwriteRemoteWithLocal(
+  state: AppState,
+  key: CryptoKey,
+  salt: Uint8Array,
+  fileId: string
+): Promise<string> {
+  await ensureFreshConnection()
+  await withTimeout(
+    driveSync.project(APP_PROJECT_ID).files.read(fileId),
+    DRIVE_IO_TIMEOUT_MS,
+    'files.read (adopt baseline)'
+  )
+  return await syncBackup(state, key, salt)
 }
 
 /**

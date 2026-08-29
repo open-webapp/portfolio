@@ -9,6 +9,14 @@ import { peekEnvelopeShape, savePersistedApp } from './lib/persist'
 import { drive } from './lib/drive'
 import App from './App'
 
+const CONNECTED_AUTH_STATUS = {
+  connected: true,
+  email: 'test@gmail.com',
+  expiresAt: Date.now() + 3_600_000,
+  needsReauth: false,
+  tokenValid: true,
+}
+
 // Stable session key/salt used by the mocked PasswordGate's onUnlock callback.
 // Declared via vi.hoisted so it's initialized before the hoisted vi.mock factories run.
 // Also capture PasswordGate props for testing early Drive status checks.
@@ -46,6 +54,9 @@ vi.mock('./lib/drive', () => ({
   ensureFreshConnection: vi.fn(),
   disconnectDrive: vi.fn(),
   syncBackup: vi.fn(),
+  overwriteLocalWithRemote: vi.fn(),
+  overwriteRemoteWithLocal: vi.fn(),
+  getBackupFileStatus: vi.fn(),
 }))
 
 vi.mock('./lib/persist', () => ({
@@ -839,5 +850,161 @@ describe('auto-lock on inactivity', () => {
     })
 
     expect(screen.queryByText(/Auto Lock Test Acct/)).toBeFalsy()
+  })
+})
+
+describe('Drive sync conflict resolution', () => {
+  let alertSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(async () => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    mockUnlockLoadedState.current = undefined
+    alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue({ ...CONNECTED_AUTH_STATUS })
+    vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
+    vi.mocked(driveModule.syncBackup).mockReset()
+    vi.mocked(driveModule.overwriteLocalWithRemote).mockReset()
+    vi.mocked(driveModule.overwriteRemoteWithLocal).mockReset()
+    vi.mocked(driveModule.getBackupFileStatus).mockReset()
+    vi.mocked(driveModule.getBackupFileStatus).mockResolvedValue({
+      exists: true,
+      changedSinceRestore: true,
+    })
+  })
+
+  afterEach(() => {
+    alertSpy.mockRestore()
+    vi.mocked(console.error).mockRestore?.()
+    mockUnlockLoadedState.current = undefined
+  })
+
+  function remoteChangedError(reason = 'remote-changed') {
+    return Object.assign(new Error('File x changed on Drive since it was last restored'), {
+      name: 'RemoteChangedError',
+      reason,
+      fileId: 'file-1',
+    })
+  }
+
+  /** Unlock, wait for the Drive Sync button, click it. */
+  async function renderAndSync() {
+    const utils = await renderUnlockedApp()
+    const syncButton = await screen.findByTitle('Sync now')
+    fireEvent.click(syncButton)
+    return utils
+  }
+
+  it('(bug-reveal) opens SyncConflictDialog and does NOT alert "Sync failed" when syncBackup throws RemoteChangedError', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+
+    await renderAndSync()
+
+    expect(await screen.findByText('Drive backup changed')).toBeTruthy()
+    expect(alertSpy).not.toHaveBeenCalledWith(expect.stringContaining('Sync failed'))
+  })
+
+  it('(edge) opens the dialog even when the RemoteChangedError reason is "never-restored"', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError('never-restored'))
+
+    await renderAndSync()
+
+    expect(await screen.findByText('Drive backup changed')).toBeTruthy()
+    expect(alertSpy).not.toHaveBeenCalledWith(expect.stringContaining('Sync failed'))
+  })
+
+  it('(happy — take remote) overwriteLocalWithRemote is called with (fileId, key) and the dialog closes', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+    vi.mocked(driveModule.getBackupFileStatus).mockResolvedValue({
+      exists: true,
+      changedSinceRestore: true,
+      remoteModifiedTime: '2026-02-01T10:00:00Z',
+      lastRestoredAt: '2026-01-15T09:00:00Z',
+    })
+    const restoredState = initialState()
+    vi.mocked(driveModule.overwriteLocalWithRemote).mockResolvedValue(restoredState)
+
+    await renderAndSync()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite local with remote' }))
+
+    await waitFor(() => {
+      expect(driveModule.overwriteLocalWithRemote).toHaveBeenCalledWith('file-1', mockSessionKey)
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+    })
+  })
+
+  it('(happy — push local) overwriteRemoteWithLocal is called with (state, key, salt, fileId), dialog closes, alerts "Synced to Drive"', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+    vi.mocked(driveModule.overwriteRemoteWithLocal).mockResolvedValue('file-1')
+
+    await renderAndSync()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite remote with local' }))
+
+    await waitFor(() => {
+      expect(driveModule.overwriteRemoteWithLocal).toHaveBeenCalledWith(
+        expect.any(Object),
+        mockSessionKey,
+        mockSessionSalt,
+        'file-1'
+      )
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+    })
+    expect(alertSpy).toHaveBeenCalledWith('Synced to Drive')
+  })
+
+  it('(edge — push race) a RemoteChangedError from overwriteRemoteWithLocal keeps the dialog open with a generic inline error, no retry, no success alert', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+    vi.mocked(driveModule.overwriteRemoteWithLocal).mockRejectedValue({ name: 'RemoteChangedError' })
+
+    await renderAndSync()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite remote with local' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy()
+    })
+    expect(screen.getByText('Drive backup changed')).toBeTruthy()
+    expect(driveModule.overwriteRemoteWithLocal).toHaveBeenCalledTimes(1)
+    expect(alertSpy).not.toHaveBeenCalledWith('Synced to Drive')
+  })
+
+  it('(edge — other error) a plain Error from syncBackup takes the existing alert path and shows no dialog', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(new Error('network down'))
+
+    await renderAndSync()
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith('Sync failed: network down')
+    })
+    expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+  })
+
+  it('(edge) Cancel unmounts the dialog and calls no resolution helper', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+
+    await renderAndSync()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+    })
+    expect(driveModule.overwriteLocalWithRemote).not.toHaveBeenCalled()
+    expect(driveModule.overwriteRemoteWithLocal).not.toHaveBeenCalled()
   })
 })

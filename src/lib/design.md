@@ -58,6 +58,26 @@ DriveRestorePanel → [Restore from Drive button clicked] → showPicker = true 
 
 Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong backup-password submit), the cross-password prompt renders its own `DriveFilePickerDialog` ("Pick a file" button) inline — picking a file there re-attempts `restoreBackupFromFileId` with the newly picked file id, chaining into a fresh cross-password prompt if that also decrypts wrong. The original dialog's `showPicker` is cleared before this fallback appears (see above), so only one "Pick a file" button is ever on screen at a time.
 
+### Sync Conflict
+
+Manual Sync button → `App.tsx` `handleSync` → `syncBackup(state, key, salt)` throws `RemoteChangedError` (drive-sync; `reason` = `'remote-changed'` | `'never-restored'`) → caught via `error.name === 'RemoteChangedError'` string match (not `instanceof`)
+  ├─ `fileId = backupFileId ?? error.fileId ?? await getBackupFileId()`; none → existing `alert('Sync failed: …')`, no dialog
+  └─ `getBackupFileStatus(fileId).catch(() => null)` → `setSyncConflict({ fileId, remoteModifiedTime, lastRestoredAt })` → `<SyncConflictDialog>` (`src/components/SyncConflictDialog.tsx`; owns local `busy` + `inlineError`, all buttons disabled while pending)
+     ├─ Overwrite local with remote → `handleConflictTakeRemote` → `overwriteLocalWithRemote(fileId, key)` → `dispatch({ type: '__SET_STATE', newState })` → `setSyncConflict(null)` (debounced local-persist effect saves after; no explicit persist call)
+     ├─ Overwrite remote with local → `handleConflictPushLocal` → `overwriteRemoteWithLocal(state, key, salt, fileId)` → `setBackupFileId` → `setSyncConflict(null)` → `alert('Synced to Drive')`
+     └─ Cancel → `setSyncConflict(null)`, no change on either side
+
+Non-`RemoteChangedError` throws from `syncBackup` keep the old `alert('Sync failed: …')`.
+
+Dialog error handling (both overwrite props are async, may throw):
+- `DriveDecryptError` (matched by `err.name`) → inline "This Drive backup was saved with a different password. Use Settings > Drive > Restore from Drive to enter it."; dialog stays mounted, no inline password input.
+- Any other throw (incl. a second `RemoteChangedError` from the re-write) → inline "Drive changed again — close and retry sync."; dialog stays open, no retry loop.
+
+New `drive.ts` exports:
+- `getBackupFileStatus(fileId): Promise<{ exists, remoteModifiedTime?, lastRestoredAt?, changedSinceRestore }>` — display-only status helper; thin `withTimeout` wrapper over `driveSync.project('app').files.status`; rejections propagate (caller does `.catch(() => null)`). Never gates a sync/restore.
+- `overwriteLocalWithRemote(fileId, key): Promise<AppState>` — `ensureFreshConnection` → reuses private `readAndDecryptFile` (advances drive-sync baseline via `files.read`; maps `OperationError` → `DriveDecryptError`); throws `Error('Drive backup is empty or unreadable')` on null; propagates `DriveDecryptError`.
+- `overwriteRemoteWithLocal(state, key, salt, fileId): Promise<string>` — `ensureFreshConnection` → `files.read(fileId)` to adopt the remote version as baseline (result discarded) → `return syncBackup(state, key, salt)`; a `RemoteChangedError` from that re-write propagates unchanged, NO retry.
+
 ### Balance Register
 
 `register.ts` — pure data-in/data-out module (no `AppState` coupling), consumed by `selectors.ts` and `RegisterPage.tsx`/`RegisterBalanceDialog.tsx` (not detailed here):
