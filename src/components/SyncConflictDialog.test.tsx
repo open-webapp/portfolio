@@ -42,6 +42,14 @@ describe('SyncConflictDialog', () => {
     expect(screen.getByText(`Local copy restored: ${new Date(local).toLocaleString()}`)).toBeTruthy()
   })
 
+  it('formats localRestoredAt when given as epoch-ms (drive-sync surfaces it that way)', () => {
+    const localMs = Date.parse('2026-08-19T08:30:00.000Z')
+    renderDialog({ localRestoredAt: localMs })
+    expect(
+      screen.getByText(`Local copy restored: ${new Date(localMs).toLocaleString()}`)
+    ).toBeTruthy()
+  })
+
   it('renders an em dash when timestamps are omitted', () => {
     renderDialog()
     expect(screen.getByText('Remote backup updated: —')).toBeTruthy()
