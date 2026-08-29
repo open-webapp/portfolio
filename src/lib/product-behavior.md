@@ -172,6 +172,18 @@ When the user clicks "Restore from Drive" on the Restore tab (PasswordGate) or S
 - **Picker cancellation**: If the user closes the Picker dialog without selecting a file, the Picker can be reopened by clicking "Restore from Drive" again.
 - **OAuth + API key required**: Picker needs both a valid Google OAuth token and a configured Picker API key (`VITE_GOOGLE_PICKER_API_KEY`) to open. If a valid cached OAuth token exists, no auth window appears — Picker opens directly with the cached token. If the token is expired, the standard Google auth flow runs before Picker opens. A missing API key surfaces as an explicit error in the Picker fallback UI, not a silent failure.
 
+### Sync Conflict
+
+Manual "Sync to Drive" button only — no auto-sync path exists. Conflict is caught on write: `syncBackup` throws `RemoteChangedError` when the Drive file moved since this device's baseline. `reason` is either `'remote-changed'` (file modified since this device last restored) or `'never-restored'` (this device never established a baseline). Detected by `error.name` string match, not `instanceof`.
+
+- **File-id resolve**: known `backupFileId` → `error.fileId` → `getBackupFileId()`. None resolves → keeps the plain `alert('Sync failed: …')`, no dialog.
+- **Dialog** (title "Drive backup changed"): shows remote-backup modified time and local last-restored time — each `—` when missing or unparseable, else `new Date(iso).toLocaleString()`. Three buttons, all disabled while an action is pending; inline error region below the times.
+  - **Overwrite local with remote**: reads + decrypts the Drive file, applies it via `__SET_STATE`, closes the dialog. The existing debounced local-persist effect writes it to IndexedDB afterward — no explicit persist call. Advances the drive-sync restore baseline.
+  - **Overwrite remote with local**: `files.read` the remote file to adopt its version as the new baseline (content discarded), then re-writes local state with `syncBackup`. On success: records the backup file id, closes the dialog, `alert('Synced to Drive')`.
+  - **Cancel**: closes the dialog, nothing changes on either side.
+- **Wrong-password backup** (`DriveDecryptError` from either overwrite path, matched by `err.name`): inline text "This Drive backup was saved with a different password. Use Settings > Drive > Restore from Drive to enter it." Dialog stays mounted; no inline cross-password prompt — a differently-encrypted backup is Settings-only.
+- **Post-read (push) race** (remote moved again between the baseline read and the re-write — a second `RemoteChangedError`, or any other throw): generic inline error "Drive changed again — close and retry sync." Dialog stays open, no retry loop.
+
 ## Import/Export
 
 Settings > "Backup" tab, "Download" section (stacked below the Google Drive Sync section; module code is `importExport.ts`, internal `settingsSection` value `'backup'`). Fully local file download — no Google Drive interaction, independent of Drive sync/auth state.

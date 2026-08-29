@@ -8,7 +8,17 @@ import { AccountsPage } from './components/AccountsPage'
 import { RegisterPage } from './components/RegisterPage'
 import { QuotesPage } from './components/QuotesPage'
 import { PasswordGate } from './components/PasswordGate'
-import { drive, getDriveAuthStatus, getBackupFileId, syncBackup, ensureFreshConnection } from './lib/drive'
+import { SyncConflictDialog } from './components/SyncConflictDialog'
+import {
+  drive,
+  getDriveAuthStatus,
+  getBackupFileId,
+  syncBackup,
+  ensureFreshConnection,
+  overwriteLocalWithRemote,
+  overwriteRemoteWithLocal,
+  getBackupFileStatus,
+} from './lib/drive'
 import { runPriceSync } from './lib/priceSync'
 import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync } from './lib/selectors'
 import { syncTickerOverviews } from './lib/tickerOverview'
@@ -45,6 +55,11 @@ function App() {
   const [driveReady, setDriveReady] = useState(false)
   const [driveEmail, setDriveEmail] = useState<string | null>(null)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
+  const [syncConflict, setSyncConflict] = useState<{
+    fileId: string
+    remoteModifiedTime?: string
+    lastRestoredAt?: string
+  } | null>(null)
   const [tickerOverviewErrors, setTickerOverviewErrors] = useState<Record<string, string>>({})
   const [mutualFundSyncErrors, setMutualFundSyncErrors] = useState<Record<string, string>>({})
 
@@ -269,11 +284,38 @@ function App() {
       alert('Synced to Drive')
     } catch (error) {
       console.error('Sync failed:', error)
-      alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
+      if ((error as { name?: string })?.name === 'RemoteChangedError') {
+        const fileId = backupFileId ?? (error as { fileId?: string }).fileId ?? (await getBackupFileId())
+        if (!fileId) {
+          alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
+        } else {
+          const status = await getBackupFileStatus(fileId).catch(() => null)
+          setSyncConflict({
+            fileId,
+            remoteModifiedTime: status?.remoteModifiedTime,
+            lastRestoredAt: status?.lastRestoredAt,
+          })
+        }
+      } else {
+        alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
     } finally {
       setSyncing(false)
     }
-  }, [state, sessionKey, sessionSalt])
+  }, [state, sessionKey, sessionSalt, backupFileId])
+
+  const handleConflictTakeRemote = useCallback(async () => {
+    const newState = await overwriteLocalWithRemote(syncConflict!.fileId, sessionKey!)
+    dispatch({ type: '__SET_STATE', newState })
+    setSyncConflict(null)
+  }, [syncConflict, sessionKey])
+
+  const handleConflictPushLocal = useCallback(async () => {
+    const fileId = await overwriteRemoteWithLocal(state, sessionKey!, sessionSalt!, syncConflict!.fileId)
+    setBackupFileId(fileId)
+    setSyncConflict(null)
+    alert('Synced to Drive')
+  }, [state, sessionKey, sessionSalt, syncConflict])
 
   const handleConnect = useCallback(async () => {
     setSyncing(true)
@@ -540,6 +582,16 @@ function App() {
           </div>
         )}
       </div>
+
+      {syncConflict && (
+        <SyncConflictDialog
+          remoteModifiedTime={syncConflict.remoteModifiedTime}
+          localRestoredAt={syncConflict.lastRestoredAt}
+          onCancel={() => setSyncConflict(null)}
+          onOverwriteLocalWithRemote={handleConflictTakeRemote}
+          onOverwriteRemoteWithLocal={handleConflictPushLocal}
+        />
+      )}
     </div>
   )
 }
