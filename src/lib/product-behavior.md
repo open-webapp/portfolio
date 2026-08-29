@@ -23,7 +23,7 @@ Closed positions are viewable per-account on the Accounts page via a Closed Posi
 
 ## Price Sync
 
-Settings > "Quotes API Key" tab (alongside Drive Sync, Download, and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
+Settings > "Quotes API Key" tab (alongside Backup and Change Encryption Password) fetches daily closing prices for held Equity/ETF positions from Polygon.io.
 
 Mutual Fund holdings sync separately via Alphavantage — see "## Mutual Fund Price Sync" below.
 
@@ -160,7 +160,7 @@ The app does **not** automatically look up the backup file ID on load — file l
 
 ### Restore from Google Drive
 
-When the user clicks "Restore from Drive" on the Restore tab (PasswordGate) or Settings > Drive, a Google File Picker dialog opens immediately — there is no automatic lookup of a backup by name in the app's own folder first. Picker is the only restore entry point.
+When the user clicks "Restore from Drive" on the Restore tab (PasswordGate) or Settings > Backup tab, a Google File Picker dialog opens immediately — there is no automatic lookup of a backup by name in the app's own folder first. Picker is the only restore entry point.
 
 1. **Picker opens on click**: Picker's starting folder defaults to the app's own `OpenWebApp/Portfolio` Drive folder, but the user can navigate to any other folder they have access to using Picker's built-in navigation.
 2. **File selection**: After the user picks a file, the app asks for confirmation ("Restore will replace all data..."). Restore proceeds with the current session password via `restoreBackupFromFileId`.
@@ -174,7 +174,7 @@ When the user clicks "Restore from Drive" on the Restore tab (PasswordGate) or S
 
 ## Import/Export
 
-Settings > "Download" tab (between Google Drive and Encryption; module code is `importExport.ts`, internal `settingsSection` value `'importExport'`). Fully local file download — no Google Drive interaction, independent of Drive sync/auth state.
+Settings > "Backup" tab, "Download" section (stacked below the Google Drive Sync section; module code is `importExport.ts`, internal `settingsSection` value `'backup'`). Fully local file download — no Google Drive interaction, independent of Drive sync/auth state.
 
 ### Download
 

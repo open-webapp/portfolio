@@ -154,7 +154,7 @@ describe('SettingsPage', () => {
       setSyncing: mockSetSyncing,
       handleConnect: mockHandleConnect,
       handleDisconnect: mockHandleDisconnect,
-      settingsSection: 'drive',
+      settingsSection: 'backup',
       setSettingsSection: mockSetSettingsSection,
       runPriceSyncTrigger: mockRunPriceSyncTrigger,
       runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
@@ -362,10 +362,11 @@ describe('SettingsPage', () => {
   })
 
   describe('Section rendering', () => {
-    it('settingsSection="drive" shows the Drive card only', () => {
-      renderSettings({ settingsSection: 'drive' })
+    it('settingsSection="backup" shows both the Drive card and the Download card', () => {
+      renderSettings({ settingsSection: 'backup' })
 
       expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Download Backup' })).toBeTruthy()
       expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
     })
 
@@ -380,24 +381,24 @@ describe('SettingsPage', () => {
   })
 
   describe('Settings tab-seg', () => {
-    it('renders tab-seg with "Google Drive" and "Encryption" options', () => {
-      renderSettings({ settingsSection: 'drive' })
+    it('renders tab-seg with "Backup" and "Encryption" options', () => {
+      renderSettings({ settingsSection: 'backup' })
 
-      expect(screen.getByLabelText('Google Drive')).toBeTruthy()
+      expect(screen.getByLabelText('Backup')).toBeTruthy()
       expect(screen.getByLabelText('Encryption')).toBeTruthy()
     })
 
-    it('clicking Google Drive tab calls setSettingsSection with "drive"', () => {
+    it('clicking Backup tab calls setSettingsSection with "backup"', () => {
       renderSettings({ settingsSection: 'encryption' })
 
-      const googleDriveInput = screen.getByLabelText('Google Drive') as HTMLInputElement
-      fireEvent.click(googleDriveInput)
+      const backupInput = screen.getByLabelText('Backup') as HTMLInputElement
+      fireEvent.click(backupInput)
 
-      expect(mockSetSettingsSection).toHaveBeenCalledWith('drive')
+      expect(mockSetSettingsSection).toHaveBeenCalledWith('backup')
     })
 
     it('clicking Encryption tab calls setSettingsSection with "encryption"', () => {
-      renderSettings({ settingsSection: 'drive' })
+      renderSettings({ settingsSection: 'backup' })
 
       const encryptionInput = screen.getByLabelText('Encryption') as HTMLInputElement
       fireEvent.click(encryptionInput)
@@ -406,7 +407,7 @@ describe('SettingsPage', () => {
     })
 
     it('renders .hr divider immediately after the tab-seg', () => {
-      const { container } = renderSettings({ settingsSection: 'drive' })
+      const { container } = renderSettings({ settingsSection: 'backup' })
 
       const segDiv = container.querySelector('.seg')
       expect(segDiv).toBeTruthy()
@@ -1012,7 +1013,7 @@ describe('SettingsPage', () => {
 
   describe('Price Sync', () => {
     it('clicking the Price Sync tab shows the API key input and Fetch prices now button, and hides Drive/Encryption sections', () => {
-      renderSettings({ settingsSection: 'drive' })
+      renderSettings({ settingsSection: 'backup' })
 
       const priceSyncInput = screen.getByLabelText('Quotes API Key') as HTMLInputElement
       fireEvent.click(priceSyncInput)
@@ -1273,19 +1274,18 @@ describe('SettingsPage', () => {
   })
 
   describe('Import/Export', () => {
-    it('settingsSection="importExport" shows the Download card only, with a Download Backup button', () => {
-      renderSettings({ settingsSection: 'importExport' })
+    it('settingsSection="backup" shows the Download card (with Download Backup button) alongside the Drive card', () => {
+      renderSettings({ settingsSection: 'backup' })
 
       expect(screen.getAllByText('Download').length).toBeGreaterThan(0)
       expect(screen.getByRole('button', { name: 'Download Backup' })).toBeTruthy()
-      expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
       expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
     })
 
     it('clicking Download Backup exports the current state and triggers a download with a dated filename', async () => {
       const state = initialState()
 
-      renderSettings({ state, settingsSection: 'importExport' })
+      renderSettings({ state, settingsSection: 'backup' })
 
       const downloadButton = screen.getByRole('button', { name: 'Download Backup' })
       fireEvent.click(downloadButton)
@@ -1305,7 +1305,7 @@ describe('SettingsPage', () => {
     })
 
     it('no longer renders a file input on the Download section (upload UI removed)', () => {
-      const { container } = renderSettings({ settingsSection: 'importExport' })
+      const { container } = renderSettings({ settingsSection: 'backup' })
 
       expect(container.querySelector('input[type="file"]')).toBeFalsy()
     })
