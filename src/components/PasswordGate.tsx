@@ -66,6 +66,7 @@ interface GateShellProps {
   children: React.ReactNode
   onReset: () => Promise<void>
   tabControl?: React.ReactNode
+  noCardWrapper?: boolean
 }
 
 function GateShell({
@@ -74,6 +75,7 @@ function GateShell({
   children,
   onReset,
   tabControl,
+  noCardWrapper = false,
 }: GateShellProps) {
   return (
     <div
@@ -97,9 +99,11 @@ function GateShell({
             Ledger
           </div>
           <h1 style={{ margin: '0 0 6px' }}>{title}</h1>
-          <div className="text-muted" style={{ fontSize: '13px' }}>
-            {subtitle}
-          </div>
+          {subtitle && (
+            <div className="text-muted" style={{ fontSize: '13px' }}>
+              {subtitle}
+            </div>
+          )}
         </div>
 
         {tabControl && (
@@ -108,9 +112,13 @@ function GateShell({
           </div>
         )}
 
-        <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
-          {children}
-        </div>
+        {noCardWrapper ? (
+          children
+        ) : (
+          <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+            {children}
+          </div>
+        )}
 
         <div style={{ borderTop: '1px solid var(--color-divider)', paddingTop: 'var(--space-5)', textAlign: 'center' }}>
           <div className="text-muted" style={{ fontSize: '12px', lineHeight: 1.6, marginBottom: 'var(--space-3)' }}>
@@ -153,7 +161,7 @@ function SetPasswordScreen({
   const [submitting, setSubmitting] = useState(false)
 
   // Tab control for new vs restore (only in 'absent' shape)
-  const [gateTab, setGateTab] = useState<'new' | 'restore' | 'restoreFile'>('new')
+  const [gateTab, setGateTab] = useState<'new' | 'restore'>('new')
 
   // Dummy key/salt for restore panel initialization
   const [dummyKey, setDummyKey] = useState<CryptoKey | null>(null)
@@ -208,18 +216,9 @@ function SetPasswordScreen({
   }
 
   // Conditional title/subtitle based on tab
-  const title =
-    gateTab === 'new'
-      ? 'Set Encryption Password'
-      : gateTab === 'restore'
-        ? 'Restore from Google Drive'
-        : 'Restore from Backup File'
+  const title = gateTab === 'new' ? 'Set Encryption Password' : 'Restore'
   const subtitle =
-    gateTab === 'new'
-      ? 'Choose a password to encrypt your data on this device.'
-      : gateTab === 'restore'
-        ? 'Load your data stored in Google Drive.'
-        : 'Load your data from a backup file exported earlier.'
+    gateTab === 'new' ? 'Choose a password to encrypt your data on this device.' : ''
 
   // Tab control (only in 'absent' shape)
   const tabControl =
@@ -243,17 +242,7 @@ function SetPasswordScreen({
             readOnly
             onClick={() => setGateTab('restore')}
           />
-          Restore from Drive
-        </label>
-        <label className="seg-opt">
-          <input
-            type="radio"
-            name="gateTab"
-            checked={gateTab === 'restoreFile'}
-            readOnly
-            onClick={() => setGateTab('restoreFile')}
-          />
-          Restore from Backup File
+          Restore
         </label>
       </div>
     ) : null
@@ -264,9 +253,10 @@ function SetPasswordScreen({
       subtitle={subtitle}
       onReset={onReset}
       tabControl={tabControl}
+      noCardWrapper
     >
       {/* New Setup Panel - always mounted, visibility toggled */}
-      <div style={{ display: gateTab === 'new' ? 'block' : 'none' }}>
+      <div className="card blueprint elev-sm" style={{ display: gateTab === 'new' ? 'block' : 'none' }}>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label>New password</label>
@@ -311,31 +301,31 @@ function SetPasswordScreen({
       {/* Restore Panel - only rendered in 'absent' shape, always mounted, visibility toggled */}
       {shape === 'absent' && (
         <div style={{ display: gateTab === 'restore' ? 'block' : 'none' }}>
-          {dummyKeyReady && dummyKey && dummySalt ? (
-            <DriveRestorePanel
-              driveReady={driveReady}
-              driveEmail={driveEmail}
-              backupFileId={backupFileId}
-              syncing={syncing}
-              setSyncing={setSyncing || (() => {})}
-              handleConnect={handleConnect || (() => {})}
-              handleDisconnect={handleDisconnect || (() => {})}
-              restoreKey={dummyKey}
-              restoreSalt={dummySalt}
-              onRestored={(state, key, salt) => onUnlock(key, salt, state)}
-            />
-          ) : (
-            <div style={{ padding: 'var(--space-3)', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-              Loading restore options...
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Restore-from-file Panel - only rendered in 'absent' shape, always mounted, visibility toggled */}
-      {shape === 'absent' && (
-        <div style={{ display: gateTab === 'restoreFile' ? 'block' : 'none' }}>
-          <GateRestoreFromFilePanel onUnlock={onUnlock} />
+          <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+            <div className="card-title">Google Drive</div>
+            {dummyKeyReady && dummyKey && dummySalt ? (
+              <DriveRestorePanel
+                driveReady={driveReady}
+                driveEmail={driveEmail}
+                backupFileId={backupFileId}
+                syncing={syncing}
+                setSyncing={setSyncing || (() => {})}
+                handleConnect={handleConnect || (() => {})}
+                handleDisconnect={handleDisconnect || (() => {})}
+                restoreKey={dummyKey}
+                restoreSalt={dummySalt}
+                onRestored={(state, key, salt) => onUnlock(key, salt, state)}
+              />
+            ) : (
+              <div style={{ padding: 'var(--space-3)', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                Loading restore options...
+              </div>
+            )}
+          </div>
+          <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+            <div className="card-title">Backup file</div>
+            <GateRestoreFromFilePanel onUnlock={onUnlock} />
+          </div>
         </div>
       )}
     </GateShell>

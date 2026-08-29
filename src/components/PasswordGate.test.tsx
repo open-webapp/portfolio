@@ -199,6 +199,19 @@ describe('PasswordGate', () => {
       expect(screen.queryByText('Confirm password')).toBeFalsy()
     })
 
+    it('still renders its subtitle and a single default card wrapper (no tab-seg, no card merge)', () => {
+      const { container } = renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
+
+      expect(
+        screen.getByText('Your data is encrypted on this device. Enter your password to unlock it.')
+      ).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Encryption Password' })).toBeTruthy()
+      // Single card wrapper around the unlock form; no restore cards.
+      expect(container.querySelectorAll('.card.blueprint.elev-sm')).toHaveLength(1)
+      expect(screen.queryByText('Google Drive')).toBeFalsy()
+      expect(screen.queryByText('Backup file')).toBeFalsy()
+    })
+
     it('correct password calls onUnlock(key, salt, loadedState)', async () => {
       const loaded = initialState()
       vi.mocked(persistModule.peekStoredSalt).mockResolvedValue(fakeSalt)
@@ -317,38 +330,41 @@ describe('PasswordGate', () => {
   })
 
   describe('shape: absent — restore tab', () => {
-    it('renders tab-seg with "New Setup", "Restore from Drive" and "Restore from Backup File" tabs', () => {
+    it('renders tab-seg with "New Setup" and "Restore" tabs', () => {
       renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
       expect(screen.getByLabelText('New Setup')).toBeTruthy()
-      expect(screen.getByLabelText('Restore from Drive')).toBeTruthy()
-      expect(screen.getByLabelText('Restore from Backup File')).toBeTruthy()
+      expect(screen.getByLabelText('Restore')).toBeTruthy()
+      // Exactly two tabs — the old 3-tab split is gone.
+      expect(document.querySelectorAll('.seg .seg-opt input[type="radio"]')).toHaveLength(2)
+      expect(screen.getAllByRole('radio')).toHaveLength(2)
     })
 
     it('tab-seg is absent when shape="legacy-plaintext"', () => {
       renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
 
       expect(screen.queryByLabelText('New Setup')).toBeFalsy()
-      expect(screen.queryByLabelText('Restore from Drive')).toBeFalsy()
+      expect(screen.queryByLabelText('Restore')).toBeFalsy()
     })
 
     it('tab-seg is absent when shape="encrypted"', () => {
       renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
 
       expect(screen.queryByLabelText('New Setup')).toBeFalsy()
-      expect(screen.queryByLabelText('Restore from Drive')).toBeFalsy()
+      expect(screen.queryByLabelText('Restore')).toBeFalsy()
     })
 
-    it('clicking "Restore from Drive" tab swaps title/subtitle and hides password-set form', () => {
+    it('clicking "Restore" tab shows h1 "Restore" and both restore cards', () => {
       renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
       expect(screen.getByText('Set Encryption Password')).toBeTruthy()
       expect(screen.getByText('Choose a password to encrypt your data on this device.')).toBeTruthy()
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
-      expect(screen.getByText('Restore from Google Drive')).toBeTruthy()
-      expect(screen.getByText('Load your data stored in Google Drive.')).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Restore' })).toBeTruthy()
+      expect(screen.getByText('Google Drive')).toBeTruthy()
+      expect(screen.getByText('Backup file')).toBeTruthy()
       // When restore tab is active, the new setup title should not be visible
       expect(screen.queryByText('Set Encryption Password')).toBeFalsy()
     })
@@ -361,8 +377,8 @@ describe('PasswordGate', () => {
       fireEvent.change(confirmInput, { target: { value: 'mysecretpassword' } })
 
       // Switch to restore tab
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
-      expect(screen.getByText('Restore from Google Drive')).toBeTruthy()
+      fireEvent.click(screen.getByLabelText('Restore'))
+      expect(screen.getByRole('heading', { name: 'Restore' })).toBeTruthy()
 
       // Switch back to new setup
       fireEvent.click(screen.getByLabelText('New Setup'))
@@ -377,7 +393,7 @@ describe('PasswordGate', () => {
     it('shows "Connect Google Account" button on restore tab when driveReady=false', async () => {
       renderPasswordGate({ shape: 'absent', onUnlock, onReset, driveReady: false })
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
@@ -394,7 +410,7 @@ describe('PasswordGate', () => {
         handleConnect: mockHandleConnect,
       })
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
@@ -426,7 +442,7 @@ describe('PasswordGate', () => {
         handleConnect: mockHandleConnect,
       })
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
@@ -476,7 +492,7 @@ describe('PasswordGate', () => {
         driveEmail: 'user@example.com',
       })
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
@@ -525,7 +541,7 @@ describe('PasswordGate', () => {
         driveEmail: 'user@example.com',
       })
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
@@ -566,7 +582,7 @@ describe('PasswordGate', () => {
         handleDisconnect: mockHandleDisconnect,
       })
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
         expect(screen.getByText('user@example.com')).toBeTruthy()
@@ -582,10 +598,10 @@ describe('PasswordGate', () => {
 
       renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
-      fireEvent.click(screen.getByLabelText('Restore from Drive'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
-        expect(screen.getByText('Restore from Google Drive')).toBeTruthy()
+        expect(screen.getByRole('heading', { name: 'Restore' })).toBeTruthy()
       })
 
       fireEvent.click(screen.getByText('Reset App'))
@@ -624,16 +640,15 @@ describe('PasswordGate', () => {
       return container.querySelector('input[type="file"]') as HTMLInputElement
     }
 
-    it('clicking "Restore from Backup File" tab swaps title/subtitle and hides both other panels', () => {
+    it('Backup file card is visible on the Restore tab alongside the Google Drive card', () => {
       renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
-      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
-      // Both the tab label and the h1 title read "Restore from Backup File".
-      expect(screen.getByRole('heading', { name: 'Restore from Backup File' })).toBeTruthy()
-      expect(screen.getByText('Load your data from a backup file exported earlier.')).toBeTruthy()
+      // Both restore cards mount at once under the single "Restore" tab.
+      expect(screen.getByText('Backup file')).toBeTruthy()
+      expect(screen.getByText('Google Drive')).toBeTruthy()
       expect(screen.queryByText('Set Encryption Password')).toBeFalsy()
-      expect(screen.queryByText('Restore from Google Drive')).toBeFalsy()
     })
 
     it('uploading a valid backup + correct password calls onUnlock(key, salt, mergedState) and never shows a confirm dialog', async () => {
@@ -667,7 +682,7 @@ describe('PasswordGate', () => {
 
       const { container } = renderPasswordGate({ shape: 'absent', onUnlock: mockOnUnlock, onReset })
 
-      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       const file = new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' })
       fireEvent.change(getFileInput(container), { target: { files: [file] } })
@@ -705,7 +720,7 @@ describe('PasswordGate', () => {
 
       const { container } = renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
-      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       const file = new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' })
       fireEvent.change(getFileInput(container), { target: { files: [file] } })
@@ -730,7 +745,7 @@ describe('PasswordGate', () => {
     it('malformed file shows inline error and no password prompt', async () => {
       const { container } = renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
-      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       const file = new File(['not json{{'], 'backup.json', { type: 'application/json' })
       fireEvent.change(getFileInput(container), { target: { files: [file] } })
@@ -744,7 +759,7 @@ describe('PasswordGate', () => {
       const envelope = fakeEnvelope()
       const { container } = renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
-      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       const file = new File([JSON.stringify(envelope)], 'backup.json', { type: 'application/json' })
       fireEvent.change(getFileInput(container), { target: { files: [file] } })
@@ -756,7 +771,7 @@ describe('PasswordGate', () => {
       fireEvent.click(screen.getByLabelText('New Setup'))
       expect(screen.getByText('Set Encryption Password')).toBeTruthy()
 
-      fireEvent.click(screen.getByLabelText('Restore from Backup File'))
+      fireEvent.click(screen.getByLabelText('Restore'))
 
       const restoredPasswordInput = screen.getByPlaceholderText('Backup password') as HTMLInputElement
       expect(restoredPasswordInput.value).toBe('in-progress-password')

@@ -197,4 +197,4 @@ Settings > "Backup" tab, "Download" section (stacked below the Google Drive Sync
 
 ### Upload
 
-Restore-from-file moved to the pre-unlock password gate ("Restore from Backup File" tab) — no longer in Settings. See root `product-behavior.md`'s `## Password gate` section for current behavior.
+Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup file" card — no longer in Settings. See root `product-behavior.md`'s `## Password gate` section for current behavior.
