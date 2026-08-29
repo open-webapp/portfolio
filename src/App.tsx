@@ -58,7 +58,7 @@ function App() {
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
     remoteModifiedTime?: string
-    lastRestoredAt?: string
+    lastRestoredAt?: number
   } | null>(null)
   const [tickerOverviewErrors, setTickerOverviewErrors] = useState<Record<string, string>>({})
   const [mutualFundSyncErrors, setMutualFundSyncErrors] = useState<Record<string, string>>({})
@@ -290,11 +290,43 @@ function App() {
           alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
         } else {
           const status = await getBackupFileStatus(fileId).catch(() => null)
-          setSyncConflict({
-            fileId,
-            remoteModifiedTime: status?.remoteModifiedTime,
-            lastRestoredAt: status?.lastRestoredAt,
-          })
+          const remoteMs = status?.remoteModifiedTime
+            ? new Date(status.remoteModifiedTime).getTime()
+            : NaN
+          const restoredMs = status?.lastRestoredAt ?? NaN
+          // A RemoteChangedError only means Drive's version counter moved past
+          // our baseline — which also happens on metadata-only server changes.
+          // When the remote's *content* modified-time is no newer than our last
+          // restore/write, this is spurious version drift: silently re-adopt the
+          // baseline and re-push local instead of confronting the user with a
+          // destructive three-way choice. Only a genuinely newer remote content
+          // time opens the conflict dialog.
+          const remoteContentIsNewer =
+            Number.isFinite(remoteMs) && Number.isFinite(restoredMs) && remoteMs > restoredMs
+          if (!remoteContentIsNewer && Number.isFinite(restoredMs)) {
+            try {
+              const resyncedFileId = await overwriteRemoteWithLocal(
+                state,
+                sessionKey!,
+                sessionSalt!,
+                fileId
+              )
+              setBackupFileId(resyncedFileId)
+              alert('Synced to Drive')
+            } catch {
+              setSyncConflict({
+                fileId,
+                remoteModifiedTime: status?.remoteModifiedTime,
+                lastRestoredAt: status?.lastRestoredAt,
+              })
+            }
+          } else {
+            setSyncConflict({
+              fileId,
+              remoteModifiedTime: status?.remoteModifiedTime,
+              lastRestoredAt: status?.lastRestoredAt,
+            })
+          }
         }
       } else {
         alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)

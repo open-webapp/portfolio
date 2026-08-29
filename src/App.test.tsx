@@ -869,9 +869,9 @@ describe('Drive sync conflict resolution', () => {
     vi.mocked(driveModule.overwriteLocalWithRemote).mockReset()
     vi.mocked(driveModule.overwriteRemoteWithLocal).mockReset()
     vi.mocked(driveModule.getBackupFileStatus).mockReset()
+    // Default: no timestamps → conflict path can't classify drift → dialog opens.
     vi.mocked(driveModule.getBackupFileStatus).mockResolvedValue({
       exists: true,
-      changedSinceRestore: true,
     })
   })
 
@@ -922,9 +922,8 @@ describe('Drive sync conflict resolution', () => {
     vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
     vi.mocked(driveModule.getBackupFileStatus).mockResolvedValue({
       exists: true,
-      changedSinceRestore: true,
       remoteModifiedTime: '2026-02-01T10:00:00Z',
-      lastRestoredAt: '2026-01-15T09:00:00Z',
+      lastRestoredAt: Date.parse('2026-01-15T09:00:00Z'),
     })
     const restoredState = initialState()
     vi.mocked(driveModule.overwriteLocalWithRemote).mockResolvedValue(restoredState)
@@ -1006,5 +1005,48 @@ describe('Drive sync conflict resolution', () => {
     })
     expect(driveModule.overwriteLocalWithRemote).not.toHaveBeenCalled()
     expect(driveModule.overwriteRemoteWithLocal).not.toHaveBeenCalled()
+  })
+
+  it('(bug-reveal — spurious version drift) when remote content is NOT newer than the last restore, re-pushes local silently with no dialog', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+    // Remote's content modified-time is one second BEFORE our last restore —
+    // the RemoteChangedError is version-counter drift, not a real remote edit.
+    vi.mocked(driveModule.getBackupFileStatus).mockResolvedValue({
+      exists: true,
+      remoteModifiedTime: '2026-08-22T08:36:40Z',
+      lastRestoredAt: Date.parse('2026-08-22T08:36:41Z'),
+    })
+    vi.mocked(driveModule.overwriteRemoteWithLocal).mockResolvedValue('file-1')
+
+    await renderAndSync()
+
+    await waitFor(() => {
+      expect(driveModule.overwriteRemoteWithLocal).toHaveBeenCalledWith(
+        expect.any(Object),
+        mockSessionKey,
+        mockSessionSalt,
+        'file-1'
+      )
+    })
+    expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+    expect(alertSpy).toHaveBeenCalledWith('Synced to Drive')
+    expect(driveModule.overwriteLocalWithRemote).not.toHaveBeenCalled()
+  })
+
+  it('(edge — spurious drift, silent re-push fails) falls back to opening the dialog', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+    vi.mocked(driveModule.getBackupFileStatus).mockResolvedValue({
+      exists: true,
+      remoteModifiedTime: '2026-08-22T08:36:40Z',
+      lastRestoredAt: Date.parse('2026-08-22T08:36:41Z'),
+    })
+    vi.mocked(driveModule.overwriteRemoteWithLocal).mockRejectedValue(new Error('network down'))
+
+    await renderAndSync()
+
+    expect(await screen.findByText('Drive backup changed')).toBeTruthy()
+    expect(alertSpy).not.toHaveBeenCalledWith('Synced to Drive')
   })
 })

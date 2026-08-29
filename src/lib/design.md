@@ -62,7 +62,9 @@ Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong
 
 Manual Sync button → `App.tsx` `handleSync` → `syncBackup(state, key, salt)` throws `RemoteChangedError` (drive-sync; `reason` = `'remote-changed'` | `'never-restored'`) → caught via `error.name === 'RemoteChangedError'` string match (not `instanceof`)
   ├─ `fileId = backupFileId ?? error.fileId ?? await getBackupFileId()`; none → existing `alert('Sync failed: …')`, no dialog
-  └─ `getBackupFileStatus(fileId).catch(() => null)` → `setSyncConflict({ fileId, remoteModifiedTime, lastRestoredAt })` → `<SyncConflictDialog>` (`src/components/SyncConflictDialog.tsx`; owns local `busy` + `inlineError`, all buttons disabled while pending)
+  ├─ `getBackupFileStatus(fileId).catch(() => null)` → `remoteMs = Date.parse(remoteModifiedTime)`, `restoredMs = lastRestoredAt` (epoch ms)
+  ├─ **spurious version drift**: `restoredMs` finite AND remote content NOT newer (`!(remoteMs > restoredMs)`) → `RemoteChangedError` is a metadata-only Drive `version` bump, not a real remote edit → `overwriteRemoteWithLocal(state, key, salt, fileId)` silently → `setBackupFileId` → `alert('Synced to Drive')`, no dialog. That re-push throwing → fall through to the dialog.
+  └─ else (remote content genuinely newer, or no `lastRestoredAt` / status fetch failed) → `setSyncConflict({ fileId, remoteModifiedTime, lastRestoredAt })` → `<SyncConflictDialog>` (`src/components/SyncConflictDialog.tsx`; owns local `busy` + `inlineError`, all buttons disabled while pending)
      ├─ Overwrite local with remote → `handleConflictTakeRemote` → `overwriteLocalWithRemote(fileId, key)` → `dispatch({ type: '__SET_STATE', newState })` → `setSyncConflict(null)` (debounced local-persist effect saves after; no explicit persist call)
      ├─ Overwrite remote with local → `handleConflictPushLocal` → `overwriteRemoteWithLocal(state, key, salt, fileId)` → `setBackupFileId` → `setSyncConflict(null)` → `alert('Synced to Drive')`
      └─ Cancel → `setSyncConflict(null)`, no change on either side
@@ -74,7 +76,7 @@ Dialog error handling (both overwrite props are async, may throw):
 - Any other throw (incl. a second `RemoteChangedError` from the re-write) → inline "Drive changed again — close and retry sync."; dialog stays open, no retry loop.
 
 New `drive.ts` exports:
-- `getBackupFileStatus(fileId): Promise<{ exists, remoteModifiedTime?, lastRestoredAt?, changedSinceRestore }>` — display-only status helper; thin `withTimeout` wrapper over `driveSync.project('app').files.status`; rejections propagate (caller does `.catch(() => null)`). Never gates a sync/restore.
+- `getBackupFileStatus(fileId): Promise<{ exists, remoteModifiedTime?: string, lastRestoredAt?: number }>` — thin `withTimeout` wrapper over `driveSync.project('app').files.status`; `lastRestoredAt` is epoch ms (`null` → `undefined`). Deliberately omits drive-sync's `changedSinceRestore` (a Drive `version`-counter compare that also trips on metadata-only server changes). Detection is by the thrown `RemoteChangedError`; `remoteModifiedTime` vs `lastRestoredAt` only distinguishes a real remote edit from spurious version drift. Rejections propagate (caller does `.catch(() => null)`). Never gates a sync/restore.
 - `overwriteLocalWithRemote(fileId, key): Promise<AppState>` — `ensureFreshConnection` → reuses private `readAndDecryptFile` (advances drive-sync baseline via `files.read`; maps `OperationError` → `DriveDecryptError`); throws `Error('Drive backup is empty or unreadable')` on null; propagates `DriveDecryptError`.
 - `overwriteRemoteWithLocal(state, key, salt, fileId): Promise<string>` — `ensureFreshConnection` → `files.read(fileId)` to adopt the remote version as baseline (result discarded) → `return syncBackup(state, key, salt)`; a `RemoteChangedError` from that re-write propagates unchanged, NO retry.
 

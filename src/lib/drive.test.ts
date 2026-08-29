@@ -332,13 +332,14 @@ describe('conflict-reconcile helpers', () => {
 
   describe('getBackupFileStatus (T2)', () => {
     it('maps the display subset from a resolved files.status', async () => {
+      const restoredAt = Date.parse('2026-08-27T09:00:00Z')
       mockFilesStatus.mockResolvedValue({
         fileId: 'file-1',
         exists: true,
         baseVersion: '10',
         remoteVersion: '11',
         remoteModifiedTime: '2026-08-28T10:00:00Z',
-        lastRestoredAt: '2026-08-27T09:00:00Z',
+        lastRestoredAt: restoredAt,
         changedSinceRestore: true,
       })
 
@@ -348,21 +349,22 @@ describe('conflict-reconcile helpers', () => {
       expect(result).toEqual({
         exists: true,
         remoteModifiedTime: '2026-08-28T10:00:00Z',
-        lastRestoredAt: '2026-08-27T09:00:00Z',
-        changedSinceRestore: true,
+        lastRestoredAt: restoredAt,
       })
+      // The version-counter flag is deliberately not surfaced.
+      expect('changedSinceRestore' in result).toBe(false)
     })
 
-    it('leaves optional times undefined when files.status omits them', async () => {
+    it('leaves optional fields undefined when files.status omits them', async () => {
       mockFilesStatus.mockResolvedValue({
         exists: false,
         changedSinceRestore: false,
+        lastRestoredAt: null,
       })
 
       const result = await getBackupFileStatus('missing')
 
       expect(result.exists).toBe(false)
-      expect(result.changedSinceRestore).toBe(false)
       expect(result.remoteModifiedTime).toBeUndefined()
       expect(result.lastRestoredAt).toBeUndefined()
     })

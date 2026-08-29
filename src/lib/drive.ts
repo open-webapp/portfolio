@@ -348,19 +348,25 @@ export async function getBackupFileId(): Promise<string | null> {
 /**
  * Status probe for a Drive backup file, addressed by id. Thin wrapper over
  * drive-sync's `files.status` (via `withTimeout`) that returns only the
- * display-relevant subset: whether the file still exists, its remote modified
- * time, when it was last restored locally, and whether it has changed since
- * that restore.
+ * subset the conflict path needs: whether the file still exists, its remote
+ * content-modified time (RFC3339), and when this client last restored/wrote
+ * it (epoch ms).
  *
- * Display only — the UI shows this next to the backup link; it never gates a
- * sync or restore. `files.status` throwing (expired token, permission issue)
- * propagates; the caller in App swallows it with `.catch(() => null)`.
+ * Deliberately does NOT surface drive-sync's `changedSinceRestore` flag: that
+ * is a Drive `version`-counter comparison that also trips on metadata-only
+ * server changes (a `viewedByMeTime` bump from our own read, a sharing
+ * touch), producing a "changed" verdict with no content change. The conflict
+ * path relies solely on the thrown `RemoteChangedError` for detection and on
+ * `remoteModifiedTime` vs `lastRestoredAt` to tell a real remote edit from
+ * spurious version drift.
+ *
+ * `files.status` throwing (expired token, permission issue) propagates; the
+ * caller in App swallows it with `.catch(() => null)`.
  */
 export async function getBackupFileStatus(fileId: string): Promise<{
   exists: boolean
   remoteModifiedTime?: string
-  lastRestoredAt?: string
-  changedSinceRestore: boolean
+  lastRestoredAt?: number
 }> {
   const status = await withTimeout(
     driveSync.project(APP_PROJECT_ID).files.status(fileId),
@@ -370,10 +376,8 @@ export async function getBackupFileStatus(fileId: string): Promise<{
   return {
     exists: status.exists,
     remoteModifiedTime: status.remoteModifiedTime,
-    // drive-sync types `lastRestoredAt` as epoch-ms | null; surfaced verbatim
-    // for display, with null normalized to "not set".
-    lastRestoredAt: (status.lastRestoredAt ?? undefined) as string | undefined,
-    changedSinceRestore: status.changedSinceRestore,
+    // drive-sync types `lastRestoredAt` as epoch-ms | null; normalize null → undefined.
+    lastRestoredAt: status.lastRestoredAt ?? undefined,
   }
 }
 

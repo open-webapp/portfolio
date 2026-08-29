@@ -2,7 +2,8 @@ import { useState } from 'react'
 
 export interface SyncConflictDialogProps {
   remoteModifiedTime?: string
-  localRestoredAt?: string
+  /** RFC3339 string or epoch-ms (drive-sync surfaces `lastRestoredAt` as epoch-ms). */
+  localRestoredAt?: string | number
   onOverwriteLocalWithRemote: () => Promise<void>
   onOverwriteRemoteWithLocal: () => Promise<void>
   onCancel: () => void
@@ -12,9 +13,9 @@ const CROSS_PASSWORD_MESSAGE =
   'This Drive backup was saved with a different password. Use Settings > Drive > Restore from Drive to enter it.'
 const GENERIC_MESSAGE = 'Drive changed again — close and retry sync.'
 
-function formatTimestamp(iso?: string): string {
-  if (!iso) return '—'
-  const parsed = new Date(iso)
+function formatTimestamp(value?: string | number): string {
+  if (value === undefined || value === '') return '—'
+  const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return '—'
   return parsed.toLocaleString()
 }
