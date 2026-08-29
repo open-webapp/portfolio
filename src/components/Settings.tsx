@@ -21,8 +21,8 @@ export interface SettingsPageProps {
   setSyncing: (v: boolean) => void
   handleConnect: () => void
   handleDisconnect: () => void
-  settingsSection: 'drive' | 'importExport' | 'encryption' | 'priceSync'
-  setSettingsSection: (s: 'drive' | 'importExport' | 'encryption' | 'priceSync') => void
+  settingsSection: 'backup' | 'encryption' | 'priceSync'
+  setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
   runMutualFundSyncTrigger: () => Promise<void>
   tickerOverviewErrors: Record<string, string>
@@ -162,21 +162,11 @@ export function SettingsPage({
           <input
             type="radio"
             name="settingsSection"
-            checked={settingsSection === 'drive'}
+            checked={settingsSection === 'backup'}
             readOnly
-            onClick={() => setSettingsSection('drive')}
+            onClick={() => setSettingsSection('backup')}
           />
-          Google Drive
-        </label>
-        <label className="seg-opt">
-          <input
-            type="radio"
-            name="settingsSection"
-            checked={settingsSection === 'importExport'}
-            readOnly
-            onClick={() => setSettingsSection('importExport')}
-          />
-          Download
+          Backup
         </label>
         <label className="seg-opt">
           <input
@@ -202,7 +192,7 @@ export function SettingsPage({
       <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
 
       {/* Google Drive Sync section */}
-      {settingsSection === 'drive' && (
+      {settingsSection === 'backup' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Google Drive Sync</div>
         <DriveRestorePanel
@@ -224,7 +214,7 @@ export function SettingsPage({
       )}
 
       {/* Import/Export section */}
-      {settingsSection === 'importExport' && (
+      {settingsSection === 'backup' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Download</div>
         <button
