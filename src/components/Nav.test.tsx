@@ -13,7 +13,7 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
   return {
     state,
     dispatch: vi.fn(),
-    driveReady: false,
+    connected: false,
     syncing: false,
     handleSync: vi.fn(),
     onOpenSettings: vi.fn(),
@@ -115,34 +115,42 @@ describe('Nav', () => {
     expect(screen.getByRole('img', { name: /Ledger logo/i })).toBeTruthy()
   })
 
-  // Test case 6a: driveReady = true → sync icon renders
-  it('driveReady = true → sync icon renders with title="Sync now"', () => {
-    const props = makeProps({ driveReady: true })
+  // Test case 6a: connected = true → sync icon renders and is enabled
+  it('connected = true → sync icon renders with title="Sync now" and is enabled', () => {
+    const props = makeProps({ connected: true })
     render(<Nav {...props} />)
 
-    expect(screen.getByTitle('Sync now')).toBeTruthy()
+    const syncButton = screen.getByTitle('Sync now') as HTMLButtonElement
+    expect(syncButton).toBeTruthy()
+    expect(syncButton.disabled).toBe(false)
   })
 
-  // Test case 6b: driveReady = false → sync icon does not render
-  it('driveReady = false → sync icon does not render', () => {
-    const props = makeProps({ driveReady: false })
+  // Test case 6b: connected = false → sync icon still renders but is disabled,
+  // and clicking it does not call handleSync
+  it('connected = false → sync icon renders but is disabled and does not call handleSync when clicked', () => {
+    const props = makeProps({ connected: false })
     render(<Nav {...props} />)
 
-    expect(screen.queryByTitle('Sync now')).toBeFalsy()
+    const syncButton = screen.getByTitle('Sync now') as HTMLButtonElement
+    expect(syncButton).toBeTruthy()
+    expect(syncButton.disabled).toBe(true)
+
+    fireEvent.click(syncButton)
+    expect(props.handleSync).not.toHaveBeenCalled()
   })
 
-  // Test case 7: driveReady = true, syncing = true → sync icon is disabled
-  it('driveReady = true, syncing = true → sync icon is disabled', () => {
-    const props = makeProps({ driveReady: true, syncing: true })
+  // Test case 7: connected = true, syncing = true → sync icon is disabled
+  it('connected = true, syncing = true → sync icon is disabled', () => {
+    const props = makeProps({ connected: true, syncing: true })
     render(<Nav {...props} />)
 
     const syncButton = screen.getByTitle('Sync now') as HTMLButtonElement
     expect(syncButton.disabled).toBe(true)
   })
 
-  // Test case 8: Clicking sync icon calls handleSync
-  it('clicking sync icon calls handleSync mock', () => {
-    const props = makeProps({ driveReady: true })
+  // Test case 8: Clicking sync icon (connected, not syncing) calls handleSync
+  it('clicking sync icon calls handleSync mock when connected', () => {
+    const props = makeProps({ connected: true })
     render(<Nav {...props} />)
 
     fireEvent.click(screen.getByTitle('Sync now'))

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Shared fake harness for the drive conflict-reconcile work (T1 spike).
@@ -18,7 +18,17 @@ const mockFilesWrite = vi.fn()
 const mockFilesList = vi.fn()
 const mockEnsureFolderPath = vi.fn()
 const mockPickFile = vi.fn()
-const mockGetConnection = vi.fn()
+
+// ---------------------------------------------------------------------------
+// T13 opt-in switch. When `mockT13.active` is true, the two `vi.mock`
+// factories below hand back a REAL `createDriveAuth` (via `vi.importActual`)
+// over a hand-built fake `driveSync` (`mockT13.driveSync`), so the T13
+// describe block can exercise the genuine single-`connectInFlight` popup
+// guard. Every other test in this file runs with `active` false and sees the
+// original fakes unchanged. `mock`-prefixed so the hoisted factories may
+// close over it.
+// ---------------------------------------------------------------------------
+const mockT13 = vi.hoisted(() => ({ active: false, driveSync: null as any }))
 
 const mockFakeProject = {
   files: {
@@ -29,13 +39,45 @@ const mockFakeProject = {
   },
   ensureFolderPath: mockEnsureFolderPath,
   pickFile: mockPickFile,
-  getConnection: mockGetConnection,
 }
 
+// ---------------------------------------------------------------------------
+// `@open-webapp/drive-connect` fake. `driveAuth` is created once at drive.ts
+// module load (`export const driveAuth = createDriveAuth(...)`), which runs
+// while this test file's `import { ... } from './drive'` is evaluated —
+// before any top-level `const` here is initialized. So the handle is built
+// INSIDE the (hoisted) factory; tests reach the same `ensureFresh` mock the
+// module captured by importing `driveAuth` from ./drive and asserting on
+// `driveAuth.ensureFresh` / `vi.mocked(driveAuth.ensureFresh)`.
+// ---------------------------------------------------------------------------
+vi.mock('@open-webapp/drive-connect', async () => {
+  const actual = await vi.importActual<typeof import('@open-webapp/drive-connect')>(
+    '@open-webapp/drive-connect'
+  )
+  return {
+    ...actual,
+    // Fake handle by default; the REAL `createDriveAuth` when a T13 test has
+    // flipped `mockT13.active` (so its shared `connectInFlight` guard runs for
+    // real over `mockT13.driveSync`).
+    createDriveAuth: vi.fn((opts: any) =>
+      mockT13.active
+        ? (actual.createDriveAuth as (o: any) => unknown)(opts)
+        : {
+            getStatus: vi.fn(),
+            subscribe: vi.fn(() => () => {}),
+            refresh: vi.fn(),
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+            ensureFresh: vi.fn(),
+            activate: vi.fn(() => () => {}),
+          }
+    ),
+  }
+})
+
 vi.mock('@open-webapp/drive-sync', () => ({
-  createDriveSync: () => ({
-    project: () => mockFakeProject,
-  }),
+  createDriveSync: () =>
+    mockT13.active ? mockT13.driveSync : { project: () => mockFakeProject },
   NeedsReauthError: class NeedsReauthError extends Error {
     constructor(message?: string) {
       super(message)
@@ -62,14 +104,18 @@ vi.mock('@open-webapp/drive-sync', () => ({
   },
 }))
 
-import { RemoteChangedError } from '@open-webapp/drive-sync'
+import { RemoteChangedError, NeedsReauthError } from '@open-webapp/drive-sync'
 import {
   createPortfolioSyncDocument,
   DriveDecryptError,
   drive,
+  driveAuth,
+  getBackupFileId,
   getBackupFileStatus,
   overwriteLocalWithRemote,
   overwriteRemoteWithLocal,
+  restoreBackupFromFileId,
+  syncBackup,
 } from './drive'
 import { encryptState, decryptState, generateSalt, deriveKey } from './crypto'
 import { initialState } from './state'
@@ -319,7 +365,15 @@ describe('conflict-reconcile helpers', () => {
     mockFilesList.mockReset()
     mockEnsureFolderPath.mockReset()
     mockPickFile.mockReset()
-    mockGetConnection.mockReset()
+    // drive-connect's ensureFresh gate: default to a resolved fake connection so
+    // content ops never try to open an interactive auth flow. Individual tests
+    // override with mockRejectedValue to exercise the failure path.
+    vi.mocked(driveAuth.ensureFresh).mockReset()
+    vi.mocked(driveAuth.ensureFresh).mockResolvedValue({
+      email: 'user@example.com',
+      needsReauth: false,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    } as never)
   })
 
   it('passes files.status / files.read / files.write through the drive wrapper unshadowed', () => {
@@ -383,13 +437,8 @@ describe('conflict-reconcile helpers', () => {
     beforeEach(async () => {
       salt = generateSalt()
       key = await deriveKey('password', salt)
-      // ensureFreshConnection() reads a connection; give it a usable token so
-      // the helper never tries to open an interactive auth flow.
-      mockGetConnection.mockResolvedValue({
-        email: 'user@example.com',
-        needsReauth: false,
-        expiresAt: Date.now() + 60 * 60 * 1000,
-      })
+      // driveAuth.ensureFresh() gates the helper; the parent beforeEach already
+      // resolves it to a usable fake connection.
     })
 
     it('reads + decrypts the remote file and returns the AppState (baseline-advance path)', async () => {
@@ -451,13 +500,8 @@ describe('conflict-reconcile helpers', () => {
         ...initialState(),
         accounts: [{ id: 'l1', name: 'Local Wins', institution: '', balance: 99 }],
       }
-      // ensureFreshConnection() reads a connection; give it a usable token so
-      // the helper never tries to open an interactive auth flow.
-      mockGetConnection.mockResolvedValue({
-        email: 'user@example.com',
-        needsReauth: false,
-        expiresAt: Date.now() + 60 * 60 * 1000,
-      })
+      // driveAuth.ensureFresh() gates the helper; the parent beforeEach already
+      // resolves it to a usable fake connection.
       // syncBackup's folder + list + write chain.
       mockEnsureFolderPath.mockResolvedValue('folder-1')
       mockFilesList.mockResolvedValue([{ id: 'file-1' }])
@@ -503,12 +547,297 @@ describe('conflict-reconcile helpers', () => {
       expect(mockFilesWrite).toHaveBeenCalledTimes(1)
     })
 
-    it('propagates a failing ensureFreshConnection before any read', async () => {
-      mockGetConnection.mockRejectedValue(new Error('connection boom'))
+    it('propagates a failing driveAuth.ensureFresh before any read', async () => {
+      vi.mocked(driveAuth.ensureFresh).mockReset()
+      vi.mocked(driveAuth.ensureFresh).mockRejectedValue(new Error('connection boom'))
 
       await expect(overwriteRemoteWithLocal(state, key, salt, 'file-1')).rejects.toThrow('connection boom')
       expect(mockFilesRead).not.toHaveBeenCalled()
       expect(mockFilesWrite).not.toHaveBeenCalled()
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The drive-connect `driveAuth.ensureFresh()` gate (T3).
+//
+// Every content op (syncBackup / restoreBackupFromFileId /
+// overwriteLocalWithRemote / overwriteRemoteWithLocal) must call
+// driveAuth.ensureFresh() and must do so BEFORE touching any drive I/O, so a
+// stale/expired token is refreshed (or the op aborts) before a request goes
+// out. `driveAuth` is imported from ./drive so these assertions hit the exact
+// mock instance the module captured at load.
+// ---------------------------------------------------------------------------
+describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => {
+  let key: CryptoKey
+  let salt: Uint8Array
+  let ensureFresh: ReturnType<typeof vi.mocked<typeof driveAuth.ensureFresh>>
+
+  beforeEach(async () => {
+    salt = generateSalt()
+    key = await deriveKey('password', salt)
+
+    mockFilesStatus.mockReset()
+    mockFilesRead.mockReset()
+    mockFilesWrite.mockReset()
+    mockFilesList.mockReset()
+    mockEnsureFolderPath.mockReset()
+    mockPickFile.mockReset()
+
+    ensureFresh = vi.mocked(driveAuth.ensureFresh)
+    ensureFresh.mockReset()
+    ensureFresh.mockResolvedValue({
+      email: 'user@example.com',
+      needsReauth: false,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    } as never)
+
+    // syncBackup's folder + list + write chain (shared by overwriteRemoteWithLocal).
+    mockEnsureFolderPath.mockResolvedValue('folder-1')
+    mockFilesList.mockResolvedValue([{ id: 'file-1' }])
+    mockFilesWrite.mockResolvedValue({ id: 'file-1' })
+  })
+
+  const encJson = async () => JSON.stringify(await encryptState(initialState(), key, salt))
+
+  describe('happy — ensureFresh() runs before any drive I/O', () => {
+    it('syncBackup calls ensureFresh() once, before ensureFolderPath / files.list / files.write', async () => {
+      await syncBackup(initialState(), key, salt)
+
+      expect(ensureFresh).toHaveBeenCalledTimes(1)
+      const gate = ensureFresh.mock.invocationCallOrder[0]
+      expect(gate).toBeLessThan(mockEnsureFolderPath.mock.invocationCallOrder[0])
+      expect(gate).toBeLessThan(mockFilesList.mock.invocationCallOrder[0])
+      expect(gate).toBeLessThan(mockFilesWrite.mock.invocationCallOrder[0])
+    })
+
+    it('restoreBackupFromFileId calls ensureFresh() once, before files.read', async () => {
+      mockFilesRead.mockResolvedValue(await encJson())
+
+      await restoreBackupFromFileId('file-1', key)
+
+      expect(ensureFresh).toHaveBeenCalledTimes(1)
+      expect(ensureFresh.mock.invocationCallOrder[0]).toBeLessThan(
+        mockFilesRead.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('overwriteLocalWithRemote calls ensureFresh() once, before files.read', async () => {
+      mockFilesRead.mockResolvedValue(await encJson())
+
+      await overwriteLocalWithRemote('file-1', key)
+
+      expect(ensureFresh).toHaveBeenCalledTimes(1)
+      expect(ensureFresh.mock.invocationCallOrder[0]).toBeLessThan(
+        mockFilesRead.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('overwriteRemoteWithLocal gates on ensureFresh() before files.read / files.write', async () => {
+      mockFilesRead.mockResolvedValue('remote-baseline')
+
+      await overwriteRemoteWithLocal(initialState(), key, salt, 'file-1')
+
+      // Called twice: once in overwriteRemoteWithLocal itself, then again inside
+      // the syncBackup it delegates the write to. The load-bearing property is
+      // that the FIRST call precedes every drive I/O.
+      expect(ensureFresh).toHaveBeenCalledTimes(2)
+      const gate = ensureFresh.mock.invocationCallOrder[0]
+      expect(gate).toBeLessThan(mockFilesRead.mock.invocationCallOrder[0])
+      expect(gate).toBeLessThan(mockFilesWrite.mock.invocationCallOrder[0])
+    })
+  })
+
+  describe('error — a rejecting ensureFresh() aborts the op before any drive I/O', () => {
+    beforeEach(() => {
+      ensureFresh.mockReset()
+      ensureFresh.mockRejectedValue(new Error('token refresh failed'))
+    })
+
+    it('syncBackup rejects with the same error and performs no files.* call', async () => {
+      await expect(syncBackup(initialState(), key, salt)).rejects.toThrow('token refresh failed')
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+      expect(mockFilesWrite).not.toHaveBeenCalled()
+    })
+
+    it('restoreBackupFromFileId rejects with the same error and never reads', async () => {
+      await expect(restoreBackupFromFileId('file-1', key)).rejects.toThrow('token refresh failed')
+      expect(mockFilesRead).not.toHaveBeenCalled()
+    })
+
+    it('overwriteLocalWithRemote rejects with the same error and never reads', async () => {
+      await expect(overwriteLocalWithRemote('file-1', key)).rejects.toThrow('token refresh failed')
+      expect(mockFilesRead).not.toHaveBeenCalled()
+    })
+
+    it('overwriteRemoteWithLocal rejects with the same error and never reads or writes', async () => {
+      await expect(
+        overwriteRemoteWithLocal(initialState(), key, salt, 'file-1')
+      ).rejects.toThrow('token refresh failed')
+      expect(mockFilesRead).not.toHaveBeenCalled()
+      expect(mockFilesWrite).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('regression — getBackupFileId stays a passive probe', () => {
+    it('returns null silently on NeedsReauthError and never calls driveAuth.ensureFresh', async () => {
+      mockEnsureFolderPath.mockRejectedValue(new NeedsReauthError('token expired'))
+
+      const result = await getBackupFileId()
+
+      expect(result).toBeNull()
+      expect(ensureFresh).not.toHaveBeenCalled()
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// T13 — single auth-popup race (the headline guarantee).
+//
+// Unlike every block above (which mocks `createDriveAuth` to a fake handle),
+// this block runs the REAL `createDriveAuth` from `@open-webapp/drive-connect`
+// over a hand-built fake `driveSync`. Opting in: set `mockT13.active = true`,
+// `vi.resetModules()`, then `await import('./drive')` so drive.ts is
+// re-evaluated with `createDriveSync()` -> `mockT13.driveSync` and
+// `createDriveAuth()` -> the genuine implementation (one `connectInFlight`
+// promise shared by `connect()` and `ensureFresh()`).
+//
+// Fake `driveSync` shape (what the real `createDriveAuth` touches):
+//   driveSync.activate()                       -> vi.fn(() => () => {})
+//   driveSync.project(id).getConnection()      -> current cached Connection | null
+//   driveSync.project(id).connect()            -> a DEFERRED promise we resolve/reject by hand
+//   driveSync.project(id).disconnect()         -> vi.fn (unused here)
+//   driveSync.project(id).ensureFolderPath()   -> 'folder-1'      (syncBackup's post-gate I/O)
+//   driveSync.project(id).files.list()         -> []              (no existing backup)
+//   driveSync.project(id).files.write()        -> { id: 'backup-file-id' }
+// ---------------------------------------------------------------------------
+describe('T13 — single auth-popup race (real createDriveAuth)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  const t13: {
+    mod: typeof import('./drive')
+    key: CryptoKey
+    salt: Uint8Array
+    connectPrimitive: ReturnType<typeof vi.fn>
+    connectDeferred: Promise<unknown>
+    resolveConnect: (value: unknown) => void
+    rejectConnect: (err: unknown) => void
+    connection: unknown
+    connected: { email: string; expiresAt: number; needsReauth: boolean }
+  } = {} as never
+
+  beforeEach(async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    t13.connected = { email: 'user@example.com', expiresAt: Date.now() + 60 * 60 * 1000, needsReauth: false }
+    t13.connection = null // default: no usable cached token -> forces the interactive path
+    t13.connectDeferred = new Promise((resolve, reject) => {
+      t13.resolveConnect = resolve
+      t13.rejectConnect = reject
+    })
+    // The interactive connect primitive. Returns whatever `t13.connectDeferred`
+    // currently is, so a test can re-arm it for a follow-up connect.
+    t13.connectPrimitive = vi.fn(() => t13.connectDeferred)
+
+    const project = {
+      getConnection: vi.fn(async () => t13.connection),
+      connect: t13.connectPrimitive,
+      disconnect: vi.fn(async () => {}),
+      ensureFolderPath: vi.fn(async () => 'folder-1'),
+      files: {
+        list: vi.fn(async () => [] as unknown[]),
+        write: vi.fn(async () => ({ id: 'backup-file-id' })),
+        read: vi.fn(async () => null),
+        status: vi.fn(async () => ({ exists: false })),
+      },
+    }
+    mockT13.driveSync = {
+      activate: vi.fn(() => () => {}),
+      project: vi.fn(() => project),
+    }
+    mockT13.active = true
+    vi.resetModules()
+    t13.mod = await import('./drive')
+
+    t13.salt = generateSalt()
+    t13.key = await deriveKey('password', t13.salt)
+  })
+
+  afterEach(() => {
+    mockT13.active = false
+    mockT13.driveSync = null
+    vi.resetModules()
+    vi.restoreAllMocks()
+  })
+
+  it('headline: connect() + syncBackup() in one tick share ONE interactive connect; both resolve off it', async () => {
+    t13.connection = null // no cached/valid token
+
+    const pConnect = t13.mod.driveAuth.connect()
+    const pEnsure = t13.mod.driveAuth.ensureFresh()
+    const pSync = t13.mod.syncBackup(initialState(), t13.key, t13.salt)
+
+    // Let ensureFresh()/syncBackup() get past getConnection() into the shared connect().
+    await flush()
+    expect(t13.connectPrimitive).toHaveBeenCalledTimes(1)
+
+    t13.resolveConnect(t13.connected)
+
+    const [c1, c2, fileId] = await Promise.all([pConnect, pEnsure, pSync])
+    expect(c1).toBe(t13.connected)
+    expect(c2).toBe(t13.connected) // same connection object, not a second flow
+    expect(c1).toBe(c2)
+    expect(fileId).toBe('backup-file-id')
+    expect(t13.connectPrimitive).toHaveBeenCalledTimes(1)
+  })
+
+  it('fast path: a still-valid cached token races with zero interactive connects', async () => {
+    t13.connection = { email: 'user@example.com', expiresAt: Date.now() + 30 * 60 * 1000, needsReauth: false }
+
+    const pEnsure = t13.mod.driveAuth.ensureFresh()
+    const pSync = t13.mod.syncBackup(initialState(), t13.key, t13.salt)
+
+    const [conn, fileId] = await Promise.all([pEnsure, pSync])
+    expect(t13.connectPrimitive).not.toHaveBeenCalled()
+    expect(conn).toBe(t13.connection)
+    expect(fileId).toBe('backup-file-id')
+  })
+
+  it('error: the shared connect rejects -> both callers reject; a later connect() starts a fresh interactive call', async () => {
+    t13.connection = null
+
+    const pConnect = t13.mod.driveAuth.connect()
+    const pSync = t13.mod.syncBackup(initialState(), t13.key, t13.salt)
+    await flush()
+    expect(t13.connectPrimitive).toHaveBeenCalledTimes(1)
+
+    const boom = new Error('user denied consent')
+    t13.rejectConnect(boom)
+
+    await expect(pConnect).rejects.toBe(boom)
+    await expect(pSync).rejects.toThrow('user denied consent')
+
+    // in-flight guard cleared in `finally` -> the next connect() is a NEW interactive call
+    t13.connectDeferred = new Promise((resolve) => {
+      t13.resolveConnect = resolve
+    })
+    const pConnect2 = t13.mod.driveAuth.connect()
+    await flush()
+    expect(t13.connectPrimitive).toHaveBeenCalledTimes(2)
+
+    t13.resolveConnect(t13.connected)
+    await expect(pConnect2).resolves.toBe(t13.connected)
+  })
+
+  it('sequential: ensureFresh() twice with a valid token -> zero interactive connects', async () => {
+    t13.connection = { email: 'user@example.com', expiresAt: Date.now() + 30 * 60 * 1000, needsReauth: false }
+
+    const c1 = await t13.mod.driveAuth.ensureFresh()
+    const c2 = await t13.mod.driveAuth.ensureFresh()
+
+    expect(c1).toBe(t13.connection)
+    expect(c2).toBe(t13.connection)
+    expect(t13.connectPrimitive).not.toHaveBeenCalled()
   })
 })

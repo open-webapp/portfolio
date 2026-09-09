@@ -1,3 +1,19 @@
+@import '@open-webapp/drive-connect/styles.css';
+
+/* Map @open-webapp/drive-connect widget tokens onto portfolio design tokens
+   (defined in src/styles/styles.css). Only tokens the shipped package CSS
+   actually references are declared here. */
+:root {
+  --owa-drive-gap: var(--space-3);
+  --owa-drive-font: var(--font-body);
+  --owa-drive-fg: var(--color-text);
+  --owa-drive-muted: var(--color-neutral-600);
+  --owa-drive-accent: var(--color-accent);
+  --owa-drive-accent-fg: var(--color-surface);
+  --owa-drive-danger: var(--color-text);
+  --owa-drive-radius: var(--radius-sm);
+}
+
 :root {
   color: rgba(255, 255, 255, 0.87);
   background-color: #242424;

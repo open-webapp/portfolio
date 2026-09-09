@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react'
+import { useDriveConnection } from '@open-webapp/drive-connect'
+import type { DriveAuthHandle } from '@open-webapp/drive-connect'
 import type { AppState } from '../lib/state'
 import {
   restoreBackupFromFileId,
@@ -66,30 +68,26 @@ function DriveFilePickerDialog({
 }
 
 export interface DriveRestorePanelProps {
-  driveReady: boolean
-  driveEmail: string | null
+  auth: DriveAuthHandle
   backupFileId: string | null
   syncing: boolean
   setSyncing: (v: boolean) => void
-  handleConnect: () => void
-  handleDisconnect: () => void
   restoreKey: CryptoKey
   restoreSalt: Uint8Array
   onRestored: (state: AppState, key: CryptoKey, salt: Uint8Array) => void
 }
 
 export function DriveRestorePanel({
-  driveReady,
-  driveEmail,
+  auth,
   backupFileId,
   syncing,
   setSyncing,
-  handleConnect,
-  handleDisconnect,
   restoreKey,
   restoreSalt,
   onRestored,
 }: DriveRestorePanelProps) {
+  const { connected } = useDriveConnection(auth)
+
   // Cross-password restore local state
   const [crossPasswordPrompt, setCrossPasswordPrompt] = useState<{
     salt: Uint8Array
@@ -131,41 +129,8 @@ export function DriveRestorePanel({
 
   return (
     <>
-      {/* Google Account Connection Status */}
-      {!driveReady ? (
-        <button className="btn btn-primary blueprint" onClick={handleConnect} disabled={syncing}>
-          {syncing ? 'Connecting...' : 'Connect Google Account'}
-        </button>
-      ) : (
-        <>
-          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-            <div style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--color-success)',
-              flexShrink: 0,
-            }} />
-            <span style={{ fontFamily: 'var(--sans-serif)', fontSize: '0.95rem' }}>{driveEmail}</span>
-          </div>
-          <span
-            onClick={handleDisconnect}
-            style={{
-              cursor: 'pointer',
-              textDecoration: 'underline',
-              fontSize: '0.85rem',
-              color: 'var(--text-muted)',
-              marginBottom: 'var(--space-4)',
-              display: 'inline-block',
-            }}
-          >
-            Disconnect
-          </span>
-        </>
-      )}
-
       {/* Restore Button */}
-      {driveReady && (
+      {connected && (
         <div style={{ marginTop: 'var(--space-4)' }}>
           <button className="btn btn-secondary" onClick={handleRestore} disabled={syncing}>
             {syncing ? 'Restoring...' : 'Restore from Drive'}
@@ -174,7 +139,7 @@ export function DriveRestorePanel({
       )}
 
       {/* Backup Link */}
-      {backupFileId && driveReady && (
+      {backupFileId && connected && (
         <div style={{ marginTop: 'var(--space-4)' }}>
           <a
             href={`https://drive.google.com/file/d/${backupFileId}/view`}
@@ -218,6 +183,7 @@ export function DriveRestorePanel({
               }
               console.error('Restore from picked file failed:', error)
               alert(`Restore failed: ${error instanceof Error ? error.message : String(error)}`)
+              if ((error as { name?: string })?.name === 'NeedsReauthError') auth.refresh()
             } finally {
               setSyncing(false)
             }

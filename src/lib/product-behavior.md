@@ -154,9 +154,13 @@ Saving balance entries for an account/date combination that already has an entry
 
 ### Drive Connection Persistence
 
-On app load, the app checks for a stored Google Drive connection (non-blocking, parallel with other initialization). If a connection exists and the cached token is still valid, the app displays "Connected as user@gmail.com" on the Restore tab without re-prompting. If the token is expired or no connection exists, the Restore tab shows a "Connect Google Account" button.
+Connect/disconnect UI is the `@open-webapp/drive-connect` package widget (`<GoogleDriveWidget>`), mounted on the password gate's Restore tab and Settings > Backup tab.
 
-The app does **not** automatically look up the backup file ID on load — file lookup only happens when the user clicks "Restore" and a fresh connection is confirmed.
+- Widget renders all four connect states itself (disconnected / connecting / connected / needs-reauth), shows the connected Google account, and surfaces errors inline via `role="alert"`.
+- No `window.alert` dialogs for connect/disconnect (no "Connected"/"Disconnected"/"Connect failed"/"Disconnect failed" popups, no "Google auth timed out"). Portfolio's own sync/restore alerts stay ("Synced to Drive", "Sync failed: …", "Restored from Drive", "Restore failed: …").
+- Connecting no longer greys out the "Restore from Drive" button; connect/disconnect no longer flip the app's `syncing` flag (which now means only "a sync/restore content op is running").
+- On app load the app still does **not** auto-look-up the backup file ID — it's fetched in the widget's `onConnected` callback (a failed lookup just leaves the "View backup in Google Drive" link hidden), and cleared on disconnect.
+- Token warm-up runs only after local unlock; a valid cached token is reused without prompting, and a single in-flight guard means at most one Google auth window even under rapid sync/restore/connect.
 
 ### Restore from Google Drive
 

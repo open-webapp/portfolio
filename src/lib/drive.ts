@@ -1,5 +1,5 @@
 import { createDriveSync, NeedsReauthError, PickerCancelledError } from '@open-webapp/drive-sync'
-import type { Connection } from '@open-webapp/drive-sync'
+import { createDriveAuth } from '@open-webapp/drive-connect'
 import type { AppState } from './state'
 import { coalesceWithDefaults } from './persist'
 import { decryptState, encryptState } from './crypto'
@@ -29,6 +29,14 @@ const driveSync = createDriveSync({
   appId: 'portfolio',
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
   folderPath: ['OpenWebApp', 'Portfolio'],
+})
+
+const APP_PROJECT_ID = 'app'
+
+export const driveAuth = createDriveAuth({
+  drive: driveSync,
+  projectId: APP_PROJECT_ID,
+  tokenBufferMs: 5 * 60 * 1000,
 })
 
 /**
@@ -99,14 +107,6 @@ export const drive = {
 } as any
 
 const APP_STATE_FILENAME = 'portfolio-state.json'
-const APP_PROJECT_ID = 'app'
-
-/**
- * A cached token is treated as usable only while it has at least this much
- * runway left. Mirrors drive-sync's own refresh buffer so the app's guard
- * and the library's proactive warm-up agree on "stale".
- */
-const TOKEN_REAUTH_BUFFER_MS = 5 * 60 * 1000
 
 /**
  * Drive I/O operations (list, read, write) must complete within this timeout.
@@ -162,81 +162,6 @@ export async function decryptBackupEnvelope(
 }
 
 /**
- * A cached access token is "valid" only when a connection exists, its granted
- * scopes are complete, and the token's expiry is far enough in the future.
- * Anything else means a Google auth flow is required before Drive I/O can run.
- */
-function isTokenUsable(conn: Connection | null): conn is Connection {
-  return (
-    conn !== null &&
-    !conn.needsReauth &&
-    conn.expiresAt !== null &&
-    conn.expiresAt > Date.now() + TOKEN_REAUTH_BUFFER_MS
-  )
-}
-
-export interface DriveAuthStatus {
-  connected: boolean
-  email: string | null
-  expiresAt: number | null
-  needsReauth: boolean
-  tokenValid: boolean
-}
-
-/**
- * Non-interactive auth snapshot for the UI. Never opens a Google window.
- * `tokenValid` is true only when a cached token exists and has not expired.
- */
-export async function getDriveAuthStatus(): Promise<DriveAuthStatus> {
-  const conn = await driveSync.project(APP_PROJECT_ID).getConnection()
-  return {
-    connected: conn !== null,
-    email: conn?.email ?? null,
-    expiresAt: conn?.expiresAt ?? null,
-    needsReauth: conn?.needsReauth ?? false,
-    tokenValid: isTokenUsable(conn),
-  }
-}
-
-// In-flight guard: at most one interactive connect at a time, so rapid
-// sync/restore calls can never spawn multiple Google auth windows.
-let connectInFlight: Promise<Connection> | null = null
-
-/**
- * Guarantee a usable token before a user-triggered Drive operation. Reuses
- * the cached token as-is while it is still valid; otherwise starts the
- * interactive Google auth flow — exactly once, even if several callers race.
- */
-export async function ensureFreshConnection(): Promise<Connection> {
-  const conn = await driveSync.project(APP_PROJECT_ID).getConnection()
-  if (isTokenUsable(conn)) {
-    return conn
-  }
-  if (!connectInFlight) {
-    connectInFlight = connectDrive().finally(() => {
-      connectInFlight = null
-    })
-  }
-  return connectInFlight
-}
-
-/**
- * Start the interactive Google OAuth connect flow for the Portfolio project.
- * This is the only call that opens a Google auth window.
- */
-export async function connectDrive(): Promise<Connection> {
-  return driveSync.project(APP_PROJECT_ID).connect()
-}
-
-/**
- * Disconnect the Portfolio project: revokes the cached token and clears the
- * stored connection.
- */
-export async function disconnectDrive(): Promise<void> {
-  return driveSync.project(APP_PROJECT_ID).disconnect()
-}
-
-/**
  * Sync app state to Google Drive as a JSON backup file.
  * Called after user interactions to persist app state to Drive.
  *
@@ -251,7 +176,7 @@ export async function disconnectDrive(): Promise<void> {
  */
 export async function syncBackup(state: AppState, key: CryptoKey, salt: Uint8Array): Promise<string> {
   try {
-    await ensureFreshConnection()
+    await driveAuth.ensureFresh()
     const project = driveSync.project(APP_PROJECT_ID)
 
     // Ensure app folder structure (OpenWebApp/Portfolio) exists
@@ -465,7 +390,7 @@ async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppSt
  */
 export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): Promise<AppState> {
   try {
-    await ensureFreshConnection()
+    await driveAuth.ensureFresh()
     const restored = await readAndDecryptFile(fileId, key)
     if (!restored) {
       throw new Error('Picked Drive file is empty or unreadable')
@@ -495,7 +420,7 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
  *   is empty/unreadable.
  */
 export async function overwriteLocalWithRemote(fileId: string, key: CryptoKey): Promise<AppState> {
-  await ensureFreshConnection()
+  await driveAuth.ensureFresh()
   const restored = await readAndDecryptFile(fileId, key)
   if (!restored) {
     throw new Error('Drive backup is empty or unreadable')
@@ -526,7 +451,7 @@ export async function overwriteRemoteWithLocal(
   salt: Uint8Array,
   fileId: string
 ): Promise<string> {
-  await ensureFreshConnection()
+  await driveAuth.ensureFresh()
   await withTimeout(
     driveSync.project(APP_PROJECT_ID).files.read(fileId),
     DRIVE_IO_TIMEOUT_MS,
