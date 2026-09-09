@@ -6,7 +6,7 @@ import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
 import * as importExportModule from '../lib/importExport'
-import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
+import { deriveKey, generateSalt } from '../lib/crypto'
 
 // Partial mock: keep exportBackup/buildExportableState real (they run
 // against the real crypto module), but stub downloadEnvelopeAsFile since it
@@ -17,13 +17,15 @@ vi.mock('../lib/importExport', async (importOriginal) => {
 })
 
 // Mock functions for drive.project('app').pickFile(), referenced by the
-// hoisted vi.mock('../lib/drive', ...) factory below.
+// hoisted vi.mock('../lib/drive', ...) factory below. Settings renders
+// DriveRestorePanel (real component), which imports these from ../lib/drive.
 const mockPickFile = vi.fn()
 const mockEnsureFolderPath = vi.fn()
 
-// Mock the drive module. Settings.tsx renders DriveRestorePanel, which opens
-// the file picker via drive.project('app').pickFile(), and also uses
-// restoreBackupFromFileId and DriveDecryptError.
+// Mock the drive module. Settings.tsx uses `driveAuth` (in handleChangePassword,
+// via driveAuth.getStatus() / driveAuth.refresh()) and `syncBackup`. The real
+// DriveRestorePanel it renders also needs restoreBackupFromFileId /
+// decryptBackupEnvelope / DriveDecryptError / drive to import cleanly.
 vi.mock('../lib/drive', () => {
   class DriveDecryptError extends Error {
     salt: Uint8Array
@@ -43,20 +45,55 @@ vi.mock('../lib/drive', () => {
       }),
     },
     restoreBackupFromFileId: vi.fn(),
-    // Real envelopes are built with the real crypto module in these tests, so
-    // the stand-in decrypts for real. The coalescing the production helper
-    // layers on top is unit-tested in drive.test.ts.
     decryptBackupEnvelope: vi.fn(async (envelope: any, key: any) => {
-      // Plain import, not importActual: resolves to the mocked crypto module
-      // where a test mocks it, and the real one where it doesn't.
       const crypto = await import('../lib/crypto')
       return crypto.decryptState(envelope, key)
     }),
-    getDriveAuthStatus: vi.fn(),
+    driveAuth: {
+      getStatus: vi.fn(),
+      subscribe: vi.fn(() => () => {}),
+      refresh: vi.fn(),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      ensureFresh: vi.fn(),
+      activate: vi.fn(() => () => {}),
+    },
     syncBackup: vi.fn(),
     DriveDecryptError,
   }
 })
+
+// Shim @open-webapp/drive-connect. GoogleDriveWidget is rendered here purely to
+// prove its onConnected/onDisconnected callbacks are wired to the
+// onDriveConnected/onDriveDisconnected props — the real connect/disconnect
+// behavior lives in the package and is tested there (Phase 1).
+vi.mock('@open-webapp/drive-connect', () => ({
+  GoogleDriveWidget: ({
+    onConnected,
+    onDisconnected,
+  }: {
+    onConnected?: (connection: unknown) => void
+    onDisconnected?: () => void
+  }) => (
+    <div>
+      <button data-testid="widget-connect" onClick={() => onConnected?.({})}>
+        connect
+      </button>
+      <button data-testid="widget-disconnect" onClick={() => onDisconnected?.()}>
+        disconnect
+      </button>
+    </div>
+  ),
+  useDriveConnection: vi.fn(() => ({
+    connected: false,
+    email: null,
+    connecting: false,
+    error: null,
+    needsReauth: false,
+    refresh: vi.fn(),
+  })),
+  createDriveAuth: vi.fn(),
+}))
 
 // Mock the persist module (used by the Change Password flow to verify the
 // current password and to save the re-encrypted blob under the new key, and
@@ -75,8 +112,8 @@ const mockDispatch = vi.fn()
 const mockOnKeyChange = vi.fn()
 const mockOnPasswordEntryTimeReset = vi.fn()
 const mockSetSyncing = vi.fn()
-const mockHandleConnect = vi.fn()
-const mockHandleDisconnect = vi.fn()
+const mockOnDriveConnected = vi.fn()
+const mockOnDriveDisconnected = vi.fn()
 const mockSetSettingsSection = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
 const mockRunMutualFundSyncTrigger = vi.fn()
@@ -93,20 +130,25 @@ function getMfBlock(container: HTMLElement): HTMLElement {
   return fieldDiv.parentElement as HTMLElement
 }
 
-const notConnectedAuthStatus: driveModule.DriveAuthStatus = {
+// driveAuth.getStatus() is SYNCHRONOUS and returns a DriveAuthStatus.
+const notConnectedStatus = {
   connected: false,
   email: null,
   expiresAt: null,
   needsReauth: false,
   tokenValid: false,
+  connecting: false,
+  error: null,
 }
 
-const connectedAuthStatus: driveModule.DriveAuthStatus = {
+const connectedStatus = {
   connected: true,
   email: 'test@example.com',
   expiresAt: Date.now() + 60 * 60 * 1000,
   needsReauth: false,
   tokenValid: true,
+  connecting: false,
+  error: null,
 }
 
 describe('SettingsPage', () => {
@@ -129,16 +171,6 @@ describe('SettingsPage', () => {
     cleanup()
   })
 
-  // Simulates picking `fileId` (or cancelling, when null) from whichever
-  // "Pick a file" dialog is currently on screen: sets up pickFile's next
-  // resolution and clicks the button, matching the real
-  // drive.project('app').pickFile() flow in DriveRestorePanel.tsx.
-  async function pickFile(fileId: string | null) {
-    mockPickFile.mockResolvedValueOnce(fileId ? { id: fileId, name: 'backup.json' } : null)
-    const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
-    fireEvent.click(pickButton)
-  }
-
   function renderSettings(overrides: Partial<SettingsPageProps> = {}) {
     const defaultProps: SettingsPageProps = {
       state: initialState(),
@@ -147,13 +179,11 @@ describe('SettingsPage', () => {
       sessionSalt,
       onKeyChange: mockOnKeyChange,
       onPasswordEntryTimeReset: mockOnPasswordEntryTimeReset,
-      driveReady: false,
-      driveEmail: null,
+      onDriveConnected: mockOnDriveConnected,
+      onDriveDisconnected: mockOnDriveDisconnected,
       backupFileId: null,
       syncing: false,
       setSyncing: mockSetSyncing,
-      handleConnect: mockHandleConnect,
-      handleDisconnect: mockHandleDisconnect,
       settingsSection: 'backup',
       setSettingsSection: mockSetSettingsSection,
       runPriceSyncTrigger: mockRunPriceSyncTrigger,
@@ -165,199 +195,21 @@ describe('SettingsPage', () => {
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
 
-  describe('Not connected state', () => {
-    it('renders "Not connected" state initially with Connect button', () => {
-      renderSettings({ driveReady: false })
+  describe('Google Drive Sync widget wiring', () => {
+    it("firing the widget's onConnected invokes the onDriveConnected prop", () => {
+      renderSettings({ settingsSection: 'backup' })
 
-      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+      fireEvent.click(screen.getByTestId('widget-connect'))
 
-      const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
-      expect(connectButton).toBeTruthy()
-
-      // Should not show Sync, Restore, or Disconnect buttons
-      expect(screen.queryByRole('button', { name: /Sync Now/ })).toBeFalsy()
-      expect(screen.queryByRole('button', { name: /Restore from Drive/ })).toBeFalsy()
-      expect(screen.queryByText('Disconnect')).toBeFalsy()
+      expect(mockOnDriveConnected).toHaveBeenCalledTimes(1)
     })
 
-    it('Connect button has btn btn-primary blueprint classes', () => {
-      renderSettings({ driveReady: false })
+    it("firing the widget's onDisconnected invokes the onDriveDisconnected prop", () => {
+      renderSettings({ settingsSection: 'backup' })
 
-      const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
-      expect(connectButton.className).toContain('btn btn-primary')
-      expect(connectButton.className).toContain('blueprint')
-    })
+      fireEvent.click(screen.getByTestId('widget-disconnect'))
 
-    it('clicking Connect button calls the handleConnect prop', () => {
-      renderSettings({ driveReady: false })
-
-      const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
-      fireEvent.click(connectButton)
-
-      expect(mockHandleConnect).toHaveBeenCalledTimes(1)
-    })
-
-    it('shows "Connecting..." text and disables the Connect button when syncing prop is true', () => {
-      renderSettings({ driveReady: false, syncing: true })
-
-      const connectButton = screen.getByRole('button', { name: 'Connecting...' })
-      expect(connectButton).toBeTruthy()
-      expect((connectButton as HTMLButtonElement).disabled).toBe(true)
-    })
-  })
-
-  describe('Connected state', () => {
-    it('renders connected state with Restore from Drive and Disconnect', () => {
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
-
-      // Should show connected email and disconnect link
-      expect(screen.getByText('test@example.com')).toBeTruthy()
-      expect(screen.getByText('Disconnect')).toBeTruthy()
-
-      // Should not show Connect button or Sync Now button
-      expect(screen.queryByRole('button', { name: 'Connect Google Account' })).toBeFalsy()
-      expect(screen.queryByRole('button', { name: /Sync Now/ })).toBeFalsy()
-    })
-
-    it('Restore from Drive button uses correct classes', () => {
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      expect(restoreButton.className).toContain('btn btn-secondary')
-      expect(restoreButton.className).not.toContain('blueprint')
-      expect(restoreButton.querySelectorAll('i.corner').length).toBe(0)
-    })
-
-    it('does not show Drive link when connected but no backup file exists', () => {
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com', backupFileId: null })
-
-      expect(screen.queryByRole('link', { name: 'View backup in Google Drive' })).toBeFalsy()
-    })
-
-    it('shows Drive link to existing backup file when connected and synced', () => {
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com', backupFileId: 'file-id-123' })
-
-      const link = screen.getByRole('link', { name: 'View backup in Google Drive' })
-      expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/file-id-123/view')
-      expect(link.getAttribute('target')).toBe('_blank')
-    })
-
-
-    it('shows "Restoring..." text and disables Restore when syncing prop is true', () => {
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com', syncing: true })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restoring...' })
-      expect(restoreButton).toBeTruthy()
-      expect((restoreButton as HTMLButtonElement).disabled).toBe(true)
-    })
-
-    it('Restore from Drive opens picker and restores selected file', async () => {
-      const restoredState = initialState()
-      restoredState.accounts = [
-        {
-          id: '1',
-          accountNumber: '123',
-          name: 'Test Account',
-          retirement: false,
-          createdAt: '2024-01-01',
-        },
-      ]
-
-      vi.mocked(driveModule.restoreBackupFromFileId).mockResolvedValue(restoredState)
-      vi.mocked(global.confirm).mockReturnValue(true)
-
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
-      await waitFor(() => {
-        expect(global.confirm).toHaveBeenCalledWith(
-          'Restore will replace all data with the backed-up version. Continue?'
-        )
-        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-file-id', expect.anything())
-        expect(mockDispatch).toHaveBeenCalledWith({
-          type: '__SET_STATE',
-          newState: restoredState,
-        })
-        expect(global.alert).toHaveBeenCalledWith('Restored from Drive')
-      })
-    })
-
-    it('Restore is cancelled if user declines confirmation', async () => {
-      vi.mocked(global.confirm).mockReturnValue(false)
-
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
-      await waitFor(() => {
-        expect(global.confirm).toHaveBeenCalled()
-        expect(driveModule.restoreBackupFromFileId).not.toHaveBeenCalled()
-        expect(mockDispatch).not.toHaveBeenCalled()
-      })
-    })
-
-
-    it('calls setSyncing(true) then setSyncing(false) around a restore', async () => {
-      const restoredState = initialState()
-      vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(restoredState), 20))
-      )
-      vi.mocked(global.confirm).mockReturnValue(true)
-
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
-      await waitFor(() => {
-        expect(mockSetSyncing).toHaveBeenCalledWith(true)
-      })
-      await waitFor(() => {
-        expect(mockSetSyncing).toHaveBeenCalledWith(false)
-      })
-    })
-
-    it('shows error alert if Restore fails', async () => {
-      const error = new Error('Restore error')
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(error)
-      vi.mocked(global.confirm).mockReturnValue(true)
-
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
-      await waitFor(() => {
-        expect(global.alert).toHaveBeenCalledWith('Restore failed: Restore error')
-      })
-    })
-  })
-
-  describe('Disconnect functionality', () => {
-    it('clicking Disconnect calls the handleDisconnect prop', () => {
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const disconnectLink = screen.getByText('Disconnect')
-      fireEvent.click(disconnectLink)
-
-      expect(mockHandleDisconnect).toHaveBeenCalledTimes(1)
+      expect(mockOnDriveDisconnected).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -430,7 +282,7 @@ describe('SettingsPage', () => {
     }
 
     beforeEach(() => {
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(notConnectedAuthStatus)
+      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(notConnectedStatus as never)
     })
 
     it('Change Password button has btn btn-primary blueprint classes', () => {
@@ -461,6 +313,7 @@ describe('SettingsPage', () => {
       expect(saveArgs[0]).toBe(state)
       expect(saveArgs[2]).not.toEqual(sessionSalt)
 
+      // Drive not connected -> no re-sync, no warning
       expect(driveModule.syncBackup).not.toHaveBeenCalled()
 
       await waitFor(() => {
@@ -472,6 +325,7 @@ describe('SettingsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Encryption password changed')).toBeTruthy()
       })
+      expect(screen.queryByText(/Drive re-sync failed/)).toBeFalsy()
 
       const inputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
       const [currentInput, newInput, confirmInput] = inputs.slice(-3)
@@ -564,10 +418,10 @@ describe('SettingsPage', () => {
       expect(mockOnKeyChange).not.toHaveBeenCalled()
     })
 
-    it('also syncs to Drive with the new key/salt when Drive is connected', async () => {
+    it('also syncs to Drive with the new key/salt when driveAuth.getStatus() is connected', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
       vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
+      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(connectedStatus as never)
       vi.mocked(driveModule.syncBackup).mockResolvedValue('file-id')
       const state = initialState()
 
@@ -595,10 +449,10 @@ describe('SettingsPage', () => {
       expect(screen.queryByText(/Drive re-sync failed/)).toBeFalsy()
     })
 
-    it('keeps the local password change and shows a warning when Drive re-sync fails', async () => {
+    it('keeps the local password change and shows the exact warning copy when Drive re-sync fails', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
       vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
-      vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue(connectedAuthStatus)
+      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(connectedStatus as never)
       vi.mocked(driveModule.syncBackup).mockRejectedValue(new Error('network down'))
 
       const { container } = renderSettings({ settingsSection: 'encryption' })
@@ -615,400 +469,46 @@ describe('SettingsPage', () => {
       await waitFor(() => {
         expect(mockOnKeyChange).toHaveBeenCalled()
       })
-      await waitFor(() => {
-        expect(
-          screen.getByText(/Encryption password changed locally, but Drive re-sync failed: network down/)
-        ).toBeTruthy()
-      })
-    })
-  })
 
-  describe('Cross-password Drive restore', () => {
-    beforeEach(() => {
-      vi.mocked(global.confirm).mockReturnValue(true)
-    })
-
-    it('shows the inline cross-password prompt when file restore rejects with DriveDecryptError', async () => {
-      const backupSalt = generateSalt()
-      const backupState = initialState()
-      const envelope = await encryptState(backupState, sessionKey, backupSalt)
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
+      const warningEl = await screen.findByText(
+        /Encryption password changed locally, but Drive re-sync failed: network down/
       )
+      expect(warningEl.textContent?.endsWith('Sync manually from Google Drive Sync above.')).toBe(true)
 
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
-      await waitFor(() => {
-        expect(
-          screen.getByText('This backup was saved with a different encryption password. Enter that password to restore:')
-        ).toBeTruthy()
-      })
-
-      // Only the confirm dialog ran to trigger the restore; the decrypt-mismatch path itself does not prompt again.
-      expect(global.confirm).toHaveBeenCalledTimes(1)
+      // NeedsReauthError-specific refresh is NOT triggered for a plain Error
+      expect(driveModule.driveAuth.refresh).not.toHaveBeenCalled()
     })
 
-    it('"Restore with this password" button has btn btn-primary blueprint classes and 4 ordered corner marks; Cancel stays plain secondary', async () => {
-      const backupSalt = generateSalt()
-      const backupState = initialState()
-      const envelope = await encryptState(backupState, sessionKey, backupSalt)
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
-      )
+    it('calls driveAuth.refresh exactly once when Drive re-sync rejects with a NeedsReauthError', async () => {
+      vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
+      vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
+      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(connectedStatus as never)
+      const reauthError = new Error('token expired')
+      reauthError.name = 'NeedsReauthError'
+      vi.mocked(driveModule.syncBackup).mockRejectedValue(reauthError)
 
-      renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
+      const { container } = renderSettings({ settingsSection: 'encryption' })
 
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
-      const submitButton = await screen.findByRole('button', { name: 'Restore with this password' })
-      expect(submitButton.className).toContain('btn btn-primary')
-      expect(submitButton.className).toContain('blueprint')
-
-      const cancelButton = screen.getByRole('button', { name: 'Cancel' })
-      expect(cancelButton.className).toContain('btn btn-secondary')
-      expect(cancelButton.className).not.toContain('blueprint')
-      expect(cancelButton.querySelectorAll('i.corner').length).toBe(0)
-    })
-
-    it('retries decryption locally against the carried envelope (no second restoreBackupFromFileId call) on the correct backup password', async () => {
-      const backupPassword = 'correct-backup-password'
-      const backupSalt = generateSalt()
-      const backupKey = await deriveKey(backupPassword, backupSalt)
-      const restoredState = initialState()
-      restoredState.accounts = [
-        {
-          id: 'acc1',
-          accountNumber: '999',
-          name: 'Backup Account',
-          retirement: false,
-          createdAt: '2024-01-01',
-        },
-      ]
-      const envelope = await encryptState(restoredState, backupKey, backupSalt)
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
-      )
-
-      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      fillAndSubmitChangePassword(container, {
+        current: 'test-password',
+        next: 'new-password-1',
+        confirm: 'new-password-1',
       })
 
-      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: backupPassword } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
       await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalledWith({ type: '__SET_STATE', newState: restoredState })
+        expect(driveModule.driveAuth.refresh).toHaveBeenCalledTimes(1)
       })
 
-      expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledTimes(1)
-
+      // Local change still succeeds and the warning is still shown
       await waitFor(() => {
         expect(mockOnKeyChange).toHaveBeenCalled()
       })
-      const keyChangeArgs = mockOnKeyChange.mock.calls[0]
-      expect(keyChangeArgs[1]).toEqual(backupSalt)
-    })
-
-    it('shows an inline error and keeps the prompt open (retryable) on a wrong backup password', async () => {
-      const backupSalt = generateSalt()
-      const restoredState = initialState()
-      const envelope = await encryptState(restoredState, sessionKey, backupSalt)
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
-      )
-
-      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user opening the picker and selecting a file
-      await pickFile('picked-file-id')
-
       await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: 'totally-wrong-password' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
-      })
-
-      // Prompt stays open and can be retried
-      expect(
-        screen.getByText('This backup was saved with a different encryption password. Enter that password to restore:')
-      ).toBeTruthy()
-      expect(screen.getByRole('button', { name: 'Restore with this password' })).toBeTruthy()
-      expect(mockDispatch).not.toHaveBeenCalled()
-    })
-
-    it('T5.1: Fallback Picker appears after failed cross-password retry', async () => {
-      const backupSalt = generateSalt()
-      const restoredState = initialState()
-      const envelope = await encryptState(restoredState, sessionKey, backupSalt)
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
-      )
-
-      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user selecting a file from the picker (first pick)
-      await pickFile('picked-file-id')
-
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-      expect(mockPickFile).toHaveBeenCalledTimes(1)
-
-      // Submit wrong password
-      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-password' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      // Wait for error to appear
-      await waitFor(() => {
-        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
-      })
-
-      // The fallback picker's "Pick a file" button should now be showing,
-      // and the original dialog's button should not linger alongside it.
-      await waitFor(() => {
-        expect(screen.getAllByRole('button', { name: 'Pick a file' })).toHaveLength(1)
+        expect(
+          screen.getByText(/Encryption password changed locally, but Drive re-sync failed: token expired/)
+        ).toBeTruthy()
       })
     })
-
-    it('T5.2: Picking a different file via fallback from cross-password error restores successfully', async () => {
-      const backupSalt = generateSalt()
-      const restoredState = initialState()
-      restoredState.accounts = [
-        {
-          id: 'picked-acc-1',
-          accountNumber: '555',
-          name: 'Picked Account',
-          retirement: false,
-          createdAt: '2024-01-01',
-        },
-      ]
-      const envelope = await encryptState(restoredState, sessionKey, backupSalt)
-
-      vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
-        if (fileId === 'first-file-id') {
-          throw new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, envelope)
-        }
-        return restoredState
-      })
-
-      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user selecting the first file from the picker
-      await pickFile('first-file-id')
-
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      // Submit wrong password to trigger the fallback picker
-      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-password' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
-      })
-
-      // Simulate user selecting a file from the fallback picker
-      await pickFile('picked-file-id')
-
-      // The confirmation dialog should be triggered for the fallback pick
-      expect(global.confirm).toHaveBeenCalledWith('Restore will replace all data with the backed-up version. Continue?')
-
-      // Wait for successful restore
-      await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalledWith({ type: '__SET_STATE', newState: restoredState })
-      })
-
-      // Prompt should be closed
-      expect(screen.queryByText(/This backup was saved with a different encryption password/)).toBeFalsy()
-
-      // Success alert shown
-      expect(global.alert).toHaveBeenCalledWith('Restored from Drive')
-    })
-
-    it('T5.3: Picking a file that also fails to decrypt shows blank password field (not pre-filled)', async () => {
-      const backupSalt1 = generateSalt()
-      const backupState = initialState()
-      const envelope1 = await encryptState(backupState, sessionKey, backupSalt1)
-      const backupSalt2 = generateSalt()
-      const envelope2 = await encryptState(backupState, sessionKey, backupSalt2)
-
-      vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
-        if (fileId === 'picked-file-1') {
-          throw new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt1, envelope1)
-        } else if (fileId === 'picked-file-b') {
-          throw new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt2, envelope2)
-        }
-        throw new Error('unexpected fileId')
-      })
-
-      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user selecting the first file
-      await pickFile('picked-file-1')
-
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      // Submit wrong password
-      let passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: 'first-wrong-password' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
-      })
-
-      // Simulate user selecting file B from the fallback picker
-      await pickFile('picked-file-b')
-
-      // Confirmation dialog for fallback pick
-      expect(global.confirm).toHaveBeenCalledWith('Restore will replace all data with the backed-up version. Continue?')
-
-      // Wait for the new cross-password prompt (from the picked file's envelope)
-      await waitFor(() => {
-        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('picked-file-b', expect.anything())
-      })
-
-      // The old error should be cleared
-      expect(screen.queryByText('Incorrect encryption password')).toBeFalsy()
-
-      // A fresh password prompt should be shown
-      await waitFor(() => {
-        expect(screen.getAllByText(/This backup was saved with a different encryption password/).length).toBeGreaterThan(0)
-      })
-
-      // The password input should be blank (not pre-filled with the failed attempt)
-      const updatedPasswordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      expect(updatedPasswordInputs[0].value).toBe('')
-    })
-
-    it('T5.4: Chaining: pick A fails, pick B fails, blank password shown for B (not A\'s leftover)', async () => {
-      const saltOriginal = generateSalt()
-      const saltA = generateSalt()
-      const saltB = generateSalt()
-      const backupState = initialState()
-      const envelopeOriginal = await encryptState(backupState, sessionKey, saltOriginal)
-      const envelopeA = await encryptState(backupState, sessionKey, saltA)
-      const envelopeB = await encryptState(backupState, sessionKey, saltB)
-
-      vi.mocked(driveModule.restoreBackupFromFileId).mockImplementation(async (fileId: string) => {
-        if (fileId === 'original-file') {
-          throw new driveModule.DriveDecryptError('wrong for original', saltOriginal, envelopeOriginal)
-        } else if (fileId === 'file-a') {
-          throw new driveModule.DriveDecryptError('wrong for A', saltA, envelopeA)
-        } else if (fileId === 'file-b') {
-          throw new driveModule.DriveDecryptError('wrong for B', saltB, envelopeB)
-        }
-        throw new Error('unexpected fileId')
-      })
-
-      const { container } = renderSettings({ driveReady: true, driveEmail: 'test@example.com' })
-
-      const restoreButton = screen.getByRole('button', { name: 'Restore from Drive' })
-      fireEvent.click(restoreButton)
-
-      // Simulate user selecting the original file
-      await pickFile('original-file')
-
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      // Step 1: Wrong password on the original file
-      let passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-for-original' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
-      })
-
-      // Step 2: Fallback picker opens (for file A)
-      await pickFile('file-a')
-
-      expect(global.confirm).toHaveBeenCalledWith('Restore will replace all data with the backed-up version. Continue?')
-
-      // File A also fails with cross-password error
-      await waitFor(() => {
-        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-a', expect.anything())
-      })
-
-      // Cross-password prompt still showing for file A
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      // Password field should be blank
-      let currentPasswordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      expect(currentPasswordInputs[0].value).toBe('')
-
-      // Step 3: Type a password for file A, submit, wrong again
-      fireEvent.change(currentPasswordInputs[0], { target: { value: 'wrong-for-file-a' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
-      })
-
-      // Step 4: Fallback picker opens again (for file B)
-      await pickFile('file-b')
-
-      // File B also fails with cross-password error
-      await waitFor(() => {
-        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-b', expect.anything())
-      })
-
-      // Cross-password prompt still showing for file B
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      // Password field should STILL be blank (not carrying over the "wrong-for-file-a" we typed)
-      currentPasswordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      expect(currentPasswordInputs[0].value).toBe('')
-    })
-
   })
 
   describe('Price Sync', () => {
@@ -1354,5 +854,4 @@ describe('SettingsPage', () => {
       })
     })
   })
-
 })

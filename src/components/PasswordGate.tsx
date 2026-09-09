@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
+import { GoogleDriveWidget } from '@open-webapp/drive-connect'
+import type { Connection } from '@open-webapp/drive-connect'
 import type { AppState } from '../lib/state'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadLegacyPlaintextApp, loadPersistedApp, peekStoredSalt, clearPersistedApp } from '../lib/persist'
+import { driveAuth } from '../lib/drive'
 import { DriveRestorePanel } from './DriveRestorePanel'
 import { GateRestoreFromFilePanel } from './GateRestoreFromFilePanel'
 import { ResetAppControl } from './ResetAppControl'
@@ -11,13 +14,11 @@ export interface PasswordGateProps {
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
   onReset: () => void
   // Drive props for restore feature
-  driveReady?: boolean
-  driveEmail?: string | null
   backupFileId?: string | null
   syncing?: boolean
   setSyncing?: (v: boolean) => void
-  handleConnect?: () => void
-  handleDisconnect?: () => void
+  onDriveConnected?: (connection: Connection) => void
+  onDriveDisconnected?: () => void
 }
 
 /**
@@ -29,13 +30,11 @@ export function PasswordGate({
   shape,
   onUnlock,
   onReset,
-  driveReady = false,
-  driveEmail = null,
   backupFileId = null,
   syncing = false,
   setSyncing,
-  handleConnect,
-  handleDisconnect,
+  onDriveConnected,
+  onDriveDisconnected,
 }: PasswordGateProps) {
   const handleReset = async () => {
     await clearPersistedApp()
@@ -49,13 +48,11 @@ export function PasswordGate({
       shape={shape}
       onUnlock={onUnlock}
       onReset={handleReset}
-      driveReady={driveReady}
-      driveEmail={driveEmail}
       backupFileId={backupFileId}
       syncing={syncing}
       setSyncing={setSyncing}
-      handleConnect={handleConnect}
-      handleDisconnect={handleDisconnect}
+      onDriveConnected={onDriveConnected}
+      onDriveDisconnected={onDriveDisconnected}
     />
   )
 }
@@ -136,24 +133,20 @@ function SetPasswordScreen({
   shape,
   onUnlock,
   onReset,
-  driveReady = false,
-  driveEmail = null,
   backupFileId = null,
   syncing = false,
   setSyncing,
-  handleConnect,
-  handleDisconnect,
+  onDriveConnected,
+  onDriveDisconnected,
 }: {
   shape: 'absent' | 'legacy-plaintext'
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
   onReset: () => Promise<void>
-  driveReady?: boolean
-  driveEmail?: string | null
   backupFileId?: string | null
   syncing?: boolean
   setSyncing?: (v: boolean) => void
-  handleConnect?: () => void
-  handleDisconnect?: () => void
+  onDriveConnected?: (connection: Connection) => void
+  onDriveDisconnected?: () => void
 }) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -303,15 +296,17 @@ function SetPasswordScreen({
         <div style={{ display: gateTab === 'restore' ? 'block' : 'none' }}>
           <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
             <div className="card-title">Google Drive</div>
+            <GoogleDriveWidget
+              auth={driveAuth}
+              onConnected={onDriveConnected}
+              onDisconnected={onDriveDisconnected}
+            />
             {dummyKeyReady && dummyKey && dummySalt ? (
               <DriveRestorePanel
-                driveReady={driveReady}
-                driveEmail={driveEmail}
+                auth={driveAuth}
                 backupFileId={backupFileId}
                 syncing={syncing}
                 setSyncing={setSyncing || (() => {})}
-                handleConnect={handleConnect || (() => {})}
-                handleDisconnect={handleDisconnect || (() => {})}
                 restoreKey={dummyKey}
                 restoreSalt={dummySalt}
                 onRestored={(state, key, salt) => onUnlock(key, salt, state)}

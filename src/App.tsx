@@ -10,20 +10,18 @@ import { QuotesPage } from './components/QuotesPage'
 import { PasswordGate } from './components/PasswordGate'
 import { SyncConflictDialog } from './components/SyncConflictDialog'
 import {
-  drive,
-  getDriveAuthStatus,
+  driveAuth,
   getBackupFileId,
   syncBackup,
-  ensureFreshConnection,
   overwriteLocalWithRemote,
   overwriteRemoteWithLocal,
   getBackupFileStatus,
 } from './lib/drive'
+import { useDriveConnection } from '@open-webapp/drive-connect'
 import { runPriceSync } from './lib/priceSync'
 import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync } from './lib/selectors'
 import { syncTickerOverviews } from './lib/tickerOverview'
 import { runMutualFundSync } from './lib/mutualFundSync'
-import type { Connection } from '@open-webapp/drive-sync'
 import './App.css'
 
 const SYNC_RETRY_POLL_INTERVAL_MS = 60_000
@@ -52,9 +50,8 @@ function App() {
 
   // Drive-sync state (lifted from Settings.tsx so it survives Settings unmounting/remounting)
   const [syncing, setSyncing] = useState(false)
-  const [driveReady, setDriveReady] = useState(false)
-  const [driveEmail, setDriveEmail] = useState<string | null>(null)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
+  const { connected } = useDriveConnection(driveAuth)
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
     remoteModifiedTime?: string
@@ -92,27 +89,12 @@ function App() {
     peekEnvelopeShape().then(setGateShape)
   }, [])
 
-  // Early Drive status check (non-blocking, runs on mount before password gate)
-  useEffect(() => {
-    const checkDrive = async () => {
-      try {
-        const authStatus = await getDriveAuthStatus()
-        setDriveReady(authStatus.connected)
-        setDriveEmail(authStatus.email)
-      } catch (error) {
-        console.warn('Early Drive status check failed (non-blocking):', error)
-        // Leave driveReady/driveEmail at defaults (false/null)
-      }
-    }
-    checkDrive()
-  }, [])
-
-  // Drive-sync boot wiring: activate() attaches the visibility/pageshow
-  // listeners that silently warm up the cached Drive token in the
-  // background before it goes stale. Without this, drive.ts's
-  // ensureFreshConnection() only ever finds an expired token and falls
-  // back to the fully interactive connect flow, popping the Google auth
-  // window on every settings-open/sync instead of reusing the stored one.
+  // Drive-sync boot wiring: driveAuth.activate() attaches the
+  // visibility/pageshow listeners that silently warm up the cached Drive
+  // token in the background before it goes stale. Without this, a refresh
+  // only ever finds an expired token and falls back to the fully
+  // interactive connect flow, popping the Google auth window on every
+  // settings-open/sync instead of reusing the stored one.
   //
   // Gated on sessionKey (i.e. only after the password gate is passed):
   // Drive has no role before local unlock, and activate()'s
@@ -122,7 +104,7 @@ function App() {
   // the user tabbed away from and back to the password screen.
   useEffect(() => {
     if (sessionKey === null) return
-    const dispose = drive.activate()
+    const dispose = driveAuth.activate()
     return () => {
       dispose()
     }
@@ -257,24 +239,15 @@ function App() {
     return () => clearInterval(id)
   }, [sessionKey, isHydrated, runPriceSyncTrigger, runMutualFundSyncTrigger, tickerOverviewErrors])
 
-  // Check Drive connection status once unlocked (never opens a Google auth window)
-  useEffect(() => {
-    if (sessionKey === null) return
-    const checkDrive = async () => {
-      try {
-        const authStatus = await getDriveAuthStatus()
-        setDriveReady(authStatus.connected)
-        setDriveEmail(authStatus.email)
-        if (authStatus.connected) {
-          const fileId = await getBackupFileId()
-          setBackupFileId(fileId)
-        }
-      } catch (error) {
-        console.error('Failed to check Drive connection:', error)
-      }
+  const onDriveConnected = async () => {
+    try {
+      setBackupFileId(await getBackupFileId())
+    } catch (e) {
+      console.warn('backup file lookup after connect failed', e)
+      setBackupFileId(null)
     }
-    checkDrive()
-  }, [sessionKey])
+  }
+  const onDriveDisconnected = () => setBackupFileId(null)
 
   const handleSync = useCallback(async () => {
     setSyncing(true)
@@ -284,6 +257,7 @@ function App() {
       alert('Synced to Drive')
     } catch (error) {
       console.error('Sync failed:', error)
+      if ((error as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
       if ((error as { name?: string })?.name === 'RemoteChangedError') {
         const fileId = backupFileId ?? (error as { fileId?: string }).fileId ?? (await getBackupFileId())
         if (!fileId) {
@@ -337,53 +311,27 @@ function App() {
   }, [state, sessionKey, sessionSalt, backupFileId])
 
   const handleConflictTakeRemote = useCallback(async () => {
-    const newState = await overwriteLocalWithRemote(syncConflict!.fileId, sessionKey!)
-    dispatch({ type: '__SET_STATE', newState })
-    setSyncConflict(null)
+    try {
+      const newState = await overwriteLocalWithRemote(syncConflict!.fileId, sessionKey!)
+      dispatch({ type: '__SET_STATE', newState })
+      setSyncConflict(null)
+    } catch (e) {
+      if ((e as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
+      throw e
+    }
   }, [syncConflict, sessionKey])
 
   const handleConflictPushLocal = useCallback(async () => {
-    const fileId = await overwriteRemoteWithLocal(state, sessionKey!, sessionSalt!, syncConflict!.fileId)
-    setBackupFileId(fileId)
-    setSyncConflict(null)
-    alert('Synced to Drive')
-  }, [state, sessionKey, sessionSalt, syncConflict])
-
-  const handleConnect = useCallback(async () => {
-    setSyncing(true)
     try {
-      const timeoutPromise = new Promise<Connection>((_, reject) =>
-        setTimeout(() => reject(new Error('Google auth timed out')), 10000)
-      )
-      const connection = await Promise.race<Connection>([ensureFreshConnection(), timeoutPromise])
-
-      if (!connection) {
-        throw new Error('No connection returned from Google Drive')
-      }
-      setDriveReady(true)
-      setDriveEmail(connection.email)
-      alert('Connected to Drive')
-
-      // Lookup backup file separately so a failed lookup doesn't forget the connection
-      try {
-        const fileId = await getBackupFileId()
-        setBackupFileId(fileId)
-      } catch (lookupError) {
-        console.warn('Failed to lookup backup file:', lookupError)
-        // Connection succeeded but backup lookup failed — that's OK, just don't set the backup ID
-        setBackupFileId(null)
-      }
-    } catch (error) {
-      console.error('Drive connect failed:', error)
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      alert(`Connect failed: ${errorMessage}`)
-      setDriveReady(false)
-      setDriveEmail(null)
-      setBackupFileId(null)
-    } finally {
-      setSyncing(false)
+      const fileId = await overwriteRemoteWithLocal(state, sessionKey!, sessionSalt!, syncConflict!.fileId)
+      setBackupFileId(fileId)
+      setSyncConflict(null)
+      alert('Synced to Drive')
+    } catch (e) {
+      if ((e as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
+      throw e
     }
-  }, [])
+  }, [state, sessionKey, sessionSalt, syncConflict])
 
   const handleBounceToGate = useCallback(() => {
     setGateShape('absent')
@@ -391,23 +339,6 @@ function App() {
     setSessionSalt(null)
     dispatch({ type: '__SET_STATE', newState: initialState() })
     setIsHydrated(false)
-  }, [])
-
-  const handleDisconnect = useCallback(async () => {
-    setSyncing(true)
-    try {
-      await drive.project('app').disconnect()
-      setDriveReady(false)
-      setDriveEmail(null)
-      setBackupFileId(null)
-      alert('Disconnected from Drive')
-    } catch (error) {
-      console.error('Drive disconnect failed:', error)
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      alert(`Disconnect failed: ${errorMessage}`)
-    } finally {
-      setSyncing(false)
-    }
   }, [])
 
   // Locks the app due to inactivity/absolute timeout: flushes the current
@@ -530,13 +461,11 @@ function App() {
           lastActivityTimeRef.current = Date.now()
         }}
         onReset={handleBounceToGate}
-        driveReady={driveReady}
-        driveEmail={driveEmail}
+        onDriveConnected={onDriveConnected}
+        onDriveDisconnected={onDriveDisconnected}
         backupFileId={backupFileId}
         syncing={syncing}
         setSyncing={setSyncing}
-        handleConnect={handleConnect}
-        handleDisconnect={handleDisconnect}
       />
     )
   }
@@ -557,7 +486,7 @@ function App() {
         <Nav
           state={state}
           dispatch={dispatch}
-          driveReady={driveReady}
+          connected={connected}
           syncing={syncing}
           handleSync={handleSync}
           onOpenSettings={() => {
@@ -597,13 +526,11 @@ function App() {
                 passwordEntryTimeRef.current = Date.now()
               }}
               onReset={handleBounceToGate}
-              driveReady={driveReady}
-              driveEmail={driveEmail}
+              onDriveConnected={onDriveConnected}
+              onDriveDisconnected={onDriveDisconnected}
               backupFileId={backupFileId}
               syncing={syncing}
               setSyncing={setSyncing}
-              handleConnect={handleConnect}
-              handleDisconnect={handleDisconnect}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
               runPriceSyncTrigger={runPriceSyncTrigger}

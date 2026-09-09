@@ -3,7 +3,7 @@ import type { AppState } from '../lib/state'
 export interface NavProps {
   state: AppState
   dispatch: (action: any) => void
-  driveReady: boolean
+  connected: boolean
   syncing: boolean
   handleSync: () => void
   onOpenSettings: () => void
@@ -15,7 +15,7 @@ export interface NavProps {
 export function Nav({
   state,
   dispatch,
-  driveReady,
+  connected,
   syncing,
   handleSync,
   onOpenSettings,
@@ -117,35 +117,33 @@ export function Nav({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
-        {driveReady && (
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={syncing}
-            title="Sync now"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: '20px',
-              padding: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--color-text-secondary)',
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 2v6h-6"></path>
-              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-              <path d="M3 22v-6h6"></path>
-              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
-            </svg>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={!connected || syncing}
+          title="Sync now"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '20px',
+            padding: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-text-secondary)',
+            transition: 'color 0.2s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 2v6h-6"></path>
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+            <path d="M3 22v-6h6"></path>
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+          </svg>
+        </button>
 
         {/* Settings button */}
         <button

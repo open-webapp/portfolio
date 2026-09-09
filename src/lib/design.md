@@ -36,11 +36,30 @@ SELECT_ACCOUNT (accountId, categoryKey) → selectAccount (state.ts) → sets se
 
 ### Drive Connection Persistence
 
-On mount, `App.tsx` calls `getDriveAuthStatus()` non-blockingly in parallel with other initialization (sets `driveReady` + `driveEmail`, passes to `PasswordGate`). No `getBackupFileId()` auto-call on initial load.
+Auth: `driveAuth = createDriveAuth({ drive: driveSync, projectId: 'app', tokenBufferMs: 5*60*1000 })` from `@open-webapp/drive-connect`, co-located in `drive.ts` (a separate `driveAuth.ts` would import-cycle with `drive.ts`). Handle API: `getStatus()` (sync), `subscribe(fn)`, `refresh()`, `connect()`, `disconnect()`, `ensureFresh()`, `activate()`. It owns the connection-status store, the single `connectInFlight` guard (shared by the widget's Connect button and `ensureFresh()` — prevents a double Google popup), and the visibility/pageshow token warm-up.
 
-Post-unlock, `drive.activate()` + post-unlock `getDriveAuthStatus()` run in a separate effect only after `sessionKey` is set. No blocking waits on Drive connection status — initialization proceeds independently.
+`App.tsx` holds NO Drive auth state — connection state is read via `useDriveConnection(driveAuth)`; `{ connected }` feeds `<Nav>`. No pre-gate Drive status probe; no `getBackupFileId()` auto-call on initial load.
+
+Post-unlock, a single effect gated on `sessionKey !== null` calls `driveAuth.activate()` (returns a dispose fn for cleanup) to start background token warm-up. `activate()` is host-called; the widget never self-activates on mount.
+
+`App.tsx` defines `onDriveConnected` (fetches `getBackupFileId()` → `setBackupFileId` in its own try/catch — a failed lookup leaves `backupFileId` null, does NOT forget the connection) and `onDriveDisconnected` (`setBackupFileId(null)`), passed to `<PasswordGate>` and `<SettingsPage>`, which render `<GoogleDriveWidget auth={driveAuth} onConnected/onDisconnected>` themselves.
+
+The four content ops (`syncBackup`, `restoreBackupFromFileId`, `overwriteLocalWithRemote`, `overwriteRemoteWithLocal`) call `await driveAuth.ensureFresh()`.
+
+`driveAuth.refresh()` on `NeedsReauthError` (fire-and-forget, never awaited, control flow unchanged) at five catch sites:
+- `App.tsx` `handleSync` (before the `RemoteChangedError` branch)
+- `App.tsx` `handleConflictTakeRemote` (catch re-throws)
+- `App.tsx` `handleConflictPushLocal` (catch re-throws)
+- `Settings.tsx` `handleChangePassword` re-sync
+- `DriveRestorePanel.tsx` `DriveFilePickerDialog.onSelect` (non-`DriveDecryptError` branch)
+
+`getBackupFileId()`'s own internal `NeedsReauthError` catch in `drive.ts` is a passive probe and stays silent (unchanged).
+
+Widget styling: `src/index.css` does `@import '@open-webapp/drive-connect/styles.css'` and maps the package's `--owa-drive-*` custom props (`gap/font/fg/muted/accent/accent-fg/danger/radius`) onto portfolio design tokens under `:root` (`--owa-drive-danger` → `--color-text` — portfolio has no error-color token, so widget inline errors are not red). `src/styles/styles.css` untouched (byte-identical port of the design bundle).
 
 ### Restore from Drive
+
+`DriveRestorePanel` no longer owns connect/disconnect (that UI is `<GoogleDriveWidget>`, mounted above the panel). Props: `auth` (the `driveAuth` handle), `backupFileId`, `syncing`, `setSyncing`, `restoreKey`, `restoreSalt`, `onRestored`. `const { connected } = useDriveConnection(auth)` gates the "Restore from Drive" button and the "View backup in Google Drive" link. Picker / confirm / `DriveDecryptError` cross-password prompt / fallback picker chain unchanged.
 
 DriveRestorePanel → [Restore from Drive button clicked] → showPicker = true → DriveFilePickerDialog ("Pick a file" button) → [user clicks "Pick a file"] → drive.project('app').pickFile({ includeFolders: true })
   ├─ No by-name lookup first — the picker is the only restore entry point
@@ -77,8 +96,8 @@ Dialog error handling (both overwrite props are async, may throw):
 
 New `drive.ts` exports:
 - `getBackupFileStatus(fileId): Promise<{ exists, remoteModifiedTime?: string, lastRestoredAt?: number }>` — thin `withTimeout` wrapper over `driveSync.project('app').files.status`; `lastRestoredAt` is epoch ms (`null` → `undefined`). Deliberately omits drive-sync's `changedSinceRestore` (a Drive `version`-counter compare that also trips on metadata-only server changes). Detection is by the thrown `RemoteChangedError`; `remoteModifiedTime` vs `lastRestoredAt` only distinguishes a real remote edit from spurious version drift. Rejections propagate (caller does `.catch(() => null)`). Never gates a sync/restore.
-- `overwriteLocalWithRemote(fileId, key): Promise<AppState>` — `ensureFreshConnection` → reuses private `readAndDecryptFile` (advances drive-sync baseline via `files.read`; maps `OperationError` → `DriveDecryptError`); throws `Error('Drive backup is empty or unreadable')` on null; propagates `DriveDecryptError`.
-- `overwriteRemoteWithLocal(state, key, salt, fileId): Promise<string>` — `ensureFreshConnection` → `files.read(fileId)` to adopt the remote version as baseline (result discarded) → `return syncBackup(state, key, salt)`; a `RemoteChangedError` from that re-write propagates unchanged, NO retry.
+- `overwriteLocalWithRemote(fileId, key): Promise<AppState>` — `await driveAuth.ensureFresh()` → reuses private `readAndDecryptFile` (advances drive-sync baseline via `files.read`; maps `OperationError` → `DriveDecryptError`); throws `Error('Drive backup is empty or unreadable')` on null; propagates `DriveDecryptError`.
+- `overwriteRemoteWithLocal(state, key, salt, fileId): Promise<string>` — `await driveAuth.ensureFresh()` → `files.read(fileId)` to adopt the remote version as baseline (result discarded) → `return syncBackup(state, key, salt)`; a `RemoteChangedError` from that re-write propagates unchanged, NO retry.
 
 ### Balance Register
 

@@ -5,7 +5,6 @@ import { initialState, replaceImportedState } from '../lib/state'
 import { buildExportableState } from '../lib/importExport'
 import * as cryptoModule from '../lib/crypto'
 import * as persistModule from '../lib/persist'
-import * as driveModule from '../lib/drive'
 
 vi.mock('../lib/crypto', () => ({
   deriveKey: vi.fn(),
@@ -39,6 +38,28 @@ vi.mock('../lib/persist', () => ({
   clearPersistedApp: vi.fn(),
 }))
 
+vi.mock('@open-webapp/drive-connect', () => ({
+  GoogleDriveWidget: ({ onConnected, onDisconnected }: any) => (
+    <div data-testid="drive-widget">
+      <button data-testid="widget-connect" onClick={() => onConnected?.({})}>
+        connect
+      </button>
+      <button data-testid="widget-disconnect" onClick={() => onDisconnected?.()}>
+        disconnect
+      </button>
+    </div>
+  ),
+  useDriveConnection: vi.fn(() => ({
+    connected: false,
+    email: null,
+    connecting: false,
+    error: null,
+    needsReauth: false,
+    refresh: vi.fn(),
+  })),
+  createDriveAuth: vi.fn(),
+}))
+
 const mockPickFile = vi.fn()
 const mockEnsureFolderPath = vi.fn()
 
@@ -57,6 +78,15 @@ vi.mock('../lib/drive', async (importOriginal) => {
   }
   return {
     ...actual,
+    driveAuth: {
+      getStatus: vi.fn(),
+      subscribe: vi.fn(() => () => {}),
+      refresh: vi.fn(),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      ensureFresh: vi.fn(),
+      activate: vi.fn(() => () => {}),
+    },
     restoreBackupFromFileId: vi.fn(),
     // Real envelopes are built with the real crypto module in these tests, so
     // the stand-in decrypts for real. The coalescing the production helper
@@ -94,13 +124,9 @@ function renderPasswordGate(
     shape: 'absent',
     onUnlock: vi.fn(),
     onReset: vi.fn(),
-    driveReady: false,
-    driveEmail: null,
     backupFileId: null,
     syncing: false,
     setSyncing: vi.fn(),
-    handleConnect: vi.fn(),
-    handleDisconnect: vi.fn(),
     ...props,
   }
   return render(<PasswordGate {...defaults} />)
@@ -390,207 +416,87 @@ describe('PasswordGate', () => {
       expect(restoredConfirmInput.value).toBe('mysecretpassword')
     })
 
-    it('shows "Connect Google Account" button on restore tab when driveReady=false', async () => {
-      renderPasswordGate({ shape: 'absent', onUnlock, onReset, driveReady: false })
-
-      fireEvent.click(screen.getByLabelText('Restore'))
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
-      })
-    })
-
-    it('clicking Connect calls handleConnect prop', async () => {
-      const mockHandleConnect = vi.fn()
-      renderPasswordGate({
-        shape: 'absent',
-        onUnlock,
-        onReset,
-        driveReady: false,
-        handleConnect: mockHandleConnect,
-      })
-
-      fireEvent.click(screen.getByLabelText('Restore'))
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Connect Google Account' }))
-
-      expect(mockHandleConnect).toHaveBeenCalled()
-    })
-
-    it('picking a file encrypted with different password shows cross-password prompt', async () => {
-      const mockOnUnlock = vi.fn()
-      const mockHandleConnect = vi.fn()
-      const backupSalt = new Uint8Array([4, 5, 6])
-      const mockEnvelope = { encrypted: 'data' }
-
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
+    it('renders the Drive widget immediately on the Restore tab (before the dummy key resolves)', () => {
+      // Hold deriveKey pending so the dummy-key effect never completes this tick.
+      vi.mocked(cryptoModule.deriveKey).mockImplementation(
+        () => new Promise<CryptoKey>(() => {})
       )
-      mockPickFile.mockResolvedValue({ id: 'picked-file-id', name: 'backup.json' })
-      global.confirm = vi.fn().mockReturnValue(true)
 
-      renderPasswordGate({
-        shape: 'absent',
-        onUnlock: mockOnUnlock,
-        onReset,
-        driveReady: true,
-        driveEmail: 'user@example.com',
-        handleConnect: mockHandleConnect,
-      })
+      renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
       fireEvent.click(screen.getByLabelText('Restore'))
 
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      // Wait for the "Pick a file" button to appear
-      const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
-      fireEvent.click(pickButton)
-
-      await waitFor(() => {
-        expect(
-          screen.getByText('This backup was saved with a different encryption password. Enter that password to restore:')
-        ).toBeTruthy()
-      })
+      // Widget is present synchronously, rendered unconditionally.
+      expect(screen.getByTestId('drive-widget')).toBeTruthy()
+      // ...alongside the loading placeholder while the dummy key is still pending.
+      expect(screen.getByText('Loading restore options...')).toBeTruthy()
     })
 
-    it('correct backup password decrypts and calls onUnlock with (retryKey, promptSalt, decryptedState)', async () => {
-      const mockOnUnlock = vi.fn()
-      const backupPassword = 'correct-backup-password'
-      const backupSalt = new Uint8Array([4, 5, 6])
-      const restoredState = initialState()
-      restoredState.accounts = [
-        {
-          id: 'restored-acc',
-          accountNumber: '999',
-          name: 'Restored Account',
-          retirement: false,
-          createdAt: '2024-01-01',
-        },
-      ]
-      const mockEnvelope = { encrypted: 'data' }
-      const backupKey = { backup: 'key' } as unknown as CryptoKey
-
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
+    it('while the dummy key is pending the widget stays interactive and no window.alert fires on connect', () => {
+      const alertSpy = vi.fn()
+      global.alert = alertSpy
+      vi.mocked(cryptoModule.deriveKey).mockImplementation(
+        () => new Promise<CryptoKey>(() => {})
       )
-      mockPickFile.mockResolvedValue({ id: 'picked-file-id', name: 'backup.json' })
-      vi.mocked(global.confirm).mockReturnValue(true)
 
-      const { container } = renderPasswordGate({
-        shape: 'absent',
-        onUnlock: mockOnUnlock,
-        onReset,
-        driveReady: true,
-        driveEmail: 'user@example.com',
-      })
+      renderPasswordGate({ shape: 'absent', onUnlock, onReset })
+
+      fireEvent.click(screen.getByLabelText('Restore'))
+
+      expect(screen.getByText('Loading restore options...')).toBeTruthy()
+
+      const connectButton = screen.getByTestId('widget-connect')
+      expect(connectButton).toBeTruthy()
+      fireEvent.click(connectButton)
+
+      expect(alertSpy).not.toHaveBeenCalled()
+    })
+
+    it('once the dummy key resolves, DriveRestorePanel content replaces the loading placeholder in the same card', async () => {
+      renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
       fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
+        expect(screen.queryByText('Loading restore options...')).toBeFalsy()
       })
 
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      // Wait for the "Pick a file" button to appear
-      const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
-      fireEvent.click(pickButton)
-
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      // Now set up the mocks for the cross-password attempt
-      vi.mocked(cryptoModule.deriveKey).mockResolvedValue(backupKey)
-      vi.mocked(cryptoModule.decryptState).mockResolvedValue(restoredState)
-
-      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: backupPassword } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      await waitFor(() => {
-        expect(mockOnUnlock).toHaveBeenCalledWith(backupKey, backupSalt, restoredState)
-      })
+      // Widget is still rendered in the Google Drive card next to the panel.
+      expect(screen.getByTestId('drive-widget')).toBeTruthy()
     })
 
-    it('wrong backup password shows "Incorrect encryption password" and keeps prompt open', async () => {
-      const mockOnUnlock = vi.fn()
-      const backupSalt = new Uint8Array([4, 5, 6])
-      const mockEnvelope = { encrypted: 'data' }
-
-      vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(
-        new driveModule.DriveDecryptError('backup encrypted with a different password', backupSalt, mockEnvelope)
-      )
-      vi.mocked(cryptoModule.decryptState).mockRejectedValue(new Error('decrypt failed'))
-      mockPickFile.mockResolvedValue({ id: 'picked-file-id', name: 'backup.json' })
-      global.confirm = vi.fn().mockReturnValue(true)
-
-      const { container } = renderPasswordGate({
-        shape: 'absent',
-        onUnlock: mockOnUnlock,
-        onReset,
-        driveReady: true,
-        driveEmail: 'user@example.com',
-      })
+    it('with useDriveConnection reporting connected:false, no "Restore from Drive" button appears in the Restore tab', async () => {
+      renderPasswordGate({ shape: 'absent', onUnlock, onReset })
 
       fireEvent.click(screen.getByLabelText('Restore'))
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Restore from Drive' })).toBeTruthy()
+        expect(screen.queryByText('Loading restore options...')).toBeFalsy()
       })
 
-      fireEvent.click(screen.getByRole('button', { name: 'Restore from Drive' }))
-
-      // Wait for the "Pick a file" button to appear
-      const pickButton = await screen.findByRole('button', { name: 'Pick a file' })
-      fireEvent.click(pickButton)
-
-      await waitFor(() => {
-        expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
-      })
-
-      const passwordInputs = Array.from(container.querySelectorAll('input[type="password"]')) as HTMLInputElement[]
-      fireEvent.change(passwordInputs[0], { target: { value: 'wrong-password' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Restore with this password' }))
-
-      await waitFor(() => {
-        expect(screen.getByText('Incorrect encryption password')).toBeTruthy()
-      })
-
-      expect(mockOnUnlock).not.toHaveBeenCalled()
-      expect(screen.getByText(/This backup was saved with a different encryption password/)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Restore from Drive' })).toBeFalsy()
+      expect(screen.queryByText('Restore from Drive')).toBeFalsy()
     })
 
-
-    it('clicking "Disconnect" on restore tab calls handleDisconnect', async () => {
-      const mockHandleDisconnect = vi.fn()
+    it('wires the widget onConnected/onDisconnected callbacks to the onDriveConnected/onDriveDisconnected props', () => {
+      const onDriveConnected = vi.fn()
+      const onDriveDisconnected = vi.fn()
 
       renderPasswordGate({
         shape: 'absent',
         onUnlock,
         onReset,
-        driveReady: true,
-        driveEmail: 'user@example.com',
-        handleDisconnect: mockHandleDisconnect,
+        onDriveConnected,
+        onDriveDisconnected,
       })
 
       fireEvent.click(screen.getByLabelText('Restore'))
 
-      await waitFor(() => {
-        expect(screen.getByText('user@example.com')).toBeTruthy()
-      })
+      fireEvent.click(screen.getByTestId('widget-connect'))
+      expect(onDriveConnected).toHaveBeenCalled()
 
-      fireEvent.click(screen.getByText('Disconnect'))
-
-      expect(mockHandleDisconnect).toHaveBeenCalled()
+      fireEvent.click(screen.getByTestId('widget-disconnect'))
+      expect(onDriveDisconnected).toHaveBeenCalled()
     })
 
     it('Reset App link/dialog works identically from restore tab', async () => {

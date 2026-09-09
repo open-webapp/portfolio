@@ -6,26 +6,18 @@ import { appReducer } from './lib/reducer'
 import { importPositions } from './lib/positionsImport'
 import { importTransactions } from './lib/transactionsImport'
 import { peekEnvelopeShape, savePersistedApp } from './lib/persist'
-import { drive } from './lib/drive'
+import { driveAuth } from './lib/drive'
+import { useDriveConnection } from '@open-webapp/drive-connect'
 import App from './App'
-
-const CONNECTED_AUTH_STATUS = {
-  connected: true,
-  email: 'test@gmail.com',
-  expiresAt: Date.now() + 3_600_000,
-  needsReauth: false,
-  tokenValid: true,
-}
 
 // Stable session key/salt used by the mocked PasswordGate's onUnlock callback.
 // Declared via vi.hoisted so it's initialized before the hoisted vi.mock factories run.
-// Also capture PasswordGate props for testing early Drive status checks.
+// passwordGatePropsCapture keeps the last `shape` prop the mocked PasswordGate saw
+// (used by the auto-lock test to assert gateShape isn't reset to 'absent').
 const { mockSessionKey, mockSessionSalt, passwordGatePropsCapture, mockUnlockLoadedState } = vi.hoisted(() => ({
   mockSessionKey: {} as CryptoKey,
   mockSessionSalt: new Uint8Array([1, 2, 3]),
   passwordGatePropsCapture: {
-    driveReady: undefined as boolean | undefined,
-    driveEmail: undefined as string | null | undefined,
     shape: undefined as 'absent' | 'legacy-plaintext' | 'encrypted' | null | undefined,
   },
   // Mutable box so individual tests can make the mocked PasswordGate's onUnlock hand
@@ -43,20 +35,56 @@ vi.mock('./lib/priceSync', () => ({
 
 vi.mock('./lib/drive', () => ({
   drive: { activate: vi.fn(() => vi.fn()) },
-  getDriveAuthStatus: vi.fn().mockResolvedValue({
-    connected: false,
-    email: null,
-    expiresAt: null,
-    needsReauth: false,
-    tokenValid: false,
-  }),
+  driveAuth: {
+    activate: vi.fn(() => () => {}),
+    getStatus: vi.fn(() => ({
+      connected: false,
+      email: null,
+      expiresAt: null,
+      needsReauth: false,
+      tokenValid: false,
+      connecting: false,
+      error: null,
+    })),
+    ensureFresh: vi.fn(),
+    refresh: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    subscribe: vi.fn(() => () => {}),
+  },
   getBackupFileId: vi.fn().mockResolvedValue(null),
-  ensureFreshConnection: vi.fn(),
-  disconnectDrive: vi.fn(),
   syncBackup: vi.fn(),
   overwriteLocalWithRemote: vi.fn(),
   overwriteRemoteWithLocal: vi.fn(),
   getBackupFileStatus: vi.fn(),
+}))
+
+vi.mock('@open-webapp/drive-connect', () => ({
+  GoogleDriveWidget: ({
+    onConnected,
+    onDisconnected,
+  }: {
+    onConnected?: (connection: unknown) => void
+    onDisconnected?: () => void
+  }) => (
+    <div>
+      <button data-testid="widget-connect" onClick={() => onConnected?.({})}>
+        c
+      </button>
+      <button data-testid="widget-disconnect" onClick={() => onDisconnected?.()}>
+        d
+      </button>
+    </div>
+  ),
+  useDriveConnection: vi.fn(() => ({
+    connected: false,
+    email: null,
+    connecting: false,
+    error: null,
+    needsReauth: false,
+    refresh: vi.fn(),
+  })),
+  createDriveAuth: vi.fn(),
 }))
 
 vi.mock('./lib/persist', () => ({
@@ -70,18 +98,12 @@ vi.mock('./lib/persist', () => ({
 vi.mock('./components/PasswordGate', () => ({
   PasswordGate: ({
     onUnlock,
-    driveReady,
-    driveEmail,
     shape,
   }: {
     onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: unknown) => void
-    driveReady?: boolean
-    driveEmail?: string | null
     shape?: 'absent' | 'legacy-plaintext' | 'encrypted' | null
   }) => {
     // Capture props for test verification
-    passwordGatePropsCapture.driveReady = driveReady
-    passwordGatePropsCapture.driveEmail = driveEmail
     passwordGatePropsCapture.shape = shape
     return (
       <button onClick={() => onUnlock(mockSessionKey, mockSessionSalt, mockUnlockLoadedState.current)}>
@@ -370,73 +392,39 @@ describe('persistence on unmount within the debounce window', () => {
   })
 })
 
-describe('Drive-sync activation', () => {
+describe('Drive-sync activation + connect/disconnect wiring', () => {
+  const CONNECTED = {
+    connected: true,
+    email: 'test@gmail.com',
+    connecting: false,
+    error: null,
+    needsReauth: false,
+    refresh: vi.fn(),
+  }
+
   beforeEach(async () => {
     vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
-    // Reset mocks to default disconnected state
     const driveModule = await import('./lib/drive')
-    vi.mocked(driveModule.getDriveAuthStatus).mockClear()
-    vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue({
-      connected: false,
-      email: null,
-      expiresAt: null,
-      needsReauth: false,
-      tokenValid: false,
-    })
+    vi.mocked(driveModule.driveAuth.activate).mockClear()
+    vi.mocked(driveModule.driveAuth.activate).mockReturnValue(() => {})
     vi.mocked(driveModule.getBackupFileId).mockClear()
     vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
-    passwordGatePropsCapture.driveReady = undefined
-    passwordGatePropsCapture.driveEmail = undefined
-  })
-
-  it('early Drive status check populates driveReady and driveEmail before password gate is passed', async () => {
-    // Mock getDriveAuthStatus to return connected status
-    const getDriveAuthStatusMock = vi.mocked((await import('./lib/drive')).getDriveAuthStatus)
-    getDriveAuthStatusMock.mockResolvedValue({
-      connected: true,
-      email: 'test@gmail.com',
-      tokenValid: true,
-      expiresAt: Date.now() + 3600000,
+    vi.mocked(useDriveConnection).mockReturnValue({
+      connected: false,
+      email: null,
+      connecting: false,
+      error: null,
       needsReauth: false,
+      refresh: vi.fn(),
     })
-
-    // Mock getBackupFileId to ensure it's not called before unlock
-    const getBackupFileIdMock = vi.mocked((await import('./lib/drive')).getBackupFileId)
-    getBackupFileIdMock.mockClear()
-    getBackupFileIdMock.mockResolvedValue(null)
-
-    // Reset captured props
-    passwordGatePropsCapture.driveReady = undefined
-    passwordGatePropsCapture.driveEmail = undefined
-
-    render(<App />)
-
-    // Wait for the early Drive status check to resolve before checking the gate
-    await waitFor(() => {
-      expect(screen.getByText('MockUnlock')).toBeTruthy()
-    })
-
-    // Verify PasswordGate received the correct Drive props BEFORE unlock
-    expect(passwordGatePropsCapture.driveReady).toBe(true)
-    expect(passwordGatePropsCapture.driveEmail).toBe('test@gmail.com')
-
-    // Verify getBackupFileId was NOT called yet (it should only be called after unlock)
-    expect(getBackupFileIdMock).not.toHaveBeenCalled()
-
-    // Now click unlock and verify the Positions page renders
-    fireEvent.click(screen.getByText('MockUnlock'))
-
-    await waitFor(() => {
-      expect(screen.queryByText('Loading...')).toBeFalsy()
-      expect(screen.getByText('Positions')).toBeTruthy()
-    })
-
-    // After unlock, getBackupFileId SHOULD have been called
-    expect(getBackupFileIdMock).toHaveBeenCalled()
   })
 
-  it('does not call drive.activate() while the password gate is showing, so a stale cached token cannot trigger a silent Google reauth prompt before local unlock', async () => {
-    const activateMock = vi.mocked(drive.activate)
+  // (timing, Decision 17) The pre-unlock GoogleDriveWidget path (PasswordGate
+  // rendered, sessionKey still null) must not run driveAuth.activate() — a stale
+  // cached token could otherwise trigger a silent Google reauth prompt before
+  // local unlock.
+  it('does not call driveAuth.activate() while the password gate is showing (sessionKey null)', async () => {
+    const activateMock = vi.mocked(driveAuth.activate)
     activateMock.mockClear()
 
     render(<App />)
@@ -448,95 +436,101 @@ describe('Drive-sync activation', () => {
     expect(activateMock).not.toHaveBeenCalled()
   })
 
-  it('calls drive.activate() once the password gate is passed, and disposes it on unmount, so the cached Drive token is silently warmed up instead of going stale between settings-opens/syncs', async () => {
-    const activateMock = vi.mocked(drive.activate)
+  // (timing, Decision 17) activate() runs exactly once, only after unlock, and
+  // its returned dispose fn runs on unmount.
+  it('calls driveAuth.activate() exactly once after unlock (never before) and disposes it on unmount', async () => {
     const disposeSpy = vi.fn()
+    const activateMock = vi.mocked(driveAuth.activate)
     activateMock.mockReturnValue(disposeSpy)
     activateMock.mockClear()
 
-    const { unmount } = await renderUnlockedApp()
+    const { unmount } = render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('MockUnlock')).toBeTruthy()
+    })
+    // sessionKey === null → activate must not have run yet.
+    expect(activateMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('MockUnlock'))
+    await waitFor(() => {
+      expect(screen.getByText('Positions')).toBeTruthy()
+    })
 
     expect(activateMock).toHaveBeenCalledTimes(1)
     expect(disposeSpy).not.toHaveBeenCalled()
 
     unmount()
-
     expect(disposeSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('resets syncing state to false when user cancels Google auth', async () => {
-    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
-    const ensureFreshConnectionMock = vi.mocked((await import('./lib/drive')).ensureFreshConnection)
-    ensureFreshConnectionMock.mockRejectedValueOnce(new Error('User cancelled the login flow'))
+  // (wiring) GoogleDriveWidget.onConnected → App.onDriveConnected → getBackupFileId(),
+  // and the resolved id is surfaced via DriveRestorePanel's "View backup" link.
+  it('firing the widget onConnected wiring calls getBackupFileId and surfaces the resolved backup file id', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(useDriveConnection).mockReturnValue({ ...CONNECTED })
 
     await renderUnlockedApp()
+    fireEvent.click(screen.getByTitle('Settings'))
+    await waitFor(() => expect(screen.getByText('Google Drive Sync')).toBeTruthy())
 
-    // Navigate to settings
-    const gearButton = screen.getByTitle('Settings')
-    fireEvent.click(gearButton)
+    vi.mocked(driveModule.getBackupFileId).mockClear()
+    vi.mocked(driveModule.getBackupFileId).mockResolvedValue('backup-file-123')
+
+    fireEvent.click(screen.getByTestId('widget-connect'))
 
     await waitFor(() => {
-      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+      expect(driveModule.getBackupFileId).toHaveBeenCalledTimes(1)
     })
-
-    // Click Connect button
-    const connectButton = screen.getByRole('button', { name: 'Connect Google Account' })
-    fireEvent.click(connectButton)
-
-    // Button should show "Connecting..." while the flow is in progress
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Connecting...' })).toBeTruthy()
-    })
-
-    // After the error is caught, button should return to "Connect Google Account" state
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Connect Google Account' })).toBeTruthy()
-      expect(screen.queryByRole('button', { name: 'Connecting...' })).toBeFalsy()
-    })
+    const link = await screen.findByText('View backup in Google Drive')
+    expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/backup-file-123/view')
   })
 
-  it('early Drive status check logs error if getDriveAuthStatus fails, leaves state at defaults', async () => {
-    // Mock getDriveAuthStatus to reject with an error
-    const getDriveAuthStatusMock = vi.mocked((await import('./lib/drive')).getDriveAuthStatus)
-    getDriveAuthStatusMock.mockRejectedValueOnce(new Error('Network error'))
-
-    // Spy on console.warn to verify the error is logged
+  // (wiring) A rejecting getBackupFileId after onConnected must not throw, must
+  // leave backupFileId null, and must not tear down the connected UI.
+  it('a rejecting getBackupFileId after onConnected does not throw, leaves backupFileId null, and keeps the connection', async () => {
+    const driveModule = await import('./lib/drive')
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(useDriveConnection).mockReturnValue({ ...CONNECTED })
 
-    // Reset captured props
-    passwordGatePropsCapture.driveReady = undefined
-    passwordGatePropsCapture.driveEmail = undefined
+    await renderUnlockedApp()
+    fireEvent.click(screen.getByTitle('Settings'))
+    await waitFor(() => expect(screen.getByText('Google Drive Sync')).toBeTruthy())
 
-    render(<App />)
+    vi.mocked(driveModule.getBackupFileId).mockClear()
+    vi.mocked(driveModule.getBackupFileId).mockRejectedValue(new Error('lookup failed'))
 
-    // Wait for the PasswordGate to render
+    fireEvent.click(screen.getByTestId('widget-connect'))
+
     await waitFor(() => {
-      expect(screen.getByText('MockUnlock')).toBeTruthy()
+      expect(driveModule.getBackupFileId).toHaveBeenCalled()
     })
-
-    // Verify that driveReady and driveEmail stayed at defaults (error was caught and logged)
-    expect(passwordGatePropsCapture.driveReady).toBe(false)
-    expect(passwordGatePropsCapture.driveEmail).toBe(null)
-
-    // Verify the error was logged to console.warn
-    expect(warnSpy).toHaveBeenCalled()
-    const warnCall = warnSpy.mock.calls.find((call) =>
-      call[0]?.toString().includes('Drive status check failed') || call[0]?.includes?.('Network error')
-    )
-    expect(warnCall).toBeTruthy()
-
+    await waitFor(() => {
+      expect(screen.queryByText('View backup in Google Drive')).toBeFalsy()
+    })
+    // Drive Sync section still mounted — connection not forgotten.
+    expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     warnSpy.mockRestore()
+  })
 
-    // Click unlock and verify the Positions page renders with no errors
-    fireEvent.click(screen.getByText('MockUnlock'))
+  // (wiring) GoogleDriveWidget.onDisconnected → App.onDriveDisconnected clears backupFileId.
+  it('firing the widget onDisconnected wiring clears backupFileId', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(useDriveConnection).mockReturnValue({ ...CONNECTED })
 
+    await renderUnlockedApp()
+    fireEvent.click(screen.getByTitle('Settings'))
+    await waitFor(() => expect(screen.getByText('Google Drive Sync')).toBeTruthy())
+
+    // Connect first so there's a backupFileId to clear.
+    vi.mocked(driveModule.getBackupFileId).mockResolvedValue('backup-file-123')
+    fireEvent.click(screen.getByTestId('widget-connect'))
+    await screen.findByText('View backup in Google Drive')
+
+    fireEvent.click(screen.getByTestId('widget-disconnect'))
     await waitFor(() => {
-      expect(screen.queryByText('Loading...')).toBeFalsy()
-      expect(screen.getByText('Positions')).toBeTruthy()
+      expect(screen.queryByText('View backup in Google Drive')).toBeFalsy()
     })
-
-    // No console errors should have occurred
-    expect(screen.queryByText('Error')).toBeFalsy()
   })
 })
 
@@ -862,9 +856,17 @@ describe('Drive sync conflict resolution', () => {
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
+    vi.mocked(useDriveConnection).mockReturnValue({
+      connected: true,
+      email: 'test@gmail.com',
+      connecting: false,
+      error: null,
+      needsReauth: false,
+      refresh: vi.fn(),
+    })
     const driveModule = await import('./lib/drive')
-    vi.mocked(driveModule.getDriveAuthStatus).mockResolvedValue({ ...CONNECTED_AUTH_STATUS })
     vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
+    vi.mocked(driveModule.driveAuth.refresh).mockClear()
     vi.mocked(driveModule.syncBackup).mockReset()
     vi.mocked(driveModule.overwriteLocalWithRemote).mockReset()
     vi.mocked(driveModule.overwriteRemoteWithLocal).mockReset()
@@ -989,6 +991,21 @@ describe('Drive sync conflict resolution', () => {
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith('Sync failed: network down')
     })
+    expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+  })
+
+  it('(reauth) a NeedsReauthError from syncBackup calls driveAuth.refresh once and still alerts "Sync failed", with no dialog', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(
+      Object.assign(new Error('needs reauth'), { name: 'NeedsReauthError' })
+    )
+
+    await renderAndSync()
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith('Sync failed: needs reauth')
+    })
+    expect(driveModule.driveAuth.refresh).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('Drive backup changed')).toBeFalsy()
   })
 

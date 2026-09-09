@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
-import { getDriveAuthStatus, syncBackup } from '../lib/drive'
+import { GoogleDriveWidget } from '@open-webapp/drive-connect'
+import { driveAuth, syncBackup } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp, clearPersistedApp } from '../lib/persist'
 import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
@@ -14,13 +15,11 @@ export interface SettingsPageProps {
   sessionSalt: Uint8Array
   onKeyChange: (newKey: CryptoKey, newSalt: Uint8Array) => void
   onPasswordEntryTimeReset: () => void
-  driveReady: boolean
-  driveEmail: string | null
+  onDriveConnected: (connection: unknown) => void
+  onDriveDisconnected: () => void
   backupFileId: string | null
   syncing: boolean
   setSyncing: (v: boolean) => void
-  handleConnect: () => void
-  handleDisconnect: () => void
   settingsSection: 'backup' | 'encryption' | 'priceSync'
   setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
@@ -40,13 +39,11 @@ export function SettingsPage({
   sessionSalt,
   onKeyChange,
   onPasswordEntryTimeReset,
-  driveReady,
-  driveEmail,
+  onDriveConnected,
+  onDriveDisconnected,
   backupFileId,
   syncing,
   setSyncing,
-  handleConnect,
-  handleDisconnect,
   settingsSection,
   setSettingsSection,
   runPriceSyncTrigger,
@@ -125,12 +122,13 @@ export function SettingsPage({
 
       let syncWarning: string | null = null
       try {
-        const driveStatus = await getDriveAuthStatus()
+        const driveStatus = driveAuth.getStatus()
         if (driveStatus.connected) {
           await syncBackup(state, newKey, newSalt)
         }
       } catch (error) {
         console.error('Drive re-sync after password change failed:', error)
+        if ((error as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
         const message = error instanceof Error ? error.message : String(error)
         syncWarning = `Encryption password changed locally, but Drive re-sync failed: ${message}. Sync manually from Google Drive Sync above.`
       }
@@ -195,14 +193,16 @@ export function SettingsPage({
       {settingsSection === 'backup' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Google Drive Sync</div>
+        <GoogleDriveWidget
+          auth={driveAuth}
+          onConnected={onDriveConnected}
+          onDisconnected={onDriveDisconnected}
+        />
         <DriveRestorePanel
-          driveReady={driveReady}
-          driveEmail={driveEmail}
+          auth={driveAuth}
           backupFileId={backupFileId}
           syncing={syncing}
           setSyncing={setSyncing}
-          handleConnect={handleConnect}
-          handleDisconnect={handleDisconnect}
           restoreKey={sessionKey}
           restoreSalt={sessionSalt}
           onRestored={(state, key, salt) => {
