@@ -161,6 +161,7 @@ Connect/disconnect UI is the `@open-webapp/drive-connect` package widget (`<Goog
 - Connecting no longer greys out the "Restore from Drive" button; connect/disconnect no longer flip the app's `syncing` flag (which now means only "a sync/restore content op is running").
 - On app load the app still does **not** auto-look-up the backup file ID — it's fetched in the widget's `onConnected` callback (a failed lookup just leaves the "View backup in Google Drive" link hidden), and cleared on disconnect.
 - Token warm-up runs only after local unlock; a valid cached token is reused without prompting, and a single in-flight guard means at most one Google auth window even under rapid sync/restore/connect.
+- The connected/needs-reauth badge is eventually consistent, not instant: after a Drive auth error the app does not force an immediate status refresh — the widget catches up on its own next trigger (remount, tab-visibility warm-up, cross-tab broadcast, or the next connect()/disconnect()), per `@open-webapp/drive-sync`'s internal triggers.
 
 ### Restore from Google Drive
 

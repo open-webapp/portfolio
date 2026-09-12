@@ -61,9 +61,6 @@ const mockOnRestored = vi.fn()
 
 function makeAuth() {
   return {
-    getStatus: vi.fn(),
-    subscribe: vi.fn(() => () => {}),
-    refresh: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
     ensureFresh: vi.fn(),
@@ -80,7 +77,6 @@ function setConnection({ connected = false, connecting = false }: { connected?: 
     connecting,
     error: null,
     needsReauth: false,
-    refresh: vi.fn(),
   } as unknown as ReturnType<typeof useDriveConnection>)
 }
 
@@ -329,7 +325,7 @@ describe('DriveRestorePanel', () => {
       })
     })
 
-    it('error: restore throws a non-DriveDecryptError (NeedsReauthError) → alert shown AND auth.refresh called once', async () => {
+    it('error: restore throws a non-DriveDecryptError (NeedsReauthError) → alert shown, no crash', async () => {
       const error = new Error('session expired')
       error.name = 'NeedsReauthError'
       mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
@@ -352,11 +348,9 @@ describe('DriveRestorePanel', () => {
       await waitFor(() => {
         expect(global.alert).toHaveBeenCalledWith('Restore failed: session expired')
       })
-
-      expect(mockAuth.refresh).toHaveBeenCalledTimes(1)
     })
 
-    it('error: restore throws a plain Error → alert shown, auth.refresh NOT called', async () => {
+    it('error: restore throws a plain Error → alert shown, no crash', async () => {
       const error = new Error('File permission denied')
       mockPickFile.mockResolvedValue({ id: 'file-123', name: 'backup.json' })
       vi.mocked(driveModule.restoreBackupFromFileId).mockRejectedValue(error)
@@ -374,8 +368,6 @@ describe('DriveRestorePanel', () => {
       await waitFor(() => {
         expect(global.alert).toHaveBeenCalledWith('Restore failed: File permission denied')
       })
-
-      expect(mockAuth.refresh).not.toHaveBeenCalled()
     })
 
     it('error: pickFile throws error → error message shown', async () => {

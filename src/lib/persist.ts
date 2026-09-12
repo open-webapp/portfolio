@@ -2,17 +2,9 @@ import type { AppState } from './state'
 import { initialState } from './state'
 import { decryptState, detectEnvelopeShape, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
-import type { ProjectSync } from '@open-webapp/project-sync'
 
 const STORE_NAME = 'app_state'
 const STATE_KEY = 'current'
-
-// Global reference to the project-sync instance (initialized by App.tsx)
-let appInstance: ProjectSync | null = null
-
-export function setProjectSyncInstance(app: ProjectSync): void {
-  appInstance = app
-}
 
 function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64)
@@ -234,24 +226,17 @@ export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
  * fails (e.g. wrong password → OperationError propagates uncaught).
  */
 export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null> {
-  let db: IDBDatabase
-
-  if (appInstance) {
-    const dbHandle = await appInstance.data.getActiveDb() as any
-    db = dbHandle as IDBDatabase
-  } else {
-    db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('portfolio_app_state_v1', 1)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-      request.onupgradeneeded = (event) => {
-        const dbNew = (event.target as IDBOpenDBRequest).result
-        if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
-          dbNew.createObjectStore(STORE_NAME)
-        }
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('portfolio_app_state_v1', 1)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+    request.onupgradeneeded = (event) => {
+      const dbNew = (event.target as IDBOpenDBRequest).result
+      if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
+        dbNew.createObjectStore(STORE_NAME)
       }
-    })
-  }
+    }
+  })
 
   const raw = await new Promise<unknown>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly')
@@ -280,24 +265,17 @@ export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null>
 export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Uint8Array): Promise<void> {
   try {
     const envelope = await encryptState(state, key, salt)
-    let db: IDBDatabase
-
-    if (appInstance) {
-      const dbHandle = await appInstance.data.getActiveDb() as any
-      db = dbHandle as IDBDatabase
-    } else {
-      db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open('portfolio_app_state_v1', 1)
-        request.onerror = () => reject(request.error)
-        request.onsuccess = () => resolve(request.result)
-        request.onupgradeneeded = (event) => {
-          const dbNew = (event.target as IDBOpenDBRequest).result
-          if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
-            dbNew.createObjectStore(STORE_NAME)
-          }
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('portfolio_app_state_v1', 1)
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+      request.onupgradeneeded = (event) => {
+        const dbNew = (event.target as IDBOpenDBRequest).result
+        if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
+          dbNew.createObjectStore(STORE_NAME)
         }
-      })
-    }
+      }
+    })
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite')
@@ -317,24 +295,17 @@ export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Ui
  * Deletes the persisted app state entry from the active project's database.
  */
 export async function clearPersistedApp(): Promise<void> {
-  let db: IDBDatabase
-
-  if (appInstance) {
-    const dbHandle = await appInstance.data.getActiveDb() as any
-    db = dbHandle as IDBDatabase
-  } else {
-    db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('portfolio_app_state_v1', 1)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-      request.onupgradeneeded = (event) => {
-        const dbNew = (event.target as IDBOpenDBRequest).result
-        if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
-          dbNew.createObjectStore(STORE_NAME)
-        }
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('portfolio_app_state_v1', 1)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+    request.onupgradeneeded = (event) => {
+      const dbNew = (event.target as IDBOpenDBRequest).result
+      if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
+        dbNew.createObjectStore(STORE_NAME)
       }
-    })
-  }
+    }
+  })
 
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite')

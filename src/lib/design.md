@@ -36,7 +36,11 @@ SELECT_ACCOUNT (accountId, categoryKey) → selectAccount (state.ts) → sets se
 
 ### Drive Connection Persistence
 
-Auth: `driveAuth = createDriveAuth({ drive: driveSync, projectId: 'app', tokenBufferMs: 5*60*1000 })` from `@open-webapp/drive-connect`, co-located in `drive.ts` (a separate `driveAuth.ts` would import-cycle with `drive.ts`). Handle API: `getStatus()` (sync), `subscribe(fn)`, `refresh()`, `connect()`, `disconnect()`, `ensureFresh()`, `activate()`. It owns the connection-status store, the single `connectInFlight` guard (shared by the widget's Connect button and `ensureFresh()` — prevents a double Google popup), and the visibility/pageshow token warm-up.
+Auth: `driveAuth = createDriveAuth({ drive: driveSync, projectId: 'app', tokenBufferMs: 5*60*1000 })` from `@open-webapp/drive-connect` (0.2.0), co-located in `drive.ts` (a separate `driveAuth.ts` would import-cycle with `drive.ts`). `DriveAuthHandle` API is exactly `{ connect(): Promise<Connection>, disconnect(): Promise<void>, ensureFresh(): Promise<Connection>, activate(): () => void }` — the old status-getter, subscription, and manual-refresh methods are gone. It owns the single `connectInFlight` guard (shared by the widget's Connect button and `ensureFresh()` — prevents a double Google popup) and the visibility/pageshow token warm-up. It does NOT own a connection-status store of its own — status lives in drive-sync.
+
+Status: `useDriveConnection(driveAuth)` → `{ connected, email, connecting, error, needsReauth }` is the only read path (unchanged shape/hook signature). Internally it reads drive-sync's own connection store (`ProjectHandle.getConnectionSync()`/`subscribeConnection(cb)` on `driveSync.project('app')`) — drive-sync is the real single source of truth for `connected`/`email`/`needsReauth`; drive-connect layers only `connecting`/`error` (its own in-flight/last-error state) on top.
+
+`getConnectionSnapshot(): Connection | null` (`drive.ts`) — wraps `driveSync.project(APP_PROJECT_ID).getConnectionSync()`; synchronous, never throws, `null` means disconnected OR not-yet-hydrated (indistinguishable). One call site: `Settings.tsx`'s `handleChangePassword`, gating the re-sync as `if (getConnectionSnapshot() !== null) { await syncBackup(...) }`.
 
 `App.tsx` holds NO Drive auth state — connection state is read via `useDriveConnection(driveAuth)`; `{ connected }` feeds `<Nav>`. No pre-gate Drive status probe; no `getBackupFileId()` auto-call on initial load.
 
@@ -46,12 +50,7 @@ Post-unlock, a single effect gated on `sessionKey !== null` calls `driveAuth.act
 
 The four content ops (`syncBackup`, `restoreBackupFromFileId`, `overwriteLocalWithRemote`, `overwriteRemoteWithLocal`) call `await driveAuth.ensureFresh()`.
 
-`driveAuth.refresh()` on `NeedsReauthError` (fire-and-forget, never awaited, control flow unchanged) at five catch sites:
-- `App.tsx` `handleSync` (before the `RemoteChangedError` branch)
-- `App.tsx` `handleConflictTakeRemote` (catch re-throws)
-- `App.tsx` `handleConflictPushLocal` (catch re-throws)
-- `Settings.tsx` `handleChangePassword` re-sync
-- `DriveRestorePanel.tsx` `DriveFilePickerDialog.onSelect` (non-`DriveDecryptError` branch)
+No `NeedsReauthError` catch site calls a manual auth refresh/re-probe anymore — the five former call sites (`App.tsx` `handleSync`/`handleConflictTakeRemote`/`handleConflictPushLocal`, `Settings.tsx` `handleChangePassword`, `DriveRestorePanel.tsx`'s `DriveFilePickerDialog.onSelect`) were deleted outright, with no retry/poll/re-subscribe logic added in their place. This is an accepted behavior change: after a `NeedsReauthError`, the connected/needs-reauth badge no longer updates instantly — it is eventually consistent, catching up passively on drive-sync's own next trigger (mount, visibility warm-up, cross-tab broadcast, or a subsequent `connect()`/`disconnect()`), not on the error itself.
 
 `getBackupFileId()`'s own internal `NeedsReauthError` catch in `drive.ts` is a passive probe and stays silent (unchanged).
 

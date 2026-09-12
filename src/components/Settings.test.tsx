@@ -22,10 +22,10 @@ vi.mock('../lib/importExport', async (importOriginal) => {
 const mockPickFile = vi.fn()
 const mockEnsureFolderPath = vi.fn()
 
-// Mock the drive module. Settings.tsx uses `driveAuth` (in handleChangePassword,
-// via driveAuth.getStatus() / driveAuth.refresh()) and `syncBackup`. The real
-// DriveRestorePanel it renders also needs restoreBackupFromFileId /
-// decryptBackupEnvelope / DriveDecryptError / drive to import cleanly.
+// Mock the drive module. Settings.tsx uses `driveAuth`, `getConnectionSnapshot`
+// (in handleChangePassword) and `syncBackup`. The real DriveRestorePanel it
+// renders also needs restoreBackupFromFileId / decryptBackupEnvelope /
+// DriveDecryptError / drive to import cleanly.
 vi.mock('../lib/drive', () => {
   class DriveDecryptError extends Error {
     salt: Uint8Array
@@ -50,14 +50,12 @@ vi.mock('../lib/drive', () => {
       return crypto.decryptState(envelope, key)
     }),
     driveAuth: {
-      getStatus: vi.fn(),
-      subscribe: vi.fn(() => () => {}),
-      refresh: vi.fn(),
       connect: vi.fn(),
       disconnect: vi.fn(),
       ensureFresh: vi.fn(),
       activate: vi.fn(() => () => {}),
     },
+    getConnectionSnapshot: vi.fn(() => null),
     syncBackup: vi.fn(),
     DriveDecryptError,
   }
@@ -90,7 +88,6 @@ vi.mock('@open-webapp/drive-connect', () => ({
     connecting: false,
     error: null,
     needsReauth: false,
-    refresh: vi.fn(),
   })),
   createDriveAuth: vi.fn(),
 }))
@@ -130,25 +127,11 @@ function getMfBlock(container: HTMLElement): HTMLElement {
   return fieldDiv.parentElement as HTMLElement
 }
 
-// driveAuth.getStatus() is SYNCHRONOUS and returns a DriveAuthStatus.
-const notConnectedStatus = {
-  connected: false,
-  email: null,
-  expiresAt: null,
-  needsReauth: false,
-  tokenValid: false,
-  connecting: false,
-  error: null,
-}
-
-const connectedStatus = {
-  connected: true,
+// getConnectionSnapshot() is SYNCHRONOUS and returns a Connection | null.
+const connectedSnapshot = {
   email: 'test@example.com',
-  expiresAt: Date.now() + 60 * 60 * 1000,
   needsReauth: false,
-  tokenValid: true,
-  connecting: false,
-  error: null,
+  expiresAt: Date.now() + 60 * 60 * 1000,
 }
 
 describe('SettingsPage', () => {
@@ -282,7 +265,7 @@ describe('SettingsPage', () => {
     }
 
     beforeEach(() => {
-      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(notConnectedStatus as never)
+      vi.mocked(driveModule.getConnectionSnapshot).mockReturnValue(null)
     })
 
     it('Change Password button has btn btn-primary blueprint classes', () => {
@@ -418,10 +401,10 @@ describe('SettingsPage', () => {
       expect(mockOnKeyChange).not.toHaveBeenCalled()
     })
 
-    it('also syncs to Drive with the new key/salt when driveAuth.getStatus() is connected', async () => {
+    it('also syncs to Drive with the new key/salt when getConnectionSnapshot() is connected', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
       vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
-      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(connectedStatus as never)
+      vi.mocked(driveModule.getConnectionSnapshot).mockReturnValue(connectedSnapshot)
       vi.mocked(driveModule.syncBackup).mockResolvedValue('file-id')
       const state = initialState()
 
@@ -452,7 +435,7 @@ describe('SettingsPage', () => {
     it('keeps the local password change and shows the exact warning copy when Drive re-sync fails', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
       vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
-      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(connectedStatus as never)
+      vi.mocked(driveModule.getConnectionSnapshot).mockReturnValue(connectedSnapshot)
       vi.mocked(driveModule.syncBackup).mockRejectedValue(new Error('network down'))
 
       const { container } = renderSettings({ settingsSection: 'encryption' })
@@ -474,15 +457,12 @@ describe('SettingsPage', () => {
         /Encryption password changed locally, but Drive re-sync failed: network down/
       )
       expect(warningEl.textContent?.endsWith('Sync manually from Google Drive Sync above.')).toBe(true)
-
-      // NeedsReauthError-specific refresh is NOT triggered for a plain Error
-      expect(driveModule.driveAuth.refresh).not.toHaveBeenCalled()
     })
 
-    it('calls driveAuth.refresh exactly once when Drive re-sync rejects with a NeedsReauthError', async () => {
+    it('password change still succeeds locally and shows the warning when Drive re-sync rejects with a NeedsReauthError, with no reauth side effect attempted', async () => {
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(initialState())
       vi.mocked(persistModule.savePersistedApp).mockResolvedValue()
-      vi.mocked(driveModule.driveAuth.getStatus).mockReturnValue(connectedStatus as never)
+      vi.mocked(driveModule.getConnectionSnapshot).mockReturnValue(connectedSnapshot)
       const reauthError = new Error('token expired')
       reauthError.name = 'NeedsReauthError'
       vi.mocked(driveModule.syncBackup).mockRejectedValue(reauthError)
@@ -495,10 +475,6 @@ describe('SettingsPage', () => {
         confirm: 'new-password-1',
       })
 
-      await waitFor(() => {
-        expect(driveModule.driveAuth.refresh).toHaveBeenCalledTimes(1)
-      })
-
       // Local change still succeeds and the warning is still shown
       await waitFor(() => {
         expect(mockOnKeyChange).toHaveBeenCalled()
@@ -508,6 +484,10 @@ describe('SettingsPage', () => {
           screen.getByText(/Encryption password changed locally, but Drive re-sync failed: token expired/)
         ).toBeTruthy()
       })
+
+      // `refresh` no longer exists anywhere on the driveAuth mock - nothing
+      // resembling a reauth side effect is attempted.
+      expect((driveModule.driveAuth as Record<string, unknown>).refresh).toBeUndefined()
     })
   })
 
