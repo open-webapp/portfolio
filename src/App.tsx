@@ -257,7 +257,6 @@ function App() {
       alert('Synced to Drive')
     } catch (error) {
       console.error('Sync failed:', error)
-      if ((error as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
       if ((error as { name?: string })?.name === 'RemoteChangedError') {
         const fileId = backupFileId ?? (error as { fileId?: string }).fileId ?? (await getBackupFileId())
         if (!fileId) {
@@ -311,26 +310,16 @@ function App() {
   }, [state, sessionKey, sessionSalt, backupFileId])
 
   const handleConflictTakeRemote = useCallback(async () => {
-    try {
-      const newState = await overwriteLocalWithRemote(syncConflict!.fileId, sessionKey!)
-      dispatch({ type: '__SET_STATE', newState })
-      setSyncConflict(null)
-    } catch (e) {
-      if ((e as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
-      throw e
-    }
+    const newState = await overwriteLocalWithRemote(syncConflict!.fileId, sessionKey!)
+    dispatch({ type: '__SET_STATE', newState })
+    setSyncConflict(null)
   }, [syncConflict, sessionKey])
 
   const handleConflictPushLocal = useCallback(async () => {
-    try {
-      const fileId = await overwriteRemoteWithLocal(state, sessionKey!, sessionSalt!, syncConflict!.fileId)
-      setBackupFileId(fileId)
-      setSyncConflict(null)
-      alert('Synced to Drive')
-    } catch (e) {
-      if ((e as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
-      throw e
-    }
+    const fileId = await overwriteRemoteWithLocal(state, sessionKey!, sessionSalt!, syncConflict!.fileId)
+    setBackupFileId(fileId)
+    setSyncConflict(null)
+    alert('Synced to Drive')
   }, [state, sessionKey, sessionSalt, syncConflict])
 
   const handleBounceToGate = useCallback(() => {

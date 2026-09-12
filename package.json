@@ -11,9 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@open-webapp/drive-connect": "^0.1.1",
-    "@open-webapp/drive-sync": "^0.7.0",
-    "@open-webapp/project-sync": "^0.1.5",
+    "@open-webapp/drive-connect": "^0.2.0",
+    "@open-webapp/drive-sync": "^0.8.0",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "lucide-react": "^1.28.0",
     "papaparse": "^5.5.4",

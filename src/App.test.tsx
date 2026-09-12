@@ -47,7 +47,6 @@ vi.mock('./lib/drive', () => ({
       error: null,
     })),
     ensureFresh: vi.fn(),
-    refresh: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
     subscribe: vi.fn(() => () => {}),
@@ -866,7 +865,6 @@ describe('Drive sync conflict resolution', () => {
     })
     const driveModule = await import('./lib/drive')
     vi.mocked(driveModule.getBackupFileId).mockResolvedValue(null)
-    vi.mocked(driveModule.driveAuth.refresh).mockClear()
     vi.mocked(driveModule.syncBackup).mockReset()
     vi.mocked(driveModule.overwriteLocalWithRemote).mockReset()
     vi.mocked(driveModule.overwriteRemoteWithLocal).mockReset()
@@ -994,7 +992,7 @@ describe('Drive sync conflict resolution', () => {
     expect(screen.queryByText('Drive backup changed')).toBeFalsy()
   })
 
-  it('(reauth) a NeedsReauthError from syncBackup calls driveAuth.refresh once and still alerts "Sync failed", with no dialog', async () => {
+  it('(edge) a NeedsReauthError from syncBackup falls through to the generic "Sync failed" alert, with no dialog', async () => {
     const driveModule = await import('./lib/drive')
     vi.mocked(driveModule.syncBackup).mockRejectedValue(
       Object.assign(new Error('needs reauth'), { name: 'NeedsReauthError' })
@@ -1005,8 +1003,45 @@ describe('Drive sync conflict resolution', () => {
     await waitFor(() => {
       expect(alertSpy).toHaveBeenCalledWith('Sync failed: needs reauth')
     })
-    expect(driveModule.driveAuth.refresh).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+  })
+
+  it('(error) a NeedsReauthError from overwriteLocalWithRemote surfaces a generic inline error and keeps the dialog open', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+    vi.mocked(driveModule.overwriteLocalWithRemote).mockRejectedValue(
+      Object.assign(new Error('needs reauth'), { name: 'NeedsReauthError' })
+    )
+
+    await renderAndSync()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite local with remote' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy()
+    })
+    expect(screen.getByText('Drive backup changed')).toBeTruthy()
+    expect(driveModule.overwriteLocalWithRemote).toHaveBeenCalledTimes(1)
+    expect(alertSpy).not.toHaveBeenCalledWith('Synced to Drive')
+  })
+
+  it('(error) a NeedsReauthError from overwriteRemoteWithLocal surfaces a generic inline error and keeps the dialog open', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(remoteChangedError())
+    vi.mocked(driveModule.overwriteRemoteWithLocal).mockRejectedValue(
+      Object.assign(new Error('needs reauth'), { name: 'NeedsReauthError' })
+    )
+
+    await renderAndSync()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Overwrite remote with local' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy()
+    })
+    expect(screen.getByText('Drive backup changed')).toBeTruthy()
+    expect(driveModule.overwriteRemoteWithLocal).toHaveBeenCalledTimes(1)
+    expect(alertSpy).not.toHaveBeenCalledWith('Synced to Drive')
   })
 
   it('(edge) Cancel unmounts the dialog and calls no resolution helper', async () => {

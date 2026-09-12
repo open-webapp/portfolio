@@ -55,7 +55,6 @@ vi.mock('@open-webapp/drive-connect', () => ({
     connecting: false,
     error: null,
     needsReauth: false,
-    refresh: vi.fn(),
   })),
   createDriveAuth: vi.fn(),
 }))
@@ -79,9 +78,6 @@ vi.mock('../lib/drive', async (importOriginal) => {
   return {
     ...actual,
     driveAuth: {
-      getStatus: vi.fn(),
-      subscribe: vi.fn(() => () => {}),
-      refresh: vi.fn(),
       connect: vi.fn(),
       disconnect: vi.fn(),
       ensureFresh: vi.fn(),

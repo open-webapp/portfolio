@@ -29,9 +29,9 @@ Local-first, single-user React 19 + TypeScript + Vite portfolio tracker ("Ledger
 - `src/lib/reducer.ts` — thin `appReducer(state, action)` dispatch table that just calls the `state.ts` helpers
 - New features that mutate state: add a helper in `state.ts`, then a case in `reducer.ts` — don't put logic directly in the reducer or in components.
 
-**Persistence**: IndexedDB via `@open-webapp/project-sync` package. Each project gets its own derived db name (`owa-project-sync-{appId}-<projectId>`). App state (accounts, positions, transactions) lives in the per-project db via `app.data.getActiveDb()`. `App.tsx` hydrates on mount from the active project and debounce-saves (500ms) on every state change, with a flush on `pagehide`/`visibilitychange→hidden`/unmount. Migration on first run adopts the existing `portfolio_app_state_v1` into the first project.
+**Persistence**: `src/lib/persist.ts` opens a single IndexedDB directly (`indexedDB.open('portfolio_app_state_v1', 1)`) — no project registry, no per-project db naming. App state (accounts, positions, transactions) lives in that one db. `App.tsx` hydrates on mount and debounce-saves (500ms) on every state change, with a flush on `pagehide`/`visibilitychange→hidden`/unmount.
 
-**Sync**: Uses `@open-webapp/project-sync` package for project registry, per-project data-store lifecycle, sync orchestration, and status tracking. See `@open-webapp/project-sync` SPEC.md for complete design decisions. `src/lib/drive.ts` implements a single `SyncDocument` that wraps app state in an `EncryptedEnvelope`, uploaded to Drive as `portfolio-state.json`. App-supplied merge handles decryption, comparison, and conflict resolution (remote-wins semantics for encrypted state).
+**Sync**: `src/lib/drive.ts` hand-rolls Drive backup/restore/conflict handling directly against `@open-webapp/drive-sync` — wraps app state in an `EncryptedEnvelope`, uploaded to Drive as `portfolio-state.json`; decryption, comparison, and conflict resolution (remote-wins semantics for encrypted state) are app-supplied. Sync is manual-only (Sync button), no auto-sync. `@open-webapp/drive-connect` supplies just the connection/auth widget and the `useDriveConnection` hook (status is hook-only — `DriveAuthHandle` exposes only `{connect, disconnect, ensureFresh, activate}`); `getConnectionSnapshot()` in `src/lib/drive.ts` reads the current `Connection` snapshot.
 
 **Domain model** (`src/lib/types.ts`): `Account`, `Position`, `ClosedPosition`, `Transaction`, `PortfolioSnapshot`, `MappingProfile`. Key invariants:
 - `PortfolioSnapshot` natural key is `(accountId, date)` — re-importing an account's positions on the same calendar day *replaces* that day's snapshot rather than adding a duplicate point.
@@ -47,9 +47,7 @@ Local-first, single-user React 19 + TypeScript + Vite portfolio tracker ("Ledger
 
 **Design/spec reference**: `portfolio-dashboard-design/project/Portfolio Dashboard.dc.html` is the pixel-reference HTML/CSS/JS prototype this app is built from (see `portfolio-dashboard-design/README.md`). Reimplement its math/markup shape in React — do not literally reuse its mock `ACCOUNTS` data, synthetic `buildTransactions`, or the Watchlist/Alerts feature (explicitly out of scope; grep for `watchlist` case-insensitive in `src/` should always return nothing).
 
-**Tests**: vitest + jsdom, one `*.test.ts` colocated per `src/lib/*.ts` module. `drive.test.ts` verifies merge contract and document sync behavior against the exported test suites from `@open-webapp/project-sync/testing`.
-
-**Migrations**: `src/lib/migrations/adoptExistingState.ts` runs once at boot. If the registry is empty and the legacy `portfolio_app_state_v1` IndexedDB exists, creates one project named "My Portfolio" and copies the encrypted state into it, then deletes the legacy db.
+**Tests**: vitest + jsdom, one `*.test.ts` colocated per `src/lib/*.ts` module. `drive.test.ts` covers the conflict-reconcile helpers, the `driveAuth.ensureFresh` gate before sync operations, the T13 real-`createDriveAuth` auth-popup-race test, and `getConnectionSnapshot()`.
 
 For the full original task breakdown and data-model rationale, see `plans/portfolio-dashboard-v1.md`.
 

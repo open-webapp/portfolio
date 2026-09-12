@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
-import { driveAuth, syncBackup } from '../lib/drive'
+import { driveAuth, syncBackup, getConnectionSnapshot } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp, clearPersistedApp } from '../lib/persist'
 import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
@@ -122,13 +122,11 @@ export function SettingsPage({
 
       let syncWarning: string | null = null
       try {
-        const driveStatus = driveAuth.getStatus()
-        if (driveStatus.connected) {
+        if (getConnectionSnapshot() !== null) {
           await syncBackup(state, newKey, newSalt)
         }
       } catch (error) {
         console.error('Drive re-sync after password change failed:', error)
-        if ((error as { name?: string })?.name === 'NeedsReauthError') driveAuth.refresh()
         const message = error instanceof Error ? error.message : String(error)
         syncWarning = `Encryption password changed locally, but Drive re-sync failed: ${message}. Sync manually from Google Drive Sync above.`
       }

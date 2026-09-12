@@ -183,7 +183,6 @@ export function DriveRestorePanel({
               }
               console.error('Restore from picked file failed:', error)
               alert(`Restore failed: ${error instanceof Error ? error.message : String(error)}`)
-              if ((error as { name?: string })?.name === 'NeedsReauthError') auth.refresh()
             } finally {
               setSyncing(false)
             }
