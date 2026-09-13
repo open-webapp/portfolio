@@ -152,9 +152,6 @@ function fixtureState(): AppState {
     },
 
     balanceEntries: [],
-    budgetIncomeMonthly: 0,
-    budgetIncomeYearly: 0,
-    budgetExpenses: [],
 
     // UI state
     view: 'accounts',

@@ -11,7 +11,6 @@ import type {
   HeldSymbolPrice,
   PriceSyncLastRun,
   BalanceEntry,
-  Expense,
 } from './types'
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
@@ -28,12 +27,9 @@ export interface AppState {
   priceSync: PriceSyncState
   mutualFundSync: MutualFundSyncState
   balanceEntries: BalanceEntry[]
-  budgetIncomeMonthly: number
-  budgetIncomeYearly: number
-  budgetExpenses: Expense[]
 
   // UI state
-  view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'
+  view: 'settings' | 'accounts' | 'quotes' | 'register'
   sortKey: keyof Position
   sortDir: 'asc' | 'desc'
   txTypeFilter: string // 'All' or specific type like 'Buy'
@@ -75,9 +71,6 @@ export function initialState(): AppState {
     },
     mutualFundSync: { apiKey: '', heldPrices: {}, lastRun: null, callBudget: { date: '', callsUsed: 0 } },
     balanceEntries: [],
-    budgetIncomeMonthly: 0,
-    budgetIncomeYearly: 0,
-    budgetExpenses: [],
 
     // UI state
     view: 'accounts',
@@ -534,9 +527,6 @@ export function replaceImportedState(state: AppState, data: ExportableState): Ap
     csvMappings: data.csvMappings,
     customInstitutions: data.customInstitutions,
     balanceEntries: data.balanceEntries,
-    budgetIncomeMonthly: data.budgetIncomeMonthly,
-    budgetIncomeYearly: data.budgetIncomeYearly,
-    budgetExpenses: data.budgetExpenses,
     priceSync: {
       ...state.priceSync,
       apiKey: data.priceSync.apiKey,
@@ -547,36 +537,6 @@ export function replaceImportedState(state: AppState, data: ExportableState): Ap
       apiKey: data.mutualFundSync.apiKey,
       lastRun: data.mutualFundSync.lastRun,
     },
-  }
-}
-
-export function setBudgetIncomeMonthly(state: AppState, amount: number): AppState {
-  return { ...state, budgetIncomeMonthly: Math.max(0, amount) }
-}
-
-export function setBudgetIncomeYearly(state: AppState, amount: number): AppState {
-  return { ...state, budgetIncomeYearly: Math.max(0, amount) }
-}
-
-export function addBudgetExpense(state: AppState, expense: Omit<Expense, 'id'>): AppState {
-  const id = uid('expense')
-  return {
-    ...state,
-    budgetExpenses: [...state.budgetExpenses, { ...expense, id }],
-  }
-}
-
-export function updateBudgetExpense(state: AppState, id: string, patch: Partial<Omit<Expense, 'id'>>): AppState {
-  return {
-    ...state,
-    budgetExpenses: state.budgetExpenses.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-  }
-}
-
-export function removeBudgetExpense(state: AppState, id: string): AppState {
-  return {
-    ...state,
-    budgetExpenses: state.budgetExpenses.filter((e) => e.id !== id),
   }
 }
 

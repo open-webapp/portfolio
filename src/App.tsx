@@ -7,7 +7,6 @@ import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
 import { RegisterPage } from './components/RegisterPage'
 import { QuotesPage } from './components/QuotesPage'
-import { BudgetPage } from './components/BudgetPage'
 import { PasswordGate } from './components/PasswordGate'
 import { SyncConflictDialog } from './components/SyncConflictDialog'
 import { PortfolioPicker } from './components/PortfolioPicker'
@@ -721,10 +720,7 @@ function App() {
           onSwitchPortfolio={() => navigateToPicker()}
         />
 
-        {state.view === 'budget' ? (
-          /* Budget page view */
-          <BudgetPage state={state} dispatch={dispatch} />
-        ) : state.view === 'accounts' ? (
+        {state.view === 'accounts' ? (
           /* Accounts page view */
           <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
             <AccountsPage state={state} dispatch={dispatch} />
