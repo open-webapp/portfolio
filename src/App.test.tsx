@@ -328,8 +328,9 @@ describe('view switching (accounts vs settings)', () => {
   it('renders the expected main nav tabs (no Dashboard tab)', async () => {
     await renderUnlockedApp()
 
-    // The Nav renders exactly the expected main tabs (Positions, Register, Quotes)
+    // The Nav renders exactly the expected main tabs (Budget, Positions, Register, Quotes)
     // and nothing else (no Dashboard tab).
+    expect(screen.getByText('Budget')).toBeTruthy()
     expect(screen.getByText('Positions')).toBeTruthy()
     expect(screen.getByText('Register')).toBeTruthy()
     expect(screen.getByText('Quotes')).toBeTruthy()
@@ -343,6 +344,16 @@ describe('view switching (accounts vs settings)', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Record Balances')).toBeTruthy()
+    })
+  })
+
+  it('should switch to budget page when the Budget tab is clicked', async () => {
+    await renderUnlockedApp()
+
+    fireEvent.click(navTab('Budget'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Add Expense')).toBeTruthy()
     })
   })
 

@@ -12,6 +12,7 @@ import {
 } from './importExport'
 import { deriveKey, decryptState, encryptState, generateSalt } from './crypto'
 import type { ExportableState } from './importExport'
+import { DEFAULT_CATEGORIES } from './computations'
 
 function populatedState(): AppState {
   const base = initialState()
@@ -39,6 +40,10 @@ function populatedState(): AppState {
     balanceEntries: [
       { id: 'bal1', accountId: 'acc1', date: '2024-01-01', balance: 5000, activities: [{ type: 'Contribution', amount: 100, note: 'note' }] },
     ],
+    budgetIncomeMonthly: 4500,
+    budgetIncomeYearly: 0,
+    budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 1800, frequency: 'monthly' }],
+    budgetCategories: [...DEFAULT_CATEGORIES, 'Custom Cat'],
     priceSync: {
       apiKey: 'price-api-key',
       lastFetchedDate: '2024-03-01',
@@ -71,6 +76,9 @@ describe('buildExportableState', () => {
     expect(result.csvMappings).toBe(state.csvMappings)
     expect(result.customInstitutions).toBe(state.customInstitutions)
     expect(result.balanceEntries).toBe(state.balanceEntries)
+    expect(result.budgetIncomeMonthly).toBe(4500)
+    expect(result.budgetExpenses).toBe(state.budgetExpenses)
+    expect(result.budgetCategories).toBe(state.budgetCategories)
 
     expect(result.priceSync).toEqual({ apiKey: 'price-api-key', lastRun: state.priceSync.lastRun })
     expect(result.mutualFundSync).toEqual({ apiKey: 'mf-api-key', lastRun: state.mutualFundSync.lastRun })
@@ -79,6 +87,10 @@ describe('buildExportableState', () => {
       [
         'accounts',
         'balanceEntries',
+        'budgetCategories',
+        'budgetExpenses',
+        'budgetIncomeMonthly',
+        'budgetIncomeYearly',
         'closedPositions',
         'csvMappings',
         'customInstitutions',
@@ -243,5 +255,46 @@ describe('decryptImportEnvelope', () => {
     const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
     expect(result.snapshots).toEqual([])
     expect(result.snapshots).not.toBeUndefined()
+  })
+
+  it('round-trips all 4 budget fields (including a custom category) exactly', async () => {
+    const state = populatedState()
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+    const envelope = await exportBackup(state, key, salt)
+
+    const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
+    expect(result.budgetIncomeMonthly).toBe(4500)
+    expect(result.budgetIncomeYearly).toBe(0)
+    expect(result.budgetExpenses).toEqual([{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 1800, frequency: 'monthly' }])
+    expect(result.budgetCategories).toEqual([...DEFAULT_CATEGORIES, 'Custom Cat'])
+  })
+
+  it('defaults budgetCategories to DEFAULT_CATEGORIES (not empty array) for a legacy backup missing the field', async () => {
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+    // Simulate a pre-budget-feature backup missing all 4 budget fields
+    // entirely, built directly rather than via buildExportableState.
+    const legacy: Partial<ExportableState> = {
+      accounts: [],
+      positions: [],
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      csvMappings: [],
+      customInstitutions: [],
+      balanceEntries: [],
+      // budgetIncomeMonthly, budgetIncomeYearly, budgetExpenses,
+      // budgetCategories intentionally omitted
+      priceSync: { apiKey: '', lastRun: null },
+      mutualFundSync: { apiKey: '', lastRun: null },
+    }
+    const envelope = await encryptState(legacy as unknown as AppState, key, salt)
+
+    const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
+    expect(result.budgetIncomeMonthly).toBe(0)
+    expect(result.budgetIncomeYearly).toBe(0)
+    expect(result.budgetExpenses).toEqual([])
+    expect(result.budgetCategories).toEqual([...DEFAULT_CATEGORIES])
   })
 })

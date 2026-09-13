@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
-import type { BalanceEntry } from './types'
+import type { BalanceEntry, Expense } from './types'
 
 export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
@@ -38,6 +38,13 @@ export type AppAction =
   | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
   | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
+  | { type: 'SET_BUDGET_INCOME_MONTHLY'; amount: number }
+  | { type: 'SET_BUDGET_INCOME_YEARLY'; amount: number }
+  | { type: 'ADD_BUDGET_EXPENSE'; expense: Omit<Expense, 'id'> }
+  | { type: 'UPDATE_BUDGET_EXPENSE'; id: string; patch: Partial<Omit<Expense, 'id'>> }
+  | { type: 'DELETE_BUDGET_EXPENSE'; id: string }
+  | { type: 'ADD_BUDGET_CATEGORY'; name: string }
+  | { type: 'DELETE_BUDGET_CATEGORY'; name: string }
 
 /**
  * Reducer function that handles all state mutations.
@@ -158,6 +165,28 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_REG_ACTIVITY_FILTER':
       return StateActions.setRegActivityFilter(state, action.filter)
+
+    // Budget page
+    case 'SET_BUDGET_INCOME_MONTHLY':
+      return StateActions.setBudgetIncomeMonthly(state, action.amount)
+
+    case 'SET_BUDGET_INCOME_YEARLY':
+      return StateActions.setBudgetIncomeYearly(state, action.amount)
+
+    case 'ADD_BUDGET_EXPENSE':
+      return StateActions.addBudgetExpense(state, action.expense)
+
+    case 'UPDATE_BUDGET_EXPENSE':
+      return StateActions.updateBudgetExpense(state, action.id, action.patch)
+
+    case 'DELETE_BUDGET_EXPENSE':
+      return StateActions.deleteBudgetExpense(state, action.id)
+
+    case 'ADD_BUDGET_CATEGORY':
+      return StateActions.addBudgetCategory(state, action.name)
+
+    case 'DELETE_BUDGET_CATEGORY':
+      return StateActions.deleteBudgetCategory(state, action.name)
 
     default:
       return state
