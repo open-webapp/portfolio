@@ -36,8 +36,7 @@ src/
     PositionGroupOverlay.tsx, ClosedPositionsTable.tsx, TransactionsTable.tsx,
     AllocationChart.tsx, AssetClassOverrideSelect.tsx, InstitutionSelect.tsx,
     RegisterBalanceDialog.tsx        — view-local widgets
-    DriveRestorePanel.tsx, GateRestoreFromFilePanel.tsx, SyncConflictDialog.tsx,
-    ResetAppControl.tsx              — Drive/reset UI
+    SyncConflictDialog.tsx, ResetAppControl.tsx — Drive/reset UI
     import/
       ImportDialog.tsx, index.ts     — CSV import dialog
   styles/styles.css                  — verbatim design-bundle CSS port
@@ -82,20 +81,23 @@ Each portfolio is an isolated IndexedDB database; navigation is driven entirely 
 - `getDriveAuthFor(portfolio)`: returns a cached `DriveAuthHandle` from `driveAuthCache: Map<string, DriveAuthHandle>`, keyed by `driveProjectIdFor(portfolio)` — same portfolio always yields the same handle; distinct non-migrated portfolios get distinct, independently-authenticated handles. Built via `@open-webapp/drive-connect`'s `createDriveAuth({ drive, projectId, tokenBufferMs })`.
 - `driveSyncForPortfolio(portfolio)`: builds a fresh `createDriveSync({..., folderPath: ['OpenWebApp', 'Portfolio', portfolio.name]})` per call — folder path always reflects the portfolio's *current* name; renaming targets a new folder on next sync, old-named folder left untouched.
 - `migrateLegacyDriveFolderIfNeeded(portfolio)`: one-time, lazy, idempotent move of the legacy flat-root backup file (`OpenWebApp/Portfolio/portfolio-state.json`) into the migrated portfolio's own named subfolder. No-op for non-migrated portfolios, and once the flat file is gone. Never prompts for auth (skips if no connection / `needsReauth`).
-- A `legacyDriveSync` fixed facade + `drive` compatibility wrapper remain for `DriveRestorePanel`'s file-picker flow (not yet migrated to per-portfolio scoping — separate follow-up).
+- Picker-scoped Drive folder browsing (new-portfolio creation/import) is separate from per-portfolio sync: `getPickerDriveAuth()` (fixed `'picker'` project id) + `listPortfolioFoldersOnDrive()`/`decryptDriveFolderBackup()` in `drive.ts`, called from `App.tsx`'s handlers and passed down to `PortfolioPicker.tsx` — not component-owned. See `src/lib/design.md` for the full API.
+- `legacyDriveSync` (fixed `['OpenWebApp','Portfolio']` facade) also backs `getPickerDriveAuth()` above. The separate `drive` compatibility wrapper (its `pickFile` override) has no current callers — see `src/lib/design.md`.
 
 ## Component Tree
 
 ```
 App.tsx
 ├─ route.name === 'picker' → PortfolioPicker
-│    (portfolios, onCreate, onRename, onDelete, onOpen=navigateToPortfolio)
+│    (portfolios, onRename, onDelete, onOpen=navigateToPortfolio, onCreateNew,
+│    onImportFromDriveFolder, onImportFromFile, onListDriveFolders=listPortfolioFoldersOnDrive)
+│    — inline create/import flows; see `src/components/PortfolioPicker.design.md`
 └─ route.name === 'portfolio' → resolves Portfolio (from loaded list, or getPortfolio() fallback;
    unknown id → navigateToPicker()) → activatePortfolio() → setActivePortfolioDb + setActivePortfolio
    ├─ not yet resolved / gate shape unknown → "Loading..." placeholder
-   ├─ sessionKey === null → PasswordGate (shape, driveAuth=getDriveAuthFor(activePortfolio), activePortfolio, onUnlock, onReset, Drive props)
+   ├─ sessionKey === null → PasswordGate (shape, onUnlock, onReset — no Drive props; new portfolios skip this gate entirely via PortfolioPicker's inline create/import flow, see below)
    │    ├─ shape === 'encrypted' → EnterPasswordScreen
-   │    └─ else → SetPasswordScreen (first-run / legacy-plaintext migration, Drive connect widget, restore panels)
+   │    └─ else → SetPasswordScreen (first-run / legacy-plaintext migration only)
    └─ unlocked + hydrated → app shell
         ├─ Nav (view tabs: Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
         ├─ state.view === 'accounts'  → AccountsPage

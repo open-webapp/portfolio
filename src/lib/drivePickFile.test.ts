@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 /**
- * The wrapper in drive.ts adapts drive-sync's pickFile for DriveRestorePanel.
- * Two behaviours it must get right, neither of which drive-sync provides:
+ * The wrapper in drive.ts adapts drive-sync's pickFile (built for the
+ * now-deleted DriveRestorePanel component; the wrapper itself has no current
+ * app callers, only this test). Two behaviours it must get right, neither of
+ * which drive-sync provides:
  *
  * 1. drive-sync drops `includeFolders` on the way to openPicker, so a picker
  *    opened without a parent folder can never reach a backup that lives in a

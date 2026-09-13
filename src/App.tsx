@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
-import { initialState } from './lib/state'
+import { initialState, type AppState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb } from './lib/persist'
 import { Nav } from './components/Nav'
@@ -17,6 +17,8 @@ import {
   overwriteLocalWithRemote,
   overwriteRemoteWithLocal,
   getBackupFileStatus,
+  listPortfolioFoldersOnDrive,
+  decryptDriveFolderBackup,
 } from './lib/drive'
 import { useDriveConnection } from '@open-webapp/drive-connect'
 import { runPriceSync } from './lib/priceSync'
@@ -33,6 +35,8 @@ import {
   getPortfolio,
   migrateLegacyDbIfNeeded,
 } from './lib/portfolioRegistry'
+import { decryptImportEnvelope, getEnvelopeSaltBytes } from './lib/importExport'
+import { deriveKey, generateSalt, type EncryptedEnvelope } from './lib/crypto'
 import type { Portfolio } from './lib/types'
 import './App.css'
 
@@ -84,6 +88,10 @@ function App() {
   } | null>(null)
   const [tickerOverviewErrors, setTickerOverviewErrors] = useState<Record<string, string>>({})
   const [mutualFundSyncErrors, setMutualFundSyncErrors] = useState<Record<string, string>>({})
+
+  // Tracks browser online/offline status (e.g. for gating Drive-import
+  // affordances in the portfolio picker). Not yet wired into any JSX.
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   // Which section of the Settings page is active
   const [settingsSection, setSettingsSection] = useState<'backup' | 'encryption' | 'priceSync'>('backup')
@@ -142,6 +150,18 @@ function App() {
     migrateLegacyDbIfNeeded().then(() => listPortfolios()).then(setPortfolios)
   }, [])
 
+  // Tracks browser online/offline transitions for isOnline.
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true)
+    const onOffline = () => setIsOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
+
   // Resolve the active portfolio from the current route. Runs before the
   // gate/persist/drive effects below (which depend on `activePortfolio`) so
   // `setActivePortfolioDb` is called before any load/save/clear persistence
@@ -167,11 +187,6 @@ function App() {
     }
   }, [route, portfolios, activatePortfolio])
 
-  const handleCreatePortfolio = useCallback(async (name: string) => {
-    await createPortfolio(name)
-    setPortfolios(await listPortfolios())
-  }, [])
-
   const handleRenamePortfolio = useCallback(async (id: string, name: string) => {
     const updated = await renamePortfolio(id, name)
     setPortfolios(await listPortfolios())
@@ -182,6 +197,86 @@ function App() {
     await deletePortfolio(id)
     setPortfolios(await listPortfolios())
   }, [])
+
+  // Transitions straight from the picker's inline unlock step into the
+  // unlocked app shell for `portfolio`, bypassing PasswordGate entirely.
+  // `setGateShape('encrypted')` is a harmless placeholder so a later
+  // gateShape-resolution effect (keyed on activePortfolio.id) doesn't
+  // regress the UI back to a gate render before it resolves for real —
+  // sessionKey being non-null is what actually gates PasswordGate rendering.
+  const handleOpenUnlocked = useCallback((portfolio: Portfolio, key: CryptoKey, salt: Uint8Array, loadedState: AppState) => {
+    activatePortfolio(portfolio)
+    setSessionKey(key)
+    setSessionSalt(salt)
+    dispatch({ type: '__SET_STATE', newState: loadedState })
+    setIsHydrated(true)
+    passwordEntryTimeRef.current = Date.now()
+    lastActivityTimeRef.current = Date.now()
+    setGateShape('encrypted')
+    navigateToPortfolio(portfolio.id)
+  }, [activatePortfolio])
+
+  // Creates a brand-new portfolio with its own password (derives a fresh
+  // salt/key pair rather than reusing any other portfolio's), persists an
+  // empty initial state under it, then opens it unlocked. Lets
+  // `createPortfolio`'s "name already exists" rejection propagate so the
+  // picker's inline error UI can show it.
+  const handleCreateNewPortfolio = useCallback(async (name: string, password: string) => {
+    const salt = generateSalt()
+    const key = await deriveKey(password, salt)
+    const portfolio = await createPortfolio(name)
+    setActivePortfolioDb(portfolio.dbName)
+    const newState = initialState()
+    await savePersistedApp(newState, key, salt)
+    setPortfolios(await listPortfolios())
+    handleOpenUnlocked(portfolio, key, salt, newState)
+  }, [handleOpenUnlocked])
+
+  // Imports a portfolio backup from a Drive folder (one of the folders
+  // returned by listPortfolioFoldersOnDrive), registering it as a new local
+  // portfolio and opening it unlocked. Lets DriveDecryptError/
+  // DriveMalformedBackupError propagate for the picker's inline handling.
+  const handleImportFromDriveFolder = useCallback(async (folder: { name: string; id: string }, password: string) => {
+    const { state: importedState, key, salt } = await decryptDriveFolderBackup(folder.id, password)
+    const portfolio = await createPortfolio(folder.name)
+    setActivePortfolioDb(portfolio.dbName)
+    await savePersistedApp(importedState, key, salt)
+    setPortfolios(await listPortfolios())
+    handleOpenUnlocked(portfolio, key, salt, importedState)
+  }, [handleOpenUnlocked])
+
+  // Imports a portfolio backup from a locally-picked export file, registering
+  // it as a new local portfolio and opening it unlocked. Lets
+  // ImportDecryptError propagate for the picker's inline handling.
+  const handleImportFromFile = useCallback(async (envelope: EncryptedEnvelope, name: string, password: string) => {
+    const decrypted = await decryptImportEnvelope(envelope, password)
+    const saltBytes = getEnvelopeSaltBytes(envelope)
+    const key = await deriveKey(password, saltBytes)
+    // Rehydrates the exported data collections onto a fresh initialState(),
+    // rather than coalesceWithDefaults (which expects a full-shaped
+    // Partial<AppState>) — ExportableState's priceSync/mutualFundSync
+    // deliberately omit cache fields (heldPrices, lastFetchedDate), which a
+    // newly-created portfolio should start fresh with anyway.
+    const base = initialState()
+    const finalState: AppState = {
+      ...base,
+      accounts: decrypted.accounts,
+      positions: decrypted.positions,
+      closedPositions: decrypted.closedPositions,
+      transactions: decrypted.transactions,
+      snapshots: decrypted.snapshots,
+      csvMappings: decrypted.csvMappings,
+      customInstitutions: decrypted.customInstitutions,
+      balanceEntries: decrypted.balanceEntries,
+      priceSync: { ...base.priceSync, apiKey: decrypted.priceSync.apiKey, lastRun: decrypted.priceSync.lastRun },
+      mutualFundSync: { ...base.mutualFundSync, apiKey: decrypted.mutualFundSync.apiKey, lastRun: decrypted.mutualFundSync.lastRun },
+    }
+    const portfolio = await createPortfolio(name)
+    setActivePortfolioDb(portfolio.dbName)
+    await savePersistedApp(finalState, key, saltBytes)
+    setPortfolios(await listPortfolios())
+    handleOpenUnlocked(portfolio, key, saltBytes, finalState)
+  }, [handleOpenUnlocked])
 
   // Determine the password-gate shape on mount, and again whenever the
   // active portfolio changes.
@@ -536,10 +631,14 @@ function App() {
     return (
       <PortfolioPicker
         portfolios={portfolios}
-        onCreate={handleCreatePortfolio}
         onRename={handleRenamePortfolio}
         onDelete={handleDeletePortfolio}
         onOpen={navigateToPortfolio}
+        onCreateNew={handleCreateNewPortfolio}
+        onImportFromDriveFolder={handleImportFromDriveFolder}
+        onImportFromFile={handleImportFromFile}
+        onListDriveFolders={listPortfolioFoldersOnDrive}
+        isOnline={isOnline}
       />
     )
   }
@@ -565,11 +664,15 @@ function App() {
 
   // Not yet unlocked: render the password gate instead of the normal app tree.
   if (sessionKey === null) {
+    // Invariant: by the time PasswordGate actually renders here, gateShape is
+    // only ever 'legacy-plaintext' or 'encrypted' — the `gateShape === null`
+    // loading-guard above already handled the not-yet-resolved case, and new
+    // portfolios now always go through handleOpenUnlocked (picker's inline
+    // create/import password step), which skips this gate entirely and never
+    // routes through the 'absent' shape.
     return (
       <PasswordGate
-        shape={gateShape}
-        driveAuth={getDriveAuthFor(activePortfolio)}
-        activePortfolio={activePortfolio!}
+        shape={gateShape as 'legacy-plaintext' | 'encrypted'}
         onUnlock={(key, salt, loadedState) => {
           setSessionKey(key)
           setSessionSalt(salt)
@@ -581,11 +684,6 @@ function App() {
           lastActivityTimeRef.current = Date.now()
         }}
         onReset={handleBounceToGate}
-        onDriveConnected={onDriveConnected}
-        onDriveDisconnected={onDriveDisconnected}
-        backupFileId={backupFileId}
-        syncing={syncing}
-        setSyncing={setSyncing}
       />
     )
   }
@@ -652,9 +750,6 @@ function App() {
               onReset={handleBounceToGate}
               onDriveConnected={onDriveConnected}
               onDriveDisconnected={onDriveDisconnected}
-              backupFileId={backupFileId}
-              syncing={syncing}
-              setSyncing={setSyncing}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
               runPriceSyncTrigger={runPriceSyncTrigger}

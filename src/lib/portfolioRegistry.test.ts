@@ -6,6 +6,7 @@ import {
   createPortfolio,
   renamePortfolio,
   deletePortfolio,
+  nameKey,
   _resetRegistryForTests,
 } from './portfolioRegistry'
 
@@ -119,5 +120,13 @@ describe('portfolioRegistry CRUD', () => {
 
   it('deletePortfolio on an unknown id is a no-op and does not throw', async () => {
     await expect(deletePortfolio('port-does-not-exist')).resolves.not.toThrow()
+  })
+})
+
+describe('nameKey', () => {
+  it('normalizes case and trims whitespace', () => {
+    expect(nameKey('  Foo  ')).toBe('foo')
+    expect(nameKey('BAR')).toBe('bar')
+    expect(nameKey('foo')).toBe(nameKey('  FOO  '))
   })
 })

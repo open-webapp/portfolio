@@ -108,6 +108,10 @@ vi.mock('./lib/drive', () => {
     overwriteLocalWithRemote: vi.fn(),
     overwriteRemoteWithLocal: vi.fn(),
     getBackupFileStatus: vi.fn(),
+    listPortfolioFoldersOnDrive: vi.fn().mockResolvedValue([]),
+    decryptDriveFolderBackup: vi.fn(),
+    DriveDecryptError: class DriveDecryptError extends Error {},
+    DriveMalformedBackupError: class DriveMalformedBackupError extends Error {},
   }
 })
 
@@ -530,9 +534,11 @@ describe('Drive-sync activation + connect/disconnect wiring', () => {
     expect(disposeSpy).toHaveBeenCalledTimes(1)
   })
 
-  // (wiring) GoogleDriveWidget.onConnected → App.onDriveConnected → getBackupFileId(),
-  // and the resolved id is surfaced via DriveRestorePanel's "View backup" link.
-  it('firing the widget onConnected wiring calls getBackupFileId and surfaces the resolved backup file id', async () => {
+  // (wiring) GoogleDriveWidget.onConnected → App.onDriveConnected → getBackupFileId().
+  // backupFileId itself is no longer surfaced in any Settings UI (the old
+  // DriveRestorePanel "View backup" link was removed along with
+  // SettingsPageProps.backupFileId) — this only verifies the lookup still fires.
+  it('firing the widget onConnected wiring calls getBackupFileId', async () => {
     const driveModule = await import('./lib/drive')
     vi.mocked(useDriveConnection).mockReturnValue({ ...CONNECTED })
 
@@ -548,13 +554,13 @@ describe('Drive-sync activation + connect/disconnect wiring', () => {
     await waitFor(() => {
       expect(driveModule.getBackupFileId).toHaveBeenCalledTimes(1)
     })
-    const link = await screen.findByText('View backup in Google Drive')
-    expect(link.getAttribute('href')).toBe('https://drive.google.com/file/d/backup-file-123/view')
+    // Drive Sync section still mounted — connection surfaced normally.
+    expect(screen.getByText('Google Drive Sync')).toBeTruthy()
   })
 
-  // (wiring) A rejecting getBackupFileId after onConnected must not throw, must
-  // leave backupFileId null, and must not tear down the connected UI.
-  it('a rejecting getBackupFileId after onConnected does not throw, leaves backupFileId null, and keeps the connection', async () => {
+  // (wiring) A rejecting getBackupFileId after onConnected must not throw and
+  // must not tear down the connected UI.
+  it('a rejecting getBackupFileId after onConnected does not throw and keeps the connection', async () => {
     const driveModule = await import('./lib/drive')
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.mocked(useDriveConnection).mockReturnValue({ ...CONNECTED })
@@ -571,16 +577,15 @@ describe('Drive-sync activation + connect/disconnect wiring', () => {
     await waitFor(() => {
       expect(driveModule.getBackupFileId).toHaveBeenCalled()
     })
-    await waitFor(() => {
-      expect(screen.queryByText('View backup in Google Drive')).toBeFalsy()
-    })
     // Drive Sync section still mounted — connection not forgotten.
     expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     warnSpy.mockRestore()
   })
 
-  // (wiring) GoogleDriveWidget.onDisconnected → App.onDriveDisconnected clears backupFileId.
-  it('firing the widget onDisconnected wiring clears backupFileId', async () => {
+  // (wiring) GoogleDriveWidget.onDisconnected → App.onDriveDisconnected fires
+  // without throwing (backupFileId itself has no surfaced UI to assert on
+  // since DriveRestorePanel was removed).
+  it('firing the widget onDisconnected wiring does not throw and keeps the Drive Sync section mounted', async () => {
     const driveModule = await import('./lib/drive')
     vi.mocked(useDriveConnection).mockReturnValue({ ...CONNECTED })
 
@@ -591,11 +596,13 @@ describe('Drive-sync activation + connect/disconnect wiring', () => {
     // Connect first so there's a backupFileId to clear.
     vi.mocked(driveModule.getBackupFileId).mockResolvedValue('backup-file-123')
     fireEvent.click(screen.getByTestId('widget-connect'))
-    await screen.findByText('View backup in Google Drive')
+    await waitFor(() => {
+      expect(driveModule.getBackupFileId).toHaveBeenCalled()
+    })
 
     fireEvent.click(screen.getByTestId('widget-disconnect'))
     await waitFor(() => {
-      expect(screen.queryByText('View backup in Google Drive')).toBeFalsy()
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
     })
   })
 })

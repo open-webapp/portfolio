@@ -50,7 +50,7 @@ function putPortfolio(p: Portfolio): Promise<void> {
   }))
 }
 
-function nameKey(name: string): string {
+export function nameKey(name: string): string {
   return name.trim().toLowerCase()
 }
 

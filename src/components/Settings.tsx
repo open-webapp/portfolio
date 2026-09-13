@@ -7,7 +7,6 @@ import { syncBackup, getConnectionSnapshot } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp, clearPersistedApp } from '../lib/persist'
 import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
-import { DriveRestorePanel } from './DriveRestorePanel'
 import { ResetAppControl } from './ResetAppControl'
 
 export interface SettingsPageProps {
@@ -21,9 +20,6 @@ export interface SettingsPageProps {
   onPasswordEntryTimeReset: () => void
   onDriveConnected: (connection: unknown) => void
   onDriveDisconnected: () => void
-  backupFileId: string | null
-  syncing: boolean
-  setSyncing: (v: boolean) => void
   settingsSection: 'backup' | 'encryption' | 'priceSync'
   setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
@@ -47,9 +43,6 @@ export function SettingsPage({
   onPasswordEntryTimeReset,
   onDriveConnected,
   onDriveDisconnected,
-  backupFileId,
-  syncing,
-  setSyncing,
   settingsSection,
   setSettingsSection,
   runPriceSyncTrigger,
@@ -201,19 +194,6 @@ export function SettingsPage({
           auth={driveAuth}
           onConnected={onDriveConnected}
           onDisconnected={onDriveDisconnected}
-        />
-        <DriveRestorePanel
-          auth={driveAuth}
-          activePortfolio={activePortfolio}
-          backupFileId={backupFileId}
-          syncing={syncing}
-          setSyncing={setSyncing}
-          restoreKey={sessionKey}
-          restoreSalt={sessionSalt}
-          onRestored={(state, key, salt) => {
-            dispatch({ type: '__SET_STATE', newState: state })
-            onKeyChange(key, salt)
-          }}
         />
       </section>
       )}
