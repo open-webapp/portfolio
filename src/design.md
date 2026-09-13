@@ -36,7 +36,7 @@ src/
     PositionGroupOverlay.tsx, ClosedPositionsTable.tsx, TransactionsTable.tsx,
     AllocationChart.tsx, AssetClassOverrideSelect.tsx, InstitutionSelect.tsx,
     RegisterBalanceDialog.tsx        — view-local widgets
-    SyncConflictDialog.tsx, ResetAppControl.tsx — Drive/reset UI
+    SyncConflictDialog.tsx           — Drive UI
     import/
       ImportDialog.tsx, index.ts     — CSV import dialog
   styles/styles.css                  — verbatim design-bundle CSS port
@@ -70,7 +70,7 @@ Each portfolio is an isolated IndexedDB database; navigation is driven entirely 
 - Parameterized by `dbName`; no hardcoded db name in the active read/write path.
 - `dbHandles: Map<string, Promise<IDBDatabase>>` caches one open connection per `dbName`.
 - `activePortfolioDbName` module-level stash, set via `setActivePortfolioDb(dbName)` (also evicts any cached handle for that name, forcing a fresh open in case a prior open raced a delete).
-- `loadPersistedApp`, `savePersistedApp`, `clearPersistedApp` call `openDb(requireActiveDbName())` — throw if `setActivePortfolioDb` was never called.
+- `loadPersistedApp`, `savePersistedApp` call `openDb(requireActiveDbName())` — throw if `setActivePortfolioDb` was never called.
 - `peekEnvelopeShape`, `peekStoredSalt`, `loadLegacyPlaintextApp` are **legacy-migration-path-only**: they always hardcode `indexedDB.open('portfolio_app_state_v1')` regardless of the active-db stash — used solely to detect pre-multi-portfolio data for one-time migration, never as general per-portfolio boot checks.
 - `coalesceWithDefaults(loaded)`: fills missing collections/fields from `initialState()` — every load path (local unlock, Drive restore) runs through this.
 
@@ -95,7 +95,7 @@ App.tsx
 └─ route.name === 'portfolio' → resolves Portfolio (from loaded list, or getPortfolio() fallback;
    unknown id → navigateToPicker()) → activatePortfolio() → setActivePortfolioDb + setActivePortfolio
    ├─ not yet resolved / gate shape unknown → "Loading..." placeholder
-   ├─ sessionKey === null → PasswordGate (shape, onUnlock, onReset — no Drive props; new portfolios skip this gate entirely via PortfolioPicker's inline create/import flow, see below)
+   ├─ sessionKey === null → PasswordGate (shape, onUnlock, onBackToPicker — no Drive props; new portfolios skip this gate entirely via PortfolioPicker's inline create/import flow, see below)
    │    ├─ shape === 'encrypted' → EnterPasswordScreen
    │    └─ else → SetPasswordScreen (first-run / legacy-plaintext migration only)
    └─ unlocked + hydrated → app shell

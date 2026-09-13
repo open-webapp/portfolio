@@ -103,12 +103,10 @@ vi.mock('@open-webapp/drive-connect', () => ({
 }))
 
 // Mock the persist module (used by the Change Password flow to verify the
-// current password and to save the re-encrypted blob under the new key, and
-// by the Reset App flow to wipe the local encrypted store)
+// current password and to save the re-encrypted blob under the new key)
 vi.mock('../lib/persist', () => ({
   loadPersistedApp: vi.fn(),
   savePersistedApp: vi.fn(),
-  clearPersistedApp: vi.fn(),
 }))
 
 // Mock window.alert and window.confirm
@@ -123,7 +121,6 @@ const mockOnDriveDisconnected = vi.fn()
 const mockSetSettingsSection = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
 const mockRunMutualFundSyncTrigger = vi.fn()
-const mockOnReset = vi.fn()
 
 // The Alphavantage sub-block is a plain <div>, not a labeled landmark, so it
 // has to be located structurally: it's the second `input[type="password"]`
@@ -182,7 +179,6 @@ describe('SettingsPage', () => {
       runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
       tickerOverviewErrors: {},
       mutualFundSyncErrors: {},
-      onReset: mockOnReset,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -801,47 +797,4 @@ describe('SettingsPage', () => {
     })
   })
 
-  describe('Danger Zone / Reset App', () => {
-    it('renders the Danger Zone card below Change Encryption Password on the encryption tab', () => {
-      const { container } = renderSettings({ settingsSection: 'encryption' })
-
-      expect(screen.getByText('Danger Zone')).toBeTruthy()
-
-      const sections = Array.from(container.querySelectorAll('section.card'))
-      const encryptionSectionIndex = sections.findIndex((s) =>
-        within(s as HTMLElement).queryAllByText('Change Encryption Password').length > 0
-      )
-      const dangerZoneIndex = sections.findIndex((s) =>
-        within(s as HTMLElement).queryByText('Danger Zone')
-      )
-      expect(encryptionSectionIndex).toBeGreaterThanOrEqual(0)
-      expect(dangerZoneIndex).toBeGreaterThan(encryptionSectionIndex)
-    })
-
-    it('reset flow: clicking Reset App, typing RESET, and confirming clears persisted app, calls onReset, and shows the toast', async () => {
-      vi.mocked(persistModule.clearPersistedApp).mockResolvedValue()
-
-      renderSettings({ settingsSection: 'encryption' })
-
-      fireEvent.click(screen.getByText('Reset App'))
-
-      const confirmInput = screen.getByPlaceholderText('RESET')
-      fireEvent.change(confirmInput, { target: { value: 'RESET' } })
-
-      const eraseButton = screen.getByRole('button', { name: 'Erase Everything' })
-      fireEvent.click(eraseButton)
-
-      await waitFor(() => {
-        expect(persistModule.clearPersistedApp).toHaveBeenCalledTimes(1)
-      })
-
-      await waitFor(() => {
-        expect(mockOnReset).toHaveBeenCalledTimes(1)
-      })
-
-      await waitFor(() => {
-        expect(screen.getByText('App reset. All data wiped.')).toBeTruthy()
-      })
-    })
-  })
 })

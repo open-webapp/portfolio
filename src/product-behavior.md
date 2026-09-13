@@ -16,7 +16,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 - Lists every registered portfolio as a row: name (click to rename inline), an **Open** button, a **Delete** link.
 - **Create**: name input + Create button below the list. Duplicate name (case-insensitive, trimmed — `"Foo"` and `"  foo  "` collide) is rejected with an inline error message; does not crash or navigate away.
 - **Rename**: click the name to enter inline edit mode. Save on blur or Enter; cancel (revert, no save) on Escape. Saving an unchanged name (trim/case-equal to current) is silently skipped — no rename call, no error. Saving a name that collides with a DIFFERENT portfolio is rejected inline (renaming a portfolio to its own current name is always allowed, never treated as a collision).
-- **Delete**: requires a native `window.confirm` ("Delete portfolio "X"? This cannot be undone.") before proceeding. Confirmed delete is immediate, irreversible, and local-only — it deletes the portfolio's IndexedDB database and its registry row, but never touches any Google Drive backup (an orphaned Drive folder, if one existed, is left in place intentionally).
+- **Delete**: requires a native `window.confirm` ("Delete portfolio "X"? This cannot be undone.") before proceeding. Confirmed delete is immediate, irreversible, and local-only — it deletes the portfolio's IndexedDB database and its registry row, but never touches any Google Drive backup (an orphaned Drive folder, if one existed, is left in place intentionally). Works on a locked/encrypted portfolio without unlocking it — only the registry id is needed, never that portfolio's password.
 - **Open**: navigates to `#/portfolio/<id>`.
 
 ### Switch Portfolio (in-app)
@@ -44,7 +44,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 - On a pre-encryption legacy plaintext blob (the one pre-multi-portfolio database migrated into a portfolio row): prompted through `SetPasswordScreen`, which migrates the plaintext data into the newly-chosen password's encrypted envelope.
 - On an existing encrypted blob: `EnterPasswordScreen` prompts for the password; wrong password fails to decrypt (no partial/garbled data shown).
 - Auto-lock: session locks after 2 hours absolute OR 5 minutes of inactivity (mouse/keyboard/touch/scroll all count as activity), checked every 30 seconds and on tab refocus. Locking flushes any pending save first, then returns to the password-entry screen (same password unlocks again — data isn't cleared).
-- "Reset" (from the gate) clears the persisted state for that portfolio's database and returns to the initial "set a password" screen — destructive, portfolio-scoped only.
+- "Back to portfolios" (from the gate, a plain text link, no confirmation step) navigates to the portfolio picker (`#/`) without touching this portfolio's data — the recovery path for a forgotten password is to delete the locked-out portfolio from the picker instead (see the picker's Delete behavior above), which never requires that portfolio's password.
 
 ### CSV Import
 

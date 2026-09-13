@@ -519,17 +519,22 @@ function App() {
     alert('Synced to Drive')
   }, [state, sessionKey, sessionSalt, syncConflict, activePortfolio])
 
-  const handleBounceToGate = useCallback(() => {
-    setGateShape('absent')
+  // Navigates back to the portfolio picker: clears the current unlock
+  // session/state and routes away, rather than resetting in place. Doesn't
+  // touch gateShape/sessionKey — once activePortfolio is null and the picker
+  // route renders, those are no longer read.
+  const handleBackToPicker = useCallback(() => {
     setSessionKey(null)
     setSessionSalt(null)
     dispatch({ type: '__SET_STATE', newState: initialState() })
     setIsHydrated(false)
+    setActivePortfolio(null)
+    navigateToPicker()
   }, [])
 
   // Locks the app due to inactivity/absolute timeout: flushes the current
   // state (best-effort) then clears the session, without touching gateShape
-  // or calling clearPersistedApp() — distinct from onReset, this is
+  // or wiping persisted data — distinct from handleBackToPicker, this is
   // non-destructive so the same password unlocks again.
   const lockNow = useCallback(() => {
     const key = sessionKeyRef.current
@@ -683,7 +688,7 @@ function App() {
           passwordEntryTimeRef.current = Date.now()
           lastActivityTimeRef.current = Date.now()
         }}
-        onReset={handleBounceToGate}
+        onBackToPicker={handleBackToPicker}
       />
     )
   }
@@ -747,7 +752,6 @@ function App() {
               onPasswordEntryTimeReset={() => {
                 passwordEntryTimeRef.current = Date.now()
               }}
-              onReset={handleBounceToGate}
               onDriveConnected={onDriveConnected}
               onDriveDisconnected={onDriveDisconnected}
               settingsSection={settingsSection}
