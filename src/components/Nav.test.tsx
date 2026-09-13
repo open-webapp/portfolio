@@ -24,20 +24,42 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
 }
 
 describe('Nav', () => {
-  // Test case 1: Positions, Register and Quotes are the main nav tabs, in order
-  it('renders exactly three main nav tabs, labeled Positions, Register and Quotes, in that order', () => {
+  // Test case 1: Budget, Positions, Register and Quotes are the main nav tabs, in order
+  it('renders exactly four main nav tabs, labeled Budget, Positions, Register and Quotes, in that order', () => {
     const props = makeProps({ state: { view: 'accounts' } as any })
     render(<Nav {...props} />)
 
+    expect(screen.getByText('Budget')).toBeTruthy()
     expect(screen.getByText('Positions')).toBeTruthy()
     expect(screen.getByText('Register')).toBeTruthy()
     expect(screen.getByText('Quotes')).toBeTruthy()
     expect(screen.queryByText('Dashboard')).toBeFalsy()
 
     const labels = Array.from(document.querySelectorAll('.nav span')).map((el) => el.textContent)
-    const order = ['Positions', 'Register', 'Quotes'].map((label) => labels.indexOf(label))
+    const order = ['Budget', 'Positions', 'Register', 'Quotes'].map((label) => labels.indexOf(label))
     expect(order[0]).toBeLessThan(order[1])
     expect(order[1]).toBeLessThan(order[2])
+    expect(order[2]).toBeLessThan(order[3])
+  })
+
+  // Test case 1b: state.view = 'budget' → Budget tab has active styling
+  it('state.view = "budget" → Budget tab has active styling, others do not', () => {
+    const props = makeProps({ state: { view: 'budget' } as any })
+    render(<Nav {...props} />)
+
+    const budgetPill = screen.getByText('Budget').closest('div') as HTMLElement
+    const positionsPill = screen.getByText('Positions').closest('div') as HTMLElement
+    expect(budgetPill.style.background).toBe('var(--color-accent-100)')
+    expect(positionsPill.style.background).not.toBe('var(--color-accent-100)')
+  })
+
+  // Test case 1c: Clicking Budget tab
+  it('clicking Budget tab dispatches { type: "SET_VIEW", view: "budget" }', () => {
+    const props = makeProps({ state: { view: 'accounts' } as any })
+    render(<Nav {...props} />)
+
+    fireEvent.click(screen.getByText('Budget'))
+    expect(props.dispatch).toHaveBeenCalledWith({ type: 'SET_VIEW', view: 'budget' })
   })
 
   // Test case 2: state.view = 'accounts' → Positions tab is active (accent-100 background)

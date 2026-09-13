@@ -16,6 +16,11 @@ import type {
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
 
+const DEFAULT_BUDGET_CATEGORIES = [
+  'Housing', 'Utilities', 'Groceries', 'Transportation', 'Insurance',
+  'Subscriptions', 'Health', 'Entertainment', 'Debt/Loans', 'Savings', 'Other',
+]
+
 export interface AppState {
   // Data collections
   accounts: Account[]
@@ -31,6 +36,7 @@ export interface AppState {
   budgetIncomeMonthly: number
   budgetIncomeYearly: number
   budgetExpenses: Expense[]
+  budgetCategories: string[]
 
   // UI state
   view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'
@@ -78,6 +84,7 @@ export function initialState(): AppState {
     budgetIncomeMonthly: 0,
     budgetIncomeYearly: 0,
     budgetExpenses: [],
+    budgetCategories: [...DEFAULT_BUDGET_CATEGORIES],
 
     // UI state
     view: 'accounts',
@@ -435,7 +442,7 @@ export function addCustomInstitution(state: AppState, name: string): AppState {
 /**
  * Set the current view (to be implemented in reducer cases).
  */
-export function setView(state: AppState, view: 'settings' | 'accounts' | 'quotes' | 'register'): AppState {
+export function setView(state: AppState, view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'): AppState {
   return {
     ...state,
     view,
@@ -537,6 +544,7 @@ export function replaceImportedState(state: AppState, data: ExportableState): Ap
     budgetIncomeMonthly: data.budgetIncomeMonthly,
     budgetIncomeYearly: data.budgetIncomeYearly,
     budgetExpenses: data.budgetExpenses,
+    budgetCategories: data.budgetCategories,
     priceSync: {
       ...state.priceSync,
       apiKey: data.priceSync.apiKey,
@@ -550,22 +558,22 @@ export function replaceImportedState(state: AppState, data: ExportableState): Ap
   }
 }
 
+/** Set the monthly income amount on the Budget page. Clamped to >= 0. */
 export function setBudgetIncomeMonthly(state: AppState, amount: number): AppState {
   return { ...state, budgetIncomeMonthly: Math.max(0, amount) }
 }
 
+/** Set the yearly income amount on the Budget page. Clamped to >= 0. */
 export function setBudgetIncomeYearly(state: AppState, amount: number): AppState {
   return { ...state, budgetIncomeYearly: Math.max(0, amount) }
 }
 
+/** Add a new expense to the Budget page's expense list. Generates its id. */
 export function addBudgetExpense(state: AppState, expense: Omit<Expense, 'id'>): AppState {
-  const id = uid('expense')
-  return {
-    ...state,
-    budgetExpenses: [...state.budgetExpenses, { ...expense, id }],
-  }
+  return { ...state, budgetExpenses: [...state.budgetExpenses, { ...expense, id: uid('expense') }] }
 }
 
+/** Patch an existing budget expense by ID. No-op if the ID isn't found. */
 export function updateBudgetExpense(state: AppState, id: string, patch: Partial<Omit<Expense, 'id'>>): AppState {
   return {
     ...state,
@@ -573,10 +581,29 @@ export function updateBudgetExpense(state: AppState, id: string, patch: Partial<
   }
 }
 
-export function removeBudgetExpense(state: AppState, id: string): AppState {
+/** Delete a budget expense by ID. No-op if the ID isn't found. */
+export function deleteBudgetExpense(state: AppState, id: string): AppState {
+  return { ...state, budgetExpenses: state.budgetExpenses.filter((e) => e.id !== id) }
+}
+
+/** Add a custom budget category. No-op if the trimmed name is empty or already present. */
+export function addBudgetCategory(state: AppState, name: string): AppState {
+  const trimmed = name.trim()
+  if (!trimmed || state.budgetCategories.includes(trimmed)) return state
+  return { ...state, budgetCategories: [...state.budgetCategories, trimmed] }
+}
+
+/**
+ * Delete a budget category. No-op for "Other" (never deletable). Any
+ * budget expenses referencing the deleted category are reassigned to
+ * "Other" in the same update.
+ */
+export function deleteBudgetCategory(state: AppState, name: string): AppState {
+  if (name === 'Other') return state
   return {
     ...state,
-    budgetExpenses: state.budgetExpenses.filter((e) => e.id !== id),
+    budgetCategories: state.budgetCategories.filter((c) => c !== name),
+    budgetExpenses: state.budgetExpenses.map((e) => (e.category === name ? { ...e, category: 'Other' } : e)),
   }
 }
 

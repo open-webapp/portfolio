@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent, glColor, GAIN_COLOR, LOSS_COLOR } from './computations'
+import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent, glColor, GAIN_COLOR, LOSS_COLOR, toMonthly, toYearly, toPeriod, DEFAULT_CATEGORIES } from './computations'
 import { Position } from './types'
 
 describe('computations', () => {
@@ -222,6 +222,55 @@ describe('computations', () => {
 
     it('returns GAIN_COLOR for zero (>= 0 tie-break)', () => {
       expect(glColor(0)).toBe(GAIN_COLOR)
+    })
+  })
+
+  describe('toMonthly', () => {
+    it('returns the amount unchanged for monthly frequency', () => {
+      expect(toMonthly(100, 'monthly')).toBe(100)
+    })
+
+    it('divides by 12 for yearly frequency', () => {
+      expect(toMonthly(1200, 'yearly')).toBe(100)
+    })
+  })
+
+  describe('toYearly', () => {
+    it('returns the amount unchanged for yearly frequency', () => {
+      expect(toYearly(1200, 'yearly')).toBe(1200)
+    })
+
+    it('multiplies by 12 for monthly frequency', () => {
+      expect(toYearly(100, 'monthly')).toBe(1200)
+    })
+  })
+
+  describe('toPeriod', () => {
+    it('monthly period + monthly freq => amount unchanged', () => {
+      expect(toPeriod(100, 'monthly', 'monthly')).toBe(100)
+    })
+
+    it('monthly period + yearly freq => divides by 12', () => {
+      expect(toPeriod(1200, 'yearly', 'monthly')).toBe(100)
+    })
+
+    it('yearly period + monthly freq => multiplies by 12', () => {
+      expect(toPeriod(100, 'monthly', 'yearly')).toBe(1200)
+    })
+
+    it('yearly period + yearly freq => amount unchanged', () => {
+      expect(toPeriod(1200, 'yearly', 'yearly')).toBe(1200)
+    })
+  })
+
+  describe('DEFAULT_CATEGORIES', () => {
+    it('has exactly 11 entries in the documented order, ending with Other', () => {
+      expect(DEFAULT_CATEGORIES).toEqual([
+        'Housing', 'Utilities', 'Groceries', 'Transportation', 'Insurance',
+        'Subscriptions', 'Health', 'Entertainment', 'Debt/Loans', 'Savings', 'Other',
+      ])
+      expect(DEFAULT_CATEGORIES.length).toBe(11)
+      expect(DEFAULT_CATEGORIES[DEFAULT_CATEGORIES.length - 1]).toBe('Other')
     })
   })
 })

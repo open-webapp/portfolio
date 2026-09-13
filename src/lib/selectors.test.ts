@@ -18,10 +18,12 @@ import {
   heldEquityEtfSymbols,
   ALPHAVANTAGE_DAILY_CALL_CAP,
   shouldRetryPolygonSync,
-  shouldRetryMutualFundSync
+  shouldRetryMutualFundSync,
+  visibleExpenses,
+  categoryBreakdown
 } from './selectors'
 import { AppState, initialState, clearAccountSelection } from './state'
-import { Account, Position, Transaction, ClosedPosition, BalanceEntry } from './types'
+import { Account, Position, Transaction, ClosedPosition, BalanceEntry, Expense } from './types'
 
 describe('selectors', () => {
   // Helper to create a test state
@@ -1530,5 +1532,109 @@ describe('selectors', () => {
     })
 
     expect(shouldRetryMutualFundSync(state, '2026-08-23')).toBe(true)
+  })
+})
+
+describe('visibleExpenses', () => {
+  const rent: Expense = { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+  const netflix: Expense = { id: 'e2', name: 'Netflix', category: 'Entertainment', amount: 180, frequency: 'yearly' }
+  const gym: Expense = { id: 'e3', name: 'Gym', category: 'Health', amount: 600, frequency: 'yearly' }
+  const groceries: Expense = { id: 'e4', name: 'Groceries', category: 'Housing', amount: 400, frequency: 'monthly' }
+  const expenses = [rent, netflix, gym, groceries]
+
+  it('__all returns everything', () => {
+    const result = visibleExpenses(expenses, '__all', 'name', 'monthly')
+    expect(result).toHaveLength(4)
+  })
+
+  it('filters by specific category', () => {
+    const result = visibleExpenses(expenses, 'Housing', 'name', 'monthly')
+    expect(result.map((e) => e.id)).toEqual(['e4', 'e1'])
+  })
+
+  it('sortBy name gives alpha order', () => {
+    const result = visibleExpenses(expenses, '__all', 'name', 'monthly')
+    expect(result.map((e) => e.name)).toEqual(['Groceries', 'Gym', 'Netflix', 'Rent'])
+  })
+
+  it('sortBy amount sorts descending by toPeriod value (monthly period)', () => {
+    // monthly equivalents: rent=2000, netflix=15, gym=50, groceries=400
+    const result = visibleExpenses(expenses, '__all', 'amount', 'monthly')
+    expect(result.map((e) => e.id)).toEqual(['e1', 'e4', 'e3', 'e2'])
+  })
+
+  it('sortBy amount sorts descending by toPeriod value (yearly period)', () => {
+    // yearly equivalents: rent=24000, netflix=180, gym=600, groceries=4800
+    const result = visibleExpenses(expenses, '__all', 'amount', 'yearly')
+    expect(result.map((e) => e.id)).toEqual(['e1', 'e4', 'e3', 'e2'])
+  })
+
+  it('sortBy category groups by category then name', () => {
+    const result = visibleExpenses(expenses, '__all', 'category', 'monthly')
+    expect(result.map((e) => e.name)).toEqual(['Netflix', 'Gym', 'Groceries', 'Rent'])
+  })
+
+  it('empty input returns empty array', () => {
+    expect(visibleExpenses([], '__all', 'name', 'monthly')).toEqual([])
+  })
+
+  it('does not mutate the original array', () => {
+    const original = [rent, netflix, gym, groceries]
+    const originalOrder = original.map((e) => e.id)
+    visibleExpenses(original, '__all', 'name', 'monthly')
+    expect(original.map((e) => e.id)).toEqual(originalOrder)
+  })
+})
+
+describe('categoryBreakdown', () => {
+  it('returns empty array for no expenses', () => {
+    expect(categoryBreakdown([], 'monthly')).toEqual([])
+  })
+
+  it('returns one entry with pct 100 for a single category', () => {
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+    ]
+    const result = categoryBreakdown(expenses, 'monthly')
+    expect(result).toEqual([{ name: 'Housing', amount: 2000, pct: 100 }])
+  })
+
+  it('sorts multiple categories descending by amount', () => {
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
+      { id: 'e2', name: 'Netflix', category: 'Entertainment', amount: 15, frequency: 'monthly' },
+      { id: 'e3', name: 'Gym', category: 'Health', amount: 50, frequency: 'monthly' }
+    ]
+    const result = categoryBreakdown(expenses, 'monthly')
+    expect(result.map((r) => r.name)).toEqual(['Housing', 'Health', 'Entertainment'])
+  })
+
+  it('pct is relative to the max category, not the sum', () => {
+    // Categories: A=100, B=100, C=200. Sum=400.
+    // Sum-based pct for C would be 50%; max-based pct for C is 100%.
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'A1', category: 'A', amount: 100, frequency: 'monthly' },
+      { id: 'e2', name: 'B1', category: 'B', amount: 100, frequency: 'monthly' },
+      { id: 'e3', name: 'C1', category: 'C', amount: 200, frequency: 'monthly' }
+    ]
+    const result = categoryBreakdown(expenses, 'monthly')
+    const cEntry = result.find((r) => r.name === 'C')
+    const aEntry = result.find((r) => r.name === 'A')
+    expect(cEntry?.pct).toBe(100)
+    expect(aEntry?.pct).toBe(50)
+  })
+
+  it('converts mixed monthly/yearly expenses via toPeriod before summing', () => {
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
+      { id: 'e2', name: 'Property Tax', category: 'Housing', amount: 12000, frequency: 'yearly' }
+    ]
+    // monthly period: rent=2000, property tax=1000 -> total 3000
+    const monthlyResult = categoryBreakdown(expenses, 'monthly')
+    expect(monthlyResult).toEqual([{ name: 'Housing', amount: 3000, pct: 100 }])
+
+    // yearly period: rent=24000, property tax=12000 -> total 36000
+    const yearlyResult = categoryBreakdown(expenses, 'yearly')
+    expect(yearlyResult).toEqual([{ name: 'Housing', amount: 36000, pct: 100 }])
   })
 })

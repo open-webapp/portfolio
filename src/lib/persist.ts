@@ -101,9 +101,6 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
           : []
       return { ...rest, activities } as typeof entry
     }),
-    budgetIncomeMonthly: loaded.budgetIncomeMonthly ?? defaults.budgetIncomeMonthly,
-    budgetIncomeYearly: loaded.budgetIncomeYearly ?? defaults.budgetIncomeYearly,
-    budgetExpenses: loaded.budgetExpenses ?? defaults.budgetExpenses,
 
     // UI state with existing values or defaults.
     // `view` is whitelisted rather than defaulted: blobs written before the
@@ -130,6 +127,10 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     regAccountId: loaded.regAccountId ?? defaults.regAccountId,
     regExpanded: loaded.regExpanded ?? defaults.regExpanded,
     regActivityFilter: loaded.regActivityFilter ?? defaults.regActivityFilter,
+    budgetIncomeMonthly: loaded.budgetIncomeMonthly ?? defaults.budgetIncomeMonthly,
+    budgetIncomeYearly: loaded.budgetIncomeYearly ?? defaults.budgetIncomeYearly,
+    budgetExpenses: loaded.budgetExpenses ?? defaults.budgetExpenses,
+    budgetCategories: loaded.budgetCategories ?? defaults.budgetCategories,
   }
 }
 

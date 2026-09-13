@@ -723,7 +723,9 @@ function App() {
 
         {state.view === 'budget' ? (
           /* Budget page view */
-          <BudgetPage state={state} dispatch={dispatch} />
+          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
+            <BudgetPage state={state} dispatch={dispatch} />
+          </div>
         ) : state.view === 'accounts' ? (
           /* Accounts page view */
           <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>

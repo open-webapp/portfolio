@@ -1,4 +1,4 @@
-import type { Position } from './types'
+import type { Position, Expense } from './types'
 
 /**
  * Shared color constants for gain/loss display.
@@ -43,6 +43,23 @@ export function fmtPortfolioPercent(value: number, total: number): string {
     return '—'
   }
   return ((value / total) * 100).toFixed(1) + '%'
+}
+
+export const DEFAULT_CATEGORIES = [
+  'Housing', 'Utilities', 'Groceries', 'Transportation', 'Insurance',
+  'Subscriptions', 'Health', 'Entertainment', 'Debt/Loans', 'Savings', 'Other',
+] as const
+
+export function toMonthly(amount: number, freq: Expense['frequency']): number {
+  return freq === 'yearly' ? amount / 12 : amount
+}
+
+export function toYearly(amount: number, freq: Expense['frequency']): number {
+  return freq === 'yearly' ? amount : amount * 12
+}
+
+export function toPeriod(amount: number, freq: Expense['frequency'], period: 'monthly' | 'yearly'): number {
+  return period === 'monthly' ? toMonthly(amount, freq) : toYearly(amount, freq)
 }
 
 /**

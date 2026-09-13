@@ -21,9 +21,16 @@ import {
   toggleRegCategoryExpanded,
   setRegActivityFilter,
   replaceImportedState,
+  setBudgetIncomeMonthly,
+  setBudgetIncomeYearly,
+  addBudgetExpense,
+  updateBudgetExpense,
+  deleteBudgetExpense,
+  addBudgetCategory,
+  deleteBudgetCategory,
 } from './state'
 import type { AppState } from './types'
-import type { BalanceEntry } from './types'
+import type { BalanceEntry, Expense } from './types'
 import type { ExportableState } from './importExport'
 
 describe('state helpers', () => {
@@ -31,6 +38,26 @@ describe('state helpers', () => {
     it('selectedCategoryKey defaults to null', () => {
       const state = initialState()
       expect(state.selectedCategoryKey).toBeNull()
+    })
+
+    it('budget fields default to zero income, no expenses, and the 11 default categories', () => {
+      const state = initialState()
+      expect(state.budgetIncomeMonthly).toBe(0)
+      expect(state.budgetIncomeYearly).toBe(0)
+      expect(state.budgetExpenses).toEqual([])
+      expect(state.budgetCategories).toEqual([
+        'Housing',
+        'Utilities',
+        'Groceries',
+        'Transportation',
+        'Insurance',
+        'Subscriptions',
+        'Health',
+        'Entertainment',
+        'Debt/Loans',
+        'Savings',
+        'Other',
+      ])
     })
   })
 
@@ -1015,8 +1042,136 @@ describe('state helpers', () => {
     })
   })
 
+  describe('setBudgetIncomeMonthly', () => {
+    it('sets the value without touching other fields', () => {
+      const state = { ...initialState(), budgetIncomeYearly: 500 }
+      const updated = setBudgetIncomeMonthly(state, 4000)
+      expect(updated.budgetIncomeMonthly).toBe(4000)
+      expect(updated.budgetIncomeYearly).toBe(500)
+    })
+
+    it('clamps negative input to 0', () => {
+      const updated = setBudgetIncomeMonthly(initialState(), -100)
+      expect(updated.budgetIncomeMonthly).toBe(0)
+    })
+  })
+
+  describe('setBudgetIncomeYearly', () => {
+    it('sets the value without touching other fields', () => {
+      const state = { ...initialState(), budgetIncomeMonthly: 300 }
+      const updated = setBudgetIncomeYearly(state, 48000)
+      expect(updated.budgetIncomeYearly).toBe(48000)
+      expect(updated.budgetIncomeMonthly).toBe(300)
+    })
+
+    it('clamps negative input to 0', () => {
+      const updated = setBudgetIncomeYearly(initialState(), -50)
+      expect(updated.budgetIncomeYearly).toBe(0)
+    })
+  })
+
+  describe('addBudgetExpense', () => {
+    it('appends a new expense with a generated id, preserving existing entries', () => {
+      const existing: Expense = { id: 'exp-1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [existing] }
+      const updated = addBudgetExpense(state, { name: 'Netflix', category: 'Subscriptions', amount: 15, frequency: 'monthly' })
+      expect(updated.budgetExpenses).toHaveLength(2)
+      expect(updated.budgetExpenses[0]).toEqual(existing)
+      expect(updated.budgetExpenses[1]).toMatchObject({ name: 'Netflix', category: 'Subscriptions', amount: 15, frequency: 'monthly' })
+      expect(typeof updated.budgetExpenses[1].id).toBe('string')
+      expect(updated.budgetExpenses[1].id.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('updateBudgetExpense', () => {
+    it('patches the matching expense by id', () => {
+      const existing: Expense = { id: 'exp-1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [existing] }
+      const updated = updateBudgetExpense(state, 'exp-1', { amount: 2100 })
+      expect(updated.budgetExpenses[0]).toEqual({ ...existing, amount: 2100 })
+    })
+
+    it('is a no-op when the id is not found', () => {
+      const existing: Expense = { id: 'exp-1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [existing] }
+      const updated = updateBudgetExpense(state, 'missing', { amount: 9999 })
+      expect(updated.budgetExpenses).toEqual([existing])
+    })
+  })
+
+  describe('deleteBudgetExpense', () => {
+    it('removes the matching expense by id', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+      const e2: Expense = { id: 'exp-2', name: 'Netflix', category: 'Subscriptions', amount: 15, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [e1, e2] }
+      const updated = deleteBudgetExpense(state, 'exp-1')
+      expect(updated.budgetExpenses).toEqual([e2])
+    })
+
+    it('is a no-op when the id is not found', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [e1] }
+      const updated = deleteBudgetExpense(state, 'missing')
+      expect(updated.budgetExpenses).toEqual([e1])
+    })
+  })
+
+  describe('addBudgetCategory', () => {
+    it('appends a new trimmed category name', () => {
+      const updated = addBudgetCategory(initialState(), '  Travel  ')
+      expect(updated.budgetCategories).toContain('Travel')
+      expect(updated.budgetCategories[updated.budgetCategories.length - 1]).toBe('Travel')
+    })
+
+    it('is a no-op for an empty or whitespace-only name', () => {
+      const state = initialState()
+      expect(addBudgetCategory(state, '')).toEqual(state)
+      expect(addBudgetCategory(state, '   ')).toEqual(state)
+    })
+
+    it('is a no-op for a name already present (exact match)', () => {
+      const state = initialState()
+      const updated = addBudgetCategory(state, 'Housing')
+      expect(updated).toEqual(state)
+    })
+  })
+
+  describe('deleteBudgetCategory', () => {
+    it('removes the category and reassigns matching expenses to Other in one call', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Gym', category: 'Health', amount: 50, frequency: 'monthly' }
+      const e2: Expense = { id: 'exp-2', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [e1, e2] }
+      const updated = deleteBudgetCategory(state, 'Health')
+      expect(updated.budgetCategories).not.toContain('Health')
+      expect(updated.budgetExpenses).toEqual([
+        { ...e1, category: 'Other' },
+        e2,
+      ])
+    })
+
+    it('is a no-op when called with "Other" (both fields unchanged)', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Misc', category: 'Other', amount: 20, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [e1] }
+      const updated = deleteBudgetCategory(state, 'Other')
+      expect(updated).toEqual(state)
+    })
+
+    it('reassigns expenses referencing a category not present in budgetCategories (unconditional reassignment)', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Old', category: 'Custom', amount: 10, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpenses: [e1] }
+      const updated = deleteBudgetCategory(state, 'Custom')
+      expect(updated.budgetCategories).toEqual(state.budgetCategories)
+      expect(updated.budgetExpenses).toEqual([{ ...e1, category: 'Other' }])
+    })
+  })
+
   describe('replaceImportedState', () => {
-    const sampleData: ExportableState = {
+    // Cast (rather than annotate) as ExportableState: this fixture includes
+    // budgetIncomeMonthly/budgetIncomeYearly/budgetExpenses/budgetCategories
+    // which are not yet part of the ExportableState type (owned by a
+    // parallel task on importExport.ts) — the cast avoids an excess-property
+    // error until that type is widened.
+    const sampleData = {
       accounts: [
         {
           id: 'acc-imported',
@@ -1100,7 +1255,13 @@ describe('state helpers', () => {
         apiKey: 'imported-mf-key',
         lastRun: { at: '2025-01-01T00:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 0 },
       },
-    }
+      budgetIncomeMonthly: 6000,
+      budgetIncomeYearly: 72000,
+      budgetExpenses: [
+        { id: 'exp-imported', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
+      ],
+      budgetCategories: ['Housing', 'Custom Category', 'Other'],
+    } as ExportableState
 
     it('replaces the 8 data collections and apiKey/lastRun, preserving cached prices and UI state', () => {
       const original: AppState = {
@@ -1145,6 +1306,10 @@ describe('state helpers', () => {
       expect(updated.csvMappings).toEqual(sampleData.csvMappings)
       expect(updated.customInstitutions).toEqual(sampleData.customInstitutions)
       expect(updated.balanceEntries).toEqual(sampleData.balanceEntries)
+      expect(updated.budgetIncomeMonthly).toBe(sampleData.budgetIncomeMonthly)
+      expect(updated.budgetIncomeYearly).toBe(sampleData.budgetIncomeYearly)
+      expect(updated.budgetExpenses).toEqual(sampleData.budgetExpenses)
+      expect(updated.budgetCategories).toEqual(sampleData.budgetCategories)
 
       expect(updated.priceSync.apiKey).toBe(sampleData.priceSync.apiKey)
       expect(updated.priceSync.lastRun).toEqual(sampleData.priceSync.lastRun)

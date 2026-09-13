@@ -12,6 +12,7 @@ import {
 import { deriveKey, generateSalt } from './crypto'
 import { initialState } from './state'
 import type { AppState } from './state'
+import { DEFAULT_CATEGORIES } from './computations'
 
 // Computed at runtime so the legacy collection name never appears literally in source
 const legacyKey = ['mapping', 'Profiles'].join('')
@@ -152,9 +153,6 @@ function fixtureState(): AppState {
     },
 
     balanceEntries: [],
-    budgetIncomeMonthly: 0,
-    budgetIncomeYearly: 0,
-    budgetExpenses: [],
 
     // UI state
     view: 'accounts',
@@ -170,6 +168,12 @@ function fixtureState(): AppState {
     regAccountId: null,
     regExpanded: {},
     regActivityFilter: 'All',
+    budgetIncomeMonthly: 5000,
+    budgetIncomeYearly: 60000,
+    budgetExpenses: [
+      { id: 'exp1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
+    ],
+    budgetCategories: [...DEFAULT_CATEGORIES],
   }
 }
 
@@ -220,6 +224,10 @@ describe('IndexedDB persistence', () => {
       const loaded = await loadPersistedApp(key)
 
       expect(loaded).toEqual(originalState)
+      expect(loaded?.budgetIncomeMonthly).toBe(originalState.budgetIncomeMonthly)
+      expect(loaded?.budgetIncomeYearly).toBe(originalState.budgetIncomeYearly)
+      expect(loaded?.budgetExpenses).toEqual(originalState.budgetExpenses)
+      expect(loaded?.budgetCategories).toEqual(originalState.budgetCategories)
     })
 
     it('loading with no prior data returns null', async () => {
@@ -722,6 +730,32 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.regAccountId).toBe(null)
       expect(loaded?.regExpanded).toEqual({})
       expect(loaded?.regActivityFilter).toBe('All')
+      expect(loaded?.budgetIncomeMonthly).toBe(0)
+      expect(loaded?.budgetIncomeYearly).toBe(0)
+      expect(loaded?.budgetExpenses).toEqual([])
+      expect(loaded?.budgetCategories).toEqual([...DEFAULT_CATEGORIES])
+    })
+
+    it('backfills missing budgetCategories with DEFAULT_CATEGORIES from a blob that predates it (has other budget fields set)', async () => {
+      await putRaw({
+        budgetIncomeMonthly: 4000,
+        budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 1500, frequency: 'monthly' }],
+        // budgetCategories key intentionally absent entirely
+      })
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded).not.toBeNull()
+      expect(loaded?.budgetIncomeMonthly).toBe(4000)
+      expect(loaded?.budgetCategories).toEqual([...DEFAULT_CATEGORIES])
+    })
+
+    it('preserves view: "budget"', async () => {
+      await putRaw({ view: 'budget' })
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded?.view).toBe('budget')
     })
 
     it('preserves view: "quotes" (regression test: quotes was previously missing from the view whitelist)', async () => {

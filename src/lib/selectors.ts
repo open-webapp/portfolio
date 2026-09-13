@@ -1,7 +1,7 @@
 import type { AppState } from './state'
-import type { Position, ClosedPosition, Transaction, TaxCategory } from './types'
+import type { Position, ClosedPosition, Transaction, TaxCategory, Expense } from './types'
 import { sortBy } from './sort'
-import { allocationByAssetClass, fmtUSD, fmtPct, computePosition } from './computations'
+import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod } from './computations'
 import { latestBalance } from './register'
 
 /**
@@ -486,5 +486,42 @@ export function shouldRetryMutualFundSync(
     const held = state.mutualFundSync.heldPrices[symbol]
     return !held || held.fetchedAt.slice(0, 10) !== today
   })
+}
+
+/**
+ * Filter expenses by category (or all) and sort by the given key.
+ * When sorting by amount, compares each expense's value converted to `period`.
+ */
+export function visibleExpenses(
+  expenses: Expense[],
+  filterCategory: string,
+  sortBy: 'category' | 'name' | 'amount',
+  period: 'monthly' | 'yearly'
+): Expense[] {
+  const visible = filterCategory === '__all' ? expenses : expenses.filter((e) => e.category === filterCategory)
+  return [...visible].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name)
+    if (sortBy === 'amount') return toPeriod(b.amount, b.frequency, period) - toPeriod(a.amount, a.frequency, period)
+    return a.category.localeCompare(b.category) || a.name.localeCompare(b.name)
+  })
+}
+
+/**
+ * Aggregate expenses by category for the given period.
+ * `pct` is relative to the largest category total (not the sum of all categories).
+ * Returns entries sorted by amount descending.
+ */
+export function categoryBreakdown(
+  expenses: Expense[],
+  period: 'monthly' | 'yearly'
+): Array<{ name: string; amount: number; pct: number }> {
+  const byCategory: Record<string, number> = {}
+  expenses.forEach((e) => {
+    byCategory[e.category] = (byCategory[e.category] ?? 0) + toPeriod(e.amount, e.frequency, period)
+  })
+  const maxCat = Math.max(1, ...Object.values(byCategory))
+  return Object.entries(byCategory)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, amount]) => ({ name, amount, pct: (amount / maxCat) * 100 }))
 }
 

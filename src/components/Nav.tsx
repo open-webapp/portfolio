@@ -12,7 +12,7 @@ export interface NavProps {
 }
 
 /**
- * Nav component: main nav tabs (Positions/Register/Quotes), sync + settings buttons.
+ * Nav component: main nav tabs (Budget/Positions/Register/Quotes), sync + settings buttons.
  */
 export function Nav({
   state,
@@ -92,7 +92,7 @@ export function Nav({
         </button>
       </div>
 
-      {/* Main navigation tabs (Positions / Register / Quotes) */}
+      {/* Main navigation tabs (Budget / Positions / Register / Quotes) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
         {mainNavTabs.map((tab) => {
           const active = state.view === tab.value
