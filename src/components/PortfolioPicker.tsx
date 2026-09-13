@@ -11,8 +11,9 @@ export interface PortfolioPickerProps {
 
 /**
  * PortfolioPicker: lists existing portfolios (rename inline, delete, open) and
- * a create-new-portfolio form below. Mirrors PasswordGate.tsx's card/field/btn
- * conventions — no new CSS, only existing design-system classes.
+ * a create-new-portfolio form below. Layout mirrors notesdiary's ProjectPicker
+ * (centered column, list section + create section, meta line, text-link
+ * delete) but uses this app's own design-system classes (card/btn/input).
  */
 export function PortfolioPicker({ portfolios, onCreate, onRename, onDelete, onOpen }: PortfolioPickerProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -58,55 +59,93 @@ export function PortfolioPicker({ portfolios, onCreate, onRename, onDelete, onOp
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
-        {portfolios.map((portfolio) => (
-          <div key={portfolio.id} className="card blueprint elev-sm">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {renamingId === portfolio.id ? (
-                  <input
-                    className="input"
-                    value={renameDraft}
-                    autoFocus
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    onBlur={() => void commitRename(portfolio)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        void commitRename(portfolio)
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault()
-                        cancelRename()
-                      }
-                    }}
-                  />
-                ) : (
-                  <div className="card-title" onClick={() => startRename(portfolio)} style={{ cursor: 'pointer' }}>
-                    {portfolio.name}
-                  </div>
-                )}
-              </div>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        minHeight: '100%',
+        padding: 'var(--space-8) var(--space-6) var(--space-6)',
+        gap: 'var(--space-8)',
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: 480, minWidth: 0 }}>
+        <h2 className="card-title" style={{ fontSize: 24, marginBottom: 'var(--space-4)' }}>
+          Your Portfolios
+        </h2>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                <button type="button" className="btn btn-primary" onClick={() => onOpen(portfolio.id)}>
-                  Open
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => void handleDelete(portfolio)}>
-                  Delete
-                </button>
+        {portfolios.length === 0 ? (
+          <p className="card-body" style={{ fontStyle: 'italic' }}>
+            No portfolios yet. Create one below to get started.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            {portfolios.map((portfolio) => (
+              <div key={portfolio.id} className="card blueprint elev-sm">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {renamingId === portfolio.id ? (
+                      <input
+                        className="input"
+                        value={renameDraft}
+                        autoFocus
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onBlur={() => void commitRename(portfolio)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            void commitRename(portfolio)
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault()
+                            cancelRename()
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="card-title" onClick={() => startRename(portfolio)} style={{ cursor: 'pointer' }}>
+                        {portfolio.name}
+                      </div>
+                    )}
+                    <p className="card-body" style={{ fontSize: 12, margin: 'var(--space-1) 0 0' }}>
+                      Created {new Date(portfolio.createdAt).toLocaleDateString()}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      style={{
+                        border: 'none',
+                        background: 'none',
+                        padding: 0,
+                        marginTop: 'var(--space-1)',
+                        fontSize: 12,
+                        display: 'block',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => void handleDelete(portfolio)}
+                      title={`Delete ${portfolio.name}`}
+                    >
+                      Delete
+                    </button>
+                  </div>
+
+                  <div style={{ flexShrink: 0 }}>
+                    <button type="button" className="btn btn-primary" onClick={() => onOpen(portfolio.id)}>
+                      Open
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
-      <div className="card blueprint elev-sm">
-        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
-          New portfolio
-        </div>
+      <div style={{ width: '100%', maxWidth: 480, paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-divider)' }}>
+        <h2 className="card-title" style={{ fontSize: 18, marginBottom: 'var(--space-4)' }}>
+          Create New Portfolio
+        </h2>
+
         <div className="field">
-          <label>Name</label>
           <input
             className="input"
             placeholder="Enter a portfolio name"
@@ -130,7 +169,7 @@ export function PortfolioPicker({ portfolios, onCreate, onRename, onDelete, onOp
           </div>
         )}
 
-        <button type="button" className="btn btn-primary btn-block blueprint" onClick={() => void handleCreate()}>
+        <button type="button" className="btn btn-primary" onClick={() => void handleCreate()}>
           Create
         </button>
       </div>
