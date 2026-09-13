@@ -79,6 +79,9 @@ describe('buildExportableState', () => {
       [
         'accounts',
         'balanceEntries',
+        'budgetExpenses',
+        'budgetIncomeMonthly',
+        'budgetIncomeYearly',
         'closedPositions',
         'csvMappings',
         'customInstitutions',

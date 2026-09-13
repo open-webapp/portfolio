@@ -10,6 +10,7 @@ import type {
   PortfolioSnapshot,
   SavedCsvMapping,
   BalanceEntry,
+  Expense,
   PriceSyncLastRun,
 } from './types'
 import { encryptState, decryptState, deriveKey, detectEnvelopeShape, type EncryptedEnvelope } from './crypto'
@@ -29,6 +30,9 @@ export interface ExportableState {
   csvMappings: SavedCsvMapping[]
   customInstitutions: string[]
   balanceEntries: BalanceEntry[]
+  budgetIncomeMonthly: number
+  budgetIncomeYearly: number
+  budgetExpenses: Expense[]
   priceSync: {
     apiKey: string
     lastRun: PriceSyncLastRun | null
@@ -53,6 +57,9 @@ export function buildExportableState(state: AppState): ExportableState {
     csvMappings: state.csvMappings,
     customInstitutions: state.customInstitutions,
     balanceEntries: state.balanceEntries,
+    budgetIncomeMonthly: state.budgetIncomeMonthly,
+    budgetIncomeYearly: state.budgetIncomeYearly,
+    budgetExpenses: state.budgetExpenses,
     priceSync: {
       apiKey: state.priceSync.apiKey,
       lastRun: state.priceSync.lastRun,
@@ -174,6 +181,9 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
     csvMappings: decrypted.csvMappings ?? [],
     customInstitutions: decrypted.customInstitutions ?? [],
     balanceEntries: decrypted.balanceEntries ?? [],
+    budgetIncomeMonthly: decrypted.budgetIncomeMonthly ?? 0,
+    budgetIncomeYearly: decrypted.budgetIncomeYearly ?? 0,
+    budgetExpenses: decrypted.budgetExpenses ?? [],
     priceSync: {
       apiKey: decrypted.priceSync?.apiKey ?? '',
       lastRun: decrypted.priceSync?.lastRun ?? null,

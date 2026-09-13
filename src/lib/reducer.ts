@@ -38,6 +38,11 @@ export type AppAction =
   | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
   | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
+  | { type: 'SET_BUDGET_INCOME_MONTHLY'; amount: number }
+  | { type: 'SET_BUDGET_INCOME_YEARLY'; amount: number }
+  | { type: 'ADD_BUDGET_EXPENSE'; expense: any }
+  | { type: 'UPDATE_BUDGET_EXPENSE'; id: string; patch: any }
+  | { type: 'REMOVE_BUDGET_EXPENSE'; id: string }
 
 /**
  * Reducer function that handles all state mutations.
@@ -158,6 +163,22 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_REG_ACTIVITY_FILTER':
       return StateActions.setRegActivityFilter(state, action.filter)
+
+    // Budget page
+    case 'SET_BUDGET_INCOME_MONTHLY':
+      return StateActions.setBudgetIncomeMonthly(state, action.amount)
+
+    case 'SET_BUDGET_INCOME_YEARLY':
+      return StateActions.setBudgetIncomeYearly(state, action.amount)
+
+    case 'ADD_BUDGET_EXPENSE':
+      return StateActions.addBudgetExpense(state, action.expense)
+
+    case 'UPDATE_BUDGET_EXPENSE':
+      return StateActions.updateBudgetExpense(state, action.id, action.patch)
+
+    case 'REMOVE_BUDGET_EXPENSE':
+      return StateActions.removeBudgetExpense(state, action.id)
 
     default:
       return state
