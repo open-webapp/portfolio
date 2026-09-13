@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import 'fake-indexeddb/auto'
 import {
   listPortfolios,
@@ -46,6 +46,27 @@ async function clearRegistryStore(): Promise<void> {
 beforeEach(async () => {
   await clearRegistryStore()
   _resetRegistryForTests()
+})
+
+// Some tests below create additional real IndexedDB databases with dynamic
+// names (e.g. a portfolio's own `dbName`). Track those here and delete them
+// after each test so they don't leak into other tests in this file.
+async function deleteNamedDb(name: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error)
+    request.onblocked = () => resolve()
+  })
+}
+
+let dynamicDbNames: string[] = []
+
+afterEach(async () => {
+  for (const name of dynamicDbNames) {
+    await deleteNamedDb(name)
+  }
+  dynamicDbNames = []
 })
 
 describe('portfolioRegistry CRUD', () => {
@@ -120,6 +141,71 @@ describe('portfolioRegistry CRUD', () => {
 
   it('deletePortfolio on an unknown id is a no-op and does not throw', async () => {
     await expect(deletePortfolio('port-does-not-exist')).resolves.not.toThrow()
+  })
+
+  it('deletePortfolio only affects its own row and its own IndexedDB, leaving other portfolios untouched', async () => {
+    const a = await createPortfolio('Alpha')
+    const b = await createPortfolio('Beta')
+    dynamicDbNames.push(a.dbName, b.dbName)
+
+    // Write distinguishable data into each portfolio's own db.
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(a.dbName, 1)
+      req.onupgradeneeded = () => req.result.createObjectStore('app_state')
+      req.onsuccess = () => {
+        const tx = req.result.transaction('app_state', 'readwrite')
+        tx.objectStore('app_state').put({ marker: 'alpha-data' }, 'current')
+        tx.oncomplete = () => { req.result.close(); resolve() }
+        tx.onerror = () => reject(tx.error)
+      }
+      req.onerror = () => reject(req.error)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(b.dbName, 1)
+      req.onupgradeneeded = () => req.result.createObjectStore('app_state')
+      req.onsuccess = () => {
+        const tx = req.result.transaction('app_state', 'readwrite')
+        tx.objectStore('app_state').put({ marker: 'beta-data' }, 'current')
+        tx.oncomplete = () => { req.result.close(); resolve() }
+        tx.onerror = () => reject(tx.error)
+      }
+      req.onerror = () => reject(req.error)
+    })
+
+    await deletePortfolio(a.id)
+
+    // (a) registry: only b remains.
+    const remaining = await listPortfolios()
+    expect(remaining.map((p) => p.id)).toEqual([b.id])
+
+    // (b) a's db is gone — reopening it comes back empty (fresh db, no store).
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(a.dbName)
+      req.onsuccess = () => {
+        const db = req.result
+        expect(db.objectStoreNames.contains('app_state')).toBe(false)
+        db.close()
+        resolve()
+      }
+      req.onerror = () => reject(req.error)
+    })
+
+    // (c) b's db is untouched — its data is still readable.
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(b.dbName, 1)
+      req.onsuccess = () => {
+        const db = req.result
+        const tx = db.transaction('app_state', 'readonly')
+        const getReq = tx.objectStore('app_state').get('current')
+        getReq.onsuccess = () => {
+          expect(getReq.result).toEqual({ marker: 'beta-data' })
+          db.close()
+          resolve()
+        }
+        getReq.onerror = () => reject(getReq.error)
+      }
+      req.onerror = () => reject(req.error)
+    })
   })
 })
 

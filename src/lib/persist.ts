@@ -11,7 +11,7 @@ let activePortfolioDbName: string | null = null
 
 /**
  * Sets which portfolio's IndexedDB database subsequent loadPersistedApp /
- * savePersistedApp / clearPersistedApp calls operate on. Must be called
+ * savePersistedApp calls operate on. Must be called
  * before any of those are used.
  */
 export function setActivePortfolioDb(dbName: string): void {
@@ -313,20 +313,4 @@ export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Ui
     console.error('Failed to save app state:', error)
     throw error
   }
-}
-
-/**
- * Deletes the persisted app state entry from the active portfolio's database.
- */
-export async function clearPersistedApp(): Promise<void> {
-  const db = await openDb(requireActiveDbName())
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite')
-    const store = transaction.objectStore(STORE_NAME)
-    const request = store.delete(STATE_KEY)
-
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve()
-  })
 }

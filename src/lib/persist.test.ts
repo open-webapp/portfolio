@@ -6,7 +6,6 @@ import {
   loadLegacyPlaintextApp,
   loadPersistedApp,
   savePersistedApp,
-  clearPersistedApp,
   coalesceWithDefaults,
   setActivePortfolioDb,
 } from './persist'
@@ -942,19 +941,6 @@ describe('IndexedDB persistence', () => {
     })
   })
 
-  describe('clearPersistedApp', () => {
-    it('deletes the stored record so peekEnvelopeShape returns absent again', async () => {
-      const salt = generateSalt()
-      const key = await deriveKey('pw', salt)
-      await savePersistedApp(fixtureState(), key, salt)
-      expect(await peekEnvelopeShape()).toBe('encrypted')
-
-      await clearPersistedApp()
-
-      expect(await peekEnvelopeShape()).toBe('absent')
-    })
-  })
-
   describe('setActivePortfolioDb: multi-portfolio db isolation', () => {
     async function deleteNamedDb(name: string): Promise<void> {
       await new Promise<void>((resolve, reject) => {
@@ -992,7 +978,7 @@ describe('IndexedDB persistence', () => {
     // case, we reset the module registry and re-import persist.ts fresh so
     // its module-level `activePortfolioDbName` starts back at null,
     // regardless of what earlier tests in this file have done.
-    it('rejects loadPersistedApp/savePersistedApp/clearPersistedApp when no active db has been set', async () => {
+    it('rejects loadPersistedApp/savePersistedApp when no active db has been set', async () => {
       vi.resetModules()
       const freshPersist = await import('./persist')
 
@@ -1003,9 +989,6 @@ describe('IndexedDB persistence', () => {
         'No active portfolio set — call setActivePortfolioDb() first',
       )
       await expect(freshPersist.savePersistedApp(initialState(), key, salt)).rejects.toThrow(
-        'No active portfolio set — call setActivePortfolioDb() first',
-      )
-      await expect(freshPersist.clearPersistedApp()).rejects.toThrow(
         'No active portfolio set — call setActivePortfolioDb() first',
       )
     })

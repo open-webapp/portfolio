@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import type { AppState } from '../lib/state'
 import { deriveKey, generateSalt } from '../lib/crypto'
-import { loadLegacyPlaintextApp, loadPersistedApp, peekStoredSalt, clearPersistedApp } from '../lib/persist'
-import { ResetAppControl } from './ResetAppControl'
+import { loadLegacyPlaintextApp, loadPersistedApp, peekStoredSalt } from '../lib/persist'
 
 export interface PasswordGateProps {
   shape: 'legacy-plaintext' | 'encrypted'
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
-  onReset: () => void
+  onBackToPicker: () => void
 }
 
 /**
@@ -15,16 +14,11 @@ export interface PasswordGateProps {
  * Nav/Accounts tree until the user has unlocked (or set) a password.
  * Mirrors design/v4's "Encryption Password" screen layout for both shapes.
  */
-export function PasswordGate({ shape, onUnlock, onReset }: PasswordGateProps) {
-  const handleReset = async () => {
-    await clearPersistedApp()
-    onReset()
-  }
-
+export function PasswordGate({ shape, onUnlock, onBackToPicker }: PasswordGateProps) {
   return shape === 'encrypted' ? (
-    <EnterPasswordScreen onUnlock={onUnlock} onReset={handleReset} />
+    <EnterPasswordScreen onUnlock={onUnlock} onBackToPicker={onBackToPicker} />
   ) : (
-    <SetPasswordScreen onUnlock={onUnlock} onReset={handleReset} />
+    <SetPasswordScreen onUnlock={onUnlock} onBackToPicker={onBackToPicker} />
   )
 }
 
@@ -32,7 +26,7 @@ interface GateShellProps {
   title: string
   subtitle: string
   children: React.ReactNode
-  onReset: () => Promise<void>
+  onBackToPicker: () => void
   tabControl?: React.ReactNode
   noCardWrapper?: boolean
 }
@@ -41,7 +35,7 @@ function GateShell({
   title,
   subtitle,
   children,
-  onReset,
+  onBackToPicker,
   tabControl,
   noCardWrapper = false,
 }: GateShellProps) {
@@ -90,10 +84,26 @@ function GateShell({
 
         <div style={{ borderTop: '1px solid var(--color-divider)', paddingTop: 'var(--space-5)', textAlign: 'center' }}>
           <div className="text-muted" style={{ fontSize: '12px', lineHeight: 1.6, marginBottom: 'var(--space-3)' }}>
-            If you do not have the encryption password, you cannot access any of the content that's encrypted. You
-            can "Reset" the app, which will wipe out all existing data so you can start over.
+            Forgot your password? You can't recover this portfolio's data without it.
           </div>
-          <ResetAppControl onReset={onReset} />
+          <button
+            type="button"
+            onClick={onBackToPicker}
+            style={{
+              fontSize: '11px',
+              color: 'var(--color-text)',
+              opacity: 0.55,
+              cursor: 'pointer',
+              letterSpacing: '0.03em',
+              textDecoration: 'underline',
+              textUnderlineOffset: '2px',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+            }}
+          >
+            Back to portfolios
+          </button>
         </div>
       </div>
     </div>
@@ -102,10 +112,10 @@ function GateShell({
 
 function SetPasswordScreen({
   onUnlock,
-  onReset,
+  onBackToPicker,
 }: {
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
-  onReset: () => Promise<void>
+  onBackToPicker: () => void
 }) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -140,7 +150,7 @@ function SetPasswordScreen({
     <GateShell
       title="Set Encryption Password"
       subtitle="Choose a password to encrypt your data on this device."
-      onReset={onReset}
+      onBackToPicker={onBackToPicker}
     >
       <form onSubmit={handleSubmit}>
         <div className="field">
@@ -187,10 +197,10 @@ function SetPasswordScreen({
 
 function EnterPasswordScreen({
   onUnlock,
-  onReset,
+  onBackToPicker,
 }: {
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
-  onReset: () => Promise<void>
+  onBackToPicker: () => void
 }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -225,7 +235,7 @@ function EnterPasswordScreen({
     <GateShell
       title="Encryption Password"
       subtitle="Your data is encrypted on this device. Enter your password to unlock it."
-      onReset={onReset}
+      onBackToPicker={onBackToPicker}
     >
       <form onSubmit={handleSubmit}>
         <div className="field">

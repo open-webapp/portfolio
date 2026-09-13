@@ -5,9 +5,8 @@ import { GoogleDriveWidget } from '@open-webapp/drive-connect'
 import type { DriveAuthHandle } from '@open-webapp/drive-connect'
 import { syncBackup, getConnectionSnapshot } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
-import { loadPersistedApp, savePersistedApp, clearPersistedApp } from '../lib/persist'
+import { loadPersistedApp, savePersistedApp } from '../lib/persist'
 import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
-import { ResetAppControl } from './ResetAppControl'
 
 export interface SettingsPageProps {
   state: AppState
@@ -26,7 +25,6 @@ export interface SettingsPageProps {
   runMutualFundSyncTrigger: () => Promise<void>
   tickerOverviewErrors: Record<string, string>
   mutualFundSyncErrors: Record<string, string>
-  onReset: () => void
 }
 
 /**
@@ -49,7 +47,6 @@ export function SettingsPage({
   runMutualFundSyncTrigger,
   tickerOverviewErrors,
   mutualFundSyncErrors,
-  onReset,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -143,11 +140,6 @@ export function SettingsPage({
       setChangingPassword(false)
     }
   }, [currentPasswordInput, newPasswordInput, confirmNewPasswordInput, sessionSalt, state, activePortfolio, onKeyChange, onPasswordEntryTimeReset])
-
-  const handleResetApp = useCallback(async () => {
-    await clearPersistedApp()
-    onReset()
-  }, [onReset])
 
   return (
     <div>
@@ -268,18 +260,6 @@ export function SettingsPage({
         {driveSyncWarning && (
           <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
         )}
-      </section>
-      )}
-
-      {/* Danger Zone section */}
-      {settingsSection === 'encryption' && (
-      <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
-        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Danger Zone</div>
-        <p className="text-muted" style={{ fontSize: '13px', marginBottom: 'var(--space-4)' }}>
-          This permanently deletes every encrypted account, position and transaction on this device. This cannot be
-          undone.
-        </p>
-        <ResetAppControl onReset={handleResetApp} />
       </section>
       )}
 

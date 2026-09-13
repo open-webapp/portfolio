@@ -16,7 +16,6 @@ vi.mock('../lib/persist', () => ({
   peekStoredSalt: vi.fn(),
   loadPersistedApp: vi.fn(),
   loadLegacyPlaintextApp: vi.fn(),
-  clearPersistedApp: vi.fn(),
 }))
 
 const fakeKey = { fake: 'key' } as unknown as CryptoKey
@@ -32,7 +31,7 @@ function renderPasswordGate(props: Partial<React.ComponentProps<typeof PasswordG
   const defaults: React.ComponentProps<typeof PasswordGate> = {
     shape: 'legacy-plaintext',
     onUnlock: vi.fn(),
-    onReset: vi.fn(),
+    onBackToPicker: vi.fn(),
     ...props,
   }
   return render(<PasswordGate {...defaults} />)
@@ -47,7 +46,7 @@ function fillAndSubmitSetPassword(password: string, confirm: string) {
 
 describe('PasswordGate', () => {
   const onUnlock = vi.fn()
-  const onReset = vi.fn()
+  const onBackToPicker = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -64,7 +63,7 @@ describe('PasswordGate', () => {
 
   describe('shape: legacy-plaintext — set-password screen', () => {
     it('renders two password fields and the explanatory note', () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
+      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
 
       expect(screen.getByText('New password')).toBeTruthy()
       expect(screen.getByText('Confirm password')).toBeTruthy()
@@ -75,7 +74,7 @@ describe('PasswordGate', () => {
     })
 
     it('shows an inline error and does not call onUnlock when password is under 6 characters', async () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
+      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
 
       fillAndSubmitSetPassword('abc', 'abc')
 
@@ -84,7 +83,7 @@ describe('PasswordGate', () => {
     })
 
     it('shows an inline error and does not call onUnlock when confirm password does not match', async () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
+      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
 
       fillAndSubmitSetPassword('longenough', 'different')
 
@@ -96,7 +95,7 @@ describe('PasswordGate', () => {
       const migrated = initialState()
       vi.mocked(persistModule.loadLegacyPlaintextApp).mockResolvedValue(migrated)
 
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
+      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
 
       fillAndSubmitSetPassword('longenough', 'longenough')
 
@@ -109,7 +108,7 @@ describe('PasswordGate', () => {
 
   describe('shape: encrypted — enter-password screen', () => {
     it('renders a single password field, not two', () => {
-      renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
+      renderPasswordGate({ shape: 'encrypted', onUnlock, onBackToPicker })
 
       expect(getPasswordInputs()).toHaveLength(1)
       expect(screen.getByText('Password')).toBeTruthy()
@@ -118,7 +117,7 @@ describe('PasswordGate', () => {
     })
 
     it('still renders its subtitle and a single default card wrapper (no tab-seg, no card merge)', () => {
-      const { container } = renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
+      const { container } = renderPasswordGate({ shape: 'encrypted', onUnlock, onBackToPicker })
 
       expect(
         screen.getByText('Your data is encrypted on this device. Enter your password to unlock it.')
@@ -135,7 +134,7 @@ describe('PasswordGate', () => {
       vi.mocked(persistModule.peekStoredSalt).mockResolvedValue(fakeSalt)
       vi.mocked(persistModule.loadPersistedApp).mockResolvedValue(loaded)
 
-      renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
+      renderPasswordGate({ shape: 'encrypted', onUnlock, onBackToPicker })
 
       fireEvent.change(getPasswordInputs()[0], { target: { value: 'correct-pw' } })
       fireEvent.click(screen.getByRole('button', { name: /unlock/i }))
@@ -149,7 +148,7 @@ describe('PasswordGate', () => {
       vi.mocked(persistModule.peekStoredSalt).mockResolvedValue(fakeSalt)
       vi.mocked(persistModule.loadPersistedApp).mockRejectedValue(new Error('bad key'))
 
-      renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
+      renderPasswordGate({ shape: 'encrypted', onUnlock, onBackToPicker })
 
       const passwordInput = getPasswordInputs()[0]
       fireEvent.change(passwordInput, { target: { value: 'wrong-pw' } })
@@ -174,74 +173,34 @@ describe('PasswordGate', () => {
     })
   })
 
-  describe('Reset app', () => {
-    it('on the set-password screen: opens confirm dialog, requires typing RESET, then calls clearPersistedApp then onReset', async () => {
-      vi.mocked(persistModule.clearPersistedApp).mockResolvedValue(undefined)
+  describe('Back to portfolios', () => {
+    it('renders a "Back to portfolios" control on the set-password screen', () => {
+      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
 
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
-
-      fireEvent.click(screen.getByText('Reset App'))
-      expect(screen.getByText('Reset app and erase all data?')).toBeTruthy()
-
-      const eraseButton = screen.getByRole('button', { name: /erase everything/i }) as HTMLButtonElement
-      expect(eraseButton.disabled).toBe(true)
-
-      fireEvent.change(screen.getByPlaceholderText('RESET'), { target: { value: 'RESET' } })
-      expect(eraseButton.disabled).toBe(false)
-
-      fireEvent.click(eraseButton)
-
-      await waitFor(() => {
-        expect(persistModule.clearPersistedApp).toHaveBeenCalled()
-        expect(onReset).toHaveBeenCalled()
-      })
+      expect(screen.getByRole('button', { name: /back to portfolios/i })).toBeTruthy()
     })
 
-    it('on the enter-password screen: opens confirm dialog, requires typing RESET, then calls clearPersistedApp then onReset', async () => {
-      vi.mocked(persistModule.clearPersistedApp).mockResolvedValue(undefined)
+    it('renders a "Back to portfolios" control on the enter-password screen', () => {
+      renderPasswordGate({ shape: 'encrypted', onUnlock, onBackToPicker })
 
-      renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
-
-      fireEvent.click(screen.getByText('Reset App'))
-      fireEvent.change(screen.getByPlaceholderText('RESET'), { target: { value: 'RESET' } })
-      fireEvent.click(screen.getByRole('button', { name: /erase everything/i }))
-
-      await waitFor(() => {
-        expect(persistModule.clearPersistedApp).toHaveBeenCalled()
-        expect(onReset).toHaveBeenCalled()
-      })
+      expect(screen.getByRole('button', { name: /back to portfolios/i })).toBeTruthy()
     })
 
-    it('typing something other than RESET keeps the erase button disabled and does not reset', async () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
+    it('clicking it calls onBackToPicker exactly once, synchronously', () => {
+      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
 
-      fireEvent.click(screen.getByText('Reset App'))
-      fireEvent.change(screen.getByPlaceholderText('RESET'), { target: { value: 'reset please' } })
+      fireEvent.click(screen.getByRole('button', { name: /back to portfolios/i }))
 
-      const eraseButton = screen.getByRole('button', { name: /erase everything/i }) as HTMLButtonElement
-      expect(eraseButton.disabled).toBe(true)
-      expect(persistModule.clearPersistedApp).not.toHaveBeenCalled()
-      expect(onReset).not.toHaveBeenCalled()
+      expect(onBackToPicker).toHaveBeenCalledTimes(1)
     })
 
-    it('Cancel closes the confirm dialog without resetting', async () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
+    it('does not show any confirm dialog or RESET-typing UI', () => {
+      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
 
-      fireEvent.click(screen.getByText('Reset App'))
-      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+      fireEvent.click(screen.getByRole('button', { name: /back to portfolios/i }))
 
-      expect(screen.queryByText('Reset app and erase all data?')).toBeFalsy()
-      expect(persistModule.clearPersistedApp).not.toHaveBeenCalled()
-      expect(onReset).not.toHaveBeenCalled()
-    })
-
-    it('Reset App trigger is present identically on both set-password and enter-password screens', () => {
-      const { unmount } = renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onReset })
-      expect(screen.getByText('Reset App')).toBeTruthy()
-      unmount()
-
-      renderPasswordGate({ shape: 'encrypted', onUnlock, onReset })
-      expect(screen.getByText('Reset App')).toBeTruthy()
+      expect(screen.queryByText(/erase all data/i)).toBeFalsy()
+      expect(screen.queryByPlaceholderText(/RESET/i)).toBeFalsy()
     })
   })
 })
