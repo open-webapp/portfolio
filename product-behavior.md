@@ -154,6 +154,12 @@ A dedicated page accessed via the gear button in the Nav. Three mutually-exclusi
 
 Navigation back to the Accounts page occurs via the Nav's Positions tab (no separate Back button or navigation affordance in Settings page content).
 
+## PWA install & offline behavior
+
+- **Install prompt**: relies entirely on the browser's native install affordance — address bar icon on desktop Chrome/Edge, "Add to Home Screen" on Android/mobile browsers. No custom in-app install button or banner.
+- **Offline behavior**: app shell (HTML/JS/CSS, icons, manifest) loads from cache when offline. IndexedDB-backed app data (accounts/positions/transactions) already works offline regardless of PWA status. Drive Connect sign-in and Drive sync (Sync button) require network — the gsi/client script and Drive API calls are intentionally NOT cached/proxied by the service worker, so they fail or hang when offline. This is expected, not a bug.
+- **Update behavior**: silent auto-update (`registerType: 'autoUpdate'`). No "new version available" prompt. The next reload or navigation after a new deploy picks up the latest service worker and assets automatically.
+
 ## Formatting conventions
 
 - USD: `fmtUSD(n)` → `"$1,234.56"` / `"-$1,234.56"` (no leading `+` on positives; callers that want a `+` prepend it themselves for G/L-style fields).
