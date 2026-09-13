@@ -9,7 +9,7 @@ afterEach(() => {
 
 function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
   const { state: stateOverride, ...rest } = overrides
-  const state = { ...initialState(), ...(stateOverride ?? {}) }
+  const state = { ...initialState(), ...stateOverride }
   return {
     state,
     dispatch: vi.fn(),

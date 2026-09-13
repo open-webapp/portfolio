@@ -41,32 +41,6 @@ describe('PositionGroupOverlay', () => {
     return `${symbol} — ${displayName} — ${assetClass}`
   }
 
-  const createTestGroup = (positions: Position[]): AggregateRow => {
-    const shares = positions.reduce((sum, p) => sum + p.shares, 0)
-    const costBasis = positions.reduce((sum, p) => sum + p.shares * p.avgCost, 0)
-    const marketValue = positions.reduce((sum, p) => sum + p.shares * p.price, 0)
-    const avgCost = shares > 0 ? costBasis / shares : 0
-    const price = positions[0]?.price || 0
-    const gl = marketValue - costBasis
-    const glPct = costBasis > 0 ? (gl / costBasis) * 100 : 0
-
-    return {
-      key: 'AAPL',
-      symbol: 'AAPL',
-      displayName: 'Apple Inc',
-      effectiveAssetClass: 'Equity',
-      shares,
-      costBasis,
-      marketValue,
-      price,
-      avgCost,
-      gl,
-      glPct,
-      rowCount: positions.length,
-      positions,
-    }
-  }
-
   const createTestState = (positions: Position[] = [], accounts: Account[] = []): AppState => ({
     accounts,
     positions,

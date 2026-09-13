@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import {
   peekEnvelopeShape,
@@ -8,6 +8,7 @@ import {
   savePersistedApp,
   clearPersistedApp,
   coalesceWithDefaults,
+  setActivePortfolioDb,
 } from './persist'
 import { deriveKey, generateSalt } from './crypto'
 import { initialState } from './state'
@@ -201,6 +202,8 @@ describe('IndexedDB persistence', () => {
   }
 
   beforeEach(async () => {
+    // Target the legacy single-portfolio db, matching pre-multi-portfolio behavior
+    setActivePortfolioDb(DB_NAME)
     // Clear the object store before each test
     await clearDatabase()
   })
@@ -949,6 +952,62 @@ describe('IndexedDB persistence', () => {
       await clearPersistedApp()
 
       expect(await peekEnvelopeShape()).toBe('absent')
+    })
+  })
+
+  describe('setActivePortfolioDb: multi-portfolio db isolation', () => {
+    async function deleteNamedDb(name: string): Promise<void> {
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(name)
+        request.onsuccess = () => resolve()
+        request.onerror = () => reject(request.error)
+        request.onblocked = () => resolve()
+      })
+    }
+
+    afterEach(async () => {
+      await deleteNamedDb('db-a')
+      await deleteNamedDb('db-b')
+    })
+
+    it('isolates state between different active portfolio dbs', async () => {
+      setActivePortfolioDb('db-a')
+      const originalState = fixtureState()
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+
+      await savePersistedApp(originalState, key, salt)
+      const loadedFromA = await loadPersistedApp(key)
+      expect(loadedFromA).toEqual(originalState)
+
+      setActivePortfolioDb('db-b')
+      const loadedFromB = await loadPersistedApp(key)
+      expect(loadedFromB).toBeNull()
+    })
+  })
+
+  describe('setActivePortfolioDb: guards against missing active db', () => {
+    // The active-db name is module-private state and is NOT reset between
+    // tests. To meaningfully test the "no setActivePortfolioDb call yet"
+    // case, we reset the module registry and re-import persist.ts fresh so
+    // its module-level `activePortfolioDbName` starts back at null,
+    // regardless of what earlier tests in this file have done.
+    it('rejects loadPersistedApp/savePersistedApp/clearPersistedApp when no active db has been set', async () => {
+      vi.resetModules()
+      const freshPersist = await import('./persist')
+
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+
+      await expect(freshPersist.loadPersistedApp(key)).rejects.toThrow(
+        'No active portfolio set — call setActivePortfolioDb() first',
+      )
+      await expect(freshPersist.savePersistedApp(initialState(), key, salt)).rejects.toThrow(
+        'No active portfolio set — call setActivePortfolioDb() first',
+      )
+      await expect(freshPersist.clearPersistedApp()).rejects.toThrow(
+        'No active portfolio set — call setActivePortfolioDb() first',
+      )
     })
   })
 })

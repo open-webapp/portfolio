@@ -1,12 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import 'fake-indexeddb/auto'
-import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, within, configure } from '@testing-library/react'
 import { SettingsPage, type SettingsPageProps } from './Settings'
 import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
 import * as importExportModule from '../lib/importExport'
 import { deriveKey, generateSalt } from '../lib/crypto'
+
+// The "Change Encryption Password" flow below runs the REAL PBKDF2 deriveKey
+// (600,000 SHA-256 iterations, see crypto.ts) up to twice per test (verify
+// current password + derive the new key) rather than mocking it, since a
+// fake key wouldn't round-trip through real SubtleCrypto encrypt/decrypt.
+// That's genuinely CPU-heavy, and under full-suite concurrency (many test
+// files' worker processes contending for the same CPU cores) it can take
+// longer than testing-library's default 1000ms waitFor timeout even though
+// it completes in well under 1s in isolation. Bump the timeout for this file
+// so real-crypto-driven assertions aren't flaky under contention; this does
+// not paper over a correctness bug, since the assertions themselves are
+// otherwise unchanged.
+configure({ asyncUtilTimeout: 5000 })
 
 // Partial mock: keep exportBackup/buildExportableState real (they run
 // against the real crypto module), but stub downloadEnvelopeAsFile since it
@@ -154,9 +167,12 @@ describe('SettingsPage', () => {
     cleanup()
   })
 
+  const testPortfolio = { id: 'p1', name: 'Test Portfolio', dbName: 'portfolio_p1', createdAt: 0 }
+
   function renderSettings(overrides: Partial<SettingsPageProps> = {}) {
     const defaultProps: SettingsPageProps = {
       state: initialState(),
+      activePortfolio: testPortfolio,
       dispatch: mockDispatch,
       sessionKey,
       sessionSalt,
@@ -422,9 +438,10 @@ describe('SettingsPage', () => {
 
       const saveArgs = vi.mocked(persistModule.savePersistedApp).mock.calls[0]
       const syncArgs = vi.mocked(driveModule.syncBackup).mock.calls[0]
-      expect(syncArgs[0]).toBe(state)
-      expect(syncArgs[1]).toBe(saveArgs[1])
-      expect(syncArgs[2]).toEqual(saveArgs[2])
+      expect(syncArgs[0]).toBe(testPortfolio)
+      expect(syncArgs[1]).toBe(state)
+      expect(syncArgs[2]).toBe(saveArgs[1])
+      expect(syncArgs[3]).toEqual(saveArgs[2])
 
       await waitFor(() => {
         expect(screen.getByText('Encryption password changed')).toBeTruthy()

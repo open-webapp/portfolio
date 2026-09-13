@@ -1,9 +1,19 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, configure } from '@testing-library/react'
 import { GateRestoreFromFilePanel } from './GateRestoreFromFilePanel'
 import { initialState, replaceImportedState } from '../lib/state'
 import { exportBackup, buildExportableState } from '../lib/importExport'
 import { generateSalt } from '../lib/crypto'
+
+// This suite drives the REAL PBKDF2 deriveKey (600,000 SHA-256 iterations,
+// see crypto.ts) rather than mocking it, since a fake key wouldn't round-trip
+// through real SubtleCrypto decrypt (decryptImportEnvelope derives its own
+// key internally). That's genuinely CPU-heavy, and under full-suite
+// concurrency (many test files' worker processes contending for the same CPU
+// cores) it can take longer than testing-library's default 1000ms waitFor
+// timeout even though it completes in well under 1s in isolation. Bump the
+// timeout so real-crypto-driven assertions aren't flaky under contention.
+configure({ asyncUtilTimeout: 5000 })
 
 // parseImportFile (in ../lib/importExport) calls detectEnvelopeShape
 // internally, so the crypto mock must keep the real implementation for

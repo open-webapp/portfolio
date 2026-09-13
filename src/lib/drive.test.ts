@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import type { Portfolio } from './types'
 
 // ---------------------------------------------------------------------------
 // Shared fake harness for the drive conflict-reconcile work (T1 spike).
@@ -14,9 +15,18 @@ const mockFilesStatus = vi.fn()
 const mockFilesRead = vi.fn()
 const mockFilesWrite = vi.fn()
 const mockFilesList = vi.fn()
+const mockFilesRemove = vi.fn()
 const mockEnsureFolderPath = vi.fn()
 const mockPickFile = vi.fn()
 const mockGetConnectionSync = vi.fn()
+
+// Records the config every `createDriveSync(config)` call was made with, so
+// tests can assert on the `folderPath` a given call resolved to (e.g. that a
+// portfolio-scoped sync's folder path ends in that portfolio's `name`, not
+// the legacy flat 2-level path). Reset in `beforeEach`.
+const mockCreateDriveSyncCalls = vi.hoisted(
+  () => [] as Array<{ folderPath?: string[]; [key: string]: unknown }>
+)
 
 // ---------------------------------------------------------------------------
 // T13 opt-in switch. When `mockT13.active` is true, the two `vi.mock`
@@ -35,6 +45,7 @@ const mockFakeProject = {
     read: mockFilesRead,
     write: mockFilesWrite,
     list: mockFilesList,
+    remove: mockFilesRemove,
   },
   ensureFolderPath: mockEnsureFolderPath,
   pickFile: mockPickFile,
@@ -42,13 +53,11 @@ const mockFakeProject = {
 }
 
 // ---------------------------------------------------------------------------
-// `@open-webapp/drive-connect` fake. `driveAuth` is created once at drive.ts
-// module load (`export const driveAuth = createDriveAuth(...)`), which runs
-// while this test file's `import { ... } from './drive'` is evaluated —
-// before any top-level `const` here is initialized. So the handle is built
-// INSIDE the (hoisted) factory; tests reach the same `ensureFresh` mock the
-// module captured by importing `driveAuth` from ./drive and asserting on
-// `driveAuth.ensureFresh` / `vi.mocked(driveAuth.ensureFresh)`.
+// `@open-webapp/drive-connect` fake. `getDriveAuthFor(portfolio)` lazily
+// creates + caches a `createDriveAuth(...)` handle per Drive "project id"
+// (drive.ts's private `driveProjectIdFor`). Tests reach a given portfolio's
+// handle by calling `getDriveAuthFor(thatPortfolio)` themselves (imported
+// from ./drive) rather than a single module-level singleton.
 // ---------------------------------------------------------------------------
 vi.mock('@open-webapp/drive-connect', async () => {
   const actual = await vi.importActual<typeof import('@open-webapp/drive-connect')>(
@@ -73,8 +82,10 @@ vi.mock('@open-webapp/drive-connect', async () => {
 })
 
 vi.mock('@open-webapp/drive-sync', () => ({
-  createDriveSync: () =>
-    mockT13.active ? mockT13.driveSync : { project: () => mockFakeProject },
+  createDriveSync: (config: any) => {
+    mockCreateDriveSyncCalls.push(config)
+    return mockT13.active ? mockT13.driveSync : { project: () => mockFakeProject }
+  },
   NeedsReauthError: class NeedsReauthError extends Error {
     constructor(message?: string) {
       super(message)
@@ -105,10 +116,11 @@ import { RemoteChangedError, NeedsReauthError } from '@open-webapp/drive-sync'
 import {
   DriveDecryptError,
   drive,
-  driveAuth,
+  getDriveAuthFor,
   getBackupFileId,
   getBackupFileStatus,
   getConnectionSnapshot,
+  migrateLegacyDriveFolderIfNeeded,
   overwriteLocalWithRemote,
   overwriteRemoteWithLocal,
   restoreBackupFromFileId,
@@ -116,6 +128,30 @@ import {
 } from './drive'
 import { encryptState, generateSalt, deriveKey } from './crypto'
 import { initialState } from './state'
+
+// ---------------------------------------------------------------------------
+// Test Portfolio fixtures.
+//
+// `migratedPortfolio` mimics the one pre-multi-portfolio db
+// (`isMigratedPortfolio` true — dbName is exactly the legacy fixed name),
+// which maps to the fixed Drive project id 'app' and keeps the old flat
+// folder-migration behavior. `testPortfolio` is a regular, non-migrated
+// portfolio (any other dbName) used as the default fixture for the
+// previously portfolio-agnostic helpers below.
+// ---------------------------------------------------------------------------
+const migratedPortfolio: Portfolio = {
+  id: 'port-legacy-migrated',
+  name: 'My Portfolio',
+  dbName: 'portfolio_app_state_v1',
+  createdAt: 1,
+}
+
+const testPortfolio: Portfolio = {
+  id: 'port-test-primary',
+  name: 'Test Portfolio',
+  dbName: 'portfolio_app_state_v1-port-test-primary',
+  createdAt: 2,
+}
 
 describe('conflict-reconcile helpers', () => {
   // T1 spike: prove the raw drive-sync `files` surface (status/read/write/list)
@@ -128,14 +164,16 @@ describe('conflict-reconcile helpers', () => {
     mockFilesRead.mockReset()
     mockFilesWrite.mockReset()
     mockFilesList.mockReset()
+    mockFilesRemove.mockReset()
     mockEnsureFolderPath.mockReset()
     mockPickFile.mockReset()
     mockGetConnectionSync.mockReset()
+    mockCreateDriveSyncCalls.length = 0
     // drive-connect's ensureFresh gate: default to a resolved fake connection so
     // content ops never try to open an interactive auth flow. Individual tests
     // override with mockRejectedValue to exercise the failure path.
-    vi.mocked(driveAuth.ensureFresh).mockReset()
-    vi.mocked(driveAuth.ensureFresh).mockResolvedValue({
+    vi.mocked(getDriveAuthFor(testPortfolio).ensureFresh).mockReset()
+    vi.mocked(getDriveAuthFor(testPortfolio).ensureFresh).mockResolvedValue({
       email: 'user@example.com',
       needsReauth: false,
       expiresAt: Date.now() + 60 * 60 * 1000,
@@ -163,7 +201,7 @@ describe('conflict-reconcile helpers', () => {
         changedSinceRestore: true,
       })
 
-      const result = await getBackupFileStatus('file-1')
+      const result = await getBackupFileStatus(testPortfolio, 'file-1')
 
       expect(mockFilesStatus).toHaveBeenCalledWith('file-1')
       expect(result).toEqual({
@@ -182,7 +220,7 @@ describe('conflict-reconcile helpers', () => {
         lastRestoredAt: null,
       })
 
-      const result = await getBackupFileStatus('missing')
+      const result = await getBackupFileStatus(testPortfolio, 'missing')
 
       expect(result.exists).toBe(false)
       expect(result.remoteModifiedTime).toBeUndefined()
@@ -192,7 +230,7 @@ describe('conflict-reconcile helpers', () => {
     it('propagates a rejected files.status (caller in App does .catch(() => null))', async () => {
       mockFilesStatus.mockRejectedValue(new Error('drive unavailable'))
 
-      await expect(getBackupFileStatus('file-1')).rejects.toThrow('drive unavailable')
+      await expect(getBackupFileStatus(testPortfolio, 'file-1')).rejects.toThrow('drive unavailable')
     })
   })
 
@@ -215,7 +253,7 @@ describe('conflict-reconcile helpers', () => {
       const envelopeJson = JSON.stringify(await encryptState(remoteState, key, salt))
       mockFilesRead.mockResolvedValue(envelopeJson)
 
-      const result = await overwriteLocalWithRemote('file-1', key)
+      const result = await overwriteLocalWithRemote(testPortfolio, 'file-1', key)
 
       // files.read is where drive-sync advances the restore baseline.
       expect(mockFilesRead).toHaveBeenCalledWith('file-1')
@@ -224,10 +262,10 @@ describe('conflict-reconcile helpers', () => {
 
     it('throws "empty or unreadable" when the read yields nothing', async () => {
       mockFilesRead.mockResolvedValue(null)
-      await expect(overwriteLocalWithRemote('file-1', key)).rejects.toThrow('Drive backup is empty or unreadable')
+      await expect(overwriteLocalWithRemote(testPortfolio, 'file-1', key)).rejects.toThrow('Drive backup is empty or unreadable')
 
       mockFilesRead.mockResolvedValue('')
-      await expect(overwriteLocalWithRemote('file-1', key)).rejects.toThrow('Drive backup is empty or unreadable')
+      await expect(overwriteLocalWithRemote(testPortfolio, 'file-1', key)).rejects.toThrow('Drive backup is empty or unreadable')
     })
 
     it('does not depend on files.status (resolves even in a would-be never-restored state)', async () => {
@@ -238,7 +276,7 @@ describe('conflict-reconcile helpers', () => {
       mockFilesRead.mockResolvedValue(JSON.stringify(await encryptState(remoteState, key, salt)))
       mockFilesStatus.mockRejectedValue(new Error('files.status must not be consulted by this path'))
 
-      const result = await overwriteLocalWithRemote('file-1', key)
+      const result = await overwriteLocalWithRemote(testPortfolio, 'file-1', key)
 
       expect(result.accounts[0].name).toBe('No Status Needed')
       expect(mockFilesStatus).not.toHaveBeenCalled()
@@ -250,7 +288,7 @@ describe('conflict-reconcile helpers', () => {
       const envelopeJson = JSON.stringify(await encryptState(initialState(), otherKey, otherSalt))
       mockFilesRead.mockResolvedValue(envelopeJson)
 
-      await expect(overwriteLocalWithRemote('file-1', key)).rejects.toThrow(DriveDecryptError)
+      await expect(overwriteLocalWithRemote(testPortfolio, 'file-1', key)).rejects.toThrow(DriveDecryptError)
     })
   })
 
@@ -277,7 +315,7 @@ describe('conflict-reconcile helpers', () => {
     it('reads remote (adopts baseline) then writes local, returning the file id', async () => {
       mockFilesRead.mockResolvedValue('whatever-the-remote-holds')
 
-      const result = await overwriteRemoteWithLocal(state, key, salt, 'file-1')
+      const result = await overwriteRemoteWithLocal(testPortfolio, state, key, salt, 'file-1')
 
       expect(result).toBe('file-1')
       expect(mockFilesRead).toHaveBeenCalledWith('file-1')
@@ -292,7 +330,7 @@ describe('conflict-reconcile helpers', () => {
     it('still proceeds to write when the baseline read yields null', async () => {
       mockFilesRead.mockResolvedValue(null)
 
-      const result = await overwriteRemoteWithLocal(state, key, salt, 'file-1')
+      const result = await overwriteRemoteWithLocal(testPortfolio, state, key, salt, 'file-1')
 
       expect(result).toBe('file-1')
       expect(mockFilesRead).toHaveBeenCalledTimes(1)
@@ -304,7 +342,7 @@ describe('conflict-reconcile helpers', () => {
       const raced = new RemoteChangedError('remote moved again')
       mockFilesWrite.mockRejectedValue(raced)
 
-      const err = await overwriteRemoteWithLocal(state, key, salt, 'file-1').catch((e) => e)
+      const err = await overwriteRemoteWithLocal(testPortfolio, state, key, salt, 'file-1').catch((e) => e)
 
       expect(err).toBe(raced)
       expect(err.name).toBe('RemoteChangedError')
@@ -314,10 +352,10 @@ describe('conflict-reconcile helpers', () => {
     })
 
     it('propagates a failing driveAuth.ensureFresh before any read', async () => {
-      vi.mocked(driveAuth.ensureFresh).mockReset()
-      vi.mocked(driveAuth.ensureFresh).mockRejectedValue(new Error('connection boom'))
+      vi.mocked(getDriveAuthFor(testPortfolio).ensureFresh).mockReset()
+      vi.mocked(getDriveAuthFor(testPortfolio).ensureFresh).mockRejectedValue(new Error('connection boom'))
 
-      await expect(overwriteRemoteWithLocal(state, key, salt, 'file-1')).rejects.toThrow('connection boom')
+      await expect(overwriteRemoteWithLocal(testPortfolio, state, key, salt, 'file-1')).rejects.toThrow('connection boom')
       expect(mockFilesRead).not.toHaveBeenCalled()
       expect(mockFilesWrite).not.toHaveBeenCalled()
     })
@@ -328,13 +366,181 @@ describe('conflict-reconcile helpers', () => {
       const connection = { email: 'user@example.com', needsReauth: false, expiresAt: Date.now() + 60 * 60 * 1000 }
       mockGetConnectionSync.mockReturnValue(connection)
 
-      expect(getConnectionSnapshot()).toBe(connection)
+      expect(getConnectionSnapshot(testPortfolio)).toBe(connection)
     })
 
     it('returns null when disconnected', () => {
       mockGetConnectionSync.mockReturnValue(null)
 
-      expect(getConnectionSnapshot()).toBeNull()
+      expect(getConnectionSnapshot(testPortfolio)).toBeNull()
+    })
+  })
+
+  describe('getDriveAuthFor caching/isolation', () => {
+    it('returns the SAME handle across repeated calls for the same portfolio', () => {
+      const a1 = getDriveAuthFor(testPortfolio)
+      const a2 = getDriveAuthFor(testPortfolio)
+
+      expect(a1).toBe(a2)
+    })
+
+    it('returns DIFFERENT handles for two distinct non-migrated portfolios', () => {
+      const portfolioA: Portfolio = {
+        id: 'port-iso-a',
+        name: 'Iso A',
+        dbName: 'portfolio_app_state_v1-port-iso-a',
+        createdAt: 10,
+      }
+      const portfolioB: Portfolio = {
+        id: 'port-iso-b',
+        name: 'Iso B',
+        dbName: 'portfolio_app_state_v1-port-iso-b',
+        createdAt: 11,
+      }
+
+      const authA = getDriveAuthFor(portfolioA)
+      const authB = getDriveAuthFor(portfolioB)
+
+      expect(authA).not.toBe(authB)
+    })
+
+    it('two differently-shaped portfolio objects that are both "migrated" (same legacy dbName, different id) share ONE cached handle', () => {
+      const migratedShapeOne: Portfolio = {
+        id: 'port-legacy-one',
+        name: 'My Portfolio',
+        dbName: 'portfolio_app_state_v1',
+        createdAt: 20,
+      }
+      const migratedShapeTwo: Portfolio = {
+        id: 'port-legacy-two',
+        name: 'My Portfolio (renamed)',
+        dbName: 'portfolio_app_state_v1',
+        createdAt: 21,
+      }
+
+      const authOne = getDriveAuthFor(migratedShapeOne)
+      const authTwo = getDriveAuthFor(migratedShapeTwo)
+
+      // Both map to the fixed 'app' project id, so they must resolve to the
+      // exact same cached auth handle despite differing `id`/`name`.
+      expect(authOne).toBe(authTwo)
+    })
+  })
+
+  describe('per-portfolio Drive folder path', () => {
+    it("a regular portfolio's sync resolves a folderPath ending in that portfolio's name", async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-1')
+      mockFilesList.mockResolvedValue([])
+
+      await getBackupFileId(testPortfolio)
+
+      const portfolioFolderCalls = mockCreateDriveSyncCalls.filter(
+        (c) => Array.isArray(c.folderPath) && c.folderPath.length === 3
+      )
+      expect(portfolioFolderCalls.length).toBeGreaterThan(0)
+      const lastCall = portfolioFolderCalls[portfolioFolderCalls.length - 1]
+      expect(lastCall.folderPath).toEqual(['OpenWebApp', 'Portfolio', testPortfolio.name])
+    })
+
+    it("the migrated portfolio's sync resolves a folderPath ending in its name too, not the old flat 2-level path", async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-1')
+      mockFilesList.mockResolvedValue([])
+
+      await getBackupFileId(migratedPortfolio)
+
+      const portfolioFolderCalls = mockCreateDriveSyncCalls.filter(
+        (c) => Array.isArray(c.folderPath) && c.folderPath.length === 3
+      )
+      const lastCall = portfolioFolderCalls[portfolioFolderCalls.length - 1]
+      expect(lastCall.folderPath).toEqual(['OpenWebApp', 'Portfolio', migratedPortfolio.name])
+      expect(lastCall.folderPath).not.toEqual(['OpenWebApp', 'Portfolio'])
+    })
+  })
+
+  describe('migrateLegacyDriveFolderIfNeeded', () => {
+    beforeEach(() => {
+      mockGetConnectionSync.mockReset()
+      mockEnsureFolderPath.mockReset()
+      mockFilesList.mockReset()
+      mockFilesRead.mockReset()
+      mockFilesWrite.mockReset()
+      mockFilesRemove.mockReset()
+      mockGetConnectionSync.mockReturnValue({
+        email: 'user@example.com',
+        needsReauth: false,
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      })
+    })
+
+    it('given a flat-root file, reads it, writes it into the portfolio folder, then removes the old file — in that order', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-1')
+      mockFilesList.mockResolvedValue([{ id: 'flat-file-1' }])
+      mockFilesRead.mockResolvedValue('legacy-content')
+      mockFilesWrite.mockResolvedValue({ id: 'new-file-1' })
+      mockFilesRemove.mockResolvedValue(undefined)
+
+      await migrateLegacyDriveFolderIfNeeded(migratedPortfolio)
+
+      expect(mockFilesRead).toHaveBeenCalledWith('flat-file-1')
+      expect(mockFilesWrite).toHaveBeenCalledTimes(1)
+      expect(mockFilesWrite.mock.calls[0][0]).toMatchObject({ content: 'legacy-content' })
+      expect(mockFilesRemove).toHaveBeenCalledWith('flat-file-1')
+
+      const readOrder = mockFilesRead.mock.invocationCallOrder[0]
+      const writeOrder = mockFilesWrite.mock.invocationCallOrder[0]
+      const removeOrder = mockFilesRemove.mock.invocationCallOrder[0]
+      expect(readOrder).toBeLessThan(writeOrder)
+      expect(writeOrder).toBeLessThan(removeOrder)
+    })
+
+    it('given no flat-root file, is an idempotent no-op — zero write/remove calls', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-1')
+      mockFilesList.mockResolvedValue([])
+
+      await migrateLegacyDriveFolderIfNeeded(migratedPortfolio)
+
+      expect(mockFilesRead).not.toHaveBeenCalled()
+      expect(mockFilesWrite).not.toHaveBeenCalled()
+      expect(mockFilesRemove).not.toHaveBeenCalled()
+    })
+
+    it('when the connection needsReauth, makes zero API calls (not even files.list)', async () => {
+      mockGetConnectionSync.mockReturnValue({
+        email: 'user@example.com',
+        needsReauth: true,
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      })
+
+      await migrateLegacyDriveFolderIfNeeded(migratedPortfolio)
+
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+      expect(mockFilesRead).not.toHaveBeenCalled()
+      expect(mockFilesWrite).not.toHaveBeenCalled()
+      expect(mockFilesRemove).not.toHaveBeenCalled()
+    })
+
+    it('when there is no active connection at all, makes zero API calls', async () => {
+      mockGetConnectionSync.mockReturnValue(null)
+
+      await migrateLegacyDriveFolderIfNeeded(migratedPortfolio)
+
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+      expect(mockFilesRead).not.toHaveBeenCalled()
+      expect(mockFilesWrite).not.toHaveBeenCalled()
+      expect(mockFilesRemove).not.toHaveBeenCalled()
+    })
+
+    it('on a NON-migrated portfolio, is an immediate no-op — zero API calls, guard short-circuits before checking connection', async () => {
+      await migrateLegacyDriveFolderIfNeeded(testPortfolio)
+
+      expect(mockGetConnectionSync).not.toHaveBeenCalled()
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+      expect(mockFilesRead).not.toHaveBeenCalled()
+      expect(mockFilesWrite).not.toHaveBeenCalled()
+      expect(mockFilesRemove).not.toHaveBeenCalled()
     })
   })
 })
@@ -344,15 +550,16 @@ describe('conflict-reconcile helpers', () => {
 //
 // Every content op (syncBackup / restoreBackupFromFileId /
 // overwriteLocalWithRemote / overwriteRemoteWithLocal) must call
-// driveAuth.ensureFresh() and must do so BEFORE touching any drive I/O, so a
-// stale/expired token is refreshed (or the op aborts) before a request goes
-// out. `driveAuth` is imported from ./drive so these assertions hit the exact
-// mock instance the module captured at load.
+// `getDriveAuthFor(portfolio).ensureFresh()` and must do so BEFORE touching
+// any drive I/O, so a stale/expired token is refreshed (or the op aborts)
+// before a request goes out. Handles are fetched fresh from `getDriveAuthFor`
+// (rather than a single module-level singleton) so these assertions hit the
+// exact cached instance drive.ts uses internally for `testPortfolio`.
 // ---------------------------------------------------------------------------
 describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => {
   let key: CryptoKey
   let salt: Uint8Array
-  let ensureFresh: ReturnType<typeof vi.mocked<typeof driveAuth.ensureFresh>>
+  let ensureFresh: ReturnType<typeof vi.mocked<ReturnType<typeof getDriveAuthFor>['ensureFresh']>>
 
   beforeEach(async () => {
     salt = generateSalt()
@@ -362,10 +569,12 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
     mockFilesRead.mockReset()
     mockFilesWrite.mockReset()
     mockFilesList.mockReset()
+    mockFilesRemove.mockReset()
     mockEnsureFolderPath.mockReset()
     mockPickFile.mockReset()
+    mockCreateDriveSyncCalls.length = 0
 
-    ensureFresh = vi.mocked(driveAuth.ensureFresh)
+    ensureFresh = vi.mocked(getDriveAuthFor(testPortfolio).ensureFresh)
     ensureFresh.mockReset()
     ensureFresh.mockResolvedValue({
       email: 'user@example.com',
@@ -383,7 +592,7 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
 
   describe('happy — ensureFresh() runs before any drive I/O', () => {
     it('syncBackup calls ensureFresh() once, before ensureFolderPath / files.list / files.write', async () => {
-      await syncBackup(initialState(), key, salt)
+      await syncBackup(testPortfolio, initialState(), key, salt)
 
       expect(ensureFresh).toHaveBeenCalledTimes(1)
       const gate = ensureFresh.mock.invocationCallOrder[0]
@@ -395,7 +604,7 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
     it('restoreBackupFromFileId calls ensureFresh() once, before files.read', async () => {
       mockFilesRead.mockResolvedValue(await encJson())
 
-      await restoreBackupFromFileId('file-1', key)
+      await restoreBackupFromFileId(testPortfolio, 'file-1', key)
 
       expect(ensureFresh).toHaveBeenCalledTimes(1)
       expect(ensureFresh.mock.invocationCallOrder[0]).toBeLessThan(
@@ -406,7 +615,7 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
     it('overwriteLocalWithRemote calls ensureFresh() once, before files.read', async () => {
       mockFilesRead.mockResolvedValue(await encJson())
 
-      await overwriteLocalWithRemote('file-1', key)
+      await overwriteLocalWithRemote(testPortfolio, 'file-1', key)
 
       expect(ensureFresh).toHaveBeenCalledTimes(1)
       expect(ensureFresh.mock.invocationCallOrder[0]).toBeLessThan(
@@ -417,7 +626,7 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
     it('overwriteRemoteWithLocal gates on ensureFresh() before files.read / files.write', async () => {
       mockFilesRead.mockResolvedValue('remote-baseline')
 
-      await overwriteRemoteWithLocal(initialState(), key, salt, 'file-1')
+      await overwriteRemoteWithLocal(testPortfolio, initialState(), key, salt, 'file-1')
 
       // Called twice: once in overwriteRemoteWithLocal itself, then again inside
       // the syncBackup it delegates the write to. The load-bearing property is
@@ -436,25 +645,25 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
     })
 
     it('syncBackup rejects with the same error and performs no files.* call', async () => {
-      await expect(syncBackup(initialState(), key, salt)).rejects.toThrow('token refresh failed')
+      await expect(syncBackup(testPortfolio, initialState(), key, salt)).rejects.toThrow('token refresh failed')
       expect(mockEnsureFolderPath).not.toHaveBeenCalled()
       expect(mockFilesList).not.toHaveBeenCalled()
       expect(mockFilesWrite).not.toHaveBeenCalled()
     })
 
     it('restoreBackupFromFileId rejects with the same error and never reads', async () => {
-      await expect(restoreBackupFromFileId('file-1', key)).rejects.toThrow('token refresh failed')
+      await expect(restoreBackupFromFileId(testPortfolio, 'file-1', key)).rejects.toThrow('token refresh failed')
       expect(mockFilesRead).not.toHaveBeenCalled()
     })
 
     it('overwriteLocalWithRemote rejects with the same error and never reads', async () => {
-      await expect(overwriteLocalWithRemote('file-1', key)).rejects.toThrow('token refresh failed')
+      await expect(overwriteLocalWithRemote(testPortfolio, 'file-1', key)).rejects.toThrow('token refresh failed')
       expect(mockFilesRead).not.toHaveBeenCalled()
     })
 
     it('overwriteRemoteWithLocal rejects with the same error and never reads or writes', async () => {
       await expect(
-        overwriteRemoteWithLocal(initialState(), key, salt, 'file-1')
+        overwriteRemoteWithLocal(testPortfolio, initialState(), key, salt, 'file-1')
       ).rejects.toThrow('token refresh failed')
       expect(mockFilesRead).not.toHaveBeenCalled()
       expect(mockFilesWrite).not.toHaveBeenCalled()
@@ -465,7 +674,7 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
     it('returns null silently on NeedsReauthError and never calls driveAuth.ensureFresh', async () => {
       mockEnsureFolderPath.mockRejectedValue(new NeedsReauthError('token expired'))
 
-      const result = await getBackupFileId()
+      const result = await getBackupFileId(testPortfolio)
 
       expect(result).toBeNull()
       expect(ensureFresh).not.toHaveBeenCalled()
@@ -555,9 +764,9 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
   it('headline: connect() + syncBackup() in one tick share ONE interactive connect; both resolve off it', async () => {
     t13.connection = null // no cached/valid token
 
-    const pConnect = t13.mod.driveAuth.connect()
-    const pEnsure = t13.mod.driveAuth.ensureFresh()
-    const pSync = t13.mod.syncBackup(initialState(), t13.key, t13.salt)
+    const pConnect = t13.mod.getDriveAuthFor(testPortfolio).connect()
+    const pEnsure = t13.mod.getDriveAuthFor(testPortfolio).ensureFresh()
+    const pSync = t13.mod.syncBackup(testPortfolio, initialState(), t13.key, t13.salt)
 
     // Let ensureFresh()/syncBackup() get past getConnection() into the shared connect().
     await flush()
@@ -576,8 +785,8 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
   it('fast path: a still-valid cached token races with zero interactive connects', async () => {
     t13.connection = { email: 'user@example.com', expiresAt: Date.now() + 30 * 60 * 1000, needsReauth: false }
 
-    const pEnsure = t13.mod.driveAuth.ensureFresh()
-    const pSync = t13.mod.syncBackup(initialState(), t13.key, t13.salt)
+    const pEnsure = t13.mod.getDriveAuthFor(testPortfolio).ensureFresh()
+    const pSync = t13.mod.syncBackup(testPortfolio, initialState(), t13.key, t13.salt)
 
     const [conn, fileId] = await Promise.all([pEnsure, pSync])
     expect(t13.connectPrimitive).not.toHaveBeenCalled()
@@ -588,8 +797,8 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
   it('error: the shared connect rejects -> both callers reject; a later connect() starts a fresh interactive call', async () => {
     t13.connection = null
 
-    const pConnect = t13.mod.driveAuth.connect()
-    const pSync = t13.mod.syncBackup(initialState(), t13.key, t13.salt)
+    const pConnect = t13.mod.getDriveAuthFor(testPortfolio).connect()
+    const pSync = t13.mod.syncBackup(testPortfolio, initialState(), t13.key, t13.salt)
     await flush()
     expect(t13.connectPrimitive).toHaveBeenCalledTimes(1)
 
@@ -603,7 +812,7 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
     t13.connectDeferred = new Promise((resolve) => {
       t13.resolveConnect = resolve
     })
-    const pConnect2 = t13.mod.driveAuth.connect()
+    const pConnect2 = t13.mod.getDriveAuthFor(testPortfolio).connect()
     await flush()
     expect(t13.connectPrimitive).toHaveBeenCalledTimes(2)
 
@@ -614,8 +823,8 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
   it('sequential: ensureFresh() twice with a valid token -> zero interactive connects', async () => {
     t13.connection = { email: 'user@example.com', expiresAt: Date.now() + 30 * 60 * 1000, needsReauth: false }
 
-    const c1 = await t13.mod.driveAuth.ensureFresh()
-    const c2 = await t13.mod.driveAuth.ensureFresh()
+    const c1 = await t13.mod.getDriveAuthFor(testPortfolio).ensureFresh()
+    const c2 = await t13.mod.getDriveAuthFor(testPortfolio).ensureFresh()
 
     expect(c1).toBe(t13.connection)
     expect(c2).toBe(t13.connection)

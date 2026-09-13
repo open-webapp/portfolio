@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
-import type { Connection } from '@open-webapp/drive-connect'
+import type { Connection, DriveAuthHandle } from '@open-webapp/drive-connect'
 import type { AppState } from '../lib/state'
+import type { Portfolio } from '../lib/types'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadLegacyPlaintextApp, loadPersistedApp, peekStoredSalt, clearPersistedApp } from '../lib/persist'
-import { driveAuth } from '../lib/drive'
 import { DriveRestorePanel } from './DriveRestorePanel'
 import { GateRestoreFromFilePanel } from './GateRestoreFromFilePanel'
 import { ResetAppControl } from './ResetAppControl'
@@ -13,6 +13,8 @@ export interface PasswordGateProps {
   shape: 'absent' | 'legacy-plaintext' | 'encrypted'
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
   onReset: () => void
+  driveAuth: DriveAuthHandle
+  activePortfolio: Portfolio
   // Drive props for restore feature
   backupFileId?: string | null
   syncing?: boolean
@@ -30,6 +32,8 @@ export function PasswordGate({
   shape,
   onUnlock,
   onReset,
+  driveAuth,
+  activePortfolio,
   backupFileId = null,
   syncing = false,
   setSyncing,
@@ -48,6 +52,8 @@ export function PasswordGate({
       shape={shape}
       onUnlock={onUnlock}
       onReset={handleReset}
+      driveAuth={driveAuth}
+      activePortfolio={activePortfolio}
       backupFileId={backupFileId}
       syncing={syncing}
       setSyncing={setSyncing}
@@ -133,6 +139,8 @@ function SetPasswordScreen({
   shape,
   onUnlock,
   onReset,
+  driveAuth,
+  activePortfolio,
   backupFileId = null,
   syncing = false,
   setSyncing,
@@ -142,6 +150,8 @@ function SetPasswordScreen({
   shape: 'absent' | 'legacy-plaintext'
   onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
   onReset: () => Promise<void>
+  driveAuth: DriveAuthHandle
+  activePortfolio: Portfolio
   backupFileId?: string | null
   syncing?: boolean
   setSyncing?: (v: boolean) => void
@@ -304,6 +314,7 @@ function SetPasswordScreen({
             {dummyKeyReady && dummyKey && dummySalt ? (
               <DriveRestorePanel
                 auth={driveAuth}
+                activePortfolio={activePortfolio}
                 backupFileId={backupFileId}
                 syncing={syncing}
                 setSyncing={setSyncing || (() => {})}

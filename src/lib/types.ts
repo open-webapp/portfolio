@@ -3,6 +3,13 @@ export type TaxCategory = 'taxable' | 'nonTaxable' | 'taxDeferred'
 export type AssetClass =
   | 'Equity' | 'ETF' | 'Mutual Fund' | 'Fixed Income' | 'Crypto' | 'Cash' | 'Other'
 
+export interface Portfolio {
+  id: string
+  name: string
+  dbName: string
+  createdAt: number
+}
+
 export interface Account {
   id: string
   accountNumber: string

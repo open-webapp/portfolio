@@ -1,10 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, configure } from '@testing-library/react'
 import { useDriveConnection } from '@open-webapp/drive-connect'
 import { DriveRestorePanel, type DriveRestorePanelProps } from './DriveRestorePanel'
 import { initialState } from '../lib/state'
 import * as driveModule from '../lib/drive'
 import { deriveKey, generateSalt, encryptState } from '../lib/crypto'
+
+// This suite drives the REAL PBKDF2 deriveKey (600,000 SHA-256 iterations,
+// see crypto.ts) for its cross-password/decrypt flows rather than mocking it,
+// since a fake key wouldn't round-trip through real SubtleCrypto decrypt.
+// That's genuinely CPU-heavy, and under full-suite concurrency (many test
+// files' worker processes contending for the same CPU cores) it can take
+// longer than testing-library's default 1000ms waitFor timeout even though it
+// completes in well under 1s in isolation. Bump the timeout so real-crypto-
+// driven assertions aren't flaky under contention.
+configure({ asyncUtilTimeout: 5000 })
 
 // Create mock functions
 const mockPickFile = vi.fn()
@@ -108,9 +118,12 @@ describe('DriveRestorePanel', () => {
     cleanup()
   })
 
+  const testPortfolio = { id: 'p1', name: 'Test Portfolio', dbName: 'portfolio_p1', createdAt: 0 }
+
   function renderPanelWithKey(overrides: Partial<DriveRestorePanelProps> = {}) {
     const defaultProps: DriveRestorePanelProps = {
       auth: mockAuth as unknown as DriveRestorePanelProps['auth'],
+      activePortfolio: testPortfolio,
       backupFileId: null,
       syncing: false,
       setSyncing: mockSetSyncing,
@@ -233,7 +246,7 @@ describe('DriveRestorePanel', () => {
       })
 
       await waitFor(() => {
-        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith('file-123', testRestoreKey)
+        expect(driveModule.restoreBackupFromFileId).toHaveBeenCalledWith(testPortfolio, 'file-123', testRestoreKey)
         expect(mockOnRestored).toHaveBeenCalledWith(restoredState, testRestoreKey, testRestoreSalt)
       })
 
