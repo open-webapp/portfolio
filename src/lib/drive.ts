@@ -5,6 +5,8 @@ import type { AppState } from './state'
 import { coalesceWithDefaults } from './persist'
 import { decryptState, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
+import type { Portfolio } from './types'
+import { isMigratedPortfolio } from './portfolioRegistry'
 
 /**
  * Thrown when decryption fails due to a wrong key (auth-tag mismatch).
@@ -23,21 +25,66 @@ export class DriveDecryptError extends Error {
 }
 
 /**
- * Raw drive-sync object - not exported, used internally
+ * Resolve the Drive auth/sync "project id" for a portfolio: the legacy,
+ * pre-multi-portfolio db keeps the original fixed 'app' id (so its existing
+ * Drive-stored token/connection keeps working); every other portfolio gets
+ * its own id (its portfolio id) so each has an isolated Drive connection.
  */
-const driveSync = createDriveSync({
+function driveProjectIdFor(portfolio: Portfolio): string {
+  return isMigratedPortfolio(portfolio) ? 'app' : portfolio.id
+}
+
+/**
+ * Legacy fixed-path Drive facade, kept only for the `drive` compatibility
+ * wrapper below (consumed by DriveRestorePanel, which is not yet migrated to
+ * a per-portfolio Drive connection — a separate follow-up task). Not
+ * exported.
+ */
+const legacyDriveSync = createDriveSync({
   appId: 'portfolio',
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
   folderPath: ['OpenWebApp', 'Portfolio'],
 })
 
-const APP_PROJECT_ID = 'app'
+const driveAuthCache = new Map<string, ReturnType<typeof createDriveAuth>>()
 
-export const driveAuth = createDriveAuth({
-  drive: driveSync,
-  projectId: APP_PROJECT_ID,
-  tokenBufferMs: 5 * 60 * 1000,
-})
+/**
+ * Returns the (cached, lazily-created) Drive auth handle for a portfolio.
+ * Each non-legacy portfolio gets its own isolated auth/token via its own
+ * project id; the migrated legacy portfolio keeps reusing the original
+ * fixed 'app' project id so its existing stored token/connection survives.
+ */
+export function getDriveAuthFor(portfolio: Portfolio) {
+  const projectId = driveProjectIdFor(portfolio)
+  let auth = driveAuthCache.get(projectId)
+  if (!auth) {
+    const authFacade = createDriveSync({
+      appId: 'portfolio',
+      clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      folderPath: ['OpenWebApp', 'Portfolio'],
+    })
+    auth = createDriveAuth({
+      drive: authFacade,
+      projectId,
+      tokenBufferMs: 5 * 60 * 1000,
+    })
+    driveAuthCache.set(projectId, auth)
+  }
+  return auth
+}
+
+/**
+ * Builds a drive-sync instance scoped to a portfolio's own Drive folder
+ * (named after the portfolio), so each portfolio's backup lives in its own
+ * folder under OpenWebApp/Portfolio.
+ */
+function driveSyncForPortfolio(portfolio: Portfolio) {
+  return createDriveSync({
+    appId: 'portfolio',
+    clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+    folderPath: ['OpenWebApp', 'Portfolio', portfolio.name],
+  })
+}
 
 /**
  * Wrapper around drive-sync that provides compatibility for the DriveRestorePanel
@@ -45,9 +92,9 @@ export const driveAuth = createDriveAuth({
  * instead of an array of PickedFile objects.
  */
 export const drive = {
-  ...driveSync,
+  ...legacyDriveSync,
   project: (projectId: string) => {
-    const project = driveSync.project(projectId)
+    const project = legacyDriveSync.project(projectId)
     return {
       ...project,
       pickFile: async (options?: any): Promise<{ id: string; name?: string; mimeType?: string } | null> => {
@@ -102,18 +149,18 @@ export const drive = {
         }
         return null
       },
-    } as ReturnType<typeof driveSync.project> & { pickFile: (options?: any) => Promise<{ id: string; name?: string; mimeType?: string } | null> }
+    } as ReturnType<typeof legacyDriveSync.project> & { pickFile: (options?: any) => Promise<{ id: string; name?: string; mimeType?: string } | null> }
   },
 } as any
 
 /**
- * Synchronous snapshot of the current Drive connection for the app project.
- * Thin wrapper over drive-sync's `getConnectionSync()` — never throws, never
- * returns a Promise, and `null` means disconnected (or not-yet-hydrated;
- * callers can't distinguish the two, which is expected).
+ * Synchronous snapshot of the current Drive connection for a portfolio's
+ * project. Thin wrapper over drive-sync's `getConnectionSync()` — never
+ * throws, never returns a Promise, and `null` means disconnected (or
+ * not-yet-hydrated; callers can't distinguish the two, which is expected).
  */
-export function getConnectionSnapshot(): Connection | null {
-  return driveSync.project(APP_PROJECT_ID).getConnectionSync()
+export function getConnectionSnapshot(portfolio: Portfolio): Connection | null {
+  return driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio)).getConnectionSync()
 }
 
 const APP_STATE_FILENAME = 'portfolio-state.json'
@@ -178,16 +225,17 @@ export async function decryptBackupEnvelope(
  * Opens a Google auth window only when the cached token has expired or is
  * missing; a still-valid stored token is reused without prompting.
  *
+ * @param portfolio The portfolio whose Drive connection/folder to sync to
  * @param state The current app state to backup
  * @param key AES-GCM key to encrypt the backup under
  * @param salt PBKDF2 salt used to derive `key`, stored alongside the ciphertext
  *   so restore can re-derive the same key from a password
  * @throws Throws if Drive connection fails or write fails
  */
-export async function syncBackup(state: AppState, key: CryptoKey, salt: Uint8Array): Promise<string> {
+export async function syncBackup(portfolio: Portfolio, state: AppState, key: CryptoKey, salt: Uint8Array): Promise<string> {
   try {
-    await driveAuth.ensureFresh()
-    const project = driveSync.project(APP_PROJECT_ID)
+    await getDriveAuthFor(portfolio).ensureFresh()
+    const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
 
     // Ensure app folder structure (OpenWebApp/Portfolio) exists
     const folderId = await withTimeout(
@@ -240,9 +288,9 @@ export async function syncBackup(state: AppState, key: CryptoKey, salt: Uint8Arr
  * This is a status probe (also called on page load), so it never opens a
  * Google auth window: an expired/missing token yields null, not an error.
  */
-export async function getBackupFileId(): Promise<string | null> {
+export async function getBackupFileId(portfolio: Portfolio): Promise<string | null> {
   try {
-    const project = driveSync.project(APP_PROJECT_ID)
+    const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
 
     const folderId = await withTimeout(
       project.ensureFolderPath(),
@@ -298,13 +346,13 @@ export async function getBackupFileId(): Promise<string | null> {
  * `files.status` throwing (expired token, permission issue) propagates; the
  * caller in App swallows it with `.catch(() => null)`.
  */
-export async function getBackupFileStatus(fileId: string): Promise<{
+export async function getBackupFileStatus(portfolio: Portfolio, fileId: string): Promise<{
   exists: boolean
   remoteModifiedTime?: string
   lastRestoredAt?: number
 }> {
   const status = await withTimeout(
-    driveSync.project(APP_PROJECT_ID).files.status(fileId),
+    driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio)).files.status(fileId),
     DRIVE_IO_TIMEOUT_MS,
     'files.status'
   )
@@ -322,8 +370,8 @@ export async function getBackupFileStatus(fileId: string): Promise<{
  * Picker selection — see `drive.project(id).pickFile()` above) so restore
  * throws a consistent `DriveDecryptError` on a wrong-password mismatch.
  */
-async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppState | null> {
-  const project = driveSync.project(APP_PROJECT_ID)
+async function readAndDecryptFile(portfolio: Portfolio, fileId: string, key: CryptoKey): Promise<AppState | null> {
+  const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
 
   const content = await withTimeout(
     project.files.read(fileId),
@@ -398,10 +446,10 @@ async function readAndDecryptFile(fileId: string, key: CryptoKey): Promise<AppSt
  *   empty/unreadable, the backup JSON is malformed, or decryption fails for
  *   a reason other than a wrong key
  */
-export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): Promise<AppState> {
+export async function restoreBackupFromFileId(portfolio: Portfolio, fileId: string, key: CryptoKey): Promise<AppState> {
   try {
-    await driveAuth.ensureFresh()
-    const restored = await readAndDecryptFile(fileId, key)
+    await getDriveAuthFor(portfolio).ensureFresh()
+    const restored = await readAndDecryptFile(portfolio, fileId, key)
     if (!restored) {
       throw new Error('Picked Drive file is empty or unreadable')
     }
@@ -429,9 +477,9 @@ export async function restoreBackupFromFileId(fileId: string, key: CryptoKey): P
  * @throws Throws if the Drive connection fails, the read fails, or the file
  *   is empty/unreadable.
  */
-export async function overwriteLocalWithRemote(fileId: string, key: CryptoKey): Promise<AppState> {
-  await driveAuth.ensureFresh()
-  const restored = await readAndDecryptFile(fileId, key)
+export async function overwriteLocalWithRemote(portfolio: Portfolio, fileId: string, key: CryptoKey): Promise<AppState> {
+  await getDriveAuthFor(portfolio).ensureFresh()
+  const restored = await readAndDecryptFile(portfolio, fileId, key)
   if (!restored) {
     throw new Error('Drive backup is empty or unreadable')
   }
@@ -456,16 +504,92 @@ export async function overwriteLocalWithRemote(fileId: string, key: CryptoKey): 
  * @throws Throws if the Drive connection fails or the read/write fails.
  */
 export async function overwriteRemoteWithLocal(
+  portfolio: Portfolio,
   state: AppState,
   key: CryptoKey,
   salt: Uint8Array,
   fileId: string
 ): Promise<string> {
-  await driveAuth.ensureFresh()
+  await getDriveAuthFor(portfolio).ensureFresh()
   await withTimeout(
-    driveSync.project(APP_PROJECT_ID).files.read(fileId),
+    driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio)).files.read(fileId),
     DRIVE_IO_TIMEOUT_MS,
     'files.read (adopt baseline)'
   )
-  return await syncBackup(state, key, salt)
+  return await syncBackup(portfolio, state, key, salt)
+}
+
+/**
+ * One-time, idempotent migration of a portfolio's Drive backup out of the
+ * legacy flat root folder (`OpenWebApp/Portfolio/portfolio-state.json`,
+ * shared by every portfolio before the multi-portfolio feature) into its own
+ * named subfolder (`OpenWebApp/Portfolio/{portfolio.name}/portfolio-state.json`).
+ *
+ * Only applies to the migrated legacy portfolio (`isMigratedPortfolio`) —
+ * every other portfolio was created after the multi-portfolio folder scheme
+ * existed and never had a flat-root file to migrate.
+ *
+ * Deliberately non-interactive: this runs as a background step (e.g. before
+ * a sync), not in response to a direct user "connect" action, so it must
+ * never itself trigger an auth popup. It reuses `getConnectionSnapshot`'s
+ * exact mechanism (`ProjectHandle.getConnectionSync()`) to check for an
+ * existing, still-valid connection and no-ops otherwise.
+ *
+ * Safe to call unconditionally on every load/sync: once the flat-root file
+ * has been moved (or never existed), `files.list` finds nothing and this
+ * becomes a cheap no-op forever after.
+ *
+ * Ordered write-then-remove: the new copy is written before the old one is
+ * removed, so a crash between the two steps leaves the legacy file in place
+ * (migration simply retries next time) rather than losing data.
+ */
+export async function migrateLegacyDriveFolderIfNeeded(portfolio: Portfolio): Promise<void> {
+  if (!isMigratedPortfolio(portfolio)) return
+
+  const conn = getConnectionSnapshot(portfolio)
+  if (!conn || conn.needsReauth) return // don't prompt just for this
+
+  const projectId = driveProjectIdFor(portfolio)
+  const rootProject = legacyDriveSync.project(projectId)
+
+  const rootFolderId = await withTimeout(
+    rootProject.ensureFolderPath(),
+    DRIVE_IO_TIMEOUT_MS,
+    'ensureFolderPath (legacy root)'
+  )
+  const flatFiles = await withTimeout(
+    rootProject.files.list({ folderId: rootFolderId, nameEquals: APP_STATE_FILENAME }),
+    DRIVE_IO_TIMEOUT_MS,
+    'files.list (legacy root)'
+  )
+  if (flatFiles.length === 0) return // already migrated or never existed
+
+  const content = await withTimeout(
+    rootProject.files.read(flatFiles[0].id),
+    DRIVE_IO_TIMEOUT_MS,
+    'files.read (legacy root)'
+  )
+  if (content == null) return // file vanished/unreadable between list and read — nothing to migrate
+
+  const newProject = driveSyncForPortfolio(portfolio).project(projectId)
+  const newFolderId = await withTimeout(
+    newProject.ensureFolderPath(),
+    DRIVE_IO_TIMEOUT_MS,
+    'ensureFolderPath (portfolio folder)'
+  )
+  await withTimeout(
+    newProject.files.write({
+      folderId: newFolderId,
+      name: APP_STATE_FILENAME,
+      content,
+      mimeType: 'application/json',
+    }),
+    DRIVE_IO_TIMEOUT_MS,
+    'files.write (portfolio folder)'
+  )
+  await withTimeout(
+    rootProject.files.remove(flatFiles[0].id),
+    DRIVE_IO_TIMEOUT_MS,
+    'files.remove (legacy root)'
+  )
 }

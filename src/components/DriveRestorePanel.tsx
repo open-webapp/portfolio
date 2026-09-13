@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { useDriveConnection } from '@open-webapp/drive-connect'
 import type { DriveAuthHandle } from '@open-webapp/drive-connect'
 import type { AppState } from '../lib/state'
+import type { Portfolio } from '../lib/types'
 import {
   restoreBackupFromFileId,
   decryptBackupEnvelope,
@@ -69,6 +70,7 @@ function DriveFilePickerDialog({
 
 export interface DriveRestorePanelProps {
   auth: DriveAuthHandle
+  activePortfolio: Portfolio
   backupFileId: string | null
   syncing: boolean
   setSyncing: (v: boolean) => void
@@ -79,6 +81,7 @@ export interface DriveRestorePanelProps {
 
 export function DriveRestorePanel({
   auth,
+  activePortfolio,
   backupFileId,
   syncing,
   setSyncing,
@@ -164,7 +167,7 @@ export function DriveRestorePanel({
 
             setSyncing(true)
             try {
-              const restored = await restoreBackupFromFileId(fileId, restoreKey)
+              const restored = await restoreBackupFromFileId(activePortfolio, fileId, restoreKey)
               onRestored(restored, restoreKey, restoreSalt)
               setShowPicker(false)
               setCrossPasswordPrompt(null)
@@ -242,7 +245,7 @@ export function DriveRestorePanel({
 
                 setSyncing(true)
                 try {
-                  const restored = await restoreBackupFromFileId(fileId, restoreKey)
+                  const restored = await restoreBackupFromFileId(activePortfolio, fileId, restoreKey)
                   onRestored(restored, restoreKey, restoreSalt)
                   setCrossPasswordPrompt(null)
                   setCrossPasswordError(null)

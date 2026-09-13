@@ -6,6 +6,44 @@ import type { EncryptedEnvelope } from './crypto'
 const STORE_NAME = 'app_state'
 const STATE_KEY = 'current'
 
+const dbHandles: Map<string, Promise<IDBDatabase>> = new Map()
+let activePortfolioDbName: string | null = null
+
+/**
+ * Sets which portfolio's IndexedDB database subsequent loadPersistedApp /
+ * savePersistedApp / clearPersistedApp calls operate on. Must be called
+ * before any of those are used.
+ */
+export function setActivePortfolioDb(dbName: string): void {
+  activePortfolioDbName = dbName
+  dbHandles.delete(dbName) // force a fresh open in case a prior open raced a delete
+}
+
+function openDb(dbName: string): Promise<IDBDatabase> {
+  if (!dbHandles.has(dbName)) {
+    dbHandles.set(
+      dbName,
+      new Promise((resolve, reject) => {
+        const request = indexedDB.open(dbName, 1)
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+        request.onupgradeneeded = (event) => {
+          const db = (event.target as IDBOpenDBRequest).result
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME)
+          }
+        }
+      }),
+    )
+  }
+  return dbHandles.get(dbName)!
+}
+
+function requireActiveDbName(): string {
+  if (!activePortfolioDbName) throw new Error('No active portfolio set — call setActivePortfolioDb() first')
+  return activePortfolioDbName
+}
+
 function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64)
   const bytes = new Uint8Array(binary.length)
@@ -99,11 +137,13 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
  * Used by the password gate to decide whether to prompt for a new password
  * (absent), migrate (legacy-plaintext), or unlock (encrypted).
  *
- * At the password gate stage, we need to check the old legacy database
- * since the project hasn't been selected yet.
+ * Legacy-migration-path-only check: always reads the hardcoded old
+ * single-portfolio database ('portfolio_app_state_v1'), never the active
+ * portfolio's database. This exists solely to detect pre-multi-portfolio
+ * data left behind for one-time migration.
  */
 export async function peekEnvelopeShape(): Promise<'absent' | 'legacy-plaintext' | 'encrypted'> {
-  // At boot, before any project selection, check the old database for legacy data
+  // Legacy-migration check only: always targets the old hardcoded database
   try {
     return await new Promise<'absent' | 'legacy-plaintext' | 'encrypted'>((resolve) => {
       const request = indexedDB.open('portfolio_app_state_v1')
@@ -139,7 +179,9 @@ export async function peekEnvelopeShape(): Promise<'absent' | 'legacy-plaintext'
  * Peeks at the stored envelope's salt (if it is already encrypted) without a password.
  * Returns null if nothing is stored or the stored value isn't an encrypted envelope.
  *
- * At the password gate stage, check the old database.
+ * Legacy-migration-path-only check: always reads the hardcoded old
+ * single-portfolio database ('portfolio_app_state_v1'), never the active
+ * portfolio's database.
  */
 export async function peekStoredSalt(): Promise<Uint8Array | null> {
   try {
@@ -181,7 +223,9 @@ export async function peekStoredSalt(): Promise<Uint8Array | null> {
  * Returns the saved state, or null if nothing was saved.
  * Missing collections default to empty arrays for migration tolerance.
  *
- * At boot, checks the old database.
+ * Legacy-migration-path-only check: always reads the hardcoded old
+ * single-portfolio database ('portfolio_app_state_v1'), never the active
+ * portfolio's database.
  */
 export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
   try {
@@ -219,24 +263,14 @@ export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
 }
 
 /**
- * Loads and decrypts the persisted AppState from the active project's database.
+ * Loads and decrypts the persisted AppState from the active portfolio's database.
  * Returns null if nothing was saved.
  * Throws if the stored value is not an encrypted envelope (caller bug — the
  * gate must never call this on a legacy/absent envelope) or if decryption
  * fails (e.g. wrong password → OperationError propagates uncaught).
  */
 export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null> {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open('portfolio_app_state_v1', 1)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = (event) => {
-      const dbNew = (event.target as IDBOpenDBRequest).result
-      if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
-        dbNew.createObjectStore(STORE_NAME)
-      }
-    }
-  })
+  const db = await openDb(requireActiveDbName())
 
   const raw = await new Promise<unknown>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly')
@@ -260,22 +294,12 @@ export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null>
 }
 
 /**
- * Encrypts and saves app state to the active project's database.
+ * Encrypts and saves app state to the active portfolio's database.
  */
 export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Uint8Array): Promise<void> {
   try {
     const envelope = await encryptState(state, key, salt)
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('portfolio_app_state_v1', 1)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-      request.onupgradeneeded = (event) => {
-        const dbNew = (event.target as IDBOpenDBRequest).result
-        if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
-          dbNew.createObjectStore(STORE_NAME)
-        }
-      }
-    })
+    const db = await openDb(requireActiveDbName())
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite')
@@ -292,20 +316,10 @@ export async function savePersistedApp(state: AppState, key: CryptoKey, salt: Ui
 }
 
 /**
- * Deletes the persisted app state entry from the active project's database.
+ * Deletes the persisted app state entry from the active portfolio's database.
  */
 export async function clearPersistedApp(): Promise<void> {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open('portfolio_app_state_v1', 1)
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = (event) => {
-      const dbNew = (event.target as IDBOpenDBRequest).result
-      if (!dbNew.objectStoreNames.contains(STORE_NAME)) {
-        dbNew.createObjectStore(STORE_NAME)
-      }
-    }
-  })
+  const db = await openDb(requireActiveDbName())
 
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite')

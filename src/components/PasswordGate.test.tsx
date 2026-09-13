@@ -94,7 +94,7 @@ vi.mock('../lib/drive', async (importOriginal) => {
       return crypto.decryptState(envelope, key)
     }),
     drive: {
-      project: (id: string) => ({
+      project: (_id: string) => ({
         pickFile: mockPickFile,
         ensureFolderPath: mockEnsureFolderPath,
       }),

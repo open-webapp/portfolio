@@ -5,10 +5,55 @@ import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { importPositions } from './lib/positionsImport'
 import { importTransactions } from './lib/transactionsImport'
-import { peekEnvelopeShape, savePersistedApp } from './lib/persist'
+import { peekEnvelopeShape, savePersistedApp, setActivePortfolioDb } from './lib/persist'
 import { driveAuth } from './lib/drive'
 import { useDriveConnection } from '@open-webapp/drive-connect'
+import { createPortfolio, _resetRegistryForTests } from './lib/portfolioRegistry'
 import App from './App'
+
+const REGISTRY_DB_NAME = 'portfolio-registry'
+const REGISTRY_STORE_NAME = 'portfolios'
+
+// Same rationale as portfolioRegistry.test.ts: portfolioRegistry.ts memoizes a
+// single open IDBDatabase connection for the module's lifetime and never
+// closes it, so indexedDB.deleteDatabase against a live connection hangs
+// forever under fake-indexeddb. Clear the object store directly instead, and
+// reset the module's cached connection promise so it reopens cleanly.
+async function clearRegistryStore(): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(REGISTRY_DB_NAME, 1)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+    request.onupgradeneeded = (event) => {
+      const upgradeDb = (event.target as IDBOpenDBRequest).result
+      if (!upgradeDb.objectStoreNames.contains(REGISTRY_STORE_NAME)) {
+        upgradeDb.createObjectStore(REGISTRY_STORE_NAME, { keyPath: 'id' })
+      }
+    }
+  })
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(REGISTRY_STORE_NAME, 'readwrite')
+    const req = tx.objectStore(REGISTRY_STORE_NAME).clear()
+    req.onerror = () => reject(req.error)
+    req.onsuccess = () => resolve()
+  })
+  db.close()
+}
+
+/**
+ * Resets the (real, fake-indexeddb-backed) portfolio registry to empty, then
+ * creates one real portfolio via createPortfolio() and navigates the hash to
+ * it — the setup nearly every pre-existing test in this file wants, since
+ * App.tsx only renders the gate/app shell once a `#/portfolio/<id>` route
+ * resolves to a real registry entry. Returns the created portfolio.
+ */
+async function resetRegistryAndOpenDefaultPortfolio() {
+  await clearRegistryStore()
+  _resetRegistryForTests()
+  const portfolio = await createPortfolio('Test Portfolio')
+  window.location.hash = `#/portfolio/${portfolio.id}`
+  return portfolio
+}
 
 // Stable session key/salt used by the mocked PasswordGate's onUnlock callback.
 // Declared via vi.hoisted so it's initialized before the hoisted vi.mock factories run.
@@ -33,9 +78,8 @@ vi.mock('./lib/priceSync', () => ({
   }),
 }))
 
-vi.mock('./lib/drive', () => ({
-  drive: { activate: vi.fn(() => vi.fn()) },
-  driveAuth: {
+vi.mock('./lib/drive', () => {
+  const driveAuth = {
     activate: vi.fn(() => () => {}),
     getStatus: vi.fn(() => ({
       connected: false,
@@ -50,13 +94,22 @@ vi.mock('./lib/drive', () => ({
     connect: vi.fn(),
     disconnect: vi.fn(),
     subscribe: vi.fn(() => () => {}),
-  },
-  getBackupFileId: vi.fn().mockResolvedValue(null),
-  syncBackup: vi.fn(),
-  overwriteLocalWithRemote: vi.fn(),
-  overwriteRemoteWithLocal: vi.fn(),
-  getBackupFileStatus: vi.fn(),
-}))
+  }
+  return {
+    drive: { activate: vi.fn(() => vi.fn()) },
+    driveAuth,
+    // App.tsx resolves the (per-portfolio) drive auth handle via
+    // getDriveAuthFor(portfolio) rather than importing `driveAuth` directly;
+    // returning the same mocked handle for every portfolio keeps the
+    // existing driveAuth.* assertions in this file valid.
+    getDriveAuthFor: vi.fn(() => driveAuth),
+    getBackupFileId: vi.fn().mockResolvedValue(null),
+    syncBackup: vi.fn(),
+    overwriteLocalWithRemote: vi.fn(),
+    overwriteRemoteWithLocal: vi.fn(),
+    getBackupFileStatus: vi.fn(),
+  }
+})
 
 vi.mock('@open-webapp/drive-connect', () => ({
   GoogleDriveWidget: ({
@@ -89,6 +142,7 @@ vi.mock('@open-webapp/drive-connect', () => ({
 vi.mock('./lib/persist', () => ({
   peekEnvelopeShape: vi.fn(),
   savePersistedApp: vi.fn().mockResolvedValue(undefined),
+  setActivePortfolioDb: vi.fn(),
 }))
 
 // PasswordGate is a full-replacement screen with its own real-crypto/form flow that's
@@ -112,7 +166,20 @@ vi.mock('./components/PasswordGate', () => ({
   },
 }))
 
-afterEach(cleanup)
+// Default routing setup for every test in this file: a single real portfolio
+// in the (real, fake-indexeddb-backed) registry, with the hash already
+// pointing at it, so App.tsx resolves `activePortfolio` and renders the
+// gate/app shell exactly as it did pre-multi-portfolio. Tests that care about
+// picker/unknown-id routing (see "multi-portfolio routing" below) override
+// the registry contents and/or hash themselves before rendering.
+beforeEach(async () => {
+  await resetRegistryAndOpenDefaultPortfolio()
+})
+
+afterEach(() => {
+  cleanup()
+  window.location.hash = ''
+})
 
 /**
  * Renders <App/>, waits for the (mocked) password gate to appear, and clicks through
@@ -933,7 +1000,7 @@ describe('Drive sync conflict resolution', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Overwrite local with remote' }))
 
     await waitFor(() => {
-      expect(driveModule.overwriteLocalWithRemote).toHaveBeenCalledWith('file-1', mockSessionKey)
+      expect(driveModule.overwriteLocalWithRemote).toHaveBeenCalledWith(expect.any(Object), 'file-1', mockSessionKey)
     })
     await waitFor(() => {
       expect(screen.queryByText('Drive backup changed')).toBeFalsy()
@@ -951,6 +1018,7 @@ describe('Drive sync conflict resolution', () => {
 
     await waitFor(() => {
       expect(driveModule.overwriteRemoteWithLocal).toHaveBeenCalledWith(
+        expect.any(Object),
         expect.any(Object),
         mockSessionKey,
         mockSessionSalt,
@@ -1076,6 +1144,7 @@ describe('Drive sync conflict resolution', () => {
     await waitFor(() => {
       expect(driveModule.overwriteRemoteWithLocal).toHaveBeenCalledWith(
         expect.any(Object),
+        expect.any(Object),
         mockSessionKey,
         mockSessionSalt,
         'file-1'
@@ -1100,5 +1169,75 @@ describe('Drive sync conflict resolution', () => {
 
     expect(await screen.findByText('Drive backup changed')).toBeTruthy()
     expect(alertSpy).not.toHaveBeenCalledWith('Synced to Drive')
+  })
+})
+
+describe('multi-portfolio routing', () => {
+  beforeEach(() => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    vi.mocked(setActivePortfolioDb).mockClear()
+  })
+
+  it('renders PortfolioPicker (not the gate/app shell) when navigating to #/ with zero portfolios', async () => {
+    // Override the top-level beforeEach's single-portfolio setup: empty the
+    // registry back out and point the hash at the picker route.
+    await clearRegistryStore()
+    _resetRegistryForTests()
+    window.location.hash = '#/'
+
+    render(<App />)
+
+    // PortfolioPicker's "New portfolio" card, distinctive to that component.
+    await waitFor(() => {
+      expect(screen.getByText('Create')).toBeTruthy()
+    })
+    expect(screen.queryByText('MockUnlock')).toBeFalsy()
+    expect(screen.queryByText('Positions')).toBeFalsy()
+  })
+
+  it('navigating to #/portfolio/<valid-id> calls setActivePortfolioDb with that portfolio\'s dbName and renders the gate/app shell', async () => {
+    const portfolio = await createPortfolio('Second Portfolio')
+    window.location.hash = `#/portfolio/${portfolio.id}`
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(setActivePortfolioDb).toHaveBeenCalledWith(portfolio.dbName)
+    })
+    // Gate/app shell (mocked PasswordGate), not the picker.
+    await waitFor(() => {
+      expect(screen.getByText('MockUnlock')).toBeTruthy()
+    })
+    expect(screen.queryByText('Create')).toBeFalsy()
+  })
+
+  it('navigating to #/portfolio/<unknown-id> redirects the hash to #/ and renders the picker', async () => {
+    window.location.hash = '#/portfolio/does-not-exist'
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe('#/')
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Create')).toBeTruthy()
+    })
+    expect(screen.queryByText('MockUnlock')).toBeFalsy()
+  })
+
+  it('clicking "Switch Portfolio" in Nav navigates the hash back to #/ and renders the picker', async () => {
+    // renderUnlockedApp relies on the top-level beforeEach's default
+    // portfolio + hash, then unlocks through the mocked PasswordGate.
+    await renderUnlockedApp()
+
+    fireEvent.click(screen.getByTitle('Switch Portfolio'))
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe('#/')
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Create')).toBeTruthy()
+    })
+    expect(screen.queryByText('Positions')).toBeFalsy()
   })
 })

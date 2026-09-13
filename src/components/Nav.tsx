@@ -7,6 +7,7 @@ export interface NavProps {
   syncing: boolean
   handleSync: () => void
   onOpenSettings: () => void
+  onSwitchPortfolio: () => void
 }
 
 /**
@@ -19,6 +20,7 @@ export function Nav({
   syncing,
   handleSync,
   onOpenSettings,
+  onSwitchPortfolio,
 }: NavProps) {
   const mainNavTabs = [
     { value: 'accounts', label: 'Positions' },
@@ -142,6 +144,34 @@ export function Nav({
             <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
             <path d="M3 22v-6h6"></path>
             <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+          </svg>
+        </button>
+
+        {/* Switch Portfolio button */}
+        <button
+          type="button"
+          onClick={onSwitchPortfolio}
+          title="Switch Portfolio"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '20px',
+            padding: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-text-secondary)',
+            transition: 'color 0.2s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-secondary)')}
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 2l4 4-4 4"></path>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+            <path d="M7 22l-4-4 4-4"></path>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
           </svg>
         </button>
 

@@ -1,7 +1,9 @@
 import { useCallback, useState } from 'react'
 import type { AppState } from '../lib/state'
+import type { Portfolio } from '../lib/types'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
-import { driveAuth, syncBackup, getConnectionSnapshot } from '../lib/drive'
+import type { DriveAuthHandle } from '@open-webapp/drive-connect'
+import { syncBackup, getConnectionSnapshot } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp, clearPersistedApp } from '../lib/persist'
 import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
@@ -11,6 +13,8 @@ import { ResetAppControl } from './ResetAppControl'
 export interface SettingsPageProps {
   state: AppState
   dispatch: (action: any) => void
+  activePortfolio: Portfolio
+  driveAuth: DriveAuthHandle
   sessionKey: CryptoKey
   sessionSalt: Uint8Array
   onKeyChange: (newKey: CryptoKey, newSalt: Uint8Array) => void
@@ -35,6 +39,8 @@ export interface SettingsPageProps {
 export function SettingsPage({
   state,
   dispatch,
+  activePortfolio,
+  driveAuth,
   sessionKey,
   sessionSalt,
   onKeyChange,
@@ -122,8 +128,8 @@ export function SettingsPage({
 
       let syncWarning: string | null = null
       try {
-        if (getConnectionSnapshot() !== null) {
-          await syncBackup(state, newKey, newSalt)
+        if (getConnectionSnapshot(activePortfolio) !== null) {
+          await syncBackup(activePortfolio, state, newKey, newSalt)
         }
       } catch (error) {
         console.error('Drive re-sync after password change failed:', error)
@@ -143,7 +149,7 @@ export function SettingsPage({
     } finally {
       setChangingPassword(false)
     }
-  }, [currentPasswordInput, newPasswordInput, confirmNewPasswordInput, sessionSalt, state, onKeyChange, onPasswordEntryTimeReset])
+  }, [currentPasswordInput, newPasswordInput, confirmNewPasswordInput, sessionSalt, state, activePortfolio, onKeyChange, onPasswordEntryTimeReset])
 
   const handleResetApp = useCallback(async () => {
     await clearPersistedApp()
@@ -198,6 +204,7 @@ export function SettingsPage({
         />
         <DriveRestorePanel
           auth={driveAuth}
+          activePortfolio={activePortfolio}
           backupFileId={backupFileId}
           syncing={syncing}
           setSyncing={setSyncing}

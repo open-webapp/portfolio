@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
-import { savePersistedApp, peekEnvelopeShape } from './lib/persist'
+import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb } from './lib/persist'
 import { Nav } from './components/Nav'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
@@ -9,8 +9,9 @@ import { RegisterPage } from './components/RegisterPage'
 import { QuotesPage } from './components/QuotesPage'
 import { PasswordGate } from './components/PasswordGate'
 import { SyncConflictDialog } from './components/SyncConflictDialog'
+import { PortfolioPicker } from './components/PortfolioPicker'
 import {
-  driveAuth,
+  getDriveAuthFor,
   getBackupFileId,
   syncBackup,
   overwriteLocalWithRemote,
@@ -22,12 +23,31 @@ import { runPriceSync } from './lib/priceSync'
 import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync } from './lib/selectors'
 import { syncTickerOverviews } from './lib/tickerOverview'
 import { runMutualFundSync } from './lib/mutualFundSync'
+import { useHashRoute } from './hooks/useHashRoute'
+import { navigateToPicker, navigateToPortfolio } from './lib/router'
+import {
+  listPortfolios,
+  createPortfolio,
+  renamePortfolio,
+  deletePortfolio,
+  getPortfolio,
+  migrateLegacyDbIfNeeded,
+} from './lib/portfolioRegistry'
+import type { Portfolio } from './lib/types'
 import './App.css'
 
 const SYNC_RETRY_POLL_INTERVAL_MS = 60_000
 const LOCK_ABSOLUTE_MS = 2 * 60 * 60 * 1000 // 2h
 const LOCK_IDLE_MS = 5 * 60 * 1000 // 5min
 const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
+
+// Placeholder portfolio passed to useDriveConnection before a real portfolio
+// is active (picker route, or portfolio not yet resolved). useDriveConnection
+// requires a non-null DriveAuthHandle on every render (React hooks can't be
+// called conditionally), so this stands in until `activePortfolio` is set;
+// the resulting `connected` status is never surfaced anywhere the picker/
+// loading screens render.
+const NO_ACTIVE_PORTFOLIO: Portfolio = { id: '__none__', name: '', dbName: '__none__', createdAt: 0 }
 
 /**
  * App: Main component that wires everything together.
@@ -38,6 +58,11 @@ const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
  * - Wires import dialogs
  */
 function App() {
+  // Multi-portfolio routing/registry state
+  const route = useHashRoute()
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([])
+  const [activePortfolio, setActivePortfolio] = useState<Portfolio | null>(null)
+
   // State management with hydration
   const [isHydrated, setIsHydrated] = useState(false)
   const [state, dispatch] = useReducer(appReducer, initialState())
@@ -51,7 +76,7 @@ function App() {
   // Drive-sync state (lifted from Settings.tsx so it survives Settings unmounting/remounting)
   const [syncing, setSyncing] = useState(false)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
-  const { connected } = useDriveConnection(driveAuth)
+  const { connected } = useDriveConnection(getDriveAuthFor(activePortfolio ?? NO_ACTIVE_PORTFOLIO))
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
     remoteModifiedTime?: string
@@ -83,13 +108,89 @@ function App() {
   sessionSaltRef.current = sessionSalt
   const lastActivityTimeRef = useRef<number>(Date.now())
   const passwordEntryTimeRef = useRef<number>(0) // 0 = not unlocked yet
+  // Tracks the id of the previously-active portfolio so the route-resolution
+  // effect can distinguish "switching directly between two different
+  // portfolios" (needs a full unlock-state reset) from "resolving the first
+  // portfolio after mount" (nothing was unlocked yet, nothing to reset).
+  const prevActivePortfolioIdRef = useRef<string | null>(null)
 
-  // Determine the password-gate shape on mount (no key needed for this).
-  useEffect(() => {
-    peekEnvelopeShape().then(setGateShape)
+  // Activates a resolved portfolio as the active one. If this is a real
+  // switch away from a DIFFERENT, previously-active portfolio (as opposed to
+  // the initial null -> first-portfolio resolution), resets every piece of
+  // per-unlock-session state back to its locked/initial values first, so a
+  // user who navigates directly between two portfolio routes (bypassing the
+  // picker, e.g. browser back/forward or a hand-edited URL) can never carry
+  // portfolio A's decrypted session/state into portfolio B's gate.
+  const activatePortfolio = useCallback((p: Portfolio) => {
+    if (prevActivePortfolioIdRef.current !== null && prevActivePortfolioIdRef.current !== p.id) {
+      setSessionKey(null)
+      setSessionSalt(null)
+      setGateShape(null)
+      setIsHydrated(false)
+      dispatch({ type: '__SET_STATE', newState: initialState() })
+      passwordEntryTimeRef.current = 0
+      lastActivityTimeRef.current = Date.now()
+    }
+    prevActivePortfolioIdRef.current = p.id
+    setActivePortfolioDb(p.dbName)
+    setActivePortfolio(p)
   }, [])
 
-  // Drive-sync boot wiring: driveAuth.activate() attaches the
+  // Load the portfolio registry once on mount, migrating a pre-multi-portfolio
+  // legacy database into it if one exists and no portfolios are registered yet.
+  useEffect(() => {
+    migrateLegacyDbIfNeeded().then(() => listPortfolios()).then(setPortfolios)
+  }, [])
+
+  // Resolve the active portfolio from the current route. Runs before the
+  // gate/persist/drive effects below (which depend on `activePortfolio`) so
+  // `setActivePortfolioDb` is called before any load/save/clear persistence
+  // call can fire.
+  useEffect(() => {
+    if (route.name !== 'portfolio') return
+    const found = portfolios.find((p) => p.id === route.portfolioId)
+    if (found) {
+      activatePortfolio(found)
+      return
+    }
+    let cancelled = false
+    getPortfolio(route.portfolioId).then((p) => {
+      if (cancelled) return
+      if (p) {
+        activatePortfolio(p)
+      } else {
+        navigateToPicker()
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [route, portfolios, activatePortfolio])
+
+  const handleCreatePortfolio = useCallback(async (name: string) => {
+    await createPortfolio(name)
+    setPortfolios(await listPortfolios())
+  }, [])
+
+  const handleRenamePortfolio = useCallback(async (id: string, name: string) => {
+    const updated = await renamePortfolio(id, name)
+    setPortfolios(await listPortfolios())
+    setActivePortfolio((prev) => (prev?.id === id ? updated : prev))
+  }, [])
+
+  const handleDeletePortfolio = useCallback(async (id: string) => {
+    await deletePortfolio(id)
+    setPortfolios(await listPortfolios())
+  }, [])
+
+  // Determine the password-gate shape on mount, and again whenever the
+  // active portfolio changes.
+  useEffect(() => {
+    if (!activePortfolio) return
+    peekEnvelopeShape().then(setGateShape)
+  }, [activePortfolio?.id])
+
+  // Drive-sync boot wiring: the auth handle's activate() attaches the
   // visibility/pageshow listeners that silently warm up the cached Drive
   // token in the background before it goes stale. Without this, a refresh
   // only ever finds an expired token and falls back to the fully
@@ -103,12 +204,12 @@ function App() {
   // a silent reauth attempt (surfacing a Google auth prompt) every time
   // the user tabbed away from and back to the password screen.
   useEffect(() => {
-    if (sessionKey === null) return
-    const dispose = driveAuth.activate()
+    if (sessionKey === null || !activePortfolio) return
+    const dispose = getDriveAuthFor(activePortfolio).activate()
     return () => {
       dispose()
     }
-  }, [sessionKey])
+  }, [sessionKey, activePortfolio?.id])
 
   useEffect(() => {
     if (sessionKey === null) return
@@ -197,7 +298,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (sessionKey === null || !isHydrated) return
+    if (sessionKey === null || !isHydrated || !activePortfolio) return
 
     runPriceSyncTrigger()
 
@@ -206,17 +307,17 @@ function App() {
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
-  }, [sessionKey, isHydrated, runPriceSyncTrigger])
+  }, [sessionKey, isHydrated, runPriceSyncTrigger, activePortfolio?.id])
 
   useEffect(() => {
-    if (sessionKey === null || !isHydrated) return
+    if (sessionKey === null || !isHydrated || !activePortfolio) return
     runMutualFundSyncTrigger()
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') runMutualFundSyncTrigger()
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
-  }, [sessionKey, isHydrated, runMutualFundSyncTrigger])
+  }, [sessionKey, isHydrated, runMutualFundSyncTrigger, activePortfolio?.id])
 
   // Retry-interval poll: periodically retries Polygon/mutual-fund syncs that
   // failed or were left incomplete (e.g. rate-limited), without hammering on
@@ -226,7 +327,7 @@ function App() {
   // sync can run for minutes); runPriceSyncTrigger's own internal check
   // still prevents it from starting an overlapping name sync.
   useEffect(() => {
-    if (sessionKey === null || !isHydrated) return
+    if (sessionKey === null || !isHydrated || !activePortfolio) return
     const id = setInterval(() => {
       const current = latestStateRef.current
       if (shouldRetryPolygonSync(current, tickerOverviewErrors)) {
@@ -237,11 +338,11 @@ function App() {
       }
     }, SYNC_RETRY_POLL_INTERVAL_MS)
     return () => clearInterval(id)
-  }, [sessionKey, isHydrated, runPriceSyncTrigger, runMutualFundSyncTrigger, tickerOverviewErrors])
+  }, [sessionKey, isHydrated, runPriceSyncTrigger, runMutualFundSyncTrigger, tickerOverviewErrors, activePortfolio?.id])
 
   const onDriveConnected = async () => {
     try {
-      setBackupFileId(await getBackupFileId())
+      setBackupFileId(await getBackupFileId(activePortfolio!))
     } catch (e) {
       console.warn('backup file lookup after connect failed', e)
       setBackupFileId(null)
@@ -252,17 +353,17 @@ function App() {
   const handleSync = useCallback(async () => {
     setSyncing(true)
     try {
-      const fileId = await syncBackup(state, sessionKey!, sessionSalt!)
+      const fileId = await syncBackup(activePortfolio!, state, sessionKey!, sessionSalt!)
       setBackupFileId(fileId)
       alert('Synced to Drive')
     } catch (error) {
       console.error('Sync failed:', error)
       if ((error as { name?: string })?.name === 'RemoteChangedError') {
-        const fileId = backupFileId ?? (error as { fileId?: string }).fileId ?? (await getBackupFileId())
+        const fileId = backupFileId ?? (error as { fileId?: string }).fileId ?? (await getBackupFileId(activePortfolio!))
         if (!fileId) {
           alert(`Sync failed: ${error instanceof Error ? error.message : String(error)}`)
         } else {
-          const status = await getBackupFileStatus(fileId).catch(() => null)
+          const status = await getBackupFileStatus(activePortfolio!, fileId).catch(() => null)
           const remoteMs = status?.remoteModifiedTime
             ? new Date(status.remoteModifiedTime).getTime()
             : NaN
@@ -279,6 +380,7 @@ function App() {
           if (!remoteContentIsNewer && Number.isFinite(restoredMs)) {
             try {
               const resyncedFileId = await overwriteRemoteWithLocal(
+                activePortfolio!,
                 state,
                 sessionKey!,
                 sessionSalt!,
@@ -307,20 +409,20 @@ function App() {
     } finally {
       setSyncing(false)
     }
-  }, [state, sessionKey, sessionSalt, backupFileId])
+  }, [state, sessionKey, sessionSalt, backupFileId, activePortfolio])
 
   const handleConflictTakeRemote = useCallback(async () => {
-    const newState = await overwriteLocalWithRemote(syncConflict!.fileId, sessionKey!)
+    const newState = await overwriteLocalWithRemote(activePortfolio!, syncConflict!.fileId, sessionKey!)
     dispatch({ type: '__SET_STATE', newState })
     setSyncConflict(null)
-  }, [syncConflict, sessionKey])
+  }, [syncConflict, sessionKey, activePortfolio])
 
   const handleConflictPushLocal = useCallback(async () => {
-    const fileId = await overwriteRemoteWithLocal(state, sessionKey!, sessionSalt!, syncConflict!.fileId)
+    const fileId = await overwriteRemoteWithLocal(activePortfolio!, state, sessionKey!, sessionSalt!, syncConflict!.fileId)
     setBackupFileId(fileId)
     setSyncConflict(null)
     alert('Synced to Drive')
-  }, [state, sessionKey, sessionSalt, syncConflict])
+  }, [state, sessionKey, sessionSalt, syncConflict, activePortfolio])
 
   const handleBounceToGate = useCallback(() => {
     setGateShape('absent')
@@ -374,6 +476,7 @@ function App() {
   // Flush the pending save on page unload/hide so a refresh within the debounce
   // window doesn't lose the latest state (e.g. a just-finished import).
   useEffect(() => {
+    if (!activePortfolio) return
     const flush = () => {
       if (!isHydratedRef.current) return
       const key = sessionKeyRef.current
@@ -398,12 +501,13 @@ function App() {
       document.removeEventListener('visibilitychange', onVisibilityChange)
       flush()
     }
-  }, [])
+  }, [activePortfolio?.id])
 
   // Debounce-save effect: save state to IndexedDB on changes (500ms delay)
   useEffect(() => {
     if (!isHydrated) return
     if (!sessionKey || !sessionSalt) return
+    if (!activePortfolio) return
 
     // Clear existing timeout
     if (saveTimeoutRef.current) {
@@ -423,7 +527,32 @@ function App() {
         clearTimeout(saveTimeoutRef.current)
       }
     }
-  }, [state, isHydrated, sessionKey, sessionSalt])
+  }, [state, isHydrated, sessionKey, sessionSalt, activePortfolio?.id])
+
+  // Picker route: render the portfolio picker instead of the gate/app shell.
+  // No load/persist/drive effects run against a portfolio here since
+  // `activePortfolio` stays null while this route is active.
+  if (route.name === 'picker') {
+    return (
+      <PortfolioPicker
+        portfolios={portfolios}
+        onCreate={handleCreatePortfolio}
+        onRename={handleRenamePortfolio}
+        onDelete={handleDeletePortfolio}
+        onOpen={navigateToPortfolio}
+      />
+    )
+  }
+
+  // Portfolio route, but the portfolio hasn't resolved yet (registry still
+  // loading, or the `getPortfolio` fallback lookup is in flight).
+  if (!activePortfolio) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <p>Loading...</p>
+      </div>
+    )
+  }
 
   // Still checking the stored envelope's shape.
   if (gateShape === null) {
@@ -439,6 +568,8 @@ function App() {
     return (
       <PasswordGate
         shape={gateShape}
+        driveAuth={getDriveAuthFor(activePortfolio)}
+        activePortfolio={activePortfolio!}
         onUnlock={(key, salt, loadedState) => {
           setSessionKey(key)
           setSessionSalt(salt)
@@ -482,6 +613,7 @@ function App() {
             setSettingsSection('backup')
             dispatch({ type: 'SET_VIEW', view: 'settings' })
           }}
+          onSwitchPortfolio={() => navigateToPicker()}
         />
 
         {state.view === 'accounts' ? (
@@ -505,6 +637,8 @@ function App() {
             <SettingsPage
               state={state}
               dispatch={dispatch}
+              activePortfolio={activePortfolio!}
+              driveAuth={getDriveAuthFor(activePortfolio!)}
               sessionKey={sessionKey!}
               sessionSalt={sessionSalt!}
               onKeyChange={(newKey, newSalt) => {
