@@ -115,11 +115,15 @@ vi.mock('@open-webapp/drive-sync', () => ({
 import { RemoteChangedError, NeedsReauthError } from '@open-webapp/drive-sync'
 import {
   DriveDecryptError,
+  DriveMalformedBackupError,
   drive,
+  decryptDriveFolderBackup,
   getDriveAuthFor,
+  getPickerDriveAuth,
   getBackupFileId,
   getBackupFileStatus,
   getConnectionSnapshot,
+  listPortfolioFoldersOnDrive,
   migrateLegacyDriveFolderIfNeeded,
   overwriteLocalWithRemote,
   overwriteRemoteWithLocal,
@@ -829,5 +833,151 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
     expect(c1).toBe(t13.connection)
     expect(c2).toBe(t13.connection)
     expect(t13.connectPrimitive).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// listPortfolioFoldersOnDrive (T2 — picker Drive folder discovery).
+// ---------------------------------------------------------------------------
+describe('listPortfolioFoldersOnDrive', () => {
+  let ensureFresh: ReturnType<typeof vi.mocked<ReturnType<typeof getPickerDriveAuth>['ensureFresh']>>
+
+  beforeEach(() => {
+    mockFilesList.mockReset()
+    mockEnsureFolderPath.mockReset()
+    mockEnsureFolderPath.mockResolvedValue('picker-root-folder')
+
+    ensureFresh = vi.mocked(getPickerDriveAuth().ensureFresh)
+    ensureFresh.mockReset()
+    ensureFresh.mockResolvedValue({
+      email: 'user@example.com',
+      needsReauth: false,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    } as never)
+  })
+
+  it('resolves to the folders returned by files.list, mapped to {name, id}', async () => {
+    mockFilesList.mockResolvedValue([
+      { id: 'f1', name: 'Portfolio A', mimeType: 'application/vnd.google-apps.folder' },
+      { id: 'f2', name: 'Portfolio B', mimeType: 'application/vnd.google-apps.folder' },
+      { id: 'f3', name: 'Portfolio C', mimeType: 'application/vnd.google-apps.folder' },
+    ])
+
+    const result = await listPortfolioFoldersOnDrive()
+
+    expect(result).toEqual([
+      { name: 'Portfolio A', id: 'f1' },
+      { name: 'Portfolio B', id: 'f2' },
+      { name: 'Portfolio C', id: 'f3' },
+    ])
+    expect(mockFilesList).toHaveBeenCalledWith({
+      folderId: 'picker-root-folder',
+      mimeType: 'application/vnd.google-apps.folder',
+    })
+  })
+
+  it('resolves to [] when files.list returns no folders', async () => {
+    mockFilesList.mockResolvedValue([])
+
+    const result = await listPortfolioFoldersOnDrive()
+
+    expect(result).toEqual([])
+  })
+
+  it('rejects when ensureFresh() fails, without ever calling files.list', async () => {
+    ensureFresh.mockRejectedValue(new Error('auth failed'))
+
+    await expect(listPortfolioFoldersOnDrive()).rejects.toThrow('auth failed')
+    expect(mockFilesList).not.toHaveBeenCalled()
+  })
+
+  it('resolves to [] when files.list throws after a successful ensureFresh()', async () => {
+    mockFilesList.mockRejectedValue(new Error('transient network error'))
+
+    const result = await listPortfolioFoldersOnDrive()
+
+    expect(result).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// decryptDriveFolderBackup (T3 — picker Drive folder decrypt).
+// ---------------------------------------------------------------------------
+describe('decryptDriveFolderBackup', () => {
+  let ensureFresh: ReturnType<typeof vi.mocked<ReturnType<typeof getPickerDriveAuth>['ensureFresh']>>
+  let salt: Uint8Array
+  let key: CryptoKey
+
+  beforeEach(async () => {
+    mockFilesList.mockReset()
+    mockFilesRead.mockReset()
+
+    ensureFresh = vi.mocked(getPickerDriveAuth().ensureFresh)
+    ensureFresh.mockReset()
+    ensureFresh.mockResolvedValue({
+      email: 'user@example.com',
+      needsReauth: false,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    } as never)
+
+    salt = generateSalt()
+    key = await deriveKey('correct-password', salt)
+
+    mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'portfolio-state.json' }])
+  })
+
+  it('resolves { state, key, salt } on the correct password', async () => {
+    const remoteState = initialState()
+    const envelope = await encryptState(remoteState, key, salt)
+    mockFilesRead.mockResolvedValue(JSON.stringify(envelope))
+
+    const result = await decryptDriveFolderBackup('folder-1', 'correct-password')
+
+    expect(result.state).toEqual(remoteState)
+    expect(result.salt).toEqual(salt)
+    expect(mockFilesList).toHaveBeenCalledWith({
+      folderId: 'folder-1',
+      nameEquals: 'portfolio-state.json',
+    })
+    expect(mockFilesRead).toHaveBeenCalledWith('file-1')
+  })
+
+  it('rejects with DriveDecryptError carrying the salt/envelope on the wrong password', async () => {
+    const envelope = await encryptState(initialState(), key, salt)
+    mockFilesRead.mockResolvedValue(JSON.stringify(envelope))
+
+    const err = await decryptDriveFolderBackup('folder-1', 'wrong-password').catch((e) => e)
+
+    expect(err).toBeInstanceOf(DriveDecryptError)
+    expect(err.salt).toEqual(salt)
+    expect(err.envelope).toEqual(envelope)
+  })
+
+  it('rejects with DriveMalformedBackupError when the folder has no portfolio-state.json', async () => {
+    mockFilesList.mockResolvedValue([])
+
+    await expect(decryptDriveFolderBackup('folder-1', 'correct-password')).rejects.toThrow(
+      DriveMalformedBackupError
+    )
+    expect(mockFilesRead).not.toHaveBeenCalled()
+  })
+
+  it('rejects with DriveMalformedBackupError on malformed JSON content', async () => {
+    mockFilesRead.mockResolvedValue('{not valid json')
+
+    await expect(decryptDriveFolderBackup('folder-1', 'correct-password')).rejects.toThrow(
+      DriveMalformedBackupError
+    )
+  })
+
+  it('propagates raw when ensureFresh() rejects, without calling files.list', async () => {
+    ensureFresh.mockRejectedValue(new Error('auth failed'))
+
+    const err = await decryptDriveFolderBackup('folder-1', 'correct-password').catch((e) => e)
+
+    expect(err).not.toBeInstanceOf(DriveMalformedBackupError)
+    expect(err).not.toBeInstanceOf(DriveDecryptError)
+    expect(err.message).toBe('auth failed')
+    expect(mockFilesList).not.toHaveBeenCalled()
   })
 })

@@ -3,7 +3,7 @@ import type { Connection } from '@open-webapp/drive-sync'
 import { createDriveAuth } from '@open-webapp/drive-connect'
 import type { AppState } from './state'
 import { coalesceWithDefaults } from './persist'
-import { decryptState, encryptState } from './crypto'
+import { decryptState, deriveKey, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
 import type { Portfolio } from './types'
 import { isMigratedPortfolio } from './portfolioRegistry'
@@ -25,6 +25,15 @@ export class DriveDecryptError extends Error {
 }
 
 /**
+ * Thrown when a Drive folder's backup file is missing, unreadable, or its
+ * content can't be parsed/recognized as an encrypted backup envelope.
+ * Distinguishable from `DriveDecryptError` (wrong password on an otherwise
+ * well-formed envelope) so callers can silently skip a malformed folder while
+ * still surfacing a password-retry prompt for a decrypt failure.
+ */
+export class DriveMalformedBackupError extends Error {}
+
+/**
  * Resolve the Drive auth/sync "project id" for a portfolio: the legacy,
  * pre-multi-portfolio db keeps the original fixed 'app' id (so its existing
  * Drive-stored token/connection keeps working); every other portfolio gets
@@ -35,10 +44,11 @@ function driveProjectIdFor(portfolio: Portfolio): string {
 }
 
 /**
- * Legacy fixed-path Drive facade, kept only for the `drive` compatibility
- * wrapper below (consumed by DriveRestorePanel, which is not yet migrated to
- * a per-portfolio Drive connection — a separate follow-up task). Not
- * exported.
+ * Legacy fixed-path Drive facade. Backs `getPickerDriveAuth()` below (the
+ * portfolio picker's Drive folder browsing/import). Also backs the `drive`
+ * compatibility wrapper further down, which has no current callers — it was
+ * built for the now-deleted `DriveRestorePanel` component. Not exported
+ * itself.
  */
 const legacyDriveSync = createDriveSync({
   appId: 'portfolio',
@@ -47,6 +57,171 @@ const legacyDriveSync = createDriveSync({
 })
 
 const driveAuthCache = new Map<string, ReturnType<typeof createDriveAuth>>()
+
+/**
+ * Drive-sync's `files.list({ folderId, mimeType })` (see
+ * node_modules/@open-webapp/drive-sync/dist/files.d.ts `ListOptions`) is how
+ * "list only folders under a folderId" is expressed: pass
+ * `mimeType: 'application/vnd.google-apps.folder'` alongside `folderId` —
+ * there's no separate boolean flag or dedicated folder-listing call. Each
+ * returned `FileRef` optionally carries a Drive `mimeType` string (no
+ * `isFolder`-like boolean) — a later folder-listing task can compare it
+ * against `'application/vnd.google-apps.folder'` itself, or simply rely on
+ * having already filtered the `list()` call by that mimeType.
+ */
+
+let pickerDriveAuth: ReturnType<typeof createDriveAuth> | undefined
+
+/**
+ * Returns the (cached, lazily-created) Drive auth handle used for the
+ * portfolio picker's Drive folder browsing — distinct from the per-portfolio
+ * `driveAuthCache` above. Fixed project id `'picker'`, which cannot collide
+ * with a per-portfolio project id (always a portfolio id, an opaque
+ * generated id — never the literal string `'picker'`) or with the legacy
+ * `'app'` id used for the migrated portfolio (see `driveProjectIdFor`).
+ * Reuses `legacyDriveSync` (already scoped to `folderPath: ['OpenWebApp',
+ * 'Portfolio']`, the folder this picker needs to browse) instead of
+ * instantiating a redundant drive-sync facade.
+ */
+export function getPickerDriveAuth() {
+  if (!pickerDriveAuth) {
+    pickerDriveAuth = createDriveAuth({
+      drive: legacyDriveSync,
+      projectId: 'picker',
+      tokenBufferMs: 5 * 60 * 1000,
+    })
+  }
+  return pickerDriveAuth
+}
+
+/**
+ * Lists the immediate subfolders of the app's Drive root
+ * (`OpenWebApp/Portfolio`) — each one is expected to be a per-portfolio
+ * backup folder (see `driveSyncForPortfolio`), so this is how the portfolio
+ * picker discovers portfolios that exist on Drive but not yet locally.
+ *
+ * `ensureFresh()` runs first and is deliberately left uncaught: an
+ * auth/connect failure must reject so the picker UI can show a "couldn't
+ * connect" message rather than silently rendering an empty list. Once auth
+ * has succeeded, though, this is a passive lookup — if `files.list` itself
+ * throws (transient network error, folder doesn't exist yet), that is
+ * swallowed to `[]` rather than surfaced as a hard failure.
+ */
+export async function listPortfolioFoldersOnDrive(): Promise<{ name: string; id: string }[]> {
+  await getPickerDriveAuth().ensureFresh()
+
+  const project = legacyDriveSync.project('picker')
+
+  try {
+    const folderId = await withTimeout(
+      project.ensureFolderPath(),
+      DRIVE_IO_TIMEOUT_MS,
+      'ensureFolderPath (picker root)'
+    )
+    const folders = await withTimeout(
+      project.files.list({
+        folderId,
+        mimeType: 'application/vnd.google-apps.folder',
+      }),
+      DRIVE_IO_TIMEOUT_MS,
+      'files.list (portfolio folders)'
+    )
+    return folders.map((f) => ({ name: f.name ?? '', id: f.id }))
+  } catch (error) {
+    console.warn('Failed to list portfolio folders on Drive:', error)
+    return []
+  }
+}
+
+/**
+ * Reads and decrypts the `portfolio-state.json` backup inside a specific
+ * Drive folder (one of the folders returned by `listPortfolioFoldersOnDrive`)
+ * — used by the portfolio picker to preview/import a portfolio that exists on
+ * Drive but not yet locally.
+ *
+ * `ensureFresh()` is deliberately left uncaught, same convention as
+ * `listPortfolioFoldersOnDrive`: an auth/connect failure must propagate raw so
+ * the picker UI can distinguish "couldn't connect" from "this folder has no
+ * usable backup".
+ *
+ * Everything else about a missing/unreadable/malformed backup file is folded
+ * into `DriveMalformedBackupError` — no file, an unreadable file, unparseable
+ * JSON, or an envelope missing the fields `base64ToBytes`/`deriveKey` need.
+ * That is deliberately distinct from `DriveDecryptError` (thrown only for a
+ * wrong-password auth-tag mismatch on an otherwise well-formed envelope), so a
+ * later caller can silently skip malformed folders while still surfacing a
+ * password-retry prompt for a decrypt failure.
+ */
+export async function decryptDriveFolderBackup(
+  folderId: string,
+  password: string
+): Promise<{ state: AppState; key: CryptoKey; salt: Uint8Array }> {
+  await getPickerDriveAuth().ensureFresh()
+
+  const project = legacyDriveSync.project('picker')
+
+  const files = await project.files.list({
+    folderId,
+    nameEquals: APP_STATE_FILENAME,
+  })
+  if (files.length === 0) {
+    throw new DriveMalformedBackupError(`No ${APP_STATE_FILENAME} found in Drive folder`)
+  }
+
+  let content: unknown
+  try {
+    content = await project.files.read(files[0].id)
+  } catch (error) {
+    throw new DriveMalformedBackupError(
+      `Failed to read ${APP_STATE_FILENAME} from Drive folder: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+
+  if (!content) {
+    throw new DriveMalformedBackupError(`${APP_STATE_FILENAME} in Drive folder is empty or unreadable`)
+  }
+
+  let contentStr: string
+  if (typeof content === 'string') {
+    contentStr = content
+  } else if (content instanceof ArrayBuffer || content instanceof Uint8Array) {
+    contentStr = new TextDecoder().decode(content)
+  } else if (typeof content === 'object' && 'text' in content && typeof (content as any).text === 'function') {
+    contentStr = await (content as any).text()
+  } else {
+    throw new DriveMalformedBackupError(`${APP_STATE_FILENAME} in Drive folder has an unrecognized content type`)
+  }
+
+  if (!contentStr) {
+    throw new DriveMalformedBackupError(`${APP_STATE_FILENAME} in Drive folder is empty`)
+  }
+
+  let envelope: EncryptedEnvelope
+  let salt: Uint8Array
+  try {
+    envelope = JSON.parse(contentStr) as EncryptedEnvelope
+    salt = base64ToBytes(envelope.salt)
+    if (!(salt instanceof Uint8Array) || salt.length === 0) {
+      throw new Error('missing or empty salt')
+    }
+  } catch (parseError) {
+    throw new DriveMalformedBackupError(
+      `Malformed backup envelope in Drive folder: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+    )
+  }
+
+  const key = await deriveKey(password, salt)
+
+  try {
+    const state = await decryptBackupEnvelope(envelope, key)
+    return { state, key, salt }
+  } catch (decryptError) {
+    if (decryptError instanceof Error && decryptError.name === 'OperationError') {
+      throw new DriveDecryptError('backup encrypted with a different password', salt, envelope)
+    }
+    throw decryptError
+  }
+}
 
 /**
  * Returns the (cached, lazily-created) Drive auth handle for a portfolio.
@@ -87,9 +262,12 @@ function driveSyncForPortfolio(portfolio: Portfolio) {
 }
 
 /**
- * Wrapper around drive-sync that provides compatibility for the DriveRestorePanel
- * component. Overrides pickFile to return a single file object with 'id' property
- * instead of an array of PickedFile objects.
+ * Wrapper around drive-sync that overrides pickFile to return a single file
+ * object with an 'id' property instead of an array of PickedFile objects.
+ * Originally built for the now-deleted `DriveRestorePanel` component; it has
+ * no current callers in the app (only exercised directly by
+ * drivePickFile.test.ts). Left in place rather than removed here — see
+ * design.md's "Orphaned code" note.
  */
 export const drive = {
   ...legacyDriveSync,

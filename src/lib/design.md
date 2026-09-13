@@ -46,7 +46,7 @@ Status: `useDriveConnection(getDriveAuthFor(portfolio))` → `{ connected, email
 
 Post-unlock, a single effect gated on `sessionKey !== null && activePortfolio` calls `getDriveAuthFor(activePortfolio).activate()` (returns a dispose fn for cleanup) to start background token warm-up. `activate()` is host-called; the widget never self-activates on mount.
 
-`App.tsx` defines `onDriveConnected` (fetches `getBackupFileId(activePortfolio)` → `setBackupFileId` in its own try/catch — a failed lookup leaves `backupFileId` null, does NOT forget the connection) and `onDriveDisconnected` (`setBackupFileId(null)`), passed to `<PasswordGate>` and `<SettingsPage>` along with `activePortfolio` and the resolved `driveAuth` handle (`getDriveAuthFor(activePortfolio)`); both components render `<GoogleDriveWidget auth={driveAuth} onConnected/onDisconnected>` themselves, and pass `auth`/`activePortfolio` on through to `<DriveRestorePanel>`.
+`App.tsx` defines `onDriveConnected` (fetches `getBackupFileId(activePortfolio)` → `setBackupFileId` in its own try/catch — a failed lookup leaves `backupFileId` null, does NOT forget the connection) and `onDriveDisconnected` (`setBackupFileId(null)`), passed only to `<SettingsPage>` along with `activePortfolio` and the resolved `driveAuth` handle (`getDriveAuthFor(activePortfolio)`). `<PasswordGate>` receives none of these — it takes just `{ shape, onUnlock, onReset }` and renders no Drive UI. `SettingsPage` renders `<GoogleDriveWidget auth={driveAuth} onConnected/onDisconnected>` itself.
 
 The four content ops (`syncBackup`, `restoreBackupFromFileId`, `overwriteLocalWithRemote`, `overwriteRemoteWithLocal`) each take `portfolio: Portfolio` as their first argument and call `await getDriveAuthFor(portfolio).ensureFresh()` internally.
 
@@ -56,27 +56,26 @@ No `NeedsReauthError` catch site calls a manual auth refresh/re-probe anymore �
 
 `getBackupFileId(portfolio)`'s own internal `NeedsReauthError` catch in `drive.ts` is a passive probe and stays silent (unchanged).
 
+**Orphaned code**: the exported `drive` object in `drive.ts` (a compatibility wrapper adding a single-file-returning `pickFile` override over `legacyDriveSync`) has no remaining callers anywhere in `src/` now that `DriveRestorePanel.tsx` is deleted — only its own test (`drivePickFile.test.ts`) exercises it. Not removed as part of this docs pass; flagged here for a future cleanup.
+
 Widget styling: `src/index.css` does `@import '@open-webapp/drive-connect/styles.css'` and maps the package's `--owa-drive-*` custom props (`gap/font/fg/muted/accent/accent-fg/danger/radius`) onto portfolio design tokens under `:root` (`--owa-drive-danger` → `--color-text` — portfolio has no error-color token, so widget inline errors are not red). `src/styles/styles.css` untouched (byte-identical port of the design bundle).
 
 ### Restore from Drive
 
-`DriveRestorePanel` no longer owns connect/disconnect (that UI is `<GoogleDriveWidget>`, mounted above the panel). Props: `auth` (the portfolio's `DriveAuthHandle`, from `getDriveAuthFor(activePortfolio)`), `activePortfolio: Portfolio`, `backupFileId`, `syncing`, `setSyncing`, `restoreKey`, `restoreSalt`, `onRestored`. `const { connected } = useDriveConnection(auth)` gates the "Restore from Drive" button and the "View backup in Google Drive" link. Picker / confirm / `DriveDecryptError` cross-password prompt / fallback picker chain unchanged.
+There is no in-app "restore an arbitrary backup file into the current portfolio" flow anymore (`DriveRestorePanel`/`GateRestoreFromFilePanel` are deleted). What replaced them:
 
-DriveRestorePanel → [Restore from Drive button clicked] → showPicker = true → DriveFilePickerDialog ("Pick a file" button) → [user clicks "Pick a file"] → drive.project('app').pickFile({ includeFolders: true })
-  ├─ No by-name lookup first — the picker is the only restore entry point
-  ├─ `drive.ts`'s `pickFile` wrapper resolves apiKey (VITE_GOOGLE_PICKER_API_KEY) + appId
-  │  (VITE_GOOGLE_PROJECT_NUMBER, or the numeric prefix of VITE_GOOGLE_CLIENT_ID) and a
-  │  parentFolderId (defaults to project.ensureFolderPath(), i.e. OpenWebApp/Portfolio),
-  │  then calls @open-webapp/drive-sync's project.pickFile(...) — which acquires/refreshes
-  │  the OAuth token itself and opens Google Picker scoped to that starting folder; user
-  │  can still navigate elsewhere via Picker's own UI
-  ├─ Cancelling the picker (PickerCancelledError) resolves `null`, not a throw — treated as onCancel
-  └─ Selecting a file resolves `{ id, name, mimeType }` → onSelect(file.id) → confirm dialog → restoreBackupFromFileId(activePortfolio, fileId, key)
-     ├─ Success: onRestored() → state hydrated, showPicker reset to false
-     ├─ DriveDecryptError (password mismatch): showPicker set to false, setCrossPasswordPrompt() → user enters backup password → deriveKey + decryptState
-     └─ Error: alert shown; showPicker stays true, "Pick a file" can be clicked again to retry
+- **Existing portfolio, same backup**: the Sync Conflict flow below (`overwriteLocalWithRemote`) is the only way an already-open portfolio's local state is replaced from Drive.
+- **New portfolio from a Drive backup**: `PortfolioPicker.tsx` lists an account's other Drive-backed portfolio folders (via `getPickerDriveAuth()` + `listPortfolioFoldersOnDrive()`) and imports a chosen one as a brand-new local portfolio via `decryptDriveFolderBackup()` — see "Picker-scoped Drive access" below and `src/components/PortfolioPicker.design.md`.
+- **New portfolio from a local file**: `PortfolioPicker.tsx` decrypts a user-picked export file directly (`lib/importExport.ts`'s `decryptImportEnvelope`) into a new portfolio — no gate-level component involved.
 
-Cross-password flow's fallback picker: once `crossPasswordError` is set (a wrong backup-password submit), the cross-password prompt renders its own `DriveFilePickerDialog` ("Pick a file" button) inline — picking a file there re-attempts `restoreBackupFromFileId` with the newly picked file id, chaining into a fresh cross-password prompt if that also decrypts wrong. The original dialog's `showPicker` is cleared before this fallback appears (see above), so only one "Pick a file" button is ever on screen at a time.
+The `drive` compatibility wrapper (`pickFile` override) in `drive.ts` that the old `DriveRestorePanel` used to call `drive.project('app').pickFile({ includeFolders: true })` is still defined but has no current callers — see "Orphaned code" note under Drive Sync above.
+
+### Picker-scoped Drive access
+
+- `getPickerDriveAuth()` (`drive.ts`) — cached `DriveAuthHandle` (fixed `projectId: 'picker'`) built over `legacyDriveSync` (the fixed `['OpenWebApp','Portfolio']` facade), independent of any per-portfolio `driveAuthCache` entry. Used by `PortfolioPicker.tsx` (via `App.tsx`) to authenticate before browsing Drive for importable portfolios.
+- `listPortfolioFoldersOnDrive()` (`drive.ts`) — lists immediate subfolders of `OpenWebApp/Portfolio` (`files.list({ folderId, mimeType: 'application/vnd.google-apps.folder' })`), each expected to be one portfolio's backup folder; returns `{ name, id }[]`.
+- `decryptDriveFolderBackup(folderId, password)` (`drive.ts`) — reads `portfolio-state.json` from the given folder, derives a key from the envelope's own embedded salt, decrypts it; throws `DriveDecryptError` on a password mismatch, `DriveMalformedBackupError` on a folder with no/unparseable backup file (distinct from a decrypt failure so the picker can skip a malformed folder while still prompting to retry the password on a real mismatch). Returns `{ state, key, salt }`.
+- `DriveMalformedBackupError` (`drive.ts`, extends `Error`) — see above.
 
 ### Sync Conflict
 
@@ -237,4 +236,4 @@ successful name fetch, mirroring `tickerOverview.ts`'s pattern.
 - `getEnvelopeSaltBytes(envelope: EncryptedEnvelope)` — `Uint8Array`, decodes `envelope.salt` from base64 (wraps the module-private `base64ToBytes`).
 - `decryptImportEnvelope(envelope, password)` — derives key from the envelope's OWN embedded salt (via `getEnvelopeSaltBytes`, not session salt) via `deriveKey`, decrypts via `decryptState`, catches `OperationError` and rethrows as `ImportDecryptError` → `ExportableState`. Coalesces every field against `ExportableState` defaults (`?? []` for arrays, `?? ''`/`?? null` for `apiKey`/`lastRun`) so an older/partial export never injects `undefined`.
 
-`state.ts`'s `replaceImportedState(state, data: ExportableState)` — full replace of the 8 array fields + `priceSync`/`mutualFundSync` `apiKey`/`lastRun` only; spreads existing `priceSync`/`mutualFundSync` first so `heldPrices`/`lastFetchedDate`/`callBudget` survive untouched, and spreads existing `state` first so all UI-state fields pass through unchanged. No reducer action dispatches this anymore — called directly by `src/components/GateRestoreFromFilePanel.tsx` (pre-unlock gate) after decrypting an uploaded backup file.
+`state.ts`'s `replaceImportedState(state, data: ExportableState)` — full replace of the 8 array fields + `priceSync`/`mutualFundSync` `apiKey`/`lastRun` only; spreads existing `priceSync`/`mutualFundSync` first so `heldPrices`/`lastFetchedDate`/`callBudget` survive untouched, and spreads existing `state` first so all UI-state fields pass through unchanged. **Orphaned**: no reducer action dispatches this and no component calls it (its former caller, `GateRestoreFromFilePanel.tsx`, is deleted — `PortfolioPicker.tsx`'s file-import path builds a fresh `AppState` directly in `App.tsx`'s `handleImportFromFile` instead). Only exercised by `state.test.ts`. Not removed as part of this docs pass; flagged for a future cleanup.

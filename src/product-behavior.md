@@ -31,7 +31,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 
 ### Per-portfolio isolation
 
-- **Password / encryption gate**: each portfolio has its own independent password gate — its own "absent / legacy-plaintext / encrypted" state, unlocked with its own password, against its own database. Unlocking one portfolio has no effect on any other portfolio's lock state.
+- **Password / encryption gate**: each portfolio has its own independent password gate — its own "legacy-plaintext / encrypted" state, unlocked with its own password, against its own database. (A newly-created or imported portfolio never shows this gate at all — it's set up and unlocked inline in the Portfolio Picker before the portfolio is ever opened.) Unlocking one portfolio has no effect on any other portfolio's lock state.
 - **Drive connection**: each portfolio (other than the migrated legacy one) has its own independent Google Drive connection/token. Connecting Drive while inside one portfolio never connects, disconnects, or otherwise affects any other portfolio's Drive connection. The migrated legacy portfolio specifically keeps using its pre-upgrade Drive connection (no re-auth forced on upgrade).
 - **Drive backup location**: each portfolio's Drive backup lives in its own named subfolder (`OpenWebApp/Portfolio/{portfolio name}/portfolio-state.json`). Renaming a portfolio moves future backups to a folder matching the new name — the old-named folder is left behind, not renamed or deleted. The migrated legacy portfolio's pre-upgrade flat-root backup file is moved into its own subfolder automatically, once, the first time a Drive connection is active after upgrade (silent, no prompt).
 - Switching directly between two portfolio routes (e.g. via browser back/forward, bypassing the picker) fully resets the in-memory unlock session (password/session key, hydrated app state) before the new portfolio's gate is shown — one portfolio's decrypted data is never visible while looking at another's screen.
@@ -40,8 +40,8 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 
 ### Password gate / encryption
 
-- On first use of a portfolio (no data yet): set a new password (`SetPasswordScreen`).
-- On a pre-encryption legacy plaintext blob: prompted through the same set-password screen, which migrates the plaintext data into the newly-chosen password's encrypted envelope.
+- A new or imported portfolio never reaches this gate — its password is set inline in the Portfolio Picker (see `PortfolioPicker.product-behavior.md`) and it opens already unlocked.
+- On a pre-encryption legacy plaintext blob (the one pre-multi-portfolio database migrated into a portfolio row): prompted through `SetPasswordScreen`, which migrates the plaintext data into the newly-chosen password's encrypted envelope.
 - On an existing encrypted blob: `EnterPasswordScreen` prompts for the password; wrong password fails to decrypt (no partial/garbled data shown).
 - Auto-lock: session locks after 2 hours absolute OR 5 minutes of inactivity (mouse/keyboard/touch/scroll all count as activity), checked every 30 seconds and on tab refocus. Locking flushes any pending save first, then returns to the password-entry screen (same password unlocks again — data isn't cleared).
 - "Reset" (from the gate) clears the persisted state for that portfolio's database and returns to the initial "set a password" screen — destructive, portfolio-scoped only.
@@ -67,4 +67,5 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 - Successful sync uploads the current encrypted state as `portfolio-state.json` under the portfolio's Drive folder.
 - If the remote file changed since the last known baseline, a spurious-drift check first tries a silent re-adopt-and-repush when the remote's actual content time is no newer than the last restore; only a genuinely newer remote triggers the **Sync Conflict** dialog, letting the user choose "keep remote" or "push local" (remote-wins is not automatic — user decides).
 - Restoring a backup encrypted with a different password surfaces a specific "different password" message rather than a generic failure.
-- Drive restore also supports picking an arbitrary file via Google Picker (`DriveRestorePanel`) and restoring from a locally-selected file (`GateRestoreFromFilePanel`), independent of the app's own by-name backup lookup.
+
+New portfolio creation and import (from a Drive folder or a local backup file) happen entirely in the Portfolio Picker, before any portfolio-scoped gate is shown — see `src/components/PortfolioPicker.product-behavior.md`.

@@ -30,15 +30,12 @@ vi.mock('../lib/importExport', async (importOriginal) => {
 })
 
 // Mock functions for drive.project('app').pickFile(), referenced by the
-// hoisted vi.mock('../lib/drive', ...) factory below. Settings renders
-// DriveRestorePanel (real component), which imports these from ../lib/drive.
+// hoisted vi.mock('../lib/drive', ...) factory below.
 const mockPickFile = vi.fn()
 const mockEnsureFolderPath = vi.fn()
 
 // Mock the drive module. Settings.tsx uses `driveAuth`, `getConnectionSnapshot`
-// (in handleChangePassword) and `syncBackup`. The real DriveRestorePanel it
-// renders also needs restoreBackupFromFileId / decryptBackupEnvelope /
-// DriveDecryptError / drive to import cleanly.
+// and `syncBackup` (in handleChangePassword).
 vi.mock('../lib/drive', () => {
   class DriveDecryptError extends Error {
     salt: Uint8Array
@@ -121,7 +118,6 @@ global.confirm = vi.fn()
 const mockDispatch = vi.fn()
 const mockOnKeyChange = vi.fn()
 const mockOnPasswordEntryTimeReset = vi.fn()
-const mockSetSyncing = vi.fn()
 const mockOnDriveConnected = vi.fn()
 const mockOnDriveDisconnected = vi.fn()
 const mockSetSettingsSection = vi.fn()
@@ -180,9 +176,6 @@ describe('SettingsPage', () => {
       onPasswordEntryTimeReset: mockOnPasswordEntryTimeReset,
       onDriveConnected: mockOnDriveConnected,
       onDriveDisconnected: mockOnDriveDisconnected,
-      backupFileId: null,
-      syncing: false,
-      setSyncing: mockSetSyncing,
       settingsSection: 'backup',
       setSettingsSection: mockSetSettingsSection,
       runPriceSyncTrigger: mockRunPriceSyncTrigger,
