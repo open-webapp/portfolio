@@ -606,6 +606,7 @@ function App() {
         <Nav
           state={state}
           dispatch={dispatch}
+          portfolioName={activePortfolio!.name}
           connected={connected}
           syncing={syncing}
           handleSync={handleSync}

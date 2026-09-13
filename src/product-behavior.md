@@ -21,7 +21,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 
 ### Switch Portfolio (in-app)
 
-- Nav bar (visible once inside an unlocked portfolio) has a "Switch Portfolio" icon button next to the sync and settings buttons. Clicking it navigates back to `#/` (the picker) — it does not lock/reset the current portfolio's saved data, it only leaves that portfolio's screen.
+- Nav bar (visible once inside an unlocked portfolio) shows the active portfolio's name, top-left, in place of a static brand label. Clicking the name navigates back to `#/` (the picker) — it does not lock/reset the current portfolio's saved data, it only leaves that portfolio's screen.
 
 ### First-boot legacy migration
 

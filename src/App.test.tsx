@@ -1225,12 +1225,12 @@ describe('multi-portfolio routing', () => {
     expect(screen.queryByText('MockUnlock')).toBeFalsy()
   })
 
-  it('clicking "Switch Portfolio" in Nav navigates the hash back to #/ and renders the picker', async () => {
+  it('clicking "Switch portfolio" in Nav navigates the hash back to #/ and renders the picker', async () => {
     // renderUnlockedApp relies on the top-level beforeEach's default
     // portfolio + hash, then unlocks through the mocked PasswordGate.
     await renderUnlockedApp()
 
-    fireEvent.click(screen.getByTitle('Switch Portfolio'))
+    fireEvent.click(screen.getByTitle('Switch portfolio'))
 
     await waitFor(() => {
       expect(window.location.hash).toBe('#/')

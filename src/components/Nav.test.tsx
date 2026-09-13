@@ -17,6 +17,8 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof Nav>> = {}) {
     syncing: false,
     handleSync: vi.fn(),
     onOpenSettings: vi.fn(),
+    portfolioName: 'Test Portfolio',
+    onSwitchPortfolio: vi.fn(),
     ...rest,
   }
 }
@@ -164,5 +166,41 @@ describe('Nav', () => {
 
     fireEvent.click(screen.getByTitle('Settings'))
     expect(props.onOpenSettings).toHaveBeenCalledTimes(1)
+  })
+
+  // Test case 10a: renders portfolioName text instead of "Ledger"
+  it('renders portfolioName text instead of "Ledger"', () => {
+    const props = makeProps()
+    render(<Nav {...props} />)
+
+    expect(screen.queryByText('Ledger')).toBeFalsy()
+    expect(screen.getByText('Test Portfolio')).toBeTruthy()
+  })
+
+  // Test case 10b: portfolio-name element is a button with title="Switch portfolio"
+  it('portfolio-name element is a button with title="Switch portfolio"', () => {
+    const props = makeProps()
+    render(<Nav {...props} />)
+
+    const brandButton = screen.getByTitle('Switch portfolio')
+    expect(brandButton).toBeTruthy()
+    expect(brandButton.tagName).toBe('BUTTON')
+  })
+
+  // Test case 10c: clicking it calls onSwitchPortfolio
+  it('clicking the portfolio name button calls onSwitchPortfolio', () => {
+    const props = makeProps()
+    render(<Nav {...props} />)
+
+    fireEvent.click(screen.getByTitle('Switch portfolio'))
+    expect(props.onSwitchPortfolio).toHaveBeenCalledTimes(1)
+  })
+
+  // Test case 10d: old icon button (capital P title) is gone
+  it('old "Switch Portfolio" icon button is gone', () => {
+    const props = makeProps()
+    render(<Nav {...props} />)
+
+    expect(screen.queryByTitle('Switch Portfolio')).toBeFalsy()
   })
 })

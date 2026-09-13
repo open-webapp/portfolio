@@ -30,7 +30,7 @@ src/
     design.md                        — drive.ts-focused module doc (see header note)
   components/
     PortfolioPicker.tsx              — portfolio create/rename/delete/open UI
-    Nav.tsx                          — top nav: view tabs, sync/switch-portfolio/settings buttons
+    Nav.tsx                          — top nav: view tabs, sync button, portfolio-name button (switch portfolio), settings button
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
     AccountsPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
     PositionGroupOverlay.tsx, ClosedPositionsTable.tsx, TransactionsTable.tsx,
@@ -97,7 +97,7 @@ App.tsx
    │    ├─ shape === 'encrypted' → EnterPasswordScreen
    │    └─ else → SetPasswordScreen (first-run / legacy-plaintext migration, Drive connect widget, restore panels)
    └─ unlocked + hydrated → app shell
-        ├─ Nav (view tabs: Positions/Register/Quotes; sync button; onSwitchPortfolio=navigateToPicker; settings button)
+        ├─ Nav (view tabs: Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
         ├─ state.view === 'accounts'  → AccountsPage
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage
