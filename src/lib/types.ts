@@ -87,6 +87,14 @@ export interface BalanceEntry {
   activities: { type: ActivityType; amount: number; note: string }[]
 }
 
+export interface Expense {
+  id: string
+  name: string
+  category: string
+  amount: number
+  frequency: 'monthly' | 'yearly'
+}
+
 export const POSITIONS_REQUIRED_FIELDS = [
   'symbol',
   'assetClass',

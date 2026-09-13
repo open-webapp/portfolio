@@ -25,6 +25,7 @@ export function Nav({
   portfolioName,
 }: NavProps) {
   const mainNavTabs = [
+    { value: 'budget', label: 'Budget' },
     { value: 'accounts', label: 'Positions' },
     { value: 'register', label: 'Register' },
     { value: 'quotes', label: 'Quotes' },

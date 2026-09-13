@@ -101,20 +101,21 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
           : []
       return { ...rest, activities } as typeof entry
     }),
+    budgetIncomeMonthly: loaded.budgetIncomeMonthly ?? defaults.budgetIncomeMonthly,
+    budgetIncomeYearly: loaded.budgetIncomeYearly ?? defaults.budgetIncomeYearly,
+    budgetExpenses: loaded.budgetExpenses ?? defaults.budgetExpenses,
 
     // UI state with existing values or defaults.
     // `view` is whitelisted rather than defaulted: blobs written before the
     // Dashboard was removed carry `view: 'dashboard'`, which is no longer a
     // renderable view. Anything unrecognized falls back to the default.
-    // Whitelist covers all four current views (accounts, settings, quotes,
-    // register); `quotes` was previously missing from this whitelist, which
-    // meant a stored `view: 'quotes'` incorrectly fell back to the default —
-    // fixed here alongside adding `register`.
+    // Whitelist covers all current views (accounts, settings, quotes, register, budget).
     view:
       loaded.view === 'accounts' ||
       loaded.view === 'settings' ||
       loaded.view === 'quotes' ||
-      loaded.view === 'register'
+      loaded.view === 'register' ||
+      loaded.view === 'budget'
         ? loaded.view
         : defaults.view,
     sortKey: loaded.sortKey ?? defaults.sortKey,
