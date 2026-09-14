@@ -740,6 +740,7 @@ describe('BudgetPage', () => {
         fireEvent.click(screen.getByText('Add Record'))
 
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ADD_BUDGET_TRANSACTION' }))
+        expect(screen.getByText('Date is required.')).toBeTruthy()
       })
 
       it('does not dispatch when amount is <= 0', () => {
@@ -751,6 +752,50 @@ describe('BudgetPage', () => {
         fireEvent.click(screen.getByText('Add Record'))
 
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ADD_BUDGET_TRANSACTION' }))
+        expect(screen.getByText('Amount must be greater than 0.')).toBeTruthy()
+      })
+
+      it('a record added for a month other than the currently selected Month filter switches the filter so the record is visible', () => {
+        let state: AppState = {
+          ...initialState(),
+          budgetTransactions: [makeTransaction({ date: '2025-03-10', description: 'Old rent', category: 'Housing', amount: 900 })],
+        }
+        const dispatch = (action: any) => {
+          state = appReducer(state, action)
+        }
+        const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} />)
+
+        // Default Month filter is the latest existing month (2025-03); add a record for a later month.
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-07-15' } })
+        fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'New rent' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '950' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        rerender(<BudgetPage state={state} dispatch={dispatch} />)
+
+        expect(state.budgetTransactions.length).toBe(2)
+        expect(screen.getByText('New rent')).toBeTruthy()
+      })
+
+      it('a record added for the current month appears in the Spend records table (end-to-end with real reducer)', () => {
+        let state: AppState = initialState()
+        const dispatch = (action: any) => {
+          state = appReducer(state, action)
+        }
+        const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} />)
+
+        const now = new Date()
+        const todayValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: todayValue } })
+        fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'Coffee' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '4.5' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        rerender(<BudgetPage state={state} dispatch={dispatch} />)
+
+        expect(state.budgetTransactions.length).toBe(1)
+        expect(screen.getByText('Coffee')).toBeTruthy()
       })
     })
 

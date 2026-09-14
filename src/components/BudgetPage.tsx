@@ -118,6 +118,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const [recDescription, setRecDescription] = useState('')
   const [recCategory, setRecCategory] = useState(categories[0] ?? '')
   const [recAmount, setRecAmount] = useState('')
+  const [recError, setRecError] = useState('')
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importTab, setImportTab] = useState<'paste' | 'upload'>('paste')
   const [csvText, setCsvText] = useState('')
@@ -189,12 +190,22 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
 
   const handleAddRecord = () => {
     const amount = parseFloat(recAmount)
-    if (!recDate || !amount || amount <= 0) return
+    if (!recDate) {
+      setRecError('Date is required.')
+      return
+    }
+    if (!amount || amount <= 0) {
+      setRecError('Amount must be greater than 0.')
+      return
+    }
     const description = recDescription.trim() || recCategory
     dispatch({
       type: 'ADD_BUDGET_TRANSACTION',
       tx: { date: recDate, description, category: recCategory, amount },
     })
+    setSelectedMonth(recDate.slice(0, 7))
+    setSelectedYear(recDate.slice(0, 4))
+    setRecError('')
     setRecDate('')
     setRecDescription('')
     setRecAmount('')
@@ -580,6 +591,9 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
             Add Record
           </button>
         </div>
+        {recError && (
+          <div style={{ color: LOSS_COLOR, fontSize: '12px', marginTop: 'var(--space-2)' }}>{recError}</div>
+        )}
 
         <div
           style={{
