@@ -5,10 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Ground Rules
 
 - Plans go in `plans/*.md`, not `.claude/<feature>/`.
+- When implementing a new feature and a UI/interaction decision arises (e.g. how to manage a list of items, a filter control, a dialog pattern), first check whether an existing part of the app already solves the same shape of problem and mirror that pattern. Only interrupt to ask the user when there's a genuine conflict or no existing pattern fits — don't ask by default.
 - *ALWAYS* update relevant docs when changes are made — independent of whether the user explicitly requests it.
 - When something is NOT working as expected, *MUST* add a test to reveal the bug and then fix and re-test.
 - Do *NOT* create any document unless asked — **except** module reference docs (see [Reference Docs](reference-docs) below).
 - After implementing a change, commit it — but only once all tests pass (`npm run test`) and all relevant reference docs are updated. If either isn't true, fix/update first; don't commit partial or doc-stale work.
+- Always commit the change once those gates pass — no need to wait for the user to ask. If the work was done in a git worktree, merge the committed changes back to `main` after committing, then tear the worktree down.
+- NEVER push changes to a remote. Committing and merging to local `main` is the end of the line; leave pushing to the user.
 
 ## Commands
 
