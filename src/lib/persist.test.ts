@@ -3,7 +3,6 @@ import 'fake-indexeddb/auto'
 import {
   peekEnvelopeShape,
   peekStoredSalt,
-  loadLegacyPlaintextApp,
   loadPersistedApp,
   savePersistedApp,
   coalesceWithDefaults,
@@ -13,10 +12,10 @@ import { deriveKey, generateSalt } from './crypto'
 import { initialState } from './state'
 import type { AppState } from './state'
 
-// Computed at runtime so the legacy collection name never appears literally in source
-const legacyKey = ['mapping', 'Profiles'].join('')
+// Computed at runtime so the stale collection name never appears literally in source
+const staleKey = ['mapping', 'Profiles'].join('')
 
-const DB_NAME = 'portfolio_app_state_v1'
+const DB_NAME = 'test-portfolio-db'
 const STORE_NAME = 'app_state'
 const STATE_KEY = 'current'
 
@@ -214,7 +213,6 @@ describe('IndexedDB persistence', () => {
   }
 
   beforeEach(async () => {
-    // Target the legacy single-portfolio db, matching pre-multi-portfolio behavior
     setActivePortfolioDb(DB_NAME)
     // Clear the object store before each test
     await clearDatabase()
@@ -268,46 +266,6 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.accounts.length).toBe(1)
       expect(loaded?.positions).toEqual([])
       expect(loaded?.transactions).toEqual([])
-    })
-
-    it('backfills missing new UI state fields with defaults via legacy plaintext path (selectedAccountId, expandedCategories, acctAssetClassFilter, acctPosSearch)', async () => {
-      // Simulate old plaintext saved blob without the 4 new fields
-      const oldBlob: any = {
-        // Data collections
-        accounts: [
-          {
-            id: 'acc1',
-            number: '12345',
-            name: 'Test',
-            institution: 'Bank',
-            accountType: 'brokerage',
-            isRetirement: false,
-          },
-        ],
-        positions: [],
-        closedPositions: [],
-        transactions: [],
-        snapshots: [],
-        csvMappings: [],
-        customInstitutions: [],
-        // UI state (omitting the 4 newer AccountsPage fields)
-        view: 'accounts',
-        sortKey: 'symbol',
-        sortDir: 'asc',
-        txTypeFilter: 'All',
-        txSearch: '',
-        // selectedAccountId, expandedCategories, acctAssetClassFilter, acctPosSearch are missing
-      }
-
-      await putRaw(oldBlob)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      // Verify the missing fields are backfilled to defaults
-      expect(loaded?.selectedAccountId).toBe(null)
-      expect(loaded?.expandedCategories).toEqual({})
-      expect(loaded?.acctAssetClassFilter).toBe('All')
-      expect(loaded?.acctPosSearch).toBe('')
     })
 
     it('preserves UI state accurately', async () => {
@@ -425,10 +383,10 @@ describe('IndexedDB persistence', () => {
       expect(await peekEnvelopeShape()).toBe('absent')
     })
 
-    it('returns legacy-plaintext after a raw plaintext AppState is written', async () => {
+    it('returns absent after a raw non-envelope value is written (never crashes on unrecognized data)', async () => {
       await putRaw(fixtureState())
 
-      expect(await peekEnvelopeShape()).toBe('legacy-plaintext')
+      expect(await peekEnvelopeShape()).toBe('absent')
     })
 
     it('returns encrypted after a normal savePersistedApp call', async () => {
@@ -439,6 +397,19 @@ describe('IndexedDB persistence', () => {
 
       expect(await peekEnvelopeShape()).toBe('encrypted')
     })
+
+    it('reads the active portfolio db, not some other db', async () => {
+      setActivePortfolioDb('other-db-for-shape-test')
+      expect(await peekEnvelopeShape()).toBe('absent')
+
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+      await savePersistedApp(fixtureState(), key, salt)
+      expect(await peekEnvelopeShape()).toBe('encrypted')
+
+      setActivePortfolioDb(DB_NAME)
+      expect(await peekEnvelopeShape()).toBe('absent')
+    })
   })
 
   describe('peekStoredSalt', () => {
@@ -446,7 +417,7 @@ describe('IndexedDB persistence', () => {
       expect(await peekStoredSalt()).toBeNull()
     })
 
-    it('returns null when the stored value is legacy-plaintext', async () => {
+    it('returns null when the stored value is not an encrypted envelope', async () => {
       await putRaw(fixtureState())
 
       expect(await peekStoredSalt()).toBeNull()
@@ -464,59 +435,69 @@ describe('IndexedDB persistence', () => {
     })
   })
 
-  describe('loadLegacyPlaintextApp', () => {
-    it('returns null when nothing was saved', async () => {
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).toBeNull()
-    })
-
-    it('reads a raw plaintext blob and round-trips it byte-for-byte', async () => {
-      const originalState = fixtureState()
-      await putRaw(originalState)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).toEqual(originalState)
-    })
-
-    it('fills in missing collections with defaults', async () => {
-      const minimalState: Partial<AppState> = {
+  describe('coalesceWithDefaults: migration tolerance for stored blobs', () => {
+    it('fills in missing collections with defaults', () => {
+      const loaded = coalesceWithDefaults({
         accounts: [],
         positions: [],
         // Missing other collections
-      }
+      })
 
-      await putRaw(minimalState)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.accounts).toEqual([])
-      expect(loaded?.positions).toEqual([])
-      expect(loaded?.closedPositions).toEqual([]) // Should default to []
-      expect(loaded?.transactions).toEqual([]) // Should default to []
-      expect(loaded?.snapshots).toEqual([]) // Should default to []
-      expect(legacyKey in loaded!).toBe(false) // Not part of AppState anymore
-      expect(loaded?.view).toBe('accounts')
-      expect(loaded?.txTypeFilter).toBe('All')
+      expect(loaded.accounts).toEqual([])
+      expect(loaded.positions).toEqual([])
+      expect(loaded.closedPositions).toEqual([])
+      expect(loaded.transactions).toEqual([])
+      expect(loaded.snapshots).toEqual([])
+      expect(loaded.view).toBe('accounts')
+      expect(loaded.txTypeFilter).toBe('All')
     })
 
-    it('silently drops a stale legacy collection key when loading pre-migration data', async () => {
-      // Simulate pre-migration IndexedDB data that still carries the legacy collection
-      const preMigrationState = {
+    it('backfills missing new UI state fields with defaults (selectedAccountId, expandedCategories, acctAssetClassFilter, acctPosSearch)', () => {
+      const oldBlob: any = {
+        accounts: [
+          {
+            id: 'acc1',
+            number: '12345',
+            name: 'Test',
+            institution: 'Bank',
+            accountType: 'brokerage',
+            isRetirement: false,
+          },
+        ],
+        positions: [],
+        closedPositions: [],
+        transactions: [],
+        snapshots: [],
+        csvMappings: [],
+        customInstitutions: [],
+        view: 'accounts',
+        sortKey: 'symbol',
+        sortDir: 'asc',
+        txTypeFilter: 'All',
+        txSearch: '',
+        // selectedAccountId, expandedCategories, acctAssetClassFilter, acctPosSearch are missing
+      }
+
+      const loaded = coalesceWithDefaults(oldBlob)
+
+      expect(loaded.selectedAccountId).toBe(null)
+      expect(loaded.expandedCategories).toEqual({})
+      expect(loaded.acctAssetClassFilter).toBe('All')
+      expect(loaded.acctPosSearch).toBe('')
+    })
+
+    it('silently drops a stale collection key that is no longer part of AppState', () => {
+      const preMigrationState: any = {
         accounts: [],
         positions: [],
         closedPositions: [],
         transactions: [],
         snapshots: [],
-        [legacyKey]: [
+        [staleKey]: [
           {
             id: 'profile1',
             name: 'Default Mapping',
-            mappings: {
-              AAPL: 'Equities',
-            },
+            mappings: { AAPL: 'Equities' },
           },
         ],
         view: 'accounts',
@@ -524,24 +505,19 @@ describe('IndexedDB persistence', () => {
         sortDir: 'asc',
         txTypeFilter: 'All',
         txSearch: '',
-        // Omitting the 4 new fields to test backward compat
       }
 
-      await putRaw(preMigrationState)
+      const loaded = coalesceWithDefaults(preMigrationState)
 
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(legacyKey in loaded!).toBe(false)
-      // Verify the missing fields are backfilled to defaults
-      expect(loaded?.selectedAccountId).toBe(null)
-      expect(loaded?.expandedCategories).toEqual({})
-      expect(loaded?.acctAssetClassFilter).toBe('All')
-      expect(loaded?.acctPosSearch).toBe('')
+      expect(staleKey in loaded).toBe(false)
+      expect(loaded.selectedAccountId).toBe(null)
+      expect(loaded.expandedCategories).toEqual({})
+      expect(loaded.acctAssetClassFilter).toBe('All')
+      expect(loaded.acctPosSearch).toBe('')
     })
 
-    it('backfills the institution field on accounts missing it', async () => {
-      const stateWithoutInstitution = {
+    it('backfills the institution field on accounts missing it', () => {
+      const loaded = coalesceWithDefaults({
         ...initialState(),
         accounts: [
           {
@@ -551,19 +527,15 @@ describe('IndexedDB persistence', () => {
             accountType: 'brokerage',
             isRetirement: false,
             // institution intentionally omitted
-          },
+          } as any,
         ],
-      }
+      })
 
-      await putRaw(stateWithoutInstitution)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded?.accounts[0].institution).toBe('')
+      expect(loaded.accounts[0].institution).toBe('')
     })
 
-    it('backfills missing shares/avgCost/price/lastImportedAt fields on closedPositions from old-shape data', async () => {
-      const stateWithOldShapeClosedPositions = {
+    it('backfills missing shares/avgCost/price/lastImportedAt fields on closedPositions from old-shape data', () => {
+      const loaded = coalesceWithDefaults({
         ...initialState(),
         closedPositions: [
           {
@@ -576,16 +548,11 @@ describe('IndexedDB persistence', () => {
             realizedGL: 2000,
             realizedGLBasis: 'transactions',
             // shares, avgCost, price, assetClassManualOverride, lastImportedAt intentionally omitted
-          },
+          } as any,
         ],
-      }
+      })
 
-      await putRaw(stateWithOldShapeClosedPositions)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.closedPositions[0]).toMatchObject({
+      expect(loaded.closedPositions[0]).toMatchObject({
         id: 'closed1',
         shares: 0,
         avgCost: 0,
@@ -595,8 +562,8 @@ describe('IndexedDB persistence', () => {
       })
     })
 
-    it('preserves real values on new-shape closedPositions while defaulting old-shape ones in the same array', async () => {
-      const stateWithMixedShapeClosedPositions = {
+    it('preserves real values on new-shape closedPositions while defaulting old-shape ones in the same array', () => {
+      const loaded = coalesceWithDefaults({
         ...initialState(),
         closedPositions: [
           {
@@ -608,8 +575,7 @@ describe('IndexedDB persistence', () => {
             assetClass: 'Equities',
             realizedGL: 2000,
             realizedGLBasis: 'transactions',
-            // old shape: shares/avgCost/price/lastImportedAt omitted
-          },
+          } as any,
           {
             id: 'new1',
             accountId: 'acc1',
@@ -626,15 +592,10 @@ describe('IndexedDB persistence', () => {
             realizedGLBasis: 'transactions',
           },
         ],
-      }
+      })
 
-      await putRaw(stateWithMixedShapeClosedPositions)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.closedPositions).toHaveLength(2)
-      expect(loaded?.closedPositions[0]).toMatchObject({
+      expect(loaded.closedPositions).toHaveLength(2)
+      expect(loaded.closedPositions[0]).toMatchObject({
         id: 'old1',
         shares: 0,
         avgCost: 0,
@@ -642,7 +603,7 @@ describe('IndexedDB persistence', () => {
         assetClassManualOverride: undefined,
         lastImportedAt: '',
       })
-      expect(loaded?.closedPositions[1]).toMatchObject({
+      expect(loaded.closedPositions[1]).toMatchObject({
         id: 'new1',
         shares: 25,
         avgCost: 100,
@@ -652,34 +613,23 @@ describe('IndexedDB persistence', () => {
       })
     })
 
-    it('migrates a retired view: "dashboard" blob to the accounts view', async () => {
+    it('migrates a retired view: "dashboard" blob to the accounts view', () => {
       // Blobs written before the Dashboard was removed carry view: 'dashboard',
       // which is no longer renderable. Passing it through would land the user on
       // Settings (the else-branch of App's two-way view conditional).
-      await putRaw({ accounts: [], positions: [], view: 'dashboard' } as unknown as Partial<AppState>)
+      const loaded = coalesceWithDefaults({ accounts: [], positions: [], view: 'dashboard' } as unknown as Partial<AppState>)
 
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded?.view).toBe('accounts')
+      expect(loaded.view).toBe('accounts')
     })
 
-    it('loads missing view with default', async () => {
-      const preExistingState: Partial<AppState> = {
-        accounts: [],
-        positions: [],
-        // Missing view
-      }
+    it('falls back to the default view for an unknown/legacy view value', () => {
+      const loaded = coalesceWithDefaults({ view: 'dashboard' } as unknown as Partial<AppState>)
 
-      await putRaw(preExistingState)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.view).toBe('accounts')
+      expect(loaded.view).toBe(initialState().view)
     })
 
-    it('loads missing csvMappings with default empty array', async () => {
-      const preExistingState: Partial<AppState> = {
+    it('loads missing csvMappings with default empty array', () => {
+      const loaded = coalesceWithDefaults({
         accounts: [],
         positions: [],
         closedPositions: [],
@@ -687,18 +637,13 @@ describe('IndexedDB persistence', () => {
         snapshots: [],
         view: 'accounts',
         // Missing csvMappings
-      }
+      })
 
-      await putRaw(preExistingState)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.csvMappings).toEqual([])
+      expect(loaded.csvMappings).toEqual([])
     })
 
-    it('loads missing selectedCategoryKey with null default (migration tolerance)', async () => {
-      const preExistingState: Partial<AppState> = {
+    it('loads missing selectedCategoryKey with null default (migration tolerance)', () => {
+      const loaded = coalesceWithDefaults({
         accounts: [],
         positions: [],
         closedPositions: [],
@@ -716,108 +661,71 @@ describe('IndexedDB persistence', () => {
         acctAssetClassFilter: 'All',
         acctPosSearch: '',
         // selectedCategoryKey intentionally omitted
-      }
+      })
 
-      await putRaw(preExistingState)
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.selectedCategoryKey).toBe(null)
+      expect(loaded.selectedCategoryKey).toBe(null)
     })
 
-    it('backfills missing balanceEntries/regAccountId/regExpanded/regActivityFilter with defaults from an empty blob', async () => {
-      await putRaw({})
+    it('backfills missing balanceEntries/regAccountId/regExpanded/regActivityFilter with defaults from an empty blob', () => {
+      const loaded = coalesceWithDefaults({})
 
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.balanceEntries).toEqual([])
-      expect(loaded?.regAccountId).toBe(null)
-      expect(loaded?.regExpanded).toEqual({})
-      expect(loaded?.regActivityFilter).toBe('All')
-      expect(loaded?.budgetIncomeMonthly).toBe(0)
-      expect(loaded?.budgetIncomeYearly).toBe(0)
-      expect(loaded?.budgetExpenses).toEqual([])
-      expect(loaded?.budgetTransactions).toEqual([])
+      expect(loaded.balanceEntries).toEqual([])
+      expect(loaded.regAccountId).toBe(null)
+      expect(loaded.regExpanded).toEqual({})
+      expect(loaded.regActivityFilter).toBe('All')
+      expect(loaded.budgetIncomeMonthly).toBe(0)
+      expect(loaded.budgetIncomeYearly).toBe(0)
+      expect(loaded.budgetExpenses).toEqual([])
+      expect(loaded.budgetTransactions).toEqual([])
     })
 
-    it('backfills missing budgetTransactions with [] from a blob that predates it (has other budget fields set)', async () => {
-      await putRaw({
+    it('backfills missing budgetTransactions with [] from a blob that predates it (has other budget fields set)', () => {
+      const loaded = coalesceWithDefaults({
         budgetIncomeMonthly: 4000,
         budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 1500, frequency: 'monthly' }],
         // budgetTransactions key intentionally absent entirely
-      })
+      } as any)
 
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.budgetIncomeMonthly).toBe(4000)
-      expect(loaded?.budgetTransactions).toEqual([])
+      expect(loaded.budgetIncomeMonthly).toBe(4000)
+      expect(loaded.budgetTransactions).toEqual([])
     })
 
-    it('preserves an existing budgetTransactions array when present', async () => {
+    it('preserves an existing budgetTransactions array when present', () => {
       const tx = [{ id: 'btx1', date: '2024-01-05', description: 'Rent payment', categoryId: 'cat-housing', amount: -2000 }]
-      await putRaw({
+      const loaded = coalesceWithDefaults({
         budgetIncomeMonthly: 4000,
         budgetTransactions: tx,
         categories: [{ id: 'cat-housing', name: 'Housing' }],
-      })
+      } as any)
 
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
-      expect(loaded?.budgetTransactions).toEqual(tx)
+      expect(loaded.budgetTransactions).toEqual(tx)
     })
 
-    it('does not error on a stray legacy budgetCategories key, and the key is absent from the returned AppState', async () => {
-      await putRaw({
+    it('does not error on a stray legacy budgetCategories key, and the key is absent from the returned AppState', () => {
+      const loaded = coalesceWithDefaults({
         budgetIncomeMonthly: 4000,
         budgetCategories: ['Housing', 'Food'],
-      })
+      } as any)
 
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded).not.toBeNull()
       expect(loaded).not.toHaveProperty('budgetCategories')
-      expect(loaded?.budgetTransactions).toEqual([])
+      expect(loaded.budgetTransactions).toEqual([])
     })
 
-    it('preserves view: "budget"', async () => {
-      await putRaw({ view: 'budget' })
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded?.view).toBe('budget')
+    it('preserves view: "budget"', () => {
+      expect(coalesceWithDefaults({ view: 'budget' } as any).view).toBe('budget')
     })
 
-    it('preserves view: "quotes" (regression test: quotes was previously missing from the view whitelist)', async () => {
-      await putRaw({ view: 'quotes' })
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded?.view).toBe('quotes')
+    it('preserves view: "quotes" (regression test: quotes was previously missing from the view whitelist)', () => {
+      expect(coalesceWithDefaults({ view: 'quotes' } as any).view).toBe('quotes')
     })
 
-    it('preserves view: "register"', async () => {
-      await putRaw({ view: 'register' })
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded?.view).toBe('register')
-    })
-
-    it('falls back to the default view for an unknown/legacy view value', async () => {
-      await putRaw({ view: 'dashboard' })
-
-      const loaded = await loadLegacyPlaintextApp()
-
-      expect(loaded?.view).toBe(initialState().view)
+    it('preserves view: "register"', () => {
+      expect(coalesceWithDefaults({ view: 'register' } as any).view).toBe('register')
     })
   })
 
-  describe('coalesceWithDefaults is shared between the legacy and encrypted paths', () => {
-    it('backfills a missing institution field via both loadLegacyPlaintextApp and loadPersistedApp', async () => {
+  describe('coalesceWithDefaults is shared between raw-blob and encrypted-load paths', () => {
+    it('backfills a missing institution field via both coalesceWithDefaults and loadPersistedApp', async () => {
       const stateWithoutInstitution = {
         ...initialState(),
         accounts: [
@@ -832,12 +740,9 @@ describe('IndexedDB persistence', () => {
         ],
       }
 
-      // Legacy path: raw plaintext write, read via loadLegacyPlaintextApp
-      await putRaw(stateWithoutInstitution)
-      const legacyLoaded = await loadLegacyPlaintextApp()
-      expect(legacyLoaded?.accounts[0].institution).toBe('')
+      const directlyLoaded = coalesceWithDefaults(stateWithoutInstitution as any)
+      expect(directlyLoaded.accounts[0].institution).toBe('')
 
-      // Encrypted path: same shape, saved+loaded via the encrypted API
       const salt = generateSalt()
       const key = await deriveKey('pw', salt)
       await savePersistedApp(stateWithoutInstitution as AppState, key, salt)
@@ -852,18 +757,14 @@ describe('IndexedDB persistence', () => {
         // Omitting the 4 new UI state fields to test backward compat
       }
 
-      await putRaw(minimalState)
-      const legacyLoaded = await loadLegacyPlaintextApp()
-      expect(legacyLoaded?.closedPositions).toEqual([])
-      expect(legacyLoaded?.transactions).toEqual([])
-      expect(legacyLoaded?.snapshots).toEqual([])
-      // Verify the missing fields are backfilled to defaults
-      expect(legacyLoaded?.selectedAccountId).toBe(null)
-      expect(legacyLoaded?.expandedCategories).toEqual({})
-      expect(legacyLoaded?.acctAssetClassFilter).toBe('All')
-      expect(legacyLoaded?.acctPosSearch).toBe('')
-
-      await clearDatabase()
+      const directlyLoaded = coalesceWithDefaults(minimalState)
+      expect(directlyLoaded.closedPositions).toEqual([])
+      expect(directlyLoaded.transactions).toEqual([])
+      expect(directlyLoaded.snapshots).toEqual([])
+      expect(directlyLoaded.selectedAccountId).toBe(null)
+      expect(directlyLoaded.expandedCategories).toEqual({})
+      expect(directlyLoaded.acctAssetClassFilter).toBe('All')
+      expect(directlyLoaded.acctPosSearch).toBe('')
 
       const salt = generateSalt()
       const key = await deriveKey('pw', salt)
@@ -872,7 +773,6 @@ describe('IndexedDB persistence', () => {
       expect(encryptedLoaded?.closedPositions).toEqual([])
       expect(encryptedLoaded?.transactions).toEqual([])
       expect(encryptedLoaded?.snapshots).toEqual([])
-      // Verify the missing fields are backfilled to defaults via encrypted path too
       expect(encryptedLoaded?.selectedAccountId).toBe(null)
       expect(encryptedLoaded?.expandedCategories).toEqual({})
       expect(encryptedLoaded?.acctAssetClassFilter).toBe('All')
@@ -886,17 +786,14 @@ describe('IndexedDB persistence', () => {
         // priceSync intentionally omitted (blob predates this field)
       }
 
-      await putRaw(minimalState)
-      const legacyLoaded = await loadLegacyPlaintextApp()
-      expect(legacyLoaded?.priceSync).toEqual(initialState().priceSync)
-      expect(legacyLoaded?.priceSync).toEqual({
+      const directlyLoaded = coalesceWithDefaults(minimalState)
+      expect(directlyLoaded.priceSync).toEqual(initialState().priceSync)
+      expect(directlyLoaded.priceSync).toEqual({
         apiKey: '',
         lastFetchedDate: null,
         heldPrices: {},
         lastRun: null,
       })
-
-      await clearDatabase()
 
       const salt = generateSalt()
       const key = await deriveKey('pw', salt)

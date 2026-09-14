@@ -34,7 +34,6 @@ import {
   renamePortfolio,
   deletePortfolio,
   getPortfolio,
-  migrateLegacyDbIfNeeded,
 } from './lib/portfolioRegistry'
 import { decryptImportEnvelope, getEnvelopeSaltBytes } from './lib/importExport'
 import { deriveKey, generateSalt, type EncryptedEnvelope } from './lib/crypto'
@@ -76,7 +75,7 @@ function App() {
   // been passed yet. gateShape is null while peekEnvelopeShape() is still resolving.
   const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null)
   const [sessionSalt, setSessionSalt] = useState<Uint8Array | null>(null)
-  const [gateShape, setGateShape] = useState<'absent' | 'legacy-plaintext' | 'encrypted' | null>(null)
+  const [gateShape, setGateShape] = useState<'absent' | 'encrypted' | null>(null)
 
   // Drive-sync state (lifted from Settings.tsx so it survives Settings unmounting/remounting)
   const [syncing, setSyncing] = useState(false)
@@ -145,10 +144,9 @@ function App() {
     setActivePortfolio(p)
   }, [])
 
-  // Load the portfolio registry once on mount, migrating a pre-multi-portfolio
-  // legacy database into it if one exists and no portfolios are registered yet.
+  // Load the portfolio registry once on mount.
   useEffect(() => {
-    migrateLegacyDbIfNeeded().then(() => listPortfolios()).then(setPortfolios)
+    listPortfolios().then(setPortfolios)
   }, [])
 
   // Tracks browser online/offline transitions for isOnline.
@@ -670,15 +668,9 @@ function App() {
 
   // Not yet unlocked: render the password gate instead of the normal app tree.
   if (sessionKey === null) {
-    // Invariant: by the time PasswordGate actually renders here, gateShape is
-    // only ever 'legacy-plaintext' or 'encrypted' — the `gateShape === null`
-    // loading-guard above already handled the not-yet-resolved case, and new
-    // portfolios now always go through handleOpenUnlocked (picker's inline
-    // create/import password step), which skips this gate entirely and never
-    // routes through the 'absent' shape.
     return (
       <PasswordGate
-        shape={gateShape as 'legacy-plaintext' | 'encrypted'}
+        shape={gateShape}
         onUnlock={(key, salt, loadedState) => {
           setSessionKey(key)
           setSessionSalt(salt)

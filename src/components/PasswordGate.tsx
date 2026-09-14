@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import type { AppState } from '../lib/state'
 import { deriveKey, generateSalt } from '../lib/crypto'
-import { loadLegacyPlaintextApp, loadPersistedApp, peekStoredSalt } from '../lib/persist'
+import { loadPersistedApp, peekStoredSalt } from '../lib/persist'
 
 export interface PasswordGateProps {
-  shape: 'legacy-plaintext' | 'encrypted'
-  onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
+  shape: 'absent' | 'encrypted'
+  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => void
   onBackToPicker: () => void
 }
 
@@ -114,7 +114,7 @@ function SetPasswordScreen({
   onUnlock,
   onBackToPicker,
 }: {
-  onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
+  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => void
   onBackToPicker: () => void
 }) {
   const [password, setPassword] = useState('')
@@ -139,8 +139,7 @@ function SetPasswordScreen({
     try {
       const salt = generateSalt()
       const key = await deriveKey(password, salt)
-      const migratedState = await loadLegacyPlaintextApp()
-      onUnlock(key, salt, migratedState ?? undefined)
+      onUnlock(key, salt)
     } finally {
       setSubmitting(false)
     }
@@ -199,7 +198,7 @@ function EnterPasswordScreen({
   onUnlock,
   onBackToPicker,
 }: {
-  onUnlock: (key: CryptoKey, salt: Uint8Array, migratedState?: AppState) => void
+  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => void
   onBackToPicker: () => void
 }) {
   const [password, setPassword] = useState('')

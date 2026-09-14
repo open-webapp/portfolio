@@ -63,7 +63,7 @@ const { mockSessionKey, mockSessionSalt, passwordGatePropsCapture, mockUnlockLoa
   mockSessionKey: {} as CryptoKey,
   mockSessionSalt: new Uint8Array([1, 2, 3]),
   passwordGatePropsCapture: {
-    shape: undefined as 'absent' | 'legacy-plaintext' | 'encrypted' | null | undefined,
+    shape: undefined as 'absent' | 'encrypted' | null | undefined,
   },
   // Mutable box so individual tests can make the mocked PasswordGate's onUnlock hand
   // App.tsx a specific loadedState (e.g. one with priceSync.apiKey set), without
@@ -158,7 +158,7 @@ vi.mock('./components/PasswordGate', () => ({
     shape,
   }: {
     onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: unknown) => void
-    shape?: 'absent' | 'legacy-plaintext' | 'encrypted' | null
+    shape?: 'absent' | 'encrypted' | null
   }) => {
     // Capture props for test verification
     passwordGatePropsCapture.shape = shape

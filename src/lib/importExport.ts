@@ -114,7 +114,7 @@ export class ImportDecryptError extends Error {}
 
 /**
  * Thrown when the imported file isn't valid JSON, or is valid JSON that
- * isn't shaped like an encrypted envelope (e.g. legacy-plaintext or garbage).
+ * isn't shaped like an encrypted envelope (e.g. a raw AppState blob or garbage).
  */
 export class ImportMalformedFileError extends Error {}
 

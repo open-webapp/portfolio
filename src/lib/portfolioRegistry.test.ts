@@ -7,8 +7,11 @@ import {
   renamePortfolio,
   deletePortfolio,
   nameKey,
+  isMigratedPortfolio,
   _resetRegistryForTests,
 } from './portfolioRegistry'
+
+const LEGACY_DB_NAME = 'portfolio_app_state_v1'
 
 const REGISTRY_DB_NAME = 'portfolio-registry'
 const STORE_NAME = 'portfolios'
@@ -214,5 +217,27 @@ describe('nameKey', () => {
     expect(nameKey('  Foo  ')).toBe('foo')
     expect(nameKey('BAR')).toBe('bar')
     expect(nameKey('foo')).toBe(nameKey('  FOO  '))
+  })
+})
+
+describe('isMigratedPortfolio', () => {
+  it('returns true for a portfolio whose dbName is the legacy db name', () => {
+    expect(
+      isMigratedPortfolio({ dbName: LEGACY_DB_NAME, id: 'x', name: 'y', createdAt: 1 })
+    ).toBe(true)
+  })
+
+  it('returns false for a portfolio whose dbName is not exactly the legacy db name', () => {
+    expect(
+      isMigratedPortfolio({
+        dbName: `${LEGACY_DB_NAME}-somethingelse`,
+        id: 'x',
+        name: 'y',
+        createdAt: 1,
+      })
+    ).toBe(false)
+    expect(
+      isMigratedPortfolio({ dbName: 'portfolio_app_state_v1-port-abc', id: 'x', name: 'y', createdAt: 1 })
+    ).toBe(false)
   })
 })

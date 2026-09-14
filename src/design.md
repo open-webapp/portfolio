@@ -60,8 +60,7 @@ Each portfolio is an isolated IndexedDB database; navigation is driven entirely 
   - Name uniqueness: case-insensitive + trimmed (`name.trim().toLowerCase()`), checked against all other rows; renaming to one's own current name is a no-op success.
   - `createPortfolio` generates `id = 'port-' + crypto.randomUUID()`, `dbName = `portfolio_app_state_v1-${id}``.
   - `deletePortfolio` removes the registry row then calls `indexedDB.deleteDatabase(portfolio.dbName)` — irreversible, local-only, never touches Drive.
-  - `migrateLegacyDbIfNeeded()`: if registry is empty AND legacy db `portfolio_app_state_v1` exists (checked via `indexedDB.databases()`; unsupported → assume absent), seeds one row `{name: 'My Portfolio', dbName: 'portfolio_app_state_v1'}`. Idempotent (`if (portfolios.length > 0) return`).
-  - `isMigratedPortfolio(portfolio)`: `true` iff `portfolio.dbName === 'portfolio_app_state_v1'` — drives the Drive `projectId`/folder-path special case in `drive.ts`.
+  - `isMigratedPortfolio(portfolio)`: `true` iff `portfolio.dbName === 'portfolio_app_state_v1'` — drives the Drive `projectId`/folder-path special case in `drive.ts`. (No code seeds a registry row with this dbName anymore — it only still matters for the pre-existing registry row of whoever's local browser was upgraded through that transition in the past.)
 - **`src/lib/router.ts`**: `Route = { name: 'picker' } | { name: 'portfolio', portfolioId: string }`. `parseHash(hash)` maps `#/portfolio/<id>` → the portfolio route, everything else (`''`, `'#/'`, `'#/portfolio/'`) → picker. `navigateToPicker()` sets `location.hash = '#/'`; `navigateToPortfolio(id)` sets `#/portfolio/<encodeURIComponent(id)>`.
 - **`src/hooks/useHashRoute.ts`**: `useHashRoute()` returns the current `Route`, re-parsed on `window` `hashchange`.
 
@@ -70,8 +69,7 @@ Each portfolio is an isolated IndexedDB database; navigation is driven entirely 
 - Parameterized by `dbName`; no hardcoded db name in the active read/write path.
 - `dbHandles: Map<string, Promise<IDBDatabase>>` caches one open connection per `dbName`.
 - `activePortfolioDbName` module-level stash, set via `setActivePortfolioDb(dbName)` (also evicts any cached handle for that name, forcing a fresh open in case a prior open raced a delete).
-- `loadPersistedApp`, `savePersistedApp` call `openDb(requireActiveDbName())` — throw if `setActivePortfolioDb` was never called.
-- `peekEnvelopeShape`, `peekStoredSalt`, `loadLegacyPlaintextApp` are **legacy-migration-path-only**: they always hardcode `indexedDB.open('portfolio_app_state_v1')` regardless of the active-db stash — used solely to detect pre-multi-portfolio data for one-time migration, never as general per-portfolio boot checks.
+- `loadPersistedApp`, `savePersistedApp`, `peekEnvelopeShape`, `peekStoredSalt` all call `openDb(requireActiveDbName())` / read via the same active-db stash — throw (or resolve 'absent'/null) if `setActivePortfolioDb` was never called for the current portfolio. No function in this module ever hardcodes a specific db name.
 - `coalesceWithDefaults(loaded)`: fills missing collections/fields from `initialState()` — every load path (local unlock, Drive restore) runs through this.
 
 ## Drive Sync (`src/lib/drive.ts`)
@@ -97,7 +95,7 @@ App.tsx
    ├─ not yet resolved / gate shape unknown → "Loading..." placeholder
    ├─ sessionKey === null → PasswordGate (shape, onUnlock, onBackToPicker — no Drive props; new portfolios skip this gate entirely via PortfolioPicker's inline create/import flow, see below)
    │    ├─ shape === 'encrypted' → EnterPasswordScreen
-   │    └─ else → SetPasswordScreen (first-run / legacy-plaintext migration only)
+   │    └─ shape === 'absent' → SetPasswordScreen (defends against a portfolio db that's genuinely empty; new portfolios never reach this since they skip the gate entirely)
    └─ unlocked + hydrated → app shell
         ├─ Nav (view tabs: Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
         ├─ state.view === 'accounts'  → AccountsPage

@@ -13,13 +13,13 @@ export interface EncryptedEnvelope {
  * Classifies a value loaded from persistence (or about to be persisted) as:
  * - 'absent': nothing stored yet (undefined/null)
  * - 'encrypted': already an EncryptedEnvelope
- * - 'legacy-plaintext': a pre-encryption plaintext AppState blob
+ * - 'invalid': present but not shaped like an EncryptedEnvelope
  *
  * Pure — no I/O, no crypto calls.
  */
-export function detectEnvelopeShape(value: unknown): 'absent' | 'legacy-plaintext' | 'encrypted' {
+export function detectEnvelopeShape(value: unknown): 'absent' | 'invalid' | 'encrypted' {
   if (value === undefined || value === null) return 'absent'
-  if (typeof value !== 'object') return 'legacy-plaintext'
+  if (typeof value !== 'object') return 'invalid'
 
   const obj = value as Record<string, unknown>
   if (
@@ -31,7 +31,7 @@ export function detectEnvelopeShape(value: unknown): 'absent' | 'legacy-plaintex
     return 'encrypted'
   }
 
-  return 'legacy-plaintext'
+  return 'invalid'
 }
 
 export const PBKDF2_ITERATIONS = 600_000

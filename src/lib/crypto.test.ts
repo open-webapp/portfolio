@@ -48,13 +48,13 @@ describe('crypto', () => {
       expect(detectEnvelopeShape(null)).toBe('absent')
     })
 
-    it('classifies a legacy AppState-shaped object as legacy-plaintext', () => {
-      const legacy: Partial<AppState> = { accounts: [], positions: [] }
-      expect(detectEnvelopeShape(legacy)).toBe('legacy-plaintext')
+    it('classifies a plain AppState-shaped object as invalid (not an envelope)', () => {
+      const plain: Partial<AppState> = { accounts: [], positions: [] }
+      expect(detectEnvelopeShape(plain)).toBe('invalid')
     })
 
-    it('classifies a full legacy AppState blob as legacy-plaintext', () => {
-      expect(detectEnvelopeShape(initialState())).toBe('legacy-plaintext')
+    it('classifies a full AppState blob as invalid (not an envelope)', () => {
+      expect(detectEnvelopeShape(initialState())).toBe('invalid')
     })
 
     it('classifies a well-formed envelope as encrypted', () => {

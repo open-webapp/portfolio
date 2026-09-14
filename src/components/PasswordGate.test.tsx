@@ -15,7 +15,6 @@ vi.mock('../lib/crypto', () => ({
 vi.mock('../lib/persist', () => ({
   peekStoredSalt: vi.fn(),
   loadPersistedApp: vi.fn(),
-  loadLegacyPlaintextApp: vi.fn(),
 }))
 
 const fakeKey = { fake: 'key' } as unknown as CryptoKey
@@ -29,7 +28,7 @@ function getPasswordInputs(): HTMLInputElement[] {
 
 function renderPasswordGate(props: Partial<React.ComponentProps<typeof PasswordGate>> = {}) {
   const defaults: React.ComponentProps<typeof PasswordGate> = {
-    shape: 'legacy-plaintext',
+    shape: 'absent',
     onUnlock: vi.fn(),
     onBackToPicker: vi.fn(),
     ...props,
@@ -52,7 +51,6 @@ describe('PasswordGate', () => {
     vi.clearAllMocks()
     vi.mocked(cryptoModule.generateSalt).mockReturnValue(fakeSalt)
     vi.mocked(cryptoModule.deriveKey).mockResolvedValue(fakeKey)
-    vi.mocked(persistModule.loadLegacyPlaintextApp).mockResolvedValue(null)
     global.alert = vi.fn()
     global.confirm = vi.fn()
   })
@@ -61,9 +59,9 @@ describe('PasswordGate', () => {
     cleanup()
   })
 
-  describe('shape: legacy-plaintext — set-password screen', () => {
+  describe('shape: absent — set-password screen', () => {
     it('renders two password fields and the explanatory note', () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
+      renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker })
 
       expect(screen.getByText('New password')).toBeTruthy()
       expect(screen.getByText('Confirm password')).toBeTruthy()
@@ -74,7 +72,7 @@ describe('PasswordGate', () => {
     })
 
     it('shows an inline error and does not call onUnlock when password is under 6 characters', async () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
+      renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker })
 
       fillAndSubmitSetPassword('abc', 'abc')
 
@@ -83,7 +81,7 @@ describe('PasswordGate', () => {
     })
 
     it('shows an inline error and does not call onUnlock when confirm password does not match', async () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
+      renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker })
 
       fillAndSubmitSetPassword('longenough', 'different')
 
@@ -91,17 +89,13 @@ describe('PasswordGate', () => {
       expect(onUnlock).not.toHaveBeenCalled()
     })
 
-    it('loads legacy state and passes it as migratedState to onUnlock', async () => {
-      const migrated = initialState()
-      vi.mocked(persistModule.loadLegacyPlaintextApp).mockResolvedValue(migrated)
-
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
+    it('derives a fresh key/salt and calls onUnlock with no loaded state', async () => {
+      renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker })
 
       fillAndSubmitSetPassword('longenough', 'longenough')
 
       await waitFor(() => {
-        expect(persistModule.loadLegacyPlaintextApp).toHaveBeenCalled()
-        expect(onUnlock).toHaveBeenCalledWith(fakeKey, fakeSalt, migrated)
+        expect(onUnlock).toHaveBeenCalledWith(fakeKey, fakeSalt)
       })
     })
   })
@@ -175,7 +169,7 @@ describe('PasswordGate', () => {
 
   describe('Back to portfolios', () => {
     it('renders a "Back to portfolios" control on the set-password screen', () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
+      renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker })
 
       expect(screen.getByRole('button', { name: /back to portfolios/i })).toBeTruthy()
     })
@@ -187,7 +181,7 @@ describe('PasswordGate', () => {
     })
 
     it('clicking it calls onBackToPicker exactly once, synchronously', () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
+      renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker })
 
       fireEvent.click(screen.getByRole('button', { name: /back to portfolios/i }))
 
@@ -195,7 +189,7 @@ describe('PasswordGate', () => {
     })
 
     it('does not show any confirm dialog or RESET-typing UI', () => {
-      renderPasswordGate({ shape: 'legacy-plaintext', onUnlock, onBackToPicker })
+      renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker })
 
       fireEvent.click(screen.getByRole('button', { name: /back to portfolios/i }))
 

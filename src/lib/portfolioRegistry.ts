@@ -104,31 +104,8 @@ export function _resetRegistryForTests(): void {
 }
 
 const LEGACY_DB_NAME = 'portfolio_app_state_v1'
-const MIGRATED_PORTFOLIO_NAME = 'My Portfolio'
 
-async function legacyDbExists(): Promise<boolean> {
-  if (!('databases' in indexedDB)) return false
-  try {
-    const dbs = await indexedDB.databases()
-    return dbs.some((d) => d.name === LEGACY_DB_NAME)
-  } catch {
-    return false
-  }
-}
-
-export async function migrateLegacyDbIfNeeded(): Promise<void> {
-  const portfolios = await listPortfolios()
-  if (portfolios.length > 0) return
-  if (!(await legacyDbExists())) return
-  await putPortfolio({
-    id: 'port-' + crypto.randomUUID(),
-    name: MIGRATED_PORTFOLIO_NAME,
-    dbName: LEGACY_DB_NAME,
-    createdAt: Date.now(),
-  })
-}
-
-/** True for the one portfolio whose db predates this feature (drives the
+/** True for the one portfolio whose db predates multi-portfolio support (drives the
  * Drive projectId + folder-path special cases in drive.ts). */
 export function isMigratedPortfolio(portfolio: Portfolio): boolean {
   return portfolio.dbName === LEGACY_DB_NAME

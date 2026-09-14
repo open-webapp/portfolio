@@ -186,132 +186,46 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
   }
 }
 
+/** Reads the raw stored value from the active portfolio's database, or undefined if nothing is stored. */
+async function readRawFromActiveDb(): Promise<unknown> {
+  const db = await openDb(requireActiveDbName())
+  return new Promise<unknown>((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly')
+    const store = transaction.objectStore(STORE_NAME)
+    const request = store.get(STATE_KEY)
+
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+  })
+}
+
 /**
- * Peeks at the raw stored value's shape without decrypting anything.
- * Used by the password gate to decide whether to prompt for a new password
- * (absent), migrate (legacy-plaintext), or unlock (encrypted).
- *
- * Legacy-migration-path-only check: always reads the hardcoded old
- * single-portfolio database ('portfolio_app_state_v1'), never the active
- * portfolio's database. This exists solely to detect pre-multi-portfolio
- * data left behind for one-time migration.
+ * Peeks at the active portfolio's raw stored value's shape without decrypting
+ * anything. Used by the password gate to decide whether to prompt for a new
+ * password (absent) or unlock (encrypted).
  */
-export async function peekEnvelopeShape(): Promise<'absent' | 'legacy-plaintext' | 'encrypted'> {
-  // Legacy-migration check only: always targets the old hardcoded database
+export async function peekEnvelopeShape(): Promise<'absent' | 'encrypted'> {
   try {
-    return await new Promise<'absent' | 'legacy-plaintext' | 'encrypted'>((resolve) => {
-      const request = indexedDB.open('portfolio_app_state_v1')
-
-      request.onerror = () => {
-        // Database doesn't exist
-        resolve('absent')
-      }
-
-      request.onsuccess = () => {
-        const db = request.result
-        try {
-          const transaction = db.transaction('app_state', 'readonly')
-          const store = transaction.objectStore('app_state')
-
-          const getRequest = store.get(STATE_KEY)
-          getRequest.onerror = () => resolve('absent')
-          getRequest.onsuccess = () => {
-            const shape = detectEnvelopeShape(getRequest.result)
-            resolve(shape)
-          }
-        } catch {
-          resolve('absent')
-        }
-      }
-    })
+    const raw = await readRawFromActiveDb()
+    return detectEnvelopeShape(raw) === 'encrypted' ? 'encrypted' : 'absent'
   } catch {
     return 'absent'
   }
 }
 
 /**
- * Peeks at the stored envelope's salt (if it is already encrypted) without a password.
- * Returns null if nothing is stored or the stored value isn't an encrypted envelope.
- *
- * Legacy-migration-path-only check: always reads the hardcoded old
- * single-portfolio database ('portfolio_app_state_v1'), never the active
- * portfolio's database.
+ * Peeks at the active portfolio's stored envelope's salt (if it is already
+ * encrypted) without a password. Returns null if nothing is stored or the
+ * stored value isn't an encrypted envelope.
  */
 export async function peekStoredSalt(): Promise<Uint8Array | null> {
   try {
-    return await new Promise<Uint8Array | null>((resolve) => {
-      const request = indexedDB.open('portfolio_app_state_v1')
-
-      request.onerror = () => {
-        resolve(null)
-      }
-
-      request.onsuccess = () => {
-        const db = request.result
-        try {
-          const transaction = db.transaction('app_state', 'readonly')
-          const store = transaction.objectStore('app_state')
-
-          const getRequest = store.get(STATE_KEY)
-          getRequest.onerror = () => resolve(null)
-          getRequest.onsuccess = () => {
-            const result = getRequest.result
-            if (detectEnvelopeShape(result) !== 'encrypted') {
-              resolve(null)
-              return
-            }
-            resolve(base64ToBytes((result as EncryptedEnvelope).salt))
-          }
-        } catch {
-          resolve(null)
-        }
-      }
-    })
-  } catch {
-    return null
-  }
-}
-
-/**
- * Loads a pre-encryption plaintext AppState blob from IndexedDB as-is.
- * Returns the saved state, or null if nothing was saved.
- * Missing collections default to empty arrays for migration tolerance.
- *
- * Legacy-migration-path-only check: always reads the hardcoded old
- * single-portfolio database ('portfolio_app_state_v1'), never the active
- * portfolio's database.
- */
-export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
-  try {
-    const loaded = await new Promise<Partial<AppState> | undefined>((resolve) => {
-      const request = indexedDB.open('portfolio_app_state_v1')
-
-      request.onerror = () => {
-        resolve(undefined)
-      }
-
-      request.onsuccess = () => {
-        const db = request.result
-        try {
-          const transaction = db.transaction('app_state', 'readonly')
-          const store = transaction.objectStore('app_state')
-
-          const getRequest = store.get(STATE_KEY)
-          getRequest.onerror = () => resolve(undefined)
-          getRequest.onsuccess = () => resolve(getRequest.result)
-        } catch {
-          resolve(undefined)
-        }
-      }
-    })
-
-    if (!loaded) {
+    const raw = await readRawFromActiveDb()
+    if (detectEnvelopeShape(raw) !== 'encrypted') {
       return null
     }
-
-    return coalesceWithDefaults(loaded)
-  } catch (error) {
-    console.error('Failed to load persisted app state:', error)
+    return base64ToBytes((raw as EncryptedEnvelope).salt)
+  } catch {
     return null
   }
 }
@@ -320,20 +234,11 @@ export async function loadLegacyPlaintextApp(): Promise<AppState | null> {
  * Loads and decrypts the persisted AppState from the active portfolio's database.
  * Returns null if nothing was saved.
  * Throws if the stored value is not an encrypted envelope (caller bug — the
- * gate must never call this on a legacy/absent envelope) or if decryption
+ * gate must never call this on an absent envelope) or if decryption
  * fails (e.g. wrong password → OperationError propagates uncaught).
  */
 export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null> {
-  const db = await openDb(requireActiveDbName())
-
-  const raw = await new Promise<unknown>((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
-    const request = store.get(STATE_KEY)
-
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-  })
+  const raw = await readRawFromActiveDb()
 
   if (raw === undefined || raw === null) {
     return null
