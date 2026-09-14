@@ -1,7 +1,7 @@
 import type { AppState } from './state'
-import type { Position, ClosedPosition, Transaction, TaxCategory, Expense } from './types'
+import type { Position, ClosedPosition, Transaction, TaxCategory, Expense, BudgetTransaction } from './types'
 import { sortBy } from './sort'
-import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod } from './computations'
+import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod, GAIN_COLOR, LOSS_COLOR } from './computations'
 import { latestBalance } from './register'
 
 /**
@@ -507,21 +507,113 @@ export function visibleExpenses(
 }
 
 /**
- * Aggregate expenses by category for the given period.
- * `pct` is relative to the largest category total (not the sum of all categories).
- * Returns entries sorted by amount descending.
+ * Get all distinct categories referenced by either budgeted expenses or actual
+ * budget transactions, sorted alphabetically.
+ */
+export function allBudgetCategories(expenses: Expense[], transactions: BudgetTransaction[]): string[] {
+  const set = new Set<string>()
+  expenses.forEach((e) => {
+    if (e.category) set.add(e.category)
+  })
+  transactions.forEach((t) => {
+    if (t.category) set.add(t.category)
+  })
+  return [...set].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Filter budget transactions to those falling within the selected month/year.
+ */
+export function budgetTransactionsForPeriod(
+  transactions: BudgetTransaction[],
+  period: 'monthly' | 'yearly',
+  selectedMonth: string, // YYYY-MM
+  selectedYear: string // YYYY
+): BudgetTransaction[] {
+  return transactions.filter((t) =>
+    period === 'monthly' ? t.date.slice(0, 7) === selectedMonth : t.date.slice(0, 4) === selectedYear
+  )
+}
+
+/**
+ * Sum actual spend per category from budget transactions.
+ */
+export function actualByCategory(transactions: BudgetTransaction[]): Record<string, number> {
+  const out: Record<string, number> = {}
+  transactions.forEach((t) => {
+    out[t.category] = (out[t.category] ?? 0) + t.amount
+  })
+  return out
+}
+
+/**
+ * Distinct months present in budget transactions plus the current month, sorted
+ * descending, with a locale-formatted label for display.
+ */
+export function availableBudgetMonths(transactions: BudgetTransaction[], now: Date): Array<{ value: string; label: string }> {
+  const set = new Set(transactions.map((t) => t.date.slice(0, 7)))
+  const current = now.toISOString().slice(0, 7)
+  set.add(current)
+  return [...set]
+    .sort()
+    .reverse()
+    .map((v) => ({
+      value: v,
+      label: new Date(v + '-01T00:00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+    }))
+}
+
+/**
+ * Distinct years present in budget transactions plus the current year, sorted descending.
+ */
+export function availableBudgetYears(transactions: BudgetTransaction[], now: Date): string[] {
+  const set = new Set(transactions.map((t) => t.date.slice(0, 4)))
+  set.add(String(now.getFullYear()))
+  return [...set].sort().reverse()
+}
+
+/**
+ * Aggregate expenses by category for the given period, alongside actual spend from
+ * budget transactions in the same period.
+ * `budgetPct`/`actualPct` are relative to the largest category total across both
+ * budget and actual (not the sum of all categories).
+ * Returns entries sorted by budgeted amount descending.
  */
 export function categoryBreakdown(
   expenses: Expense[],
+  transactions: BudgetTransaction[],
   period: 'monthly' | 'yearly'
-): Array<{ name: string; amount: number; pct: number }> {
+): Array<{
+  name: string
+  amount: number
+  actual: number
+  variance: number
+  budgetPct: number
+  actualPct: number
+  actualColor: string
+  varianceColor: string
+}> {
   const byCategory: Record<string, number> = {}
   expenses.forEach((e) => {
     byCategory[e.category] = (byCategory[e.category] ?? 0) + toPeriod(e.amount, e.frequency, period)
   })
-  const maxCat = Math.max(1, ...Object.values(byCategory))
+  const actuals = actualByCategory(transactions)
+  const maxCat = Math.max(1, ...Object.values(byCategory), ...Object.values(actuals))
   return Object.entries(byCategory)
     .sort((a, b) => b[1] - a[1])
-    .map(([name, amount]) => ({ name, amount, pct: (amount / maxCat) * 100 }))
+    .map(([name, amount]) => {
+      const actual = actuals[name] ?? 0
+      const variance = amount - actual
+      return {
+        name,
+        amount,
+        actual,
+        variance,
+        budgetPct: (amount / maxCat) * 100,
+        actualPct: (Math.min(actual, maxCat) / maxCat) * 100,
+        actualColor: variance >= 0 ? '#3b6ef6' : LOSS_COLOR,
+        varianceColor: variance >= 0 ? GAIN_COLOR : LOSS_COLOR
+      }
+    })
 }
 

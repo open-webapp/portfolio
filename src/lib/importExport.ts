@@ -12,9 +12,9 @@ import type {
   BalanceEntry,
   PriceSyncLastRun,
   Expense,
+  BudgetTransaction,
 } from './types'
 import { encryptState, decryptState, deriveKey, detectEnvelopeShape, type EncryptedEnvelope } from './crypto'
-import { DEFAULT_CATEGORIES } from './computations'
 
 /**
  * The subset of AppState that gets exported to a backup file: data
@@ -34,7 +34,7 @@ export interface ExportableState {
   budgetIncomeMonthly: number
   budgetIncomeYearly: number
   budgetExpenses: Expense[]
-  budgetCategories: string[]
+  budgetTransactions: BudgetTransaction[]
   priceSync: {
     apiKey: string
     lastRun: PriceSyncLastRun | null
@@ -62,7 +62,7 @@ export function buildExportableState(state: AppState): ExportableState {
     budgetIncomeMonthly: state.budgetIncomeMonthly,
     budgetIncomeYearly: state.budgetIncomeYearly,
     budgetExpenses: state.budgetExpenses,
-    budgetCategories: state.budgetCategories,
+    budgetTransactions: state.budgetTransactions,
     priceSync: {
       apiKey: state.priceSync.apiKey,
       lastRun: state.priceSync.lastRun,
@@ -187,7 +187,7 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
     budgetIncomeMonthly: decrypted.budgetIncomeMonthly ?? 0,
     budgetIncomeYearly: decrypted.budgetIncomeYearly ?? 0,
     budgetExpenses: decrypted.budgetExpenses ?? [],
-    budgetCategories: decrypted.budgetCategories ?? [...DEFAULT_CATEGORIES],
+    budgetTransactions: decrypted.budgetTransactions ?? [],
     priceSync: {
       apiKey: decrypted.priceSync?.apiKey ?? '',
       lastRun: decrypted.priceSync?.lastRun ?? null,

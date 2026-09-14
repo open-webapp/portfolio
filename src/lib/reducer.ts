@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
-import type { BalanceEntry, Expense } from './types'
+import type { BalanceEntry, BudgetTransaction, Expense } from './types'
 
 export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
@@ -43,8 +43,11 @@ export type AppAction =
   | { type: 'ADD_BUDGET_EXPENSE'; expense: Omit<Expense, 'id'> }
   | { type: 'UPDATE_BUDGET_EXPENSE'; id: string; patch: Partial<Omit<Expense, 'id'>> }
   | { type: 'DELETE_BUDGET_EXPENSE'; id: string }
-  | { type: 'ADD_BUDGET_CATEGORY'; name: string }
-  | { type: 'DELETE_BUDGET_CATEGORY'; name: string }
+  | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
+  | { type: 'UPDATE_BUDGET_TRANSACTION'; id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }
+  | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
+  | { type: 'IMPORT_BUDGET_TRANSACTIONS'; rows: Omit<BudgetTransaction, 'id'>[] }
+  | { type: 'SET_BUDGET_INCOME_FOR_PERIOD'; period: 'monthly' | 'yearly'; amount: number }
 
 /**
  * Reducer function that handles all state mutations.
@@ -182,11 +185,20 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'DELETE_BUDGET_EXPENSE':
       return StateActions.deleteBudgetExpense(state, action.id)
 
-    case 'ADD_BUDGET_CATEGORY':
-      return StateActions.addBudgetCategory(state, action.name)
+    case 'ADD_BUDGET_TRANSACTION':
+      return StateActions.addBudgetTransaction(state, action.tx)
 
-    case 'DELETE_BUDGET_CATEGORY':
-      return StateActions.deleteBudgetCategory(state, action.name)
+    case 'UPDATE_BUDGET_TRANSACTION':
+      return StateActions.updateBudgetTransaction(state, action.id, action.patch)
+
+    case 'DELETE_BUDGET_TRANSACTION':
+      return StateActions.deleteBudgetTransaction(state, action.id)
+
+    case 'IMPORT_BUDGET_TRANSACTIONS':
+      return StateActions.importBudgetTransactions(state, action.rows)
+
+    case 'SET_BUDGET_INCOME_FOR_PERIOD':
+      return StateActions.setBudgetIncomeForPeriod(state, action.period, action.amount)
 
     default:
       return state

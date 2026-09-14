@@ -20,8 +20,11 @@ import {
   addBudgetExpense,
   updateBudgetExpense,
   deleteBudgetExpense,
-  addBudgetCategory,
-  deleteBudgetCategory,
+  addBudgetTransaction,
+  updateBudgetTransaction,
+  deleteBudgetTransaction,
+  importBudgetTransactions,
+  setBudgetIncomeForPeriod,
 } from './state'
 import type { AppState, BalanceEntry } from './types'
 
@@ -577,53 +580,90 @@ describe('appReducer', () => {
     })
   })
 
-  describe('ADD_BUDGET_CATEGORY', () => {
-    it('dispatches to addBudgetCategory state action', () => {
-      const state: AppState = { ...initialState(), budgetCategories: ['Housing', 'Other'] }
+  describe('ADD_BUDGET_TRANSACTION', () => {
+    it('dispatches to addBudgetTransaction state action', () => {
+      const state: AppState = { ...initialState(), budgetTransactions: [] }
+      const tx = { date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 }
 
-      const resultFromReducer = appReducer(state, { type: 'ADD_BUDGET_CATEGORY', name: 'Travel' })
-      const resultDirect = addBudgetCategory(state, 'Travel')
+      const resultFromReducer = appReducer(state, { type: 'ADD_BUDGET_TRANSACTION', tx })
+      const resultDirect = addBudgetTransaction(state, tx)
 
-      expect(resultFromReducer.budgetCategories).toEqual(resultDirect.budgetCategories)
-      expect(resultFromReducer.budgetCategories).toContain('Travel')
-    })
+      expect(resultFromReducer.budgetTransactions).toHaveLength(1)
+      expect(resultFromReducer.budgetTransactions).toHaveLength(resultDirect.budgetTransactions.length)
 
-    it('is a no-op for a duplicate category, matching the direct call', () => {
-      const state: AppState = { ...initialState(), budgetCategories: ['Housing', 'Other'] }
+      const fromReducer = resultFromReducer.budgetTransactions[0]
+      const direct = resultDirect.budgetTransactions[0]
 
-      const resultFromReducer = appReducer(state, { type: 'ADD_BUDGET_CATEGORY', name: 'Housing' })
-      const resultDirect = addBudgetCategory(state, 'Housing')
-
-      expect(resultFromReducer.budgetCategories).toEqual(resultDirect.budgetCategories)
-      expect(resultFromReducer.budgetCategories).toEqual(['Housing', 'Other'])
+      expect(fromReducer.date).toBe(direct.date)
+      expect(fromReducer.description).toBe(direct.description)
+      expect(fromReducer.category).toBe(direct.category)
+      expect(fromReducer.amount).toBe(direct.amount)
+      expect(typeof fromReducer.id).toBe('string')
+      expect(fromReducer.id.length).toBeGreaterThan(0)
     })
   })
 
-  describe('DELETE_BUDGET_CATEGORY', () => {
-    it('dispatches to deleteBudgetCategory state action', () => {
+  describe('UPDATE_BUDGET_TRANSACTION', () => {
+    it('dispatches to updateBudgetTransaction state action for an existing id', () => {
       const state: AppState = {
         ...initialState(),
-        budgetCategories: ['Housing', 'Travel', 'Other'],
-        budgetExpenses: [{ id: 'exp1', name: 'Trip', category: 'Travel', amount: 500, frequency: 'yearly' }],
+        budgetTransactions: [{ id: 'tx1', date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 }],
+      }
+      const patch = { amount: 90 }
+
+      const resultFromReducer = appReducer(state, { type: 'UPDATE_BUDGET_TRANSACTION', id: 'tx1', patch })
+      const resultDirect = updateBudgetTransaction(state, 'tx1', patch)
+
+      expect(resultFromReducer.budgetTransactions).toEqual(resultDirect.budgetTransactions)
+      expect(resultFromReducer.budgetTransactions[0].amount).toBe(90)
+    })
+  })
+
+  describe('DELETE_BUDGET_TRANSACTION', () => {
+    it('dispatches to deleteBudgetTransaction state action', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetTransactions: [{ id: 'tx1', date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 }],
       }
 
-      const resultFromReducer = appReducer(state, { type: 'DELETE_BUDGET_CATEGORY', name: 'Travel' })
-      const resultDirect = deleteBudgetCategory(state, 'Travel')
+      const resultFromReducer = appReducer(state, { type: 'DELETE_BUDGET_TRANSACTION', id: 'tx1' })
+      const resultDirect = deleteBudgetTransaction(state, 'tx1')
 
-      expect(resultFromReducer.budgetCategories).toEqual(resultDirect.budgetCategories)
-      expect(resultFromReducer.budgetExpenses).toEqual(resultDirect.budgetExpenses)
-      expect(resultFromReducer.budgetCategories).not.toContain('Travel')
-      expect(resultFromReducer.budgetExpenses[0].category).toBe('Other')
+      expect(resultFromReducer.budgetTransactions).toEqual(resultDirect.budgetTransactions)
+      expect(resultFromReducer.budgetTransactions).toHaveLength(0)
     })
+  })
 
-    it('is a no-op for the "Other" category, matching the direct call', () => {
-      const state: AppState = { ...initialState(), budgetCategories: ['Housing', 'Other'] }
+  describe('IMPORT_BUDGET_TRANSACTIONS', () => {
+    it('dispatches to importBudgetTransactions state action', () => {
+      const state: AppState = { ...initialState(), budgetTransactions: [] }
+      const rows = [
+        { date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 },
+        { date: '2026-01-16', description: 'Gas', category: 'Transport', amount: 40 },
+      ]
 
-      const resultFromReducer = appReducer(state, { type: 'DELETE_BUDGET_CATEGORY', name: 'Other' })
-      const resultDirect = deleteBudgetCategory(state, 'Other')
+      const resultFromReducer = appReducer(state, { type: 'IMPORT_BUDGET_TRANSACTIONS', rows })
+      const resultDirect = importBudgetTransactions(state, rows)
 
-      expect(resultFromReducer.budgetCategories).toEqual(resultDirect.budgetCategories)
-      expect(resultFromReducer.budgetCategories).toEqual(['Housing', 'Other'])
+      expect(resultFromReducer.budgetTransactions).toHaveLength(2)
+      expect(resultFromReducer.budgetTransactions).toHaveLength(resultDirect.budgetTransactions.length)
+      expect(resultFromReducer.budgetTransactions.map((t) => t.description)).toEqual(
+        resultDirect.budgetTransactions.map((t) => t.description)
+      )
+    })
+  })
+
+  describe('SET_BUDGET_INCOME_FOR_PERIOD', () => {
+    it('dispatches to setBudgetIncomeForPeriod state action', () => {
+      const state: AppState = { ...initialState(), budgetIncomeMonthly: 0, budgetIncomeYearly: 60000 }
+
+      const resultFromReducer = appReducer(state, { type: 'SET_BUDGET_INCOME_FOR_PERIOD', period: 'monthly', amount: 5000 })
+      const resultDirect = setBudgetIncomeForPeriod(state, 'monthly', 5000)
+
+      expect(resultFromReducer.budgetIncomeMonthly).toBe(resultDirect.budgetIncomeMonthly)
+      expect(resultFromReducer.budgetIncomeYearly).toBe(resultDirect.budgetIncomeYearly)
+      expect(resultFromReducer.budgetIncomeMonthly).toBe(5000)
+      expect(resultFromReducer.budgetIncomeYearly).toBe(0)
     })
   })
 })

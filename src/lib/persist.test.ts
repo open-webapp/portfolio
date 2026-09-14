@@ -12,7 +12,6 @@ import {
 import { deriveKey, generateSalt } from './crypto'
 import { initialState } from './state'
 import type { AppState } from './state'
-import { DEFAULT_CATEGORIES } from './computations'
 
 // Computed at runtime so the legacy collection name never appears literally in source
 const legacyKey = ['mapping', 'Profiles'].join('')
@@ -173,7 +172,9 @@ function fixtureState(): AppState {
     budgetExpenses: [
       { id: 'exp1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
     ],
-    budgetCategories: [...DEFAULT_CATEGORIES],
+    budgetTransactions: [
+      { id: 'btx1', date: '2024-01-05', description: 'Rent payment', category: 'Housing', amount: -2000 },
+    ],
   }
 }
 
@@ -227,7 +228,7 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.budgetIncomeMonthly).toBe(originalState.budgetIncomeMonthly)
       expect(loaded?.budgetIncomeYearly).toBe(originalState.budgetIncomeYearly)
       expect(loaded?.budgetExpenses).toEqual(originalState.budgetExpenses)
-      expect(loaded?.budgetCategories).toEqual(originalState.budgetCategories)
+      expect(loaded?.budgetTransactions).toEqual(originalState.budgetTransactions)
     })
 
     it('loading with no prior data returns null', async () => {
@@ -733,21 +734,47 @@ describe('IndexedDB persistence', () => {
       expect(loaded?.budgetIncomeMonthly).toBe(0)
       expect(loaded?.budgetIncomeYearly).toBe(0)
       expect(loaded?.budgetExpenses).toEqual([])
-      expect(loaded?.budgetCategories).toEqual([...DEFAULT_CATEGORIES])
+      expect(loaded?.budgetTransactions).toEqual([])
     })
 
-    it('backfills missing budgetCategories with DEFAULT_CATEGORIES from a blob that predates it (has other budget fields set)', async () => {
+    it('backfills missing budgetTransactions with [] from a blob that predates it (has other budget fields set)', async () => {
       await putRaw({
         budgetIncomeMonthly: 4000,
         budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 1500, frequency: 'monthly' }],
-        // budgetCategories key intentionally absent entirely
+        // budgetTransactions key intentionally absent entirely
       })
 
       const loaded = await loadLegacyPlaintextApp()
 
       expect(loaded).not.toBeNull()
       expect(loaded?.budgetIncomeMonthly).toBe(4000)
-      expect(loaded?.budgetCategories).toEqual([...DEFAULT_CATEGORIES])
+      expect(loaded?.budgetTransactions).toEqual([])
+    })
+
+    it('preserves an existing budgetTransactions array when present', async () => {
+      const tx = [{ id: 'btx1', date: '2024-01-05', description: 'Rent payment', category: 'Housing', amount: -2000 }]
+      await putRaw({
+        budgetIncomeMonthly: 4000,
+        budgetTransactions: tx,
+      })
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded).not.toBeNull()
+      expect(loaded?.budgetTransactions).toEqual(tx)
+    })
+
+    it('does not error on a stray legacy budgetCategories key, and the key is absent from the returned AppState', async () => {
+      await putRaw({
+        budgetIncomeMonthly: 4000,
+        budgetCategories: ['Housing', 'Food'],
+      })
+
+      const loaded = await loadLegacyPlaintextApp()
+
+      expect(loaded).not.toBeNull()
+      expect(loaded).not.toHaveProperty('budgetCategories')
+      expect(loaded?.budgetTransactions).toEqual([])
     })
 
     it('preserves view: "budget"', async () => {

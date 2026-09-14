@@ -95,6 +95,14 @@ export interface Expense {
   frequency: 'monthly' | 'yearly'
 }
 
+export interface BudgetTransaction {
+  id: string
+  date: string        // YYYY-MM-DD
+  description: string
+  category: string
+  amount: number
+}
+
 export const POSITIONS_REQUIRED_FIELDS = [
   'symbol',
   'assetClass',

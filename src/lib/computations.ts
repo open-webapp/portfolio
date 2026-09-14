@@ -131,3 +131,26 @@ export function getAllExistingAssetClasses(positions: Position[]): string[] {
   })
   return Array.from(classes).sort()
 }
+
+/**
+ * Parse a raw CSV string of budget actual-spend transactions.
+ * Crude, deliberately non-RFC4180 parser (no quoting/escaping support) per spec.
+ * Header-detection heuristic: drop the first line only if its last comma-separated
+ * field does NOT parse as a float (this is a known quirk, not a bug — a data row
+ * whose amount field happens to be non-numeric will also be dropped).
+ */
+export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; description: string; category: string; amount: number }> {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  let rows = lines
+  if (rows.length && isNaN(parseFloat(rows[0].split(',').pop() ?? ''))) rows = rows.slice(1)
+  const parsed: Array<{ date: string; description: string; category: string; amount: number }> = []
+  rows.forEach((line) => {
+    const parts = line.split(',').map((p) => p.trim())
+    if (parts.length < 4) return
+    const [date, description, category, amountStr] = parts
+    const amount = parseFloat(amountStr)
+    if (!date || isNaN(amount)) return
+    parsed.push({ date, description, category: category || 'Other', amount })
+  })
+  return parsed
+}

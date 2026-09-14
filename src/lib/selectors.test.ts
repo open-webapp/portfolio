@@ -20,10 +20,16 @@ import {
   shouldRetryPolygonSync,
   shouldRetryMutualFundSync,
   visibleExpenses,
-  categoryBreakdown
+  categoryBreakdown,
+  allBudgetCategories,
+  budgetTransactionsForPeriod,
+  actualByCategory,
+  availableBudgetMonths,
+  availableBudgetYears
 } from './selectors'
 import { AppState, initialState, clearAccountSelection } from './state'
-import { Account, Position, Transaction, ClosedPosition, BalanceEntry, Expense } from './types'
+import { Account, Position, Transaction, ClosedPosition, BalanceEntry, Expense, BudgetTransaction } from './types'
+import { GAIN_COLOR, LOSS_COLOR } from './computations'
 
 describe('selectors', () => {
   // Helper to create a test state
@@ -1588,15 +1594,26 @@ describe('visibleExpenses', () => {
 
 describe('categoryBreakdown', () => {
   it('returns empty array for no expenses', () => {
-    expect(categoryBreakdown([], 'monthly')).toEqual([])
+    expect(categoryBreakdown([], [], 'monthly')).toEqual([])
   })
 
-  it('returns one entry with pct 100 for a single category', () => {
+  it('returns one entry with budgetPct 100 for a single category with no actuals', () => {
     const expenses: Expense[] = [
       { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, 'monthly')
-    expect(result).toEqual([{ name: 'Housing', amount: 2000, pct: 100 }])
+    const result = categoryBreakdown(expenses, [], 'monthly')
+    expect(result).toEqual([
+      {
+        name: 'Housing',
+        amount: 2000,
+        actual: 0,
+        variance: 2000,
+        budgetPct: 100,
+        actualPct: 0,
+        actualColor: '#3b6ef6',
+        varianceColor: GAIN_COLOR
+      }
+    ])
   })
 
   it('sorts multiple categories descending by amount', () => {
@@ -1605,11 +1622,11 @@ describe('categoryBreakdown', () => {
       { id: 'e2', name: 'Netflix', category: 'Entertainment', amount: 15, frequency: 'monthly' },
       { id: 'e3', name: 'Gym', category: 'Health', amount: 50, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, 'monthly')
+    const result = categoryBreakdown(expenses, [], 'monthly')
     expect(result.map((r) => r.name)).toEqual(['Housing', 'Health', 'Entertainment'])
   })
 
-  it('pct is relative to the max category, not the sum', () => {
+  it('budgetPct is relative to the max category, not the sum', () => {
     // Categories: A=100, B=100, C=200. Sum=400.
     // Sum-based pct for C would be 50%; max-based pct for C is 100%.
     const expenses: Expense[] = [
@@ -1617,11 +1634,11 @@ describe('categoryBreakdown', () => {
       { id: 'e2', name: 'B1', category: 'B', amount: 100, frequency: 'monthly' },
       { id: 'e3', name: 'C1', category: 'C', amount: 200, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, 'monthly')
+    const result = categoryBreakdown(expenses, [], 'monthly')
     const cEntry = result.find((r) => r.name === 'C')
     const aEntry = result.find((r) => r.name === 'A')
-    expect(cEntry?.pct).toBe(100)
-    expect(aEntry?.pct).toBe(50)
+    expect(cEntry?.budgetPct).toBe(100)
+    expect(aEntry?.budgetPct).toBe(50)
   })
 
   it('converts mixed monthly/yearly expenses via toPeriod before summing', () => {
@@ -1630,11 +1647,147 @@ describe('categoryBreakdown', () => {
       { id: 'e2', name: 'Property Tax', category: 'Housing', amount: 12000, frequency: 'yearly' }
     ]
     // monthly period: rent=2000, property tax=1000 -> total 3000
-    const monthlyResult = categoryBreakdown(expenses, 'monthly')
-    expect(monthlyResult).toEqual([{ name: 'Housing', amount: 3000, pct: 100 }])
+    const monthlyResult = categoryBreakdown(expenses, [], 'monthly')
+    expect(monthlyResult[0]).toMatchObject({ name: 'Housing', amount: 3000, budgetPct: 100 })
 
     // yearly period: rent=24000, property tax=12000 -> total 36000
-    const yearlyResult = categoryBreakdown(expenses, 'yearly')
-    expect(yearlyResult).toEqual([{ name: 'Housing', amount: 36000, pct: 100 }])
+    const yearlyResult = categoryBreakdown(expenses, [], 'yearly')
+    expect(yearlyResult[0]).toMatchObject({ name: 'Housing', amount: 36000, budgetPct: 100 })
+  })
+
+  it('computes actual/variance/colors for a fixture with one over-budget and one under-budget category', () => {
+    // Housing: budget 2000, actual 2500 -> over budget (variance -500)
+    // Food: budget 500, actual 300 -> under budget (variance 200)
+    // maxCat = max(2000, 500, 2500, 300) = 2500
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
+      { id: 'e2', name: 'Groceries', category: 'Food', amount: 500, frequency: 'monthly' }
+    ]
+    const transactions: BudgetTransaction[] = [
+      { id: 't1', date: '2026-09-05', description: 'Rent', category: 'Housing', amount: 2500 },
+      { id: 't2', date: '2026-09-10', description: 'Groceries', category: 'Food', amount: 300 }
+    ]
+    const result = categoryBreakdown(expenses, transactions, 'monthly')
+    const housing = result.find((r) => r.name === 'Housing')
+    const food = result.find((r) => r.name === 'Food')
+
+    expect(housing).toEqual({
+      name: 'Housing',
+      amount: 2000,
+      actual: 2500,
+      variance: -500,
+      budgetPct: (2000 / 2500) * 100,
+      actualPct: 100,
+      actualColor: LOSS_COLOR,
+      varianceColor: LOSS_COLOR
+    })
+    expect(food).toEqual({
+      name: 'Food',
+      amount: 500,
+      actual: 300,
+      variance: 200,
+      budgetPct: (500 / 2500) * 100,
+      actualPct: (300 / 2500) * 100,
+      actualColor: '#3b6ef6',
+      varianceColor: GAIN_COLOR
+    })
+  })
+})
+
+describe('budget selectors', () => {
+  describe('allBudgetCategories', () => {
+    it('unions and sorts categories from both sources, de-duped', () => {
+      const expenses: Expense[] = [
+        { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
+        { id: 'e2', name: 'Netflix', category: 'Entertainment', amount: 15, frequency: 'monthly' }
+      ]
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-09-01', description: 'x', category: 'Food', amount: 50 },
+        { id: 't2', date: '2026-09-02', description: 'y', category: 'Housing', amount: 100 }
+      ]
+      expect(allBudgetCategories(expenses, transactions)).toEqual(['Entertainment', 'Food', 'Housing'])
+    })
+
+    it('returns empty array when both sources are empty', () => {
+      expect(allBudgetCategories([], [])).toEqual([])
+    })
+  })
+
+  describe('budgetTransactionsForPeriod', () => {
+    const transactions: BudgetTransaction[] = [
+      { id: 't1', date: '2026-08-31', description: 'a', category: 'Food', amount: 10 },
+      { id: 't2', date: '2026-09-01', description: 'b', category: 'Food', amount: 20 },
+      { id: 't3', date: '2026-09-30', description: 'c', category: 'Food', amount: 30 },
+      { id: 't4', date: '2025-09-15', description: 'd', category: 'Food', amount: 40 }
+    ]
+
+    it('filters by YYYY-MM prefix for monthly period, boundary dates included', () => {
+      const result = budgetTransactionsForPeriod(transactions, 'monthly', '2026-09', '2026')
+      expect(result.map((t) => t.id)).toEqual(['t2', 't3'])
+    })
+
+    it('excludes dates outside the selected month', () => {
+      const result = budgetTransactionsForPeriod(transactions, 'monthly', '2026-08', '2026')
+      expect(result.map((t) => t.id)).toEqual(['t1'])
+    })
+
+    it('filters by YYYY prefix for yearly period, boundary dates included', () => {
+      const result = budgetTransactionsForPeriod(transactions, 'yearly', '2026-09', '2026')
+      expect(result.map((t) => t.id)).toEqual(['t1', 't2', 't3'])
+    })
+
+    it('excludes dates outside the selected year', () => {
+      const result = budgetTransactionsForPeriod(transactions, 'yearly', '2026-09', '2025')
+      expect(result.map((t) => t.id)).toEqual(['t4'])
+    })
+  })
+
+  describe('actualByCategory', () => {
+    it('sums amounts per category', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-09-01', description: 'a', category: 'Food', amount: 10 },
+        { id: 't2', date: '2026-09-02', description: 'b', category: 'Food', amount: 20 },
+        { id: 't3', date: '2026-09-03', description: 'c', category: 'Housing', amount: 100 }
+      ]
+      expect(actualByCategory(transactions)).toEqual({ Food: 30, Housing: 100 })
+    })
+
+    it('returns empty object for empty input', () => {
+      expect(actualByCategory([])).toEqual({})
+    })
+  })
+
+  describe('availableBudgetMonths', () => {
+    it('includes the current month even with zero transactions, with correct label', () => {
+      const now = new Date('2026-09-13T12:00:00Z')
+      const result = availableBudgetMonths([], now)
+      expect(result).toEqual([{ value: '2026-09', label: 'September 2026' }])
+    })
+
+    it('unions transaction months with current month, sorted descending', () => {
+      const now = new Date('2026-09-13T12:00:00Z')
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-06-01', description: 'a', category: 'Food', amount: 10 },
+        { id: 't2', date: '2026-12-01', description: 'b', category: 'Food', amount: 10 }
+      ]
+      const result = availableBudgetMonths(transactions, now)
+      expect(result.map((m) => m.value)).toEqual(['2026-12', '2026-09', '2026-06'])
+    })
+  })
+
+  describe('availableBudgetYears', () => {
+    it('includes the current year even with zero transactions', () => {
+      const now = new Date('2026-09-13T12:00:00Z')
+      expect(availableBudgetYears([], now)).toEqual(['2026'])
+    })
+
+    it('unions transaction years with current year, sorted descending', () => {
+      const now = new Date('2026-09-13T12:00:00Z')
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2024-06-01', description: 'a', category: 'Food', amount: 10 },
+        { id: 't2', date: '2025-12-01', description: 'b', category: 'Food', amount: 10 }
+      ]
+      expect(availableBudgetYears(transactions, now)).toEqual(['2026', '2025', '2024'])
+    })
   })
 })

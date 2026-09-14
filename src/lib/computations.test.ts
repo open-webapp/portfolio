@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent, glColor, GAIN_COLOR, LOSS_COLOR, toMonthly, toYearly, toPeriod, DEFAULT_CATEGORIES } from './computations'
+import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent, glColor, GAIN_COLOR, LOSS_COLOR, toMonthly, toYearly, toPeriod, DEFAULT_CATEGORIES, parseBudgetTransactionsCsv } from './computations'
 import { Position } from './types'
 
 describe('computations', () => {
@@ -271,6 +271,98 @@ describe('computations', () => {
       ])
       expect(DEFAULT_CATEGORIES.length).toBe(11)
       expect(DEFAULT_CATEGORIES[DEFAULT_CATEGORIES.length - 1]).toBe('Other')
+    })
+  })
+
+  describe('parseBudgetTransactionsCsv', () => {
+    it('parses 3 valid rows with no header', () => {
+      const csv = [
+        '2026-01-01,Coffee,Dining,-4.50',
+        '2026-01-02,Paycheck,Income,2000',
+        '2026-01-03,Rent,Housing,-1500',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
+        { date: '2026-01-02', description: 'Paycheck', category: 'Income', amount: 2000 },
+        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+      ])
+    })
+
+    it('drops a real header row (last field non-numeric)', () => {
+      const csv = [
+        'Date,Description,Category,Amount',
+        '2026-01-01,Coffee,Dining,-4.50',
+        '2026-01-02,Paycheck,Income,2000',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
+        { date: '2026-01-02', description: 'Paycheck', category: 'Income', amount: 2000 },
+      ])
+    })
+
+    it('known quirk: drops first data row when its amount field is non-numeric, mistaking it for a header', () => {
+      const csv = [
+        '2026-01-01,Coffee,Dining,N/A',
+        '2026-01-02,Paycheck,Income,2000',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      // The first row is dropped as a "header" even though it was real data —
+      // this is the documented behavior of the spec algorithm, not a bug.
+      expect(result).toEqual([
+        { date: '2026-01-02', description: 'Paycheck', category: 'Income', amount: 2000 },
+      ])
+    })
+
+    it('skips a line with fewer than 4 comma-separated parts', () => {
+      const csv = [
+        '2026-01-01,Coffee,Dining,-4.50',
+        '2026-01-02,Incomplete,Row',
+        '2026-01-03,Rent,Housing,-1500',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
+        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+      ])
+    })
+
+    it('skips rows with missing date or non-numeric amount', () => {
+      const csv = [
+        '2026-01-01,Coffee,Dining,-4.50',
+        ',NoDate,Dining,-5.00',
+        '2026-01-04,BadAmount,Dining,abc',
+        '2026-01-03,Rent,Housing,-1500',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
+        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+      ])
+    })
+
+    it('defaults empty category field to "Other"', () => {
+      const csv = [
+        '2026-01-01,Coffee,Dining,-4.50',
+        '2026-01-02,Misc,,-10.00',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result[1]).toEqual({ date: '2026-01-02', description: 'Misc', category: 'Other', amount: -10 })
+    })
+
+    it('ignores blank/whitespace-only lines', () => {
+      const csv = [
+        '2026-01-01,Coffee,Dining,-4.50',
+        '',
+        '   ',
+        '2026-01-03,Rent,Housing,-1500',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
+        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+      ])
     })
   })
 })

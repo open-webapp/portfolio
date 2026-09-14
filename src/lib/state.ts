@@ -12,14 +12,10 @@ import type {
   PriceSyncLastRun,
   BalanceEntry,
   Expense,
+  BudgetTransaction,
 } from './types'
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
-
-const DEFAULT_BUDGET_CATEGORIES = [
-  'Housing', 'Utilities', 'Groceries', 'Transportation', 'Insurance',
-  'Subscriptions', 'Health', 'Entertainment', 'Debt/Loans', 'Savings', 'Other',
-]
 
 export interface AppState {
   // Data collections
@@ -36,7 +32,7 @@ export interface AppState {
   budgetIncomeMonthly: number
   budgetIncomeYearly: number
   budgetExpenses: Expense[]
-  budgetCategories: string[]
+  budgetTransactions: BudgetTransaction[]
 
   // UI state
   view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'
@@ -84,7 +80,7 @@ export function initialState(): AppState {
     budgetIncomeMonthly: 0,
     budgetIncomeYearly: 0,
     budgetExpenses: [],
-    budgetCategories: [...DEFAULT_BUDGET_CATEGORIES],
+    budgetTransactions: [],
 
     // UI state
     view: 'accounts',
@@ -544,7 +540,6 @@ export function replaceImportedState(state: AppState, data: ExportableState): Ap
     budgetIncomeMonthly: data.budgetIncomeMonthly,
     budgetIncomeYearly: data.budgetIncomeYearly,
     budgetExpenses: data.budgetExpenses,
-    budgetCategories: data.budgetCategories,
     priceSync: {
       ...state.priceSync,
       apiKey: data.priceSync.apiKey,
@@ -586,24 +581,45 @@ export function deleteBudgetExpense(state: AppState, id: string): AppState {
   return { ...state, budgetExpenses: state.budgetExpenses.filter((e) => e.id !== id) }
 }
 
-/** Add a custom budget category. No-op if the trimmed name is empty or already present. */
-export function addBudgetCategory(state: AppState, name: string): AppState {
-  const trimmed = name.trim()
-  if (!trimmed || state.budgetCategories.includes(trimmed)) return state
-  return { ...state, budgetCategories: [...state.budgetCategories, trimmed] }
+/** Add a new budget transaction to the Budget page's transaction list. Generates its id. */
+export function addBudgetTransaction(state: AppState, tx: Omit<BudgetTransaction, 'id'>): AppState {
+  return { ...state, budgetTransactions: [...state.budgetTransactions, { ...tx, id: uid('budgettx') }] }
+}
+
+/** Patch an existing budget transaction by ID. No-op if the ID isn't found. */
+export function updateBudgetTransaction(state: AppState, id: string, patch: Partial<Omit<BudgetTransaction, 'id'>>): AppState {
+  return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) }
+}
+
+/** Delete a budget transaction by ID. No-op if the ID isn't found. */
+export function deleteBudgetTransaction(state: AppState, id: string): AppState {
+  return { ...state, budgetTransactions: state.budgetTransactions.filter((t) => t.id !== id) }
 }
 
 /**
- * Delete a budget category. No-op for "Other" (never deletable). Any
- * budget expenses referencing the deleted category are reassigned to
- * "Other" in the same update.
+ * Import budget transactions, deduping on natural key (date|description|category|amount)
+ * against existing transactions AND within the same import batch (accumulating Set).
  */
-export function deleteBudgetCategory(state: AppState, name: string): AppState {
-  if (name === 'Other') return state
-  return {
-    ...state,
-    budgetCategories: state.budgetCategories.filter((c) => c !== name),
-    budgetExpenses: state.budgetExpenses.map((e) => (e.category === name ? { ...e, category: 'Other' } : e)),
+export function importBudgetTransactions(state: AppState, rows: Omit<BudgetTransaction, 'id'>[]): AppState {
+  const seen = new Set(
+    state.budgetTransactions.map((t) => `${t.date}|${t.description}|${t.category}|${t.amount}`)
+  )
+  const toAdd: BudgetTransaction[] = []
+  for (const r of rows) {
+    const key = `${r.date}|${r.description}|${r.category}|${r.amount}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    toAdd.push({ ...r, id: uid('budgettx') })
   }
+  return { ...state, budgetTransactions: [...state.budgetTransactions, ...toAdd] }
 }
+
+/** Set income for one period, clearing the other (monthly/yearly are mutually exclusive). Clamped to >= 0. */
+export function setBudgetIncomeForPeriod(state: AppState, period: 'monthly' | 'yearly', amount: number): AppState {
+  const clamped = Math.max(0, amount)
+  return period === 'monthly'
+    ? { ...state, budgetIncomeMonthly: clamped, budgetIncomeYearly: 0 }
+    : { ...state, budgetIncomeYearly: clamped, budgetIncomeMonthly: 0 }
+}
+
 

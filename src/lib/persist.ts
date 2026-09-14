@@ -130,7 +130,7 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     budgetIncomeMonthly: loaded.budgetIncomeMonthly ?? defaults.budgetIncomeMonthly,
     budgetIncomeYearly: loaded.budgetIncomeYearly ?? defaults.budgetIncomeYearly,
     budgetExpenses: loaded.budgetExpenses ?? defaults.budgetExpenses,
-    budgetCategories: loaded.budgetCategories ?? defaults.budgetCategories,
+    budgetTransactions: loaded.budgetTransactions ?? defaults.budgetTransactions,
   }
 }
 
