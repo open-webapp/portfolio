@@ -70,14 +70,13 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   }
 
   return (
-    <section className="card blueprint elev-sm">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: 'var(--space-3)',
-          marginBottom: 'var(--space-4)',
           flexWrap: 'wrap',
         }}
       >
@@ -235,53 +234,11 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
         </div>
       </div>
 
-      <div className="card blueprint elev-sm" style={{ marginTop: 'var(--space-4)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
+      <div className="card blueprint elev-sm">
         <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
-          Category Breakdown
+          Expenses
         </div>
-        {breakdown.length === 0 ? (
-          <div className="text-muted" style={{ fontSize: '12px' }}>
-            Add expenses to see the breakdown.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            {breakdownRows.map(({ name, amount, pct }) => (
-              <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                <div style={{ width: '120px', flexShrink: 0 }}>{name}</div>
-                <div
-                  style={{
-                    flex: 1,
-                    background: 'var(--color-border, #e5e5e5)',
-                    borderRadius: '4px',
-                    overflow: 'hidden',
-                    height: '8px',
-                  }}
-                >
-                  <div
-                    data-testid="category-bar-fill"
-                    style={{
-                      width: `${pct}%`,
-                      height: '100%',
-                      background: 'var(--color-accent)',
-                    }}
-                  />
-                </div>
-                <div style={{ width: '90px', textAlign: 'right', flexShrink: 0 }}>{fmtUSD(amount)}</div>
-                {name !== 'Other' && (
-                  <button
-                    type="button"
-                    style={textBtnDanger}
-                    aria-label={`Delete category ${name}`}
-                    onClick={() => handleDeleteCategory(name)}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       <div
         style={{
@@ -289,7 +246,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           gap: 'var(--space-3)',
           flexWrap: 'wrap',
           alignItems: 'flex-end',
-          margin: 'var(--space-4) 0',
+          marginBottom: 'var(--space-4)',
         }}
       >
         <div className="field">
@@ -454,6 +411,56 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           </tbody>
         </table>
       )}
-    </section>
+      </div>
+
+      <div className="card blueprint elev-sm">
+        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
+          Category Breakdown
+        </div>
+        {breakdown.length === 0 ? (
+          <div className="text-muted" style={{ fontSize: '12px' }}>
+            Add expenses to see the breakdown.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            {breakdownRows.map(({ name, amount, pct }) => (
+              <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <div style={{ width: '120px', flexShrink: 0 }}>{name}</div>
+                <div
+                  style={{
+                    flex: 1,
+                    background: 'var(--color-border, #e5e5e5)',
+                    borderRadius: '4px',
+                    overflow: 'hidden',
+                    height: '8px',
+                  }}
+                >
+                  <div
+                    data-testid="category-bar-fill"
+                    style={{
+                      width: `${pct}%`,
+                      height: '100%',
+                      background: 'var(--color-accent)',
+                    }}
+                  />
+                </div>
+                <div style={{ width: '90px', textAlign: 'right', flexShrink: 0 }}>{fmtUSD(amount)}</div>
+                {name !== 'Other' && (
+                  <button
+                    type="button"
+                    style={textBtnDanger}
+                    aria-label={`Delete category ${name}`}
+                    onClick={() => handleDeleteCategory(name)}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      </div>
+    </div>
   )
 }

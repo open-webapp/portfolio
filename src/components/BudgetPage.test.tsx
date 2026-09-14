@@ -481,5 +481,21 @@ describe('BudgetPage', () => {
       render(<BudgetPage state={state} dispatch={vi.fn()} />)
       expect(screen.getByText('Add expenses to see the breakdown.')).toBeTruthy()
     })
+
+    it('places the Expenses table and Category Breakdown as side-by-side columns in a shared grid, not stacked', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenses: [makeExpense({ id: 'e1', category: 'Housing', amount: 1000 })],
+      }
+      render(<BudgetPage state={state} dispatch={vi.fn()} />)
+
+      const expensesCard = screen.getByText('Expenses', { selector: '.card-title' }).closest('.card')!
+      const breakdownCard = screen.getByText('Category Breakdown').closest('.card')!
+      const grid = expensesCard.parentElement!
+
+      expect(grid).toBe(breakdownCard.parentElement)
+      expect(grid.style.display).toBe('grid')
+      expect(grid.style.gridTemplateColumns).toBe('1.6fr 1fr')
+    })
   })
 })
