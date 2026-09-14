@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
 import { BudgetPage } from './BudgetPage'
 import { initialState, type AppState } from '../lib/state'
 import type { Expense } from '../lib/types'
@@ -434,9 +435,10 @@ describe('BudgetPage', () => {
       expect(headerCells).toContain('Actual')
       expect(headerCells).toContain('Variance')
 
-      // Scope to the Expenses table specifically — the new Records table (T14)
-      // also renders a row for this same transaction elsewhere in the page.
-      const bodyRows = container.querySelectorAll('table')[0].querySelectorAll('tbody tr')
+      // Scope to the Expenses table specifically — the Spend records table
+      // (rendered above it on the page) also renders a row for this same
+      // transaction elsewhere in the page.
+      const bodyRows = container.querySelectorAll('table')[1].querySelectorAll('tbody tr')
       expect(bodyRows.length).toBe(2)
 
       // Both rows share category "Housing" -> actual is the same aggregate for both.
@@ -458,6 +460,12 @@ describe('BudgetPage', () => {
       expect(screen.queryByText('Add expense')).toBeFalsy()
       fireEvent.click(screen.getByText('Add Expense'))
       expect(screen.getByText('Add expense')).toBeTruthy()
+    })
+
+    it('.dialog-backdrop has a z-index so overlays (e.g. Add expense) render above page controls', () => {
+      const css = readFileSync(`${process.cwd()}/src/styles/styles.css`, 'utf-8')
+      const rule = css.match(/\.dialog-backdrop\s*\{[^}]*\}/)?.[0] ?? ''
+      expect(rule).toMatch(/z-index:\s*\d+/)
     })
 
     it('default month/year picker value matches the real current month/year', () => {
@@ -593,6 +601,40 @@ describe('BudgetPage', () => {
       expect(screen.getByText('Groceries')).toBeTruthy()
       expect(screen.getByText('Rent payment')).toBeTruthy()
       expect(screen.queryByText('Outside period')).toBeFalsy()
+    })
+
+    it('table is titled "Spend records", not "Records"', () => {
+      render(<BudgetPage state={recordsState()} dispatch={vi.fn()} />)
+      expect(screen.getByText(/^Spend records \(/)).toBeTruthy()
+      expect(screen.queryByText(/^Records \(/)).toBeFalsy()
+    })
+
+    it('renders the Spend records section above the Expenses section', () => {
+      const { container } = render(<BudgetPage state={recordsState()} dispatch={vi.fn()} />)
+      const cardTitles = Array.from(container.querySelectorAll('.card-title')).map((el) => el.textContent)
+      const recordsIdx = cardTitles.findIndex((t) => t?.startsWith('Spend records'))
+      const expensesIdx = cardTitles.indexOf('Expenses')
+      expect(recordsIdx).toBeGreaterThanOrEqual(0)
+      expect(expensesIdx).toBeGreaterThanOrEqual(0)
+      expect(recordsIdx).toBeLessThan(expensesIdx)
+    })
+
+    it('the Spend records month filter does not affect the page-level Actual spend summary', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2025-03-15T00:00:00'))
+      const state = recordsState()
+      const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
+      const before = within(summary).getByText(/Actual spend/).textContent
+
+      // Selecting a different month in the Spend records filter must not
+      // change the page-level Actual spend card (that always tracks the
+      // current month, independent of this table's filter).
+      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-04' } })
+
+      const after = within(summary).getByText(/Actual spend/).textContent
+      expect(after).toBe(before)
+      vi.useRealTimers()
     })
 
     it('editing a row and clicking Done dispatches UPDATE_BUDGET_TRANSACTION with the correct patch', () => {

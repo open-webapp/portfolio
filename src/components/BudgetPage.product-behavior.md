@@ -5,7 +5,8 @@ Sibling doc: `BudgetPage.design.md` (props, state, data flow, formulas).
 ## Period toggle (Monthly / Yearly)
 
 - Two-option `.seg` control at top of page, defaults to **Monthly** on every mount (not persisted).
-- Switching period changes: the Budgeted/Income totals' basis (monthly vs. annualized), the month-vs-year picker below it, and all "Actual"/Records/Category-Breakdown figures (which re-filter by the currently selected month or year, independently tracked).
+- Switching period changes: the Budgeted/Income totals' basis (monthly vs. annualized), and the "Actual spend"/Variance/Category-Breakdown figures. These never let the user pick an arbitrary month — Monthly always reflects the **real current month** (`new Date()`), Yearly is scoped by a page-level **Year** select that only appears in Yearly mode.
+- The Spend records table's own **Month** select (inside its card, see below) is entirely independent of this toggle/Year select — it only controls which month's rows the Spend records table shows, and has no effect on the summary cards or Category Breakdown.
 
 ## Income — click-to-edit + mutual exclusivity
 
@@ -35,13 +36,15 @@ Sibling doc: `BudgetPage.design.md` (props, state, data flow, formulas).
 
 ## Month/Year picker default
 
-- On mount, `selectedMonth` defaults to `availableBudgetMonths(state.budgetTransactions, new Date())[0].value` and `selectedYear` to `availableBudgetYears(state.budgetTransactions, new Date())[0]` — both functions always include the **real current** month/year (via `new Date()`) in their candidate set before sorting descending, so the picker always defaults to the actual current month/year even if no transactions exist yet for it. (If transactions with later dates exist, those override — e.g. a future-dated transaction sorts before "now".)
+- On mount, `selectedMonth` (Spend records table filter) defaults to `availableBudgetMonths(state.budgetTransactions, new Date())[0].value` and `selectedYear` (page-level Yearly-mode filter) to `availableBudgetYears(state.budgetTransactions, new Date())[0]` — both functions always include the **real current** month/year (via `new Date()`) in their candidate set before sorting descending, so each picker defaults to the actual current month/year even if no transactions exist yet for it. (If transactions with later dates exist, those override — e.g. a future-dated transaction sorts before "now".)
 
-## Records section
+## Spend records section
+
+Rendered above the Expenses / Category Breakdown row (not below it). Card title reads `Spend records ({month label})`, e.g. "Spend records (March 2025)". Its **Month** select (`aria-label="Select month"`) lives in this card's header and filters only this table's rows — it does not affect Income, Budgeted, Actual spend, Variance, or Category Breakdown.
 
 ### Manual "Record spend" entry
 
-- Inline form at the bottom of the Records card: Date (date input), Description (text), Category (select, same derivation/`+Add new` behavior as above), Amount (number).
+- Inline form at the bottom of the Spend records card: Date (date input), Description (text), Category (select, same derivation/`+Add new` behavior as above), Amount (number).
 - "Add Record" button: no-op if `recDate` is empty, or `amount` is falsy/`<= 0` (`parseFloat(recAmount)`).
 - **Description fallback rule**: if `recDescription.trim()` is empty, the transaction's `description` is set to the selected category (`recCategory`) instead. A non-empty description is used trimmed.
 - On success dispatches `ADD_BUDGET_TRANSACTION` with `{ date, description, category, amount }`; clears `recDate`, `recDescription`, `recAmount` (category field is left as-is, not reset).
@@ -77,7 +80,7 @@ Rows whose key already exists in the seen-set are silently dropped — no error/
 
 ## Category Breakdown per-category-not-per-row quirk
 
-The Expenses table's **Actual** and **Variance** columns are looked up per-`row.category` from `actualByCategory(periodFilteredTransactions)` (a `Record<category, total>`), not per individual expense row. **Intentional**: two expense rows sharing the same category will display identical Actual and Variance figures — each shows that category's total actual spend, not spend attributable to that specific expense line.
+The Expenses table's **Actual** and **Variance** columns are looked up per-`row.category` from `actualByCategory(periodFilteredTransactions)` (a `Record<category, total>`), not per individual expense row. **Intentional**: two expense rows sharing the same category will display identical Actual and Variance figures — each shows that category's total actual spend, not spend attributable to that specific expense line. `periodFilteredTransactions` here is always the current month (Monthly) or the page-level selected Year (Yearly) — never the Spend records table's own Month filter.
 
 ## Empty-state messages (exact copy)
 
@@ -85,7 +88,7 @@ The Expenses table's **Actual** and **Variance** columns are looked up per-`row.
 |---|---|---|
 | Expenses table | `visibleExpenses(...)` returns 0 rows (post filter) | `No expenses to show.` |
 | Category Breakdown panel | `state.budgetExpenses.length === 0` | `Add expenses to see the breakdown.` |
-| Records table | `sortedRecords.length === 0` for the selected period | `No records for this period.` |
+| Spend records table | `sortedRecords.length === 0` for the selected month | `No records for this period.` |
 | Import status line | Before any import this session | `Never imported` |
 | Import status line | After an import | `{n} row(s) detected` |
 | Upload-file drop zone | No file picked/dropped yet | `No file selected` |
@@ -95,4 +98,5 @@ The Expenses table's **Actual** and **Variance** columns are looked up per-`row.
 - Summary cards always render (never hidden even with zero expenses/transactions/income) — all four show `$0.00`-equivalent via `fmtUSD` when their underlying totals are zero.
 - Variance card color: `GAIN_COLOR` when `totalExpense >= totalActual` (under/at budget), else `LOSS_COLOR`.
 - Category Breakdown "Over by"/"Under by" line: `variance < 0` → `Over by {fmtUSD(abs(variance))}`; otherwise → `Under by {fmtUSD(abs(variance))}` (a variance of exactly 0 reads as "Under by $0.00").
-- Records table "Edit" inline mode: Date/Description/Amount fields dispatch nothing until "Done" is clicked (unlike the Expenses table, where Name/Frequency/Amount dispatch per-change) — the entire row's edits (including category) are staged in `recordDraft` and committed together as one `UPDATE_BUDGET_TRANSACTION` on "Done".
+- Spend records table "Edit" inline mode: Date/Description/Amount fields dispatch nothing until "Done" is clicked (unlike the Expenses table, where Name/Frequency/Amount dispatch per-change) — the entire row's edits (including category) are staged in `recordDraft` and committed together as one `UPDATE_BUDGET_TRANSACTION` on "Done".
+- `.dialog-backdrop` (used by both the "Add expense" and "Import transactions" modals) sets an explicit `z-index` so it always paints above the page's `.card.blueprint` sections (which are `position: relative` and would otherwise win the stacking order by DOM order, hiding the overlay behind later page controls).

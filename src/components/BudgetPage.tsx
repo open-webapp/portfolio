@@ -101,11 +101,16 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
 
   const availableMonths = availableBudgetMonths(state.budgetTransactions, new Date())
   const availableYears = availableBudgetYears(state.budgetTransactions, new Date())
+  const currentMonthValue = new Date().toISOString().slice(0, 7)
 
+  // Income/Budgeted are month-agnostic; Actual spend/Variance/Category Breakdown
+  // always reflect the current month (Monthly) or the selected Year (Yearly) —
+  // never a user-picked month. Only the Spend records table below lets the user
+  // browse by an arbitrary month (see `selectedMonth` / recordsForSelectedMonth).
   const periodFilteredTransactions = budgetTransactionsForPeriod(
     state.budgetTransactions,
     period,
-    selectedMonth,
+    currentMonthValue,
     selectedYear
   )
   const totalActual = periodFilteredTransactions.reduce((sum, t) => sum + t.amount, 0)
@@ -113,7 +118,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const variance = totalExpense - totalActual
   const rangeLabel =
     period === 'monthly'
-      ? availableMonths.find((m) => m.value === selectedMonth)?.label ?? selectedMonth
+      ? availableMonths.find((m) => m.value === currentMonthValue)?.label ?? currentMonthValue
       : selectedYear
 
   const rows = visibleExpenses(state.budgetExpenses, filterCategory, sortBy, period)
@@ -128,7 +133,14 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
     setEditingIncome(false)
   }
 
-  const sortedRecords = [...periodFilteredTransactions].sort((a, b) => b.date.localeCompare(a.date))
+  const recordsRangeLabel = availableMonths.find((m) => m.value === selectedMonth)?.label ?? selectedMonth
+  const recordsForSelectedMonth = budgetTransactionsForPeriod(
+    state.budgetTransactions,
+    'monthly',
+    selectedMonth,
+    selectedYear
+  )
+  const sortedRecords = [...recordsForSelectedMonth].sort((a, b) => b.date.localeCompare(a.date))
 
   const handleAddRecord = () => {
     const amount = parseFloat(recAmount)
@@ -188,25 +200,9 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
         </div>
       </div>
 
-      <div
-        className="field"
-        style={{ maxWidth: '220px' }}
-      >
-        <label>{period === 'monthly' ? 'Month' : 'Year'}</label>
-        {period === 'monthly' ? (
-          <select
-            className="input"
-            aria-label="Select month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-          >
-            {availableMonths.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        ) : (
+      {period === 'yearly' && (
+        <div className="field" style={{ maxWidth: '220px' }}>
+          <label>Year</label>
           <select
             className="input"
             aria-label="Select year"
@@ -219,8 +215,8 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
               </option>
             ))}
           </select>
-        )}
-      </div>
+        </div>
+      )}
 
       <div
         data-testid="summary-cards"
@@ -277,6 +273,267 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           <div style={{ fontSize: '1.5rem', color: totalExpense >= totalActual ? GAIN_COLOR : LOSS_COLOR }}>
             {fmtUSD(variance)}
           </div>
+        </div>
+      </div>
+
+      <div className="card blueprint elev-sm">
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            flexWrap: 'wrap',
+            gap: 'var(--space-3)',
+            marginBottom: 'var(--space-3)',
+          }}
+        >
+          <div className="card-title">Spend records ({recordsRangeLabel})</div>
+          <div className="field" style={{ maxWidth: '220px' }}>
+            <label>Month</label>
+            <select
+              className="input"
+              aria-label="Select month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+            >
+              {availableMonths.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {sortedRecords.length === 0 ? (
+          <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
+            No records for this period.
+          </div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th style={{ textAlign: 'right' }}>Amount</th>
+                <th style={{ width: '110px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRecords.map((row) => {
+                const isEditing = recordDraft?.id === row.id
+                return (
+                  <tr key={row.id}>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          type="date"
+                          className="input"
+                          aria-label="Edit record date"
+                          value={recordDraft!.date}
+                          onChange={(e) =>
+                            setRecordDraft((d) => (d ? { ...d, date: e.target.value } : d))
+                          }
+                        />
+                      ) : (
+                        row.date
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          className="input"
+                          aria-label="Edit record description"
+                          value={recordDraft!.description}
+                          onChange={(e) =>
+                            setRecordDraft((d) => (d ? { ...d, description: e.target.value } : d))
+                          }
+                        />
+                      ) : (
+                        row.description
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <select
+                          className="input"
+                          aria-label="Edit record category"
+                          value={recordDraft!.category}
+                          onChange={(e) =>
+                            handleCategorySelectChange(e.target.value, (cat) =>
+                              setRecordDraft((d) => (d ? { ...d, category: cat } : d))
+                            )
+                          }
+                        >
+                          {categories.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                          {recordDraft && !categories.includes(recordDraft.category) && (
+                            <option value={recordDraft.category}>{recordDraft.category}</option>
+                          )}
+                          <option value="__add_new">+ Add new category…</option>
+                        </select>
+                      ) : (
+                        <span className="tag tag-neutral">{row.category}</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          className="input"
+                          aria-label="Edit record amount"
+                          value={recordDraft!.amount}
+                          onChange={(e) =>
+                            setRecordDraft((d) => (d ? { ...d, amount: e.target.value } : d))
+                          }
+                        />
+                      ) : (
+                        fmtUSD(row.amount)
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {isEditing ? (
+                        <button
+                          type="button"
+                          style={textBtnAccent}
+                          onClick={() => {
+                            dispatch({
+                              type: 'UPDATE_BUDGET_TRANSACTION',
+                              id: row.id,
+                              patch: {
+                                date: recordDraft!.date,
+                                description: recordDraft!.description,
+                                category: recordDraft!.category,
+                                amount: parseFloat(recordDraft!.amount) || 0,
+                              },
+                            })
+                            setRecordDraft(null)
+                          }}
+                        >
+                          Done
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            style={{ ...textBtnAccent, marginRight: 'var(--space-3)' }}
+                            onClick={() =>
+                              setRecordDraft({
+                                id: row.id,
+                                date: row.date,
+                                description: row.description,
+                                category: row.category,
+                                amount: String(row.amount),
+                              })
+                            }
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            style={textBtnDanger}
+                            onClick={() => {
+                              if (
+                                window.confirm(`Delete "${row.description}"? This cannot be undone.`)
+                              ) {
+                                dispatch({ type: 'DELETE_BUDGET_TRANSACTION', id: row.id })
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 'var(--space-3)',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            marginTop: 'var(--space-4)',
+          }}
+        >
+          <div className="field">
+            <label>Date</label>
+            <input
+              type="date"
+              className="input"
+              aria-label="Record date"
+              value={recDate}
+              onChange={(e) => setRecDate(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label>Description</label>
+            <input
+              type="text"
+              className="input"
+              aria-label="Record description"
+              value={recDescription}
+              onChange={(e) => setRecDescription(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label>Category</label>
+            <select
+              className="input"
+              aria-label="Record category"
+              value={recCategory}
+              onChange={(e) => handleCategorySelectChange(e.target.value, setRecCategory)}
+            >
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+              {!categories.includes(recCategory) && recCategory !== '__add_new' && (
+                <option value={recCategory}>{recCategory}</option>
+              )}
+              <option value="__add_new">+ Add new category…</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Amount</label>
+            <input
+              type="number"
+              className="input"
+              aria-label="Record amount"
+              value={recAmount}
+              onChange={(e) => setRecAmount(e.target.value)}
+            />
+          </div>
+          <button type="button" className="btn btn-primary" onClick={handleAddRecord}>
+            Add Record
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-3)',
+            marginTop: 'var(--space-4)',
+          }}
+        >
+          <button type="button" style={textBtnAccent} onClick={() => setShowImportDialog(true)}>
+            Import transactions…
+          </button>
+          <span className="text-muted" style={{ fontSize: '12px' }}>
+            {importStatus}
+          </span>
         </div>
       </div>
 
@@ -668,242 +925,6 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       </div>
       </div>
 
-      <div className="card blueprint elev-sm">
-        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
-          Records ({rangeLabel})
-        </div>
-
-        {sortedRecords.length === 0 ? (
-          <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
-            No records for this period.
-          </div>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Category</th>
-                <th style={{ textAlign: 'right' }}>Amount</th>
-                <th style={{ width: '110px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRecords.map((row) => {
-                const isEditing = recordDraft?.id === row.id
-                return (
-                  <tr key={row.id}>
-                    <td>
-                      {isEditing ? (
-                        <input
-                          type="date"
-                          className="input"
-                          aria-label="Edit record date"
-                          value={recordDraft!.date}
-                          onChange={(e) =>
-                            setRecordDraft((d) => (d ? { ...d, date: e.target.value } : d))
-                          }
-                        />
-                      ) : (
-                        row.date
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          className="input"
-                          aria-label="Edit record description"
-                          value={recordDraft!.description}
-                          onChange={(e) =>
-                            setRecordDraft((d) => (d ? { ...d, description: e.target.value } : d))
-                          }
-                        />
-                      ) : (
-                        row.description
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <select
-                          className="input"
-                          aria-label="Edit record category"
-                          value={recordDraft!.category}
-                          onChange={(e) =>
-                            handleCategorySelectChange(e.target.value, (cat) =>
-                              setRecordDraft((d) => (d ? { ...d, category: cat } : d))
-                            )
-                          }
-                        >
-                          {categories.map((cat) => (
-                            <option key={cat} value={cat}>
-                              {cat}
-                            </option>
-                          ))}
-                          {recordDraft && !categories.includes(recordDraft.category) && (
-                            <option value={recordDraft.category}>{recordDraft.category}</option>
-                          )}
-                          <option value="__add_new">+ Add new category…</option>
-                        </select>
-                      ) : (
-                        <span className="tag tag-neutral">{row.category}</span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {isEditing ? (
-                        <input
-                          type="number"
-                          className="input"
-                          aria-label="Edit record amount"
-                          value={recordDraft!.amount}
-                          onChange={(e) =>
-                            setRecordDraft((d) => (d ? { ...d, amount: e.target.value } : d))
-                          }
-                        />
-                      ) : (
-                        fmtUSD(row.amount)
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {isEditing ? (
-                        <button
-                          type="button"
-                          style={textBtnAccent}
-                          onClick={() => {
-                            dispatch({
-                              type: 'UPDATE_BUDGET_TRANSACTION',
-                              id: row.id,
-                              patch: {
-                                date: recordDraft!.date,
-                                description: recordDraft!.description,
-                                category: recordDraft!.category,
-                                amount: parseFloat(recordDraft!.amount) || 0,
-                              },
-                            })
-                            setRecordDraft(null)
-                          }}
-                        >
-                          Done
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            style={{ ...textBtnAccent, marginRight: 'var(--space-3)' }}
-                            onClick={() =>
-                              setRecordDraft({
-                                id: row.id,
-                                date: row.date,
-                                description: row.description,
-                                category: row.category,
-                                amount: String(row.amount),
-                              })
-                            }
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            style={textBtnDanger}
-                            onClick={() => {
-                              if (
-                                window.confirm(`Delete "${row.description}"? This cannot be undone.`)
-                              ) {
-                                dispatch({ type: 'DELETE_BUDGET_TRANSACTION', id: row.id })
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-
-        <div
-          style={{
-            display: 'flex',
-            gap: 'var(--space-3)',
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-            marginTop: 'var(--space-4)',
-          }}
-        >
-          <div className="field">
-            <label>Date</label>
-            <input
-              type="date"
-              className="input"
-              aria-label="Record date"
-              value={recDate}
-              onChange={(e) => setRecDate(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>Description</label>
-            <input
-              type="text"
-              className="input"
-              aria-label="Record description"
-              value={recDescription}
-              onChange={(e) => setRecDescription(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label>Category</label>
-            <select
-              className="input"
-              aria-label="Record category"
-              value={recCategory}
-              onChange={(e) => handleCategorySelectChange(e.target.value, setRecCategory)}
-            >
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-              {!categories.includes(recCategory) && recCategory !== '__add_new' && (
-                <option value={recCategory}>{recCategory}</option>
-              )}
-              <option value="__add_new">+ Add new category…</option>
-            </select>
-          </div>
-          <div className="field">
-            <label>Amount</label>
-            <input
-              type="number"
-              className="input"
-              aria-label="Record amount"
-              value={recAmount}
-              onChange={(e) => setRecAmount(e.target.value)}
-            />
-          </div>
-          <button type="button" className="btn btn-primary" onClick={handleAddRecord}>
-            Add Record
-          </button>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-3)',
-            marginTop: 'var(--space-4)',
-          }}
-        >
-          <button type="button" style={textBtnAccent} onClick={() => setShowImportDialog(true)}>
-            Import transactions…
-          </button>
-          <span className="text-muted" style={{ fontSize: '12px' }}>
-            {importStatus}
-          </span>
-        </div>
-      </div>
 
       {showImportDialog && (
         <div className="dialog-backdrop" onClick={closeImportDialog}>

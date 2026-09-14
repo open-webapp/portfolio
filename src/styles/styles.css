@@ -148,7 +148,7 @@ textarea.input { min-height: 90px; resize: vertical; }
 .table tbody tr:hover { background: var(--color-neutral-100); }
 
 /* — dialog — */
-.dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: var(--space-4); background: rgba(28,22,80,0.45); }
+.dialog-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: var(--space-4); background: rgba(28,22,80,0.45); }
 .dialog { width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-lg); border: 1px solid var(--color-divider); }
 .dialog-title { font-family: var(--font-heading); font-weight: 600; font-size: 20px; }
 .dialog-body { font-size: 14px; opacity: 0.85; }

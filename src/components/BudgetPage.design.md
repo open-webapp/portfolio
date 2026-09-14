@@ -26,9 +26,9 @@ Sibling doc: `BudgetPage.product-behavior.md` (user-visible behavior, edge cases
 | `editCategoryDraft` | `string \| null` | Pending category value for the row being edited (category changes are staged, not dispatched per-keystroke like other fields) |
 | `editingIncome` | `boolean` | Gates income inline-edit input on the Income card |
 | `incomeEditAmount` | `string` | Income edit draft; on save dispatches `SET_BUDGET_INCOME_FOR_PERIOD` |
-| `selectedMonth` | `string` (`YYYY-MM`), init `availableBudgetMonths(state.budgetTransactions, new Date())[0].value` | Which month's records/actuals are shown (monthly period) |
-| `selectedYear` | `string` (`YYYY`), init `availableBudgetYears(state.budgetTransactions, new Date())[0]` | Which year's records/actuals are shown (yearly period) |
-| `recordDraft` | `{id, date, description, category, amount} \| null` | Inline-edit draft for a Records row; on save dispatches `UPDATE_BUDGET_TRANSACTION` |
+| `selectedMonth` | `string` (`YYYY-MM`), init `availableBudgetMonths(state.budgetTransactions, new Date())[0].value` | Which month the **Spend records table** shows (independent of `period`/summary cards) |
+| `selectedYear` | `string` (`YYYY`), init `availableBudgetYears(state.budgetTransactions, new Date())[0]` | Page-level year filter, used only when `period === 'yearly'` (Actual spend/Variance/Category Breakdown) |
+| `recordDraft` | `{id, date, description, category, amount} \| null` | Inline-edit draft for a Spend records row; on save dispatches `UPDATE_BUDGET_TRANSACTION` |
 | `recDate`, `recDescription`, `recCategory`, `recAmount` | `string` each | "Add Record" form fields; on submit dispatches `ADD_BUDGET_TRANSACTION` |
 | `showImportDialog` | `boolean` | Gates Import-transactions dialog |
 | `importTab` | `'paste' \| 'upload'` | Which import sub-tab is active |
@@ -46,9 +46,9 @@ Sibling doc: `BudgetPage.product-behavior.md` (user-visible behavior, edge cases
 | `ADD_BUDGET_EXPENSE` | Add-Expense dialog "Add" | `{ expense: { name, category, amount, frequency } }` |
 | `UPDATE_BUDGET_EXPENSE` | Inline expense-row edit (per-field on change; category via "Done" button) | `{ id, patch }` |
 | `DELETE_BUDGET_EXPENSE` | Expense-row "Delete" (after `window.confirm`) | `{ id }` |
-| `ADD_BUDGET_TRANSACTION` | Records "Add Record" | `{ tx: { date, description, category, amount } }` |
-| `UPDATE_BUDGET_TRANSACTION` | Records row "Done" (inline edit) | `{ id, patch: { date, description, category, amount } }` |
-| `DELETE_BUDGET_TRANSACTION` | Records row "Delete" (after `window.confirm`) | `{ id }` |
+| `ADD_BUDGET_TRANSACTION` | Spend records "Add Record" | `{ tx: { date, description, category, amount } }` |
+| `UPDATE_BUDGET_TRANSACTION` | Spend records row "Done" (inline edit) | `{ id, patch: { date, description, category, amount } }` |
+| `DELETE_BUDGET_TRANSACTION` | Spend records row "Delete" (after `window.confirm`) | `{ id }` |
 | `IMPORT_BUDGET_TRANSACTIONS` | Import dialog "Import" | `{ rows: parseBudgetTransactionsCsv(csvText) }` |
 | `SET_BUDGET_INCOME_FOR_PERIOD` | Income card save (Enter key on the amount input) | `{ period, amount: parseFloat(incomeEditAmount) \|\| 0 }` |
 
@@ -57,13 +57,13 @@ No other `BUDGET_*` action types exist in `reducer.ts`/`state.ts` are used by th
 ## Component tree / rendered order
 
 1. Header row: "Budget" title + Monthly/Yearly `.seg` toggle (`period`).
-2. Month/Year `.field` picker (single `<select>`, swaps options based on `period`).
+2. Year `.field` picker — rendered **only** when `period === 'yearly'` (Monthly mode has no page-level picker; it always uses the real current month).
 3. Summary cards row (`data-testid="summary-cards"`, 4-up grid): Income (click-to-edit) · Budgeted (period total) · Actual spend (rangeLabel) · Variance.
-4. Add-Expense dialog (`.dialog-backdrop`/`.dialog`), rendered conditionally on `showAddExpenseDialog`, overlays regardless of scroll position (not part of the visual flow below).
-5. 2-column grid (`1.6fr 1fr`):
+4. Add-Expense dialog (`.dialog-backdrop`/`.dialog`), rendered conditionally on `showAddExpenseDialog`, overlays regardless of scroll position (not part of the visual flow below); `.dialog-backdrop` carries an explicit `z-index` so it stacks above the `.card.blueprint` sections further down the DOM (see Design patterns).
+5. Spend records card (full width, rendered **above** the Expenses/Category Breakdown grid) — its own Month `.field` picker (`selectedMonth`, independent of `period`/`selectedYear`) next to the card title, records `<table>` (or "No records for this period."), "Add Record" inline form, "Import transactions…" link + `importStatus` text.
+6. 2-column grid (`1.6fr 1fr`):
    - Left: Expenses card — filter/sort controls, expense `<table>` (or "No expenses to show."), "Add Expense" button.
    - Right: Category Breakdown card — per-category bar rows (or "Add expenses to see the breakdown.").
-6. Records card (full width) — records `<table>` (or "No records for this period."), "Add Record" inline form, "Import transactions…" link + `importStatus` text.
 7. Import-transactions dialog (`.dialog-backdrop`/`.dialog`), rendered conditionally on `showImportDialog`.
 
 ## Key formulas / derived values
@@ -74,7 +74,7 @@ No other `BUDGET_*` action types exist in `reducer.ts`/`state.ts` are used by th
 | Expense table rows | `visibleExpenses(state.budgetExpenses, filterCategory, sortBy, period)` | `selectors.ts` |
 | Month `<select>` options | `availableBudgetMonths(state.budgetTransactions, new Date())` | `selectors.ts` |
 | Year `<select>` options | `availableBudgetYears(state.budgetTransactions, new Date())` | `selectors.ts` |
-| Records table rows | `budgetTransactionsForPeriod(transactions, period, selectedMonth, selectedYear)`, then locally sorted by `date` descending | `selectors.ts` |
+| Spend records table rows | `budgetTransactionsForPeriod(transactions, 'monthly', selectedMonth, selectedYear)`, then locally sorted by `date` descending — always month-scoped by `selectedMonth`, regardless of `period` | `selectors.ts` |
 | Actual-spend-by-category (used in expense table's Actual/Variance columns) | `actualByCategory(periodFilteredTransactions)` | `selectors.ts` |
 | Category Breakdown panel rows | `categoryBreakdown(state.budgetExpenses, periodFilteredTransactions, period)` | `selectors.ts` |
 | CSV → transaction rows | `parseBudgetTransactionsCsv(csvText)` | `computations.ts` |
@@ -83,13 +83,15 @@ No other `BUDGET_*` action types exist in `reducer.ts`/`state.ts` are used by th
 | Variance color / gain-loss color | `GAIN_COLOR`, `LOSS_COLOR` constants | `computations.ts` |
 | Income total (summary card) | Computed inline in component: monthly = `budgetIncomeMonthly + budgetIncomeYearly/12`; yearly = `budgetIncomeMonthly*12 + budgetIncomeYearly` | `BudgetPage.tsx` |
 | `totalExpense` (Budgeted card) | Computed inline: `sum(toPeriod(e.amount, e.frequency, period))` over `state.budgetExpenses` | `BudgetPage.tsx` |
-| `totalActual` (Actual spend card) | Computed inline: `sum(t.amount)` over `periodFilteredTransactions` | `BudgetPage.tsx` |
+| `totalActual` (Actual spend card) | Computed inline: `sum(t.amount)` over `periodFilteredTransactions`, which is built from `currentMonthValue` (real current month, Monthly) or `selectedYear` (Yearly) — never `selectedMonth` | `BudgetPage.tsx` |
 | `variance` (Variance card) | Computed inline: `totalExpense - totalActual` | `BudgetPage.tsx` |
-| `rangeLabel` (Actual spend / Records card titles) | Computed inline: selected month's `label` from `availableBudgetMonths`, or `selectedYear` | `BudgetPage.tsx` |
+| `rangeLabel` (Actual spend card title) | Computed inline: current month's `label` from `availableBudgetMonths`, or `selectedYear` | `BudgetPage.tsx` |
+| `recordsRangeLabel` (Spend records card title) | Computed inline: `selectedMonth`'s `label` from `availableBudgetMonths` | `BudgetPage.tsx` |
 
 ## Design patterns
 
-- Category `<select>` behavior is shared via one helper, `handleCategorySelectChange(value, apply)` (top of file): selecting the `__add_new` sentinel triggers `window.prompt`, any other value passes straight to `apply`. Used identically by the Add-Expense dialog, inline expense-row edit, Records "Add Record" form, and Records inline row edit — this is the single pattern for category selection anywhere in this component.
-- Inline table-row editing (both Expenses and Records tables) follows the same shape: a component-local id (`editingId` / `recordDraft.id`) marks which row renders inputs instead of text; non-category fields dispatch `UPDATE_*` immediately on change, while the category field is staged locally (`editCategoryDraft` / part of `recordDraft`) and only dispatched on "Done".
+- Category `<select>` behavior is shared via one helper, `handleCategorySelectChange(value, apply)` (top of file): selecting the `__add_new` sentinel triggers `window.prompt`, any other value passes straight to `apply`. Used identically by the Add-Expense dialog, inline expense-row edit, Spend records "Add Record" form, and Spend records inline row edit — this is the single pattern for category selection anywhere in this component.
+- Inline table-row editing (both Expenses and Spend records tables) follows the same shape: a component-local id (`editingId` / `recordDraft.id`) marks which row renders inputs instead of text; non-category fields dispatch `UPDATE_*` immediately on change, while the category field is staged locally (`editCategoryDraft` / part of `recordDraft`) and only dispatched on "Done".
 - Both dialogs (Add Expense, Import transactions) use the shared `.dialog-backdrop`/`.dialog.blueprint` pattern with `onClick={stopPropagation}` on the inner dialog so backdrop click closes, dialog click doesn't.
+- `.card.blueprint` sets `position: relative` (`styles.css`); every `.dialog-backdrop` therefore needs its own explicit `z-index` (`styles.css`) to paint above cards that appear later in the DOM — without it, positioned siblings rendered after the dialog in source order win the stacking order regardless of the dialog's `position: fixed`.
 - `textBtnAccent`/`textBtnDanger` are local `CSSProperties` constants for borderless text-style action buttons (Edit/Done in accent color, Delete in `LOSS_COLOR`).
