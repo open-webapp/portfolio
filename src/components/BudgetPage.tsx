@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveCategoryIdForDescription } from '../lib/state'
 import { uid } from '../lib/seed'
@@ -92,11 +92,15 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
  * a later task extending this same component.
  */
 export function BudgetPage({ state, dispatch }: BudgetPageProps) {
-  const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly')
+  const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly')
   const [filterCategoryId, setFilterCategoryId] = useState('__all')
   const [sortBy, setSortBy] = useState<'category' | 'name' | 'amount'>('category')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [showAddExpenseDialog, setShowAddExpenseDialog] = useState(false)
+  const [recordSearch, setRecordSearch] = useState('')
+  const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
+  const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
+  const [recPage, setRecPage] = useState(0)
   const [formName, setFormName] = useState('')
   const categories = state.categories
   const categoriesById = new Map(state.categories.map((c) => [c.id, c.name]))
@@ -107,20 +111,15 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const [editCategoryIdDraft, setEditCategoryIdDraft] = useState<string | null>(null)
   const [editingIncome, setEditingIncome] = useState(false)
   const [incomeEditAmount, setIncomeEditAmount] = useState('')
-  const [selectedMonth, setSelectedMonth] = useState(
-    () => availableBudgetMonths(state.budgetTransactions, new Date())[0].value
-  )
   const [selectedYear, setSelectedYear] = useState(
     () => availableBudgetYears(state.budgetTransactions, new Date())[0]
   )
-  const [recordDraft, setRecordDraft] = useState<{
-    id: string
-    date: string
-    description: string
-    categoryId: string
-    accountName: string
-    amount: string
+  const [editingCell, setEditingCell] = useState<{
+    rowId: string
+    field: 'date' | 'description' | 'category' | 'account' | 'amount'
   } | null>(null)
+  const [cellDraft, setCellDraft] = useState('')
+  const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
   const [recDescription, setRecDescription] = useState('')
   const [recCategoryId, setRecCategoryId] = useState(state.categories[0]?.id ?? '')
@@ -151,9 +150,8 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const currentMonthValue = new Date().toISOString().slice(0, 7)
 
   // Income/Budgeted are month-agnostic; Actual spend/Variance/Category Breakdown
-  // always reflect the current month (Monthly) or the selected Year (Yearly) —
-  // never a user-picked month. Only the Spend records table below lets the user
-  // browse by an arbitrary month (see `selectedMonth` / recordsForSelectedMonth).
+  // and the Spend records table below always reflect the current month
+  // (Monthly) or the selected Year (Yearly).
   const periodFilteredTransactions = budgetTransactionsForPeriod(
     state.budgetTransactions,
     period,
@@ -189,14 +187,115 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
     setEditingIncome(false)
   }
 
-  const recordsRangeLabel = availableMonths.find((m) => m.value === selectedMonth)?.label ?? selectedMonth
-  const recordsForSelectedMonth = budgetTransactionsForPeriod(
-    state.budgetTransactions,
-    'monthly',
-    selectedMonth,
-    selectedYear
-  )
-  const sortedRecords = [...recordsForSelectedMonth].sort((a, b) => b.date.localeCompare(a.date))
+  const filteredRecords = recordSearch.trim()
+    ? periodFilteredTransactions.filter((t) => {
+        const searchLower = recordSearch.toLowerCase()
+        const categoryName = categoriesById.get(t.categoryId) ?? t.categoryId
+        return (
+          t.description.toLowerCase().includes(searchLower) ||
+          categoryName.toLowerCase().includes(searchLower) ||
+          (t.accountName ?? '').toLowerCase().includes(searchLower)
+        )
+      })
+    : periodFilteredTransactions
+  const toggleRecSort = (field: 'date' | 'description' | 'category' | 'account' | 'amount') => {
+    if (recSortBy === field) {
+      setRecSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setRecSortBy(field)
+      setRecSortDir(field === 'date' ? 'desc' : 'asc')
+    }
+  }
+  const searchedRecords = [...filteredRecords].sort((a, b) => {
+    let cmp = 0
+    switch (recSortBy) {
+      case 'date':
+        cmp = a.date.localeCompare(b.date)
+        break
+      case 'description':
+        cmp = a.description.localeCompare(b.description)
+        break
+      case 'category': {
+        const nameA = categoriesById.get(a.categoryId) ?? a.categoryId
+        const nameB = categoriesById.get(b.categoryId) ?? b.categoryId
+        cmp = nameA.localeCompare(nameB)
+        break
+      }
+      case 'account':
+        cmp = (a.accountName ?? '').localeCompare(b.accountName ?? '')
+        break
+      case 'amount':
+        cmp = a.amount - b.amount
+        break
+    }
+    return recSortDir === 'asc' ? cmp : -cmp
+  })
+  const recPaginationActive = searchedRecords.length > 500
+  const recPageCount = Math.ceil(searchedRecords.length / 100)
+  const pagedRecords = recPaginationActive
+    ? searchedRecords.slice(recPage * 100, recPage * 100 + 100)
+    : searchedRecords
+
+  const isEditingCell = (rowId: string, field: 'date' | 'description' | 'category' | 'account' | 'amount') =>
+    editingCell?.rowId === rowId && editingCell.field === field
+
+  const startCellEdit = (
+    rowId: string,
+    field: 'date' | 'description' | 'category' | 'account' | 'amount',
+    currentValue: string
+  ) => {
+    if (isEditingCell(rowId, field)) return
+    setEditingCell({ rowId, field })
+    setCellDraft(currentValue)
+  }
+
+  const commitCellEdit = (
+    rowId: string,
+    field: 'date' | 'description' | 'account' | 'amount',
+    value: string
+  ) => {
+    let patch: Record<string, unknown> = {}
+    switch (field) {
+      case 'date':
+        patch = { date: value }
+        break
+      case 'description':
+        patch = { description: value }
+        break
+      case 'account':
+        patch = { accountName: value.trim() || undefined }
+        break
+      case 'amount':
+        patch = { amount: parseFloat(value) || 0 }
+        break
+    }
+    dispatch({ type: 'UPDATE_BUDGET_TRANSACTION', id: rowId, patch })
+    setEditingCell(null)
+    setCellDraft('')
+  }
+
+  const handleCellInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur()
+    } else if (e.key === 'Escape') {
+      skipBlurCommitRef.current = true
+      e.currentTarget.blur()
+    }
+  }
+
+  const handleCellInputBlur = (
+    rowId: string,
+    field: 'date' | 'description' | 'account' | 'amount'
+  ) => {
+    if (!editingCell) return
+    if (skipBlurCommitRef.current) {
+      skipBlurCommitRef.current = false
+      setEditingCell(null)
+      setCellDraft('')
+      return
+    }
+    commitCellEdit(rowId, field, cellDraft)
+  }
 
   const handleAddRecord = () => {
     const amount = parseFloat(recAmount)
@@ -214,7 +313,6 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       tx: { date: recDate, description, categoryId: recCategoryId, amount },
     })
     dispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, categoryId: recCategoryId })
-    setSelectedMonth(recDate.slice(0, 7))
     setSelectedYear(recDate.slice(0, 4))
     setRecError('')
     setRecDate('')
@@ -280,7 +378,14 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
         <div className="card-title">Budget</div>
         <div className="seg">
           {(['monthly', 'yearly'] as const).map((opt) => (
-            <label key={opt} className="seg-opt" onClick={() => setPeriod(opt)}>
+            <label
+              key={opt}
+              className="seg-opt"
+              onClick={() => {
+                setPeriod(opt)
+                setRecPage(0)
+              }}
+            >
               <input type="radio" name="budgetPeriod" checked={period === opt} readOnly />
               <span>{opt === 'monthly' ? 'Monthly' : 'Yearly'}</span>
             </label>
@@ -296,7 +401,10 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
               className="input"
               aria-label="Select year"
               value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
+              onChange={(e) => {
+                setSelectedYear(e.target.value)
+                setRecPage(0)
+              }}
             >
               {availableYears.map((y) => (
                 <option key={y} value={y}>
@@ -378,25 +486,22 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
             marginBottom: 'var(--space-3)',
           }}
         >
-          <div className="card-title">Spend records ({recordsRangeLabel})</div>
-          <div className="field" style={{ maxWidth: '220px' }}>
-            <label>Month</label>
-            <select
+          <div className="card-title">Spend records ({rangeLabel})</div>
+          <div className="field" style={{ margin: 0, width: '220px' }}>
+            <input
               className="input"
-              aria-label="Select month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-            >
-              {availableMonths.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+              aria-label="Search records"
+              placeholder="Search records"
+              value={recordSearch}
+              onChange={(e) => {
+                setRecordSearch(e.target.value)
+                setRecPage(0)
+              }}
+            />
           </div>
         </div>
 
-        {sortedRecords.length === 0 ? (
+        {searchedRecords.length === 0 ? (
           <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
             No records for this period.
           </div>
@@ -404,59 +509,117 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           <table className="table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Category</th>
-                <th>Account</th>
-                <th style={{ textAlign: 'right' }}>Amount</th>
+                <th
+                  aria-label="Sort by date"
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => toggleRecSort('date')}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                    Date
+                    {recSortBy === 'date' && <SortIcon dir={recSortDir} />}
+                  </span>
+                </th>
+                <th
+                  aria-label="Sort by description"
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => toggleRecSort('description')}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                    Description
+                    {recSortBy === 'description' && <SortIcon dir={recSortDir} />}
+                  </span>
+                </th>
+                <th
+                  aria-label="Sort by category"
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => toggleRecSort('category')}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                    Category
+                    {recSortBy === 'category' && <SortIcon dir={recSortDir} />}
+                  </span>
+                </th>
+                <th
+                  aria-label="Sort by account"
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => toggleRecSort('account')}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                    Account
+                    {recSortBy === 'account' && <SortIcon dir={recSortDir} />}
+                  </span>
+                </th>
+                <th
+                  aria-label="Sort by amount"
+                  style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => toggleRecSort('amount')}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '2px' }}>
+                    Amount
+                    {recSortBy === 'amount' && <SortIcon dir={recSortDir} />}
+                  </span>
+                </th>
                 <th style={{ width: '110px' }}></th>
               </tr>
             </thead>
             <tbody>
-              {sortedRecords.map((row) => {
-                const isEditing = recordDraft?.id === row.id
+              {pagedRecords.map((row) => {
                 return (
                   <tr key={row.id}>
-                    <td>
-                      {isEditing ? (
+                    <td onClick={() => startCellEdit(row.id, 'date', row.date)}>
+                      {isEditingCell(row.id, 'date') ? (
                         <input
                           type="date"
                           className="input"
                           aria-label="Edit record date"
-                          value={recordDraft!.date}
-                          onChange={(e) =>
-                            setRecordDraft((d) => (d ? { ...d, date: e.target.value } : d))
-                          }
+                          autoFocus
+                          value={cellDraft}
+                          onChange={(e) => setCellDraft(e.target.value)}
+                          onKeyDown={handleCellInputKeyDown}
+                          onBlur={() => handleCellInputBlur(row.id, 'date')}
                         />
                       ) : (
                         row.date
                       )}
                     </td>
-                    <td>
-                      {isEditing ? (
+                    <td onClick={() => startCellEdit(row.id, 'description', row.description)}>
+                      {isEditingCell(row.id, 'description') ? (
                         <input
                           type="text"
                           className="input"
                           aria-label="Edit record description"
-                          value={recordDraft!.description}
-                          onChange={(e) =>
-                            setRecordDraft((d) => (d ? { ...d, description: e.target.value } : d))
-                          }
+                          autoFocus
+                          value={cellDraft}
+                          onChange={(e) => setCellDraft(e.target.value)}
+                          onKeyDown={handleCellInputKeyDown}
+                          onBlur={() => handleCellInputBlur(row.id, 'description')}
                         />
                       ) : (
                         row.description
                       )}
                     </td>
-                    <td>
-                      {isEditing ? (
+                    <td onClick={() => startCellEdit(row.id, 'category', row.categoryId)}>
+                      {isEditingCell(row.id, 'category') ? (
                         <select
                           className="input"
                           aria-label="Edit record category"
-                          value={recordDraft!.categoryId}
+                          autoFocus
+                          value={cellDraft}
                           onChange={(e) =>
-                            handleCategorySelectChange(e.target.value, dispatch, (categoryId) =>
-                              setRecordDraft((d) => (d ? { ...d, categoryId } : d))
-                            )
+                            handleCategorySelectChange(e.target.value, dispatch, (categoryId) => {
+                              dispatch({
+                                type: 'UPDATE_BUDGET_TRANSACTION',
+                                id: row.id,
+                                patch: { categoryId },
+                              })
+                              dispatch({
+                                type: 'UPSERT_CATEGORY_MAPPING',
+                                description: row.description,
+                                categoryId,
+                              })
+                              setEditingCell(null)
+                              setCellDraft('')
+                            })
                           }
                         >
                           {categories.map((cat) => (
@@ -470,100 +633,54 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                         <span className="tag tag-neutral">{categoriesById.get(row.categoryId) ?? row.categoryId}</span>
                       )}
                     </td>
-                    <td>
-                      {isEditing ? (
+                    <td onClick={() => startCellEdit(row.id, 'account', row.accountName ?? '')}>
+                      {isEditingCell(row.id, 'account') ? (
                         <input
                           type="text"
                           className="input"
                           aria-label="Edit record account"
-                          value={recordDraft!.accountName}
-                          onChange={(e) =>
-                            setRecordDraft((d) => (d ? { ...d, accountName: e.target.value } : d))
-                          }
+                          autoFocus
+                          value={cellDraft}
+                          onChange={(e) => setCellDraft(e.target.value)}
+                          onKeyDown={handleCellInputKeyDown}
+                          onBlur={() => handleCellInputBlur(row.id, 'account')}
                         />
                       ) : (
                         row.accountName || '—'
                       )}
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {isEditing ? (
+                    <td style={{ textAlign: 'right' }} onClick={() => startCellEdit(row.id, 'amount', String(row.amount))}>
+                      {isEditingCell(row.id, 'amount') ? (
                         <input
                           type="number"
                           className="input"
                           aria-label="Edit record amount"
-                          value={recordDraft!.amount}
-                          onChange={(e) =>
-                            setRecordDraft((d) => (d ? { ...d, amount: e.target.value } : d))
-                          }
+                          autoFocus
+                          value={cellDraft}
+                          onChange={(e) => setCellDraft(e.target.value)}
+                          onKeyDown={handleCellInputKeyDown}
+                          onBlur={() => handleCellInputBlur(row.id, 'amount')}
                         />
                       ) : (
                         fmtUSD(row.amount)
                       )}
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {isEditing ? (
-                        <button
-                          type="button"
-                          style={textBtnAccent}
-                          onClick={() => {
-                            dispatch({
-                              type: 'UPDATE_BUDGET_TRANSACTION',
-                              id: row.id,
-                              patch: {
-                                date: recordDraft!.date,
-                                description: recordDraft!.description,
-                                categoryId: recordDraft!.categoryId,
-                                accountName: recordDraft!.accountName.trim() || undefined,
-                                amount: parseFloat(recordDraft!.amount) || 0,
-                              },
-                            })
-                            dispatch({
-                              type: 'UPSERT_CATEGORY_MAPPING',
-                              description: recordDraft!.description,
-                              categoryId: recordDraft!.categoryId,
-                            })
-                            setRecordDraft(null)
-                          }}
-                        >
-                          Done
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            style={{ ...iconBtn, color: 'var(--color-accent)', marginRight: 'var(--space-2)' }}
-                            aria-label="Edit record"
-                            title="Edit record"
-                            onClick={() =>
-                              setRecordDraft({
-                                id: row.id,
-                                date: row.date,
-                                description: row.description,
-                                categoryId: row.categoryId,
-                                accountName: row.accountName ?? '',
-                                amount: String(row.amount),
-                              })
-                            }
-                          >
-                            <PencilIcon />
-                          </button>
-                          <button
-                            type="button"
-                            style={{ ...iconBtn, color: LOSS_COLOR }}
-                            aria-label="Delete record"
-                            title="Delete record"
-                            onClick={() => {
-                              if (
-                                window.confirm(`Delete "${row.description}"? This cannot be undone.`)
-                              ) {
-                                dispatch({ type: 'DELETE_BUDGET_TRANSACTION', id: row.id })
-                              }
-                            }}
-                          >
-                            <TrashIcon />
-                          </button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        style={{ ...iconBtn, color: LOSS_COLOR }}
+                        aria-label="Delete record"
+                        title="Delete record"
+                        onClick={() => {
+                          if (
+                            window.confirm(`Delete "${row.description}"? This cannot be undone.`)
+                          ) {
+                            dispatch({ type: 'DELETE_BUDGET_TRANSACTION', id: row.id })
+                          }
+                        }}
+                      >
+                        <TrashIcon />
+                      </button>
                     </td>
                   </tr>
                 )
@@ -573,12 +690,45 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                   Total
                 </td>
                 <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
-                  {fmtUSD(sortedRecords.reduce((sum, r) => sum + r.amount, 0))}
+                  {fmtUSD(searchedRecords.reduce((sum, r) => sum + r.amount, 0))}
                 </td>
                 <td style={{ borderTop: '2px solid var(--color-divider)' }}></td>
               </tr>
             </tbody>
           </table>
+        )}
+
+        {recPaginationActive && (
+          <div
+            data-testid="records-pagination"
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: 'var(--space-3)',
+              marginTop: 'var(--space-3)',
+            }}
+          >
+            <button
+              type="button"
+              className="btn"
+              disabled={recPage === 0}
+              onClick={() => setRecPage((p) => Math.max(0, p - 1))}
+            >
+              Prev
+            </button>
+            <span className="text-muted" style={{ fontSize: '12px' }}>
+              Page {recPage + 1} of {recPageCount}
+            </span>
+            <button
+              type="button"
+              className="btn"
+              disabled={recPage >= recPageCount - 1}
+              onClick={() => setRecPage((p) => Math.min(recPageCount - 1, p + 1))}
+            >
+              Next
+            </button>
+          </div>
         )}
 
         <div

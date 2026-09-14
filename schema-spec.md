@@ -275,7 +275,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'`/`'budget'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 
-**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedMonth`/`selectedYear` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions`/`categories`/`categoryMappings` (see next section) ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. `state.categories` is the source of truth for the category list (not derived) — see `## Category` above.
+**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedYear`/Spend-records `recordSearch`/`recSortBy`/`recSortDir`/`recPage`/`editingCell`/`cellDraft` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions`/`categories`/`categoryMappings` (see next section) ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. `state.categories` is the source of truth for the category list (not derived) — see `## Category` above.
 
 ## Persistence envelope
 

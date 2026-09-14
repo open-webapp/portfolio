@@ -56,13 +56,13 @@ function makeTransaction(overrides: Partial<BudgetTransaction> = {}): BudgetTran
 }
 
 describe('BudgetPage', () => {
-  it('renders 4 summary cards with correct labels and values at default monthly period', () => {
+  it('renders 4 summary cards with correct labels and values at default yearly period', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-03-15T00:00:00'))
     const state: AppState = defaultState({
       budgetIncomeMonthly: 5000,
-      budgetIncomeYearly: 1200, // 100/mo
-      budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' }), makeExpense({ amount: 2400, frequency: 'yearly' })], // 200/mo -> total 1200
+      budgetIncomeYearly: 1200,
+      budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' }), makeExpense({ amount: 2400, frequency: 'yearly' })],
       budgetTransactions: [
         makeTransaction({ date: '2025-03-05', categoryId: 'cat-housing', amount: 300 }),
         makeTransaction({ date: '2025-03-20', categoryId: 'cat-housing', amount: 150 }),
@@ -75,47 +75,47 @@ describe('BudgetPage', () => {
     expect(cards.length).toBe(4)
 
     expect(within(summary).getByText('Income')).toBeTruthy()
-    // income: 5000 + 1200/12 = 5100
-    expect(within(summary).getByText('$5,100.00')).toBeTruthy()
+    // income: 5000*12 + 1200 = 61200
+    expect(within(summary).getByText('$61,200.00')).toBeTruthy()
 
-    expect(within(summary).getByText('Budgeted (Monthly)')).toBeTruthy()
-    // expenses: 1000 + 2400/12 = 1200
-    expect(within(summary).getByText('$1,200.00')).toBeTruthy()
+    expect(within(summary).getByText('Budgeted (Yearly)')).toBeTruthy()
+    // expenses: 1000*12 + 2400 = 14400
+    expect(within(summary).getByText('$14,400.00')).toBeTruthy()
 
-    expect(within(summary).getByText('Actual spend (March 2025)')).toBeTruthy()
-    // actual: 300 + 150 = 450
+    expect(within(summary).getByText('Actual spend (2025)')).toBeTruthy()
+    // actual: 300 + 150 = 450 (both March 2025, within selected year 2025)
     expect(within(summary).getByText('$450.00')).toBeTruthy()
 
     expect(within(summary).getByText('Variance')).toBeTruthy()
-    // variance: 1200 - 450 = 750
-    expect(within(summary).getByText('$750.00')).toBeTruthy()
+    // variance: 14400 - 450 = 13950
+    expect(within(summary).getByText('$13,950.00')).toBeTruthy()
 
     vi.useRealTimers()
   })
 
-  it('toggling to Yearly recomputes summary values per yearly formulas', () => {
+  it('toggling to Monthly recomputes summary values per monthly formulas', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-03-15T00:00:00'))
     const state: AppState = defaultState({
       budgetIncomeMonthly: 5000,
       budgetIncomeYearly: 1200,
       budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' }), makeExpense({ amount: 2400, frequency: 'yearly' })],
-      budgetTransactions: [makeTransaction({ date: '2025-06-01', categoryId: 'cat-housing', amount: 500 })],
+      budgetTransactions: [makeTransaction({ date: '2025-03-06', categoryId: 'cat-housing', amount: 500 })],
     })
 
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
 
-    fireEvent.click(within(container.querySelector('.seg')!).getByText('Yearly'))
+    fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
     const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
 
-    // income: 5000*12 + 1200 = 61200
-    expect(within(summary).getByText('$61,200.00')).toBeTruthy()
-    // expenses: 1000*12 + 2400 = 14400
-    expect(within(summary).getByText('$14,400.00')).toBeTruthy()
-    // actual: 500 (transaction falls within 2025)
+    // income: 5000 + 1200/12 = 5100
+    expect(within(summary).getByText('$5,100.00')).toBeTruthy()
+    // expenses: 1000 + 2400/12 = 1200
+    expect(within(summary).getByText('$1,200.00')).toBeTruthy()
+    // actual: 500 (transaction falls within March 2025, the current month)
     expect(within(summary).getByText('$500.00')).toBeTruthy()
-    // variance: 14400 - 500 = 13900
-    expect(within(summary).getByText('$13,900.00')).toBeTruthy()
+    // variance: 1200 - 500 = 700
+    expect(within(summary).getByText('$700.00')).toBeTruthy()
 
     vi.useRealTimers()
   })
@@ -128,13 +128,13 @@ describe('BudgetPage', () => {
     expect(seg).toBeTruthy()
     const radios = seg!.querySelectorAll('input[type="radio"]')
     expect(radios.length).toBe(2)
-    expect((radios[0] as HTMLInputElement).checked).toBe(true) // Monthly is default
-    expect((radios[1] as HTMLInputElement).checked).toBe(false)
+    expect((radios[0] as HTMLInputElement).checked).toBe(false)
+    expect((radios[1] as HTMLInputElement).checked).toBe(true) // Yearly is default
 
-    fireEvent.click(within(seg!).getByText('Yearly'))
+    fireEvent.click(within(seg!).getByText('Monthly'))
     const radiosAfter = seg!.querySelectorAll('input[type="radio"]')
-    expect((radiosAfter[0] as HTMLInputElement).checked).toBe(false)
-    expect((radiosAfter[1] as HTMLInputElement).checked).toBe(true)
+    expect((radiosAfter[0] as HTMLInputElement).checked).toBe(true)
+    expect((radiosAfter[1] as HTMLInputElement).checked).toBe(false)
   })
 
   it('shows GAIN_COLOR for the Variance card when budgeted >= actual', () => {
@@ -145,9 +145,9 @@ describe('BudgetPage', () => {
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
     const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
     const varianceLabel = within(summary).getByText('Variance')
-    // variance: 1000 - 0 = 1000
+    // default period is Yearly: variance = 1000*12 - 0 = 12000
     const varianceValue = varianceLabel.nextElementSibling as HTMLElement
-    expect(varianceValue.textContent).toBe('$1,000.00')
+    expect(varianceValue.textContent).toBe('$12,000.00')
     expect(varianceValue.style.color).toBe(hexToRgb(GAIN_COLOR))
   })
 
@@ -159,6 +159,7 @@ describe('BudgetPage', () => {
       budgetTransactions: [makeTransaction({ date: `${currentMonth}-05`, categoryId: 'cat-housing', amount: 500 })],
     })
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+    fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
     const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
     // variance: 100 - 500 = -400
     const varianceValue = within(summary).getByText('-$400.00')
@@ -203,7 +204,7 @@ describe('BudgetPage', () => {
     it('sorts by amount (descending) via the Amount column header', () => {
       const state: AppState = defaultState({ budgetExpenses: fixture })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      fireEvent.click(screen.getByLabelText(/Sort by amount/))
+      fireEvent.click(screen.getAllByLabelText(/Sort by amount/)[0])
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
     })
 
@@ -211,7 +212,7 @@ describe('BudgetPage', () => {
       const state: AppState = defaultState({ budgetExpenses: fixture })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
-      fireEvent.click(screen.getByLabelText('Sort by category'))
+      fireEvent.click(screen.getAllByLabelText('Sort by category')[0])
       expect(getBodyRowNames(container)).toEqual(['Zeta', 'Mid', 'Alpha'])
     })
   })
@@ -430,6 +431,7 @@ describe('BudgetPage', () => {
       )
 
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
       const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
       const budgetedLabel = within(summary).getByText('Budgeted (Monthly)')
       const budgetedValue = budgetedLabel.nextElementSibling as HTMLElement
@@ -449,6 +451,7 @@ describe('BudgetPage', () => {
       })
 
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
       const headerCells = Array.from(container.querySelectorAll('thead th')).map((th) => th.textContent)
       expect(headerCells).toContain('Actual')
       expect(headerCells).toContain('Variance')
@@ -488,15 +491,11 @@ describe('BudgetPage', () => {
       expect(rule).toMatch(/z-index:\s*\d+/)
     })
 
-    it('default month/year picker value matches the real current month/year', () => {
+    it('default year picker value matches the real current year (Yearly is the default period)', () => {
       vi.useFakeTimers()
       vi.setSystemTime(new Date('2025-07-22T00:00:00'))
 
       render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
-      const monthSelect = screen.getByLabelText('Select month') as HTMLSelectElement
-      expect(monthSelect.value).toBe('2025-07')
-
-      fireEvent.click(within(document.querySelector('.seg')!).getByText('Yearly'))
       const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
       expect(yearSelect.value).toBe('2025')
 
@@ -533,25 +532,27 @@ describe('BudgetPage', () => {
       })
     }
 
-    it('default view shows fmtUSD(totalIncome) and no input', () => {
+    it('default view shows fmtUSD(totalIncome) for the default Yearly period and no input', () => {
       render(<BudgetPage state={incomeState()} dispatch={vi.fn()} />)
-      expect(screen.getAllByText('$5,100.00').length).toBeGreaterThan(0)
+      // income: 5000*12 + 1200 = 61200 (Yearly is the default period)
+      expect(screen.getAllByText('$61,200.00').length).toBeGreaterThan(0)
       expect(screen.queryByLabelText('Income amount')).toBeFalsy()
     })
 
-    it('clicking Edit income shows an autofocused input prefilled with the current-period amount', () => {
+    it('clicking Edit income shows an autofocused input prefilled with the current-period (Yearly) amount', () => {
       render(<BudgetPage state={incomeState()} dispatch={vi.fn()} />)
       fireEvent.click(screen.getByLabelText('Edit income'))
 
       const input = screen.getByLabelText('Income amount') as HTMLInputElement
       expect(input).toBeTruthy()
-      expect(input.value).toBe('5000')
+      expect(input.value).toBe('1200')
       expect(document.activeElement).toBe(input)
     })
 
-    it('typing a new amount and pressing Enter dispatches SET_BUDGET_INCOME_FOR_PERIOD and returns to view mode', () => {
+    it('typing a new amount and pressing Enter dispatches SET_BUDGET_INCOME_FOR_PERIOD for the current (Monthly) period and returns to view mode', () => {
       const dispatch = vi.fn()
       render(<BudgetPage state={incomeState()} dispatch={dispatch} />)
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
       fireEvent.click(screen.getByLabelText('Edit income'))
 
       const input = screen.getByLabelText('Income amount') as HTMLInputElement
@@ -568,17 +569,19 @@ describe('BudgetPage', () => {
 
     it('toggling Monthly/Yearly while not editing changes the displayed total via the existing formula', () => {
       render(<BudgetPage state={incomeState()} dispatch={vi.fn()} />)
-      expect(screen.getAllByText('$5,100.00').length).toBeGreaterThan(0)
-
-      fireEvent.click(within(document.querySelector('.seg')!).getByText('Yearly'))
-
-      // income: 5000*12 + 1200 = 61200
+      // income: 5000*12 + 1200 = 61200 (default Yearly)
       expect(screen.getAllByText('$61,200.00').length).toBeGreaterThan(0)
+
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
+
+      // income: 5000 + 1200/12 = 5100
+      expect(screen.getAllByText('$5,100.00').length).toBeGreaterThan(0)
     })
 
-    it('pressing Enter with an empty/invalid amount dispatches amount 0', () => {
+    it('pressing Enter with an empty/invalid amount dispatches amount 0 for the current (Monthly) period', () => {
       const dispatch = vi.fn()
       render(<BudgetPage state={incomeState()} dispatch={dispatch} />)
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
       fireEvent.click(screen.getByLabelText('Edit income'))
 
       const input = screen.getByLabelText('Income amount') as HTMLInputElement
@@ -605,25 +608,37 @@ describe('BudgetPage', () => {
       })
     }
 
-    function selectMarch2025(container: HTMLElement) {
-      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
-      void container
+    function selectYear2025() {
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
     }
 
-    it('records table shows only transactions matching selectedMonth/selectedYear', () => {
+    it('Monthly mode shows only transactions from the current calendar month', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2025-03-15T00:00:00'))
       const state = recordsState()
-      const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      selectMarch2025(container)
+      render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
 
       expect(screen.getByText('Groceries')).toBeTruthy()
       expect(screen.getByText('Rent payment')).toBeTruthy()
       expect(screen.queryByText('Outside period')).toBeFalsy()
+      vi.useRealTimers()
+    })
+
+    it('Yearly mode with a selected year shows all transactions in that year, across months', () => {
+      const state = recordsState()
+      render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      selectYear2025()
+
+      expect(screen.getByText('Groceries')).toBeTruthy()
+      expect(screen.getByText('Rent payment')).toBeTruthy()
+      expect(screen.getByText('Outside period')).toBeTruthy()
     })
 
     it('category tags on the records table resolve to the category name via categoriesById, not the raw id', () => {
       const state = recordsState()
-      const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      selectMarch2025(container)
+      render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      selectYear2025()
 
       const row = screen.getByText('Groceries').closest('tr')!
       expect(within(row).getByText('Food')).toBeTruthy()
@@ -646,50 +661,67 @@ describe('BudgetPage', () => {
       expect(recordsIdx).toBeLessThan(expensesIdx)
     })
 
-    it('the Spend records month filter does not affect the page-level Actual spend summary', () => {
-      vi.useFakeTimers()
-      vi.setSystemTime(new Date('2025-03-15T00:00:00'))
+    it('the Spend records table and the page-level Actual spend card share the same period/selectedYear scoping', () => {
+      // Spend Records no longer has its own independent Month filter — it now
+      // reads the same period/selectedYear state as the Actual spend card, so
+      // changing the Year selector changes both together.
       const state = recordsState()
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
-      const before = within(summary).getByText(/Actual spend/).textContent
 
-      // Selecting a different month in the Spend records filter must not
-      // change the page-level Actual spend card (that always tracks the
-      // current month, independent of this table's filter).
-      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-04' } })
-
-      const after = within(summary).getByText(/Actual spend/).textContent
-      expect(after).toBe(before)
-      vi.useRealTimers()
+      selectYear2025()
+      const actualCardText = within(summary).getByText(/Actual spend/).textContent
+      expect(actualCardText).toContain('2025')
+      // actual: 60 + 1000 + 25 = 1085 for all of 2025
+      expect(within(summary).getByText('$1,085.00')).toBeTruthy()
+      expect(screen.getByText('Outside period')).toBeTruthy()
     })
 
-    it('editing a row and clicking Done dispatches UPDATE_BUDGET_TRANSACTION then UPSERT_CATEGORY_MAPPING', () => {
+    it('editing the Description cell commits a single-field UPDATE_BUDGET_TRANSACTION patch on blur; no UPSERT_CATEGORY_MAPPING', () => {
       const state = recordsState()
       const dispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} />)
-      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+      selectYear2025()
+
+      fireEvent.click(screen.getByText('Groceries'))
+      const descInput = screen.getByLabelText('Edit record description') as HTMLInputElement
+      expect(descInput.value).toBe('Groceries')
+
+      fireEvent.change(descInput, { target: { value: 'Groceries (updated)' } })
+      fireEvent.blur(descInput)
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_TRANSACTION',
+        id: 't1',
+        patch: { description: 'Groceries (updated)' },
+      })
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPSERT_CATEGORY_MAPPING' }))
+      expect(screen.queryByLabelText('Edit record description')).toBeFalsy()
+    })
+
+    it('the Category cell <select> onChange dispatches both UPDATE_BUDGET_TRANSACTION and UPSERT_CATEGORY_MAPPING', () => {
+      const state = recordsState()
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} />)
+      selectYear2025()
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByLabelText('Edit record'))
+      fireEvent.click(within(row).getByText('Food'))
 
-      const descInput = screen.getByLabelText('Edit record description') as HTMLInputElement
-      fireEvent.change(descInput, { target: { value: 'Groceries (updated)' } })
-      const amountInput = screen.getByLabelText('Edit record amount') as HTMLInputElement
-      fireEvent.change(amountInput, { target: { value: '75' } })
-
-      fireEvent.click(screen.getByText('Done'))
+      const categorySelect = screen.getByLabelText('Edit record category') as HTMLSelectElement
+      fireEvent.change(categorySelect, { target: { value: 'cat-housing' } })
 
       expect(dispatch).toHaveBeenNthCalledWith(1, {
         type: 'UPDATE_BUDGET_TRANSACTION',
         id: 't1',
-        patch: { date: '2025-03-05', description: 'Groceries (updated)', categoryId: 'cat-food', amount: 75 },
+        patch: { categoryId: 'cat-housing' },
       })
       expect(dispatch).toHaveBeenNthCalledWith(2, {
         type: 'UPSERT_CATEGORY_MAPPING',
-        description: 'Groceries (updated)',
-        categoryId: 'cat-food',
+        description: 'Groceries',
+        categoryId: 'cat-housing',
       })
+      expect(screen.queryByLabelText('Edit record category')).toBeFalsy()
     })
 
     describe('delete', () => {
@@ -698,7 +730,7 @@ describe('BudgetPage', () => {
         const dispatch = vi.fn()
         vi.spyOn(window, 'confirm').mockReturnValue(false)
         render(<BudgetPage state={state} dispatch={dispatch} />)
-        fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+        selectYear2025()
 
         const row = screen.getByText('Groceries').closest('tr')!
         fireEvent.click(within(row).getByLabelText('Delete record'))
@@ -712,7 +744,7 @@ describe('BudgetPage', () => {
         const dispatch = vi.fn()
         vi.spyOn(window, 'confirm').mockReturnValue(true)
         render(<BudgetPage state={state} dispatch={dispatch} />)
-        fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+        selectYear2025()
 
         const row = screen.getByText('Groceries').closest('tr')!
         fireEvent.click(within(row).getByLabelText('Delete record'))
@@ -787,7 +819,9 @@ describe('BudgetPage', () => {
         expect(screen.getByText('Amount must be greater than 0.')).toBeTruthy()
       })
 
-      it('a record added for a month other than the currently selected Month filter switches the filter so the record is visible', () => {
+      it('a record added for a year other than the currently selected Year filter switches the filter so the record is visible', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2025-03-15T00:00:00'))
         let state: AppState = defaultState({
           budgetTransactions: [makeTransaction({ date: '2025-03-10', description: 'Old rent', categoryId: 'cat-housing', amount: 900 })],
         })
@@ -796,8 +830,8 @@ describe('BudgetPage', () => {
         }
         const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} />)
 
-        // Default Month filter is the latest existing month (2025-03); add a record for a later month.
-        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-07-15' } })
+        // Default Year filter is 2025 (only existing year, matching the current year too); add a record for a later year.
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2027-07-15' } })
         fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'New rent' } })
         fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '950' } })
         fireEvent.click(screen.getByText('Add Record'))
@@ -806,9 +840,10 @@ describe('BudgetPage', () => {
 
         expect(state.budgetTransactions.length).toBe(2)
         expect(screen.getByText('New rent')).toBeTruthy()
+        vi.useRealTimers()
       })
 
-      it('a record added for the current month appears in the Spend records table (end-to-end with real reducer)', () => {
+      it('a record added for the current year appears in the Spend records table (end-to-end with real reducer)', () => {
         let state: AppState = defaultState()
         const dispatch = (action: any) => {
           state = appReducer(state, action)
@@ -1148,13 +1183,13 @@ VERSION:102
         ],
       })
       render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
       const row = screen.getByText('Groceries').closest('tr')!
       expect(within(row).getByText('—')).toBeTruthy()
     })
 
-    it('inline edit round-trip: pencil -> type Account -> Done dispatches UPDATE_BUDGET_TRANSACTION then UPSERT_CATEGORY_MAPPING with the new accountName', () => {
+    it('per-cell edit round-trip: click Account cell -> type -> blur dispatches a single UPDATE_BUDGET_TRANSACTION with the new accountName', () => {
       const state: AppState = defaultState({
         budgetTransactions: [
           makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60 }),
@@ -1162,32 +1197,21 @@ VERSION:102
       })
       const dispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} />)
-      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByLabelText('Edit record'))
+      fireEvent.click(within(row).getByText('—'))
 
       const accountInput = screen.getByLabelText('Edit record account') as HTMLInputElement
       fireEvent.change(accountInput, { target: { value: 'Checking' } })
+      fireEvent.blur(accountInput)
 
-      fireEvent.click(screen.getByText('Done'))
-
-      expect(dispatch).toHaveBeenNthCalledWith(1, {
+      expect(dispatch).toHaveBeenCalledWith({
         type: 'UPDATE_BUDGET_TRANSACTION',
         id: 't1',
-        patch: {
-          date: '2025-03-05',
-          description: 'Groceries',
-          categoryId: 'cat-food',
-          accountName: 'Checking',
-          amount: 60,
-        },
+        patch: { accountName: 'Checking' },
       })
-      expect(dispatch).toHaveBeenNthCalledWith(2, {
-        type: 'UPSERT_CATEGORY_MAPPING',
-        description: 'Groceries',
-        categoryId: 'cat-food',
-      })
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPSERT_CATEGORY_MAPPING' }))
     })
 
     it('the Spend records total row leading cell has colSpan={4}', () => {
@@ -1197,11 +1221,251 @@ VERSION:102
         ],
       })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
       const totalRow = container.querySelector('[data-testid="records-total-row"]')!
       const leadCell = totalRow.querySelector('td')!
       expect(leadCell.getAttribute('colspan')).toBe('4')
+    })
+  })
+
+  describe('Spend records search, sort, pagination, and per-cell Escape revert', () => {
+    function scopedRecordsState(overrides: Partial<AppState> = {}): AppState {
+      return defaultState({
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60, accountName: 'Checking' }),
+          makeTransaction({ id: 't2', date: '2025-03-20', description: 'Rent payment', categoryId: 'cat-housing', amount: 1000, accountName: 'Savings' }),
+          makeTransaction({ id: 't3', date: '2025-03-12', description: 'Zoo tickets', categoryId: 'cat-zoo', amount: 40, accountName: 'Checking' }),
+        ],
+        ...overrides,
+      })
+    }
+
+    function renderInYear2025(overrides: Partial<AppState> = {}) {
+      const state = scopedRecordsState(overrides)
+      const utils = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+      return utils
+    }
+
+    describe('search', () => {
+      it('filters by description, case-insensitively', () => {
+        renderInYear2025()
+
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'groc' } })
+        expect(screen.getByText('Groceries')).toBeTruthy()
+        expect(screen.queryByText('Rent payment')).toBeFalsy()
+        expect(screen.queryByText('Zoo tickets')).toBeFalsy()
+      })
+
+      it('matches the resolved category name, not the raw category id', () => {
+        renderInYear2025()
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'ZOO' } })
+        expect(screen.getByText('Zoo tickets')).toBeTruthy()
+        expect(screen.queryByText('Groceries')).toBeFalsy()
+      })
+
+      it('matches the account name, case-insensitively', () => {
+        renderInYear2025()
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'savings' } })
+        expect(screen.getByText('Rent payment')).toBeTruthy()
+        expect(screen.queryByText('Groceries')).toBeFalsy()
+      })
+
+      it('shows the empty-state copy when nothing matches (the table, including its total row, is not rendered)', () => {
+        renderInYear2025()
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'nonexistent-xyz' } })
+        expect(screen.getByText('No records for this period.')).toBeTruthy()
+        expect(screen.queryByTestId('records-total-row')).toBeFalsy()
+      })
+    })
+
+    describe('sorting', () => {
+      function recordsTable() {
+        return document.querySelectorAll('table')[0]
+      }
+      function bodyRows() {
+        return Array.from(recordsTable().querySelectorAll('tbody tr:not([data-testid="records-total-row"])'))
+      }
+
+      it('defaults to Date descending, and reverses on repeat click', () => {
+        renderInYear2025()
+        expect(bodyRows().map((tr) => tr.querySelector('td')!.textContent)).toEqual([
+          '2025-03-20',
+          '2025-03-12',
+          '2025-03-05',
+        ])
+
+        fireEvent.click(screen.getByLabelText('Sort by date'))
+        expect(bodyRows().map((tr) => tr.querySelector('td')!.textContent)).toEqual([
+          '2025-03-05',
+          '2025-03-12',
+          '2025-03-20',
+        ])
+        expect(screen.getByLabelText('Sort by date').querySelector('svg')).toBeTruthy()
+      })
+
+      it('sorts by Description ascending, then reverses on repeat click', () => {
+        renderInYear2025()
+        fireEvent.click(screen.getByLabelText('Sort by description'))
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[1].textContent)).toEqual([
+          'Groceries',
+          'Rent payment',
+          'Zoo tickets',
+        ])
+
+        fireEvent.click(screen.getByLabelText('Sort by description'))
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[1].textContent)).toEqual([
+          'Zoo tickets',
+          'Rent payment',
+          'Groceries',
+        ])
+      })
+
+      it('sorts by Category using the resolved category name, not the raw category id', () => {
+        renderInYear2025()
+        fireEvent.click(screen.getAllByLabelText('Sort by category')[0])
+        // Resolved names: Food, Housing, Zoo -> ascending alphabetically.
+        // (raw ids cat-food/cat-housing/cat-zoo would sort the same here by
+        // coincidence, so this also checks against the id ordering below.)
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[2].textContent)).toEqual(['Food', 'Housing', 'Zoo'])
+      })
+
+      it('sorts by Account ascending, then reverses on repeat click', () => {
+        renderInYear2025()
+        fireEvent.click(screen.getByLabelText('Sort by account'))
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[3].textContent)).toEqual([
+          'Checking',
+          'Checking',
+          'Savings',
+        ])
+
+        fireEvent.click(screen.getByLabelText('Sort by account'))
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[3].textContent)).toEqual([
+          'Savings',
+          'Checking',
+          'Checking',
+        ])
+      })
+
+      it('sorts by Amount and shows a chevron on the active column header', () => {
+        renderInYear2025()
+        const amountHeader = screen.getAllByLabelText(/Sort by amount/)[0]
+        fireEvent.click(amountHeader)
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[4].textContent)).toEqual([
+          '$40.00',
+          '$60.00',
+          '$1,000.00',
+        ])
+        expect(amountHeader.querySelector('svg')).toBeTruthy()
+
+        fireEvent.click(amountHeader)
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[4].textContent)).toEqual([
+          '$1,000.00',
+          '$60.00',
+          '$40.00',
+        ])
+      })
+    })
+
+    describe('pagination', () => {
+      function manyTransactionsState(count: number): AppState {
+        const txs: BudgetTransaction[] = Array.from({ length: count }, (_, i) =>
+          makeTransaction({
+            id: `tx-${i}`,
+            date: `2025-01-${String((i % 28) + 1).padStart(2, '0')}`,
+            description: `Item ${String(i).padStart(4, '0')}`,
+            categoryId: 'cat-food',
+            amount: 10 + i,
+          })
+        )
+        return defaultState({ budgetTransactions: txs })
+      }
+
+      it('is hidden when the filtered row count is <= 500', () => {
+        const state = manyTransactionsState(500)
+        render(<BudgetPage state={state} dispatch={vi.fn()} />)
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+        expect(screen.queryByTestId('records-pagination')).toBeFalsy()
+      })
+
+      it('appears when the filtered row count exceeds 500, with Prev disabled on page 1', () => {
+        const state = manyTransactionsState(501)
+        render(<BudgetPage state={state} dispatch={vi.fn()} />)
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        const pagination = screen.getByTestId('records-pagination')
+        expect(pagination).toBeTruthy()
+        expect(within(pagination).getByText('Page 1 of 6')).toBeTruthy()
+        expect((within(pagination).getByText('Prev') as HTMLButtonElement).disabled).toBe(true)
+        expect((within(pagination).getByText('Next') as HTMLButtonElement).disabled).toBe(false)
+      })
+
+      it('clicking Next advances the slice and disables Next on the last page', () => {
+        const state = manyTransactionsState(501)
+        render(<BudgetPage state={state} dispatch={vi.fn()} />)
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        const pagination = screen.getByTestId('records-pagination')
+        fireEvent.click(within(pagination).getByText('Next'))
+        expect(within(pagination).getByText('Page 2 of 6')).toBeTruthy()
+
+        for (let i = 0; i < 4; i++) {
+          fireEvent.click(within(pagination).getByText('Next'))
+        }
+        expect(within(pagination).getByText('Page 6 of 6')).toBeTruthy()
+        expect((within(pagination).getByText('Next') as HTMLButtonElement).disabled).toBe(true)
+      })
+
+      it('changing the search text resets to page 1', () => {
+        const state = manyTransactionsState(501)
+        render(<BudgetPage state={state} dispatch={vi.fn()} />)
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        const pagination = screen.getByTestId('records-pagination')
+        fireEvent.click(within(pagination).getByText('Next'))
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 6')).toBeTruthy()
+
+        // 'Item' matches every row, so the filtered set still exceeds 500 and pagination stays visible.
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'Item' } })
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 6')).toBeTruthy()
+      })
+
+      it('switching the selected year resets to page 1', () => {
+        const state = manyTransactionsState(501)
+        render(<BudgetPage state={state} dispatch={vi.fn()} />)
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        const pagination = screen.getByTestId('records-pagination')
+        fireEvent.click(within(pagination).getByText('Next'))
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 6')).toBeTruthy()
+
+        const currentYear = String(new Date().getFullYear())
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: currentYear } })
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 6')).toBeTruthy()
+      })
+    })
+
+    describe('per-cell Escape revert', () => {
+      it('pressing Escape on the Amount cell reverts without dispatching', () => {
+        const dispatch = vi.fn()
+        const state = scopedRecordsState()
+        render(<BudgetPage state={state} dispatch={dispatch} />)
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        const row = screen.getByText('Groceries').closest('tr')!
+        fireEvent.click(within(row).getByText('$60.00'))
+
+        const amountInput = screen.getByLabelText('Edit record amount') as HTMLInputElement
+        expect(amountInput.value).toBe('60')
+        fireEvent.change(amountInput, { target: { value: '999' } })
+        fireEvent.keyDown(amountInput, { key: 'Escape' })
+
+        expect(dispatch).not.toHaveBeenCalled()
+        expect(within(row).getByText('$60.00')).toBeTruthy()
+        expect(screen.queryByLabelText('Edit record amount')).toBeFalsy()
+      })
     })
   })
 
@@ -1220,6 +1484,7 @@ VERSION:102
       })
 
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
       const fill = container.querySelector('[data-testid="category-bar-fill"]') as HTMLElement
       expect(fill.style.backgroundColor).toBe(hexToRgb(LOSS_COLOR))
       expect(screen.getByText(`Over by ${fmtUSD(50)}`)).toBeTruthy()
@@ -1234,6 +1499,7 @@ VERSION:102
       })
 
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
       const fill = container.querySelector('[data-testid="category-bar-fill"]') as HTMLElement
       expect(fill.style.backgroundColor).toBe(hexToRgb('#3b6ef6'))
 
@@ -1282,11 +1548,11 @@ VERSION:102
         budgetTransactions: [makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food' })],
       })
       render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
       fireEvent.click(screen.getByLabelText('Edit expense'))
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByLabelText('Edit record'))
+      fireEvent.click(within(row).getByText('Food'))
       fireEvent.click(screen.getByText('Add Expense'))
 
       const selects: HTMLSelectElement[] = [
