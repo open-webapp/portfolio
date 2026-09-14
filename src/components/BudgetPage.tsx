@@ -43,7 +43,42 @@ const textBtnAccent: CSSProperties = {
   padding: 0,
 }
 
-const textBtnDanger: CSSProperties = { ...textBtnAccent, color: LOSS_COLOR }
+const iconBtn: CSSProperties = {
+  border: 'none',
+  background: 'none',
+  cursor: 'pointer',
+  padding: '4px',
+  display: 'inline-flex',
+  alignItems: 'center',
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+      <path d="M3 6h18"></path>
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+      <path d="M10 11v6"></path>
+      <path d="M14 11v6"></path>
+    </svg>
+  )
+}
+
+function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="11" height="11">
+      {dir === 'asc' ? <path d="M12 19V5M5 12l7-7 7 7"></path> : <path d="M12 5v14M5 12l7 7 7-7"></path>}
+    </svg>
+  )
+}
 
 /**
  * Budget page: Monthly/Yearly period toggle, income/expense/net summary
@@ -55,6 +90,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly')
   const [filterCategory, setFilterCategory] = useState('__all')
   const [sortBy, setSortBy] = useState<'category' | 'name' | 'amount'>('category')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [showAddExpenseDialog, setShowAddExpenseDialog] = useState(false)
   const [formName, setFormName] = useState('')
   const categories = allBudgetCategories(state.budgetExpenses, state.budgetTransactions)
@@ -121,7 +157,16 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       ? availableMonths.find((m) => m.value === currentMonthValue)?.label ?? currentMonthValue
       : selectedYear
 
-  const rows = visibleExpenses(state.budgetExpenses, filterCategory, sortBy, period)
+  const sortedRows = visibleExpenses(state.budgetExpenses, filterCategory, sortBy, period)
+  const rows = sortDir === 'desc' ? [...sortedRows].reverse() : sortedRows
+  const toggleSort = (field: 'category' | 'name' | 'amount') => {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortDir('asc')
+    }
+  }
   const breakdown = categoryBreakdown(state.budgetExpenses, periodFilteredTransactions, period)
 
   const saveIncomeEdit = () => {
@@ -201,20 +246,22 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       </div>
 
       {period === 'yearly' && (
-        <div className="field" style={{ maxWidth: '220px' }}>
-          <label>Year</label>
-          <select
-            className="input"
-            aria-label="Select year"
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
-          >
-            {availableYears.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div className="field" style={{ maxWidth: '220px' }}>
+            <label>Year</label>
+            <select
+              className="input"
+              aria-label="Select year"
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+            >
+              {availableYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
@@ -246,8 +293,9 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
               <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalIncome)}</div>
               <button
                 type="button"
-                style={textBtnAccent}
+                style={{ ...iconBtn, color: 'var(--color-accent)' }}
                 aria-label="Edit income"
+                title="Edit income"
                 onClick={() => {
                   setIncomeEditAmount(
                     String(period === 'monthly' ? state.budgetIncomeMonthly : state.budgetIncomeYearly)
@@ -255,7 +303,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                   setEditingIncome(true)
                 }}
               >
-                ✎
+                <PencilIcon />
               </button>
             </div>
           )}
@@ -421,7 +469,9 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                         <>
                           <button
                             type="button"
-                            style={{ ...textBtnAccent, marginRight: 'var(--space-3)' }}
+                            style={{ ...iconBtn, color: 'var(--color-accent)', marginRight: 'var(--space-2)' }}
+                            aria-label="Edit record"
+                            title="Edit record"
                             onClick={() =>
                               setRecordDraft({
                                 id: row.id,
@@ -432,11 +482,13 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                               })
                             }
                           >
-                            Edit
+                            <PencilIcon />
                           </button>
                           <button
                             type="button"
-                            style={textBtnDanger}
+                            style={{ ...iconBtn, color: LOSS_COLOR }}
+                            aria-label="Delete record"
+                            title="Delete record"
                             onClick={() => {
                               if (
                                 window.confirm(`Delete "${row.description}"? This cannot be undone.`)
@@ -445,7 +497,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                               }
                             }}
                           >
-                            Delete
+                            <TrashIcon />
                           </button>
                         </>
                       )}
@@ -453,6 +505,15 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                   </tr>
                 )
               })}
+              <tr data-testid="records-total-row">
+                <td colSpan={3} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                  Total
+                </td>
+                <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                  {fmtUSD(sortedRecords.reduce((sum, r) => sum + r.amount, 0))}
+                </td>
+                <td style={{ borderTop: '2px solid var(--color-divider)' }}></td>
+              </tr>
             </tbody>
           </table>
         )}
@@ -672,19 +733,6 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
             ))}
           </select>
         </div>
-        <div className="field">
-          <label>Sort by</label>
-          <select
-            className="input"
-            aria-label="Sort by"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'category' | 'name' | 'amount')}
-          >
-            <option value="category">Category</option>
-            <option value="name">Name</option>
-            <option value="amount">Amount ({period === 'monthly' ? 'Monthly' : 'Yearly'})</option>
-          </select>
-        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -695,10 +743,37 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
         <table className="table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Category</th>
+              <th
+                aria-label="Sort by name"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => toggleSort('name')}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                  Name
+                  {sortBy === 'name' && <SortIcon dir={sortDir} />}
+                </span>
+              </th>
+              <th
+                aria-label="Sort by category"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => toggleSort('category')}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                  Category
+                  {sortBy === 'category' && <SortIcon dir={sortDir} />}
+                </span>
+              </th>
               <th>Frequency</th>
-              <th style={{ textAlign: 'right' }}>Amount ({period === 'monthly' ? 'Monthly' : 'Yearly'})</th>
+              <th
+                aria-label="Sort by amount"
+                style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => toggleSort('amount')}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '2px' }}>
+                  Amount ({period === 'monthly' ? 'Monthly' : 'Yearly'})
+                  {sortBy === 'amount' && <SortIcon dir={sortDir} />}
+                </span>
+              </th>
               <th style={{ textAlign: 'right' }}>Actual</th>
               <th style={{ textAlign: 'right' }}>Variance</th>
               <th style={{ width: '110px' }}></th>
@@ -827,24 +902,28 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                       <>
                         <button
                           type="button"
-                          style={{ ...textBtnAccent, marginRight: 'var(--space-3)' }}
+                          style={{ ...iconBtn, color: 'var(--color-accent)', marginRight: 'var(--space-2)' }}
+                          aria-label="Edit expense"
+                          title="Edit expense"
                           onClick={() => {
                             setEditCategoryDraft(null)
                             setEditingId(row.id)
                           }}
                         >
-                          Edit
+                          <PencilIcon />
                         </button>
                         <button
                           type="button"
-                          style={textBtnDanger}
+                          style={{ ...iconBtn, color: LOSS_COLOR }}
+                          aria-label="Delete expense"
+                          title="Delete expense"
                           onClick={() => {
                             if (window.confirm('Delete this expense? This cannot be undone.')) {
                               dispatch({ type: 'DELETE_BUDGET_EXPENSE', id: row.id })
                             }
                           }}
                         >
-                          Delete
+                          <TrashIcon />
                         </button>
                       </>
                     )}
@@ -852,6 +931,38 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 </tr>
               )
             })}
+            {(() => {
+              const rowsTotalAmount = rows.reduce((sum, r) => sum + toPeriod(r.amount, r.frequency, period), 0)
+              const rowsTotalActual = [...new Set(rows.map((r) => r.category))].reduce(
+                (sum, cat) => sum + (actualByCategoryForPeriod[cat] ?? 0),
+                0
+              )
+              const rowsTotalVariance = rowsTotalAmount - rowsTotalActual
+              return (
+                <tr data-testid="expenses-total-row">
+                  <td colSpan={3} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                    Total
+                  </td>
+                  <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                    {fmtUSD(rowsTotalAmount)}
+                  </td>
+                  <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                    {fmtUSD(rowsTotalActual)}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: 'right',
+                      borderTop: '2px solid var(--color-divider)',
+                      fontWeight: 600,
+                      color: rowsTotalVariance >= 0 ? GAIN_COLOR : LOSS_COLOR,
+                    }}
+                  >
+                    {fmtUSD(rowsTotalVariance)}
+                  </td>
+                  <td style={{ borderTop: '2px solid var(--color-divider)' }}></td>
+                </tr>
+              )
+            })()}
           </tbody>
         </table>
       )}

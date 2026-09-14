@@ -107,11 +107,23 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 |---|---|---|
 | `id` | `string` | `uid('expense')` |
 | `name` | `string` | User-entered, trimmed at creation; edits via `UPDATE_BUDGET_EXPENSE` are not trimmed |
-| `category` | `string` | Free string; not required to be a member of `state.budgetCategories` at read time (e.g. after that category is deleted while an expense elsewhere still references it, though `DELETE_BUDGET_CATEGORY` normally reassigns those to `'Other'` in the same update) |
+| `category` | `string` | Free string; no stored category list exists — every category `<select>` in `BudgetPage` derives its options from `allBudgetCategories(budgetExpenses, budgetTransactions)`, the live union of categories referenced by either collection |
 | `amount` | `number` | In the unit implied by `frequency` — a monthly-frequency expense's `amount` is a monthly dollar figure, a yearly-frequency expense's is a yearly figure |
 | `frequency` | `'monthly' \| 'yearly'` | |
 
 **Derived, never stored** (`src/lib/computations.ts`): `toMonthly(amount, freq)` (`freq === 'yearly' ? amount / 12 : amount`), `toYearly(amount, freq)` (`freq === 'yearly' ? amount : amount * 12`), `toPeriod(amount, freq, period)` (dispatches to one of the above by the caller's selected display period, independent of the expense's own `frequency`).
+
+## BudgetTransaction
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `string` | `uid('budgettx')` |
+| `date` | `string` | `YYYY-MM-DD` |
+| `description` | `string` | Falls back to the transaction's `category` if left blank on manual entry |
+| `category` | `string` | Free string; same derived-category-list caveat as `Expense.category` above |
+| `amount` | `number` | |
+
+**Dedup on import** (`IMPORT_BUDGET_TRANSACTIONS` / `importBudgetTransactions` in `state.ts`): natural key `date|description|category|amount` (raw values, no normalization), checked against existing `budgetTransactions` and against earlier rows already accepted in the same import batch — duplicates are silently dropped.
 
 ## SavedCsvMapping
 
@@ -220,13 +232,16 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 - `SET_MUTUAL_FUND_SYNC_API_KEY`, `RECORD_MUTUAL_FUND_SYNC_RUN`: Alphavantage mutual-fund NAV-sync API key + run result
 
 **Budget**
-- `SET_BUDGET_INCOME_MONTHLY { amount: number }`: Set `budgetIncomeMonthly`, clamped to `>= 0`
-- `SET_BUDGET_INCOME_YEARLY { amount: number }`: Set `budgetIncomeYearly`, clamped to `>= 0`
+- `SET_BUDGET_INCOME_MONTHLY { amount: number }`: Set `budgetIncomeMonthly`, clamped to `>= 0` (unused by `BudgetPage`, which always dispatches `SET_BUDGET_INCOME_FOR_PERIOD` instead)
+- `SET_BUDGET_INCOME_YEARLY { amount: number }`: Set `budgetIncomeYearly`, clamped to `>= 0` (same caveat)
+- `SET_BUDGET_INCOME_FOR_PERIOD { period: 'monthly' | 'yearly'; amount: number }`: Set the field matching `period`, clamped `>= 0`, and **zero the other period's field** in the same write (mutually exclusive by design)
 - `ADD_BUDGET_EXPENSE { expense: Omit<Expense, 'id'> }`: Append a new `Expense` to `budgetExpenses`, id generated (`uid('expense')`)
 - `UPDATE_BUDGET_EXPENSE { id: string; patch: Partial<Omit<Expense, 'id'>> }`: Patch fields on an `Expense` by id; no-op if not found
 - `DELETE_BUDGET_EXPENSE { id: string }`: Remove an `Expense` by id; no-op if not found
-- `ADD_BUDGET_CATEGORY { name: string }`: Append a trimmed category name to `budgetCategories`; no-op if empty or already present
-- `DELETE_BUDGET_CATEGORY { name: string }`: Remove a category from `budgetCategories` and reassign every `Expense` referencing it to `'Other'`; no-op for `name === 'Other'`
+- `ADD_BUDGET_TRANSACTION { tx: Omit<BudgetTransaction, 'id'> }`: Append a new `BudgetTransaction` to `budgetTransactions`, id generated (`uid('budgettx')`)
+- `UPDATE_BUDGET_TRANSACTION { id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }`: Patch fields on a `BudgetTransaction` by id; no-op if not found
+- `DELETE_BUDGET_TRANSACTION { id: string }`: Remove a `BudgetTransaction` by id; no-op if not found
+- `IMPORT_BUDGET_TRANSACTIONS { rows: Omit<BudgetTransaction, 'id'>[] }`: Append rows deduped on `date|description|category|amount` against existing `budgetTransactions` and against earlier rows in the same batch
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
@@ -234,7 +249,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'`/`'budget'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 
-**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/add-expense-form inputs/`editingId` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetCategories` (see next section) ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load.
+**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedMonth`/`selectedYear` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions` (see next section) ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. There is no stored category list at either layer — categories are always derived from `budgetExpenses`/`budgetTransactions`.
 
 ## Persistence envelope
 
@@ -253,6 +268,6 @@ interface EncryptedEnvelope {
 - **Google Drive** (`drive.ts` implements sync): the backup file `portfolio-state.json` is `JSON.stringify(envelope)` — identical shape and encryption as the IndexedDB envelope.
 - **Algorithm (fixed, not configurable)**: key derivation is PBKDF2-SHA256, 600,000 iterations (OWASP 2023 minimum), producing a non-extractable AES-256-GCM `CryptoKey`. Encryption is AES-256-GCM with a fresh random 12-byte IV per `encryptState` call. Salt is 16 random bytes, generated once per password and reused until rotated.
 - **Legacy-plaintext detection** (`detectEnvelopeShape`, pure/no I/O): a stored value is `'absent'` if `undefined`/`null`, `'encrypted'` if it structurally has `version === 1` and string `salt`/`iv`/`ciphertext` fields, otherwise `'legacy-plaintext'`. Purely structural — no version-field-only check, no content inspection beyond those four keys.
-- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys are silently dropped. `budgetCategories` is a notable special case: on both persist-load coalescing (`persist.ts`, backed by `initialState()`'s local category list) and import backfill (`importExport.ts`, via `computations.ts`'s exported `DEFAULT_CATEGORIES`), a missing/legacy value defaults to the same 11-entry list (Housing/Utilities/Groceries/Transportation/Insurance/Subscriptions/Health/Entertainment/Debt/Loans/Savings/Other), **not** `[]` — unlike `budgetExpenses`, which defaults to an empty array like every other collection. A legacy/missing blob therefore surfaces the full default category set with zero expenses in it.
+- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys are silently dropped. `budgetExpenses`/`budgetTransactions` default to `[]` like every other collection (a legacy/missing blob surfaces zero budget data — there is no default category seed list; a leftover `DEFAULT_CATEGORIES` export in `computations.ts` is dead code from the retired stored-category-list design and is no longer read by any coalescing/import path).
 - `loadPersistedApp(key: CryptoKey)` throws if the stored value is not `'encrypted'` or if decryption fails (wrong password → `OperationError` propagates).
 - `loadLegacyPlaintextApp()` reads the pre-encryption blob for one-time migration; `clearPersistedApp()` deletes the IndexedDB record entirely.

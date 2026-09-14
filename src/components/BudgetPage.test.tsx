@@ -178,30 +178,31 @@ describe('BudgetPage', () => {
     ]
 
     function getBodyRowNames(container: HTMLElement): string[] {
-      return Array.from(container.querySelectorAll('tbody tr')).map(
+      return Array.from(container.querySelectorAll('tbody tr:not([data-testid="expenses-total-row"])')).map(
         (tr) => tr.querySelector('td')!.textContent
       ) as string[]
     }
 
-    it('sorts by name', () => {
+    it('sorts by name via the Name column header', () => {
       const state: AppState = { ...initialState(), budgetExpenses: fixture }
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'name' } })
+      fireEvent.click(screen.getByLabelText('Sort by name'))
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
     })
 
-    it('sorts by amount (descending)', () => {
+    it('sorts by amount (descending) via the Amount column header', () => {
       const state: AppState = { ...initialState(), budgetExpenses: fixture }
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'amount' } })
+      fireEvent.click(screen.getByLabelText(/Sort by amount/))
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
     })
 
-    it('sorts by category', () => {
+    it('sorts by category (default) via the Category column header, and toggles direction on repeat click', () => {
       const state: AppState = { ...initialState(), budgetExpenses: fixture }
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
-      fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'category' } })
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
+      fireEvent.click(screen.getByLabelText('Sort by category'))
+      expect(getBodyRowNames(container)).toEqual(['Zeta', 'Mid', 'Alpha'])
     })
   })
 
@@ -214,7 +215,7 @@ describe('BudgetPage', () => {
       const dispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} />)
 
-      fireEvent.click(screen.getByText('Edit'))
+      fireEvent.click(screen.getByLabelText('Edit expense'))
 
       const nameInput = screen.getByLabelText('Edit expense name') as HTMLInputElement
       expect(nameInput.value).toBe('Rent')
@@ -239,7 +240,7 @@ describe('BudgetPage', () => {
       vi.spyOn(window, 'prompt').mockReturnValue('Subscriptions')
       render(<BudgetPage state={state} dispatch={dispatch} />)
 
-      fireEvent.click(screen.getByText('Edit'))
+      fireEvent.click(screen.getByLabelText('Edit expense'))
 
       const categorySelect = screen.getByLabelText('Edit expense category') as HTMLSelectElement
       fireEvent.change(categorySelect, { target: { value: '__add_new' } })
@@ -262,7 +263,7 @@ describe('BudgetPage', () => {
       vi.spyOn(window, 'confirm').mockReturnValue(false)
       render(<BudgetPage state={state} dispatch={dispatch} />)
 
-      fireEvent.click(screen.getByText('Delete'))
+      fireEvent.click(screen.getByLabelText('Delete expense'))
 
       expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'DELETE_BUDGET_EXPENSE' }))
     })
@@ -276,7 +277,7 @@ describe('BudgetPage', () => {
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       render(<BudgetPage state={state} dispatch={dispatch} />)
 
-      fireEvent.click(screen.getByText('Delete'))
+      fireEvent.click(screen.getByLabelText('Delete expense'))
 
       expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_BUDGET_EXPENSE', id: 'e1' })
     })
@@ -438,7 +439,9 @@ describe('BudgetPage', () => {
       // Scope to the Expenses table specifically — the Spend records table
       // (rendered above it on the page) also renders a row for this same
       // transaction elsewhere in the page.
-      const bodyRows = container.querySelectorAll('table')[1].querySelectorAll('tbody tr')
+      const bodyRows = container
+        .querySelectorAll('table')[1]
+        .querySelectorAll('tbody tr:not([data-testid="expenses-total-row"])')
       expect(bodyRows.length).toBe(2)
 
       // Both rows share category "Housing" -> actual is the same aggregate for both.
@@ -644,7 +647,7 @@ describe('BudgetPage', () => {
       fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByText('Edit'))
+      fireEvent.click(within(row).getByLabelText('Edit record'))
 
       const descInput = screen.getByLabelText('Edit record description') as HTMLInputElement
       fireEvent.change(descInput, { target: { value: 'Groceries (updated)' } })
@@ -669,7 +672,7 @@ describe('BudgetPage', () => {
         fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
 
         const row = screen.getByText('Groceries').closest('tr')!
-        fireEvent.click(within(row).getByText('Delete'))
+        fireEvent.click(within(row).getByLabelText('Delete record'))
 
         expect(window.confirm).toHaveBeenCalledWith('Delete "Groceries"? This cannot be undone.')
         expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'DELETE_BUDGET_TRANSACTION' }))
@@ -683,7 +686,7 @@ describe('BudgetPage', () => {
         fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
 
         const row = screen.getByText('Groceries').closest('tr')!
-        fireEvent.click(within(row).getByText('Delete'))
+        fireEvent.click(within(row).getByLabelText('Delete record'))
 
         expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_BUDGET_TRANSACTION', id: 't1' })
       })
