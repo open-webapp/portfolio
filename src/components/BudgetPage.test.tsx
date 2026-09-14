@@ -3,9 +3,8 @@ import { render, screen, cleanup, fireEvent, within } from '@testing-library/rea
 import { readFileSync } from 'node:fs'
 import { BudgetPage } from './BudgetPage'
 import { initialState, type AppState } from '../lib/state'
-import type { Expense } from '../lib/types'
+import type { Expense, BudgetTransaction, Category } from '../lib/types'
 import { GAIN_COLOR, LOSS_COLOR, fmtUSD, toPeriod } from '../lib/computations'
-import type { BudgetTransaction } from '../lib/types'
 import { appReducer } from '../lib/reducer'
 
 function hexToRgb(hex: string): string {
@@ -18,11 +17,27 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+const CATEGORIES: Category[] = [
+  { id: 'cat-housing', name: 'Housing' },
+  { id: 'cat-entertainment', name: 'Entertainment' },
+  { id: 'cat-food', name: 'Food' },
+  { id: 'cat-travel', name: 'Travel' },
+  { id: 'cat-other', name: 'Other' },
+  { id: 'cat-zoo', name: 'Zoo' },
+  { id: 'cat-alpha', name: 'Alpha Cat' },
+  { id: 'cat-mid', name: 'Mid Cat' },
+  { id: 'cat-auto', name: 'Auto' },
+]
+
+function defaultState(overrides: Partial<AppState> = {}): AppState {
+  return { ...initialState(), categories: CATEGORIES, ...overrides }
+}
+
 function makeExpense(overrides: Partial<Expense> = {}): Expense {
   return {
     id: overrides.id ?? `exp-${Math.random()}`,
     name: overrides.name ?? 'Rent',
-    category: overrides.category ?? 'Housing',
+    categoryId: overrides.categoryId ?? 'cat-housing',
     amount: overrides.amount ?? 1000,
     frequency: overrides.frequency ?? 'monthly',
     ...overrides,
@@ -34,7 +49,7 @@ function makeTransaction(overrides: Partial<BudgetTransaction> = {}): BudgetTran
     id: overrides.id ?? `tx-${Math.random()}`,
     date: overrides.date ?? '2025-03-10',
     description: overrides.description ?? 'Purchase',
-    category: overrides.category ?? 'Housing',
+    categoryId: overrides.categoryId ?? 'cat-housing',
     amount: overrides.amount ?? 100,
     ...overrides,
   }
@@ -44,16 +59,15 @@ describe('BudgetPage', () => {
   it('renders 4 summary cards with correct labels and values at default monthly period', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-03-15T00:00:00'))
-    const state: AppState = {
-      ...initialState(),
+    const state: AppState = defaultState({
       budgetIncomeMonthly: 5000,
       budgetIncomeYearly: 1200, // 100/mo
       budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' }), makeExpense({ amount: 2400, frequency: 'yearly' })], // 200/mo -> total 1200
       budgetTransactions: [
-        makeTransaction({ date: '2025-03-05', category: 'Housing', amount: 300 }),
-        makeTransaction({ date: '2025-03-20', category: 'Housing', amount: 150 }),
+        makeTransaction({ date: '2025-03-05', categoryId: 'cat-housing', amount: 300 }),
+        makeTransaction({ date: '2025-03-20', categoryId: 'cat-housing', amount: 150 }),
       ],
-    }
+    })
 
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
     const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
@@ -82,13 +96,12 @@ describe('BudgetPage', () => {
   it('toggling to Yearly recomputes summary values per yearly formulas', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-03-15T00:00:00'))
-    const state: AppState = {
-      ...initialState(),
+    const state: AppState = defaultState({
       budgetIncomeMonthly: 5000,
       budgetIncomeYearly: 1200,
       budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' }), makeExpense({ amount: 2400, frequency: 'yearly' })],
-      budgetTransactions: [makeTransaction({ date: '2025-06-01', category: 'Housing', amount: 500 })],
-    }
+      budgetTransactions: [makeTransaction({ date: '2025-06-01', categoryId: 'cat-housing', amount: 500 })],
+    })
 
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
 
@@ -108,7 +121,7 @@ describe('BudgetPage', () => {
   })
 
   it('renders period toggle as .seg/.seg-opt radio markup with correct checked state', () => {
-    const state: AppState = { ...initialState() }
+    const state: AppState = defaultState()
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
 
     const seg = container.querySelector('.seg')
@@ -125,11 +138,10 @@ describe('BudgetPage', () => {
   })
 
   it('shows GAIN_COLOR for the Variance card when budgeted >= actual', () => {
-    const state: AppState = {
-      ...initialState(),
-      budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly', category: 'Housing' })],
+    const state: AppState = defaultState({
+      budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly', categoryId: 'cat-housing' })],
       budgetTransactions: [],
-    }
+    })
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
     const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
     const varianceLabel = within(summary).getByText('Variance')
@@ -142,11 +154,10 @@ describe('BudgetPage', () => {
   it('shows LOSS_COLOR for the Variance card when budgeted < actual', () => {
     const now = new Date()
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    const state: AppState = {
-      ...initialState(),
-      budgetExpenses: [makeExpense({ amount: 100, frequency: 'monthly', category: 'Housing' })],
-      budgetTransactions: [makeTransaction({ date: `${currentMonth}-05`, category: 'Housing', amount: 500 })],
-    }
+    const state: AppState = defaultState({
+      budgetExpenses: [makeExpense({ amount: 100, frequency: 'monthly', categoryId: 'cat-housing' })],
+      budgetTransactions: [makeTransaction({ date: `${currentMonth}-05`, categoryId: 'cat-housing', amount: 500 })],
+    })
     const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
     const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
     // variance: 100 - 500 = -400
@@ -155,16 +166,15 @@ describe('BudgetPage', () => {
   })
 
   it('filtering by category shows only matching rows', () => {
-    const state: AppState = {
-      ...initialState(),
+    const state: AppState = defaultState({
       budgetExpenses: [
-        makeExpense({ id: 'e1', name: 'Rent', category: 'Housing' }),
-        makeExpense({ id: 'e2', name: 'Netflix', category: 'Entertainment' }),
+        makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing' }),
+        makeExpense({ id: 'e2', name: 'Netflix', categoryId: 'cat-entertainment' }),
       ],
-    }
+    })
     render(<BudgetPage state={state} dispatch={vi.fn()} />)
 
-    fireEvent.change(screen.getByLabelText('Filter by category'), { target: { value: 'Entertainment' } })
+    fireEvent.change(screen.getByLabelText('Filter by category'), { target: { value: 'cat-entertainment' } })
 
     expect(screen.queryByText('Rent')).toBeFalsy()
     expect(screen.getByText('Netflix')).toBeTruthy()
@@ -172,9 +182,9 @@ describe('BudgetPage', () => {
 
   describe('sorting', () => {
     const fixture = [
-      makeExpense({ id: 'a', name: 'Zeta', category: 'Zoo', amount: 10, frequency: 'monthly' }),
-      makeExpense({ id: 'b', name: 'Alpha', category: 'Alpha Cat', amount: 500, frequency: 'monthly' }),
-      makeExpense({ id: 'c', name: 'Mid', category: 'Mid Cat', amount: 100, frequency: 'monthly' }),
+      makeExpense({ id: 'a', name: 'Zeta', categoryId: 'cat-zoo', amount: 10, frequency: 'monthly' }),
+      makeExpense({ id: 'b', name: 'Alpha', categoryId: 'cat-alpha', amount: 500, frequency: 'monthly' }),
+      makeExpense({ id: 'c', name: 'Mid', categoryId: 'cat-mid', amount: 100, frequency: 'monthly' }),
     ]
 
     function getBodyRowNames(container: HTMLElement): string[] {
@@ -184,21 +194,21 @@ describe('BudgetPage', () => {
     }
 
     it('sorts by name via the Name column header', () => {
-      const state: AppState = { ...initialState(), budgetExpenses: fixture }
+      const state: AppState = defaultState({ budgetExpenses: fixture })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       fireEvent.click(screen.getByLabelText('Sort by name'))
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
     })
 
     it('sorts by amount (descending) via the Amount column header', () => {
-      const state: AppState = { ...initialState(), budgetExpenses: fixture }
+      const state: AppState = defaultState({ budgetExpenses: fixture })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       fireEvent.click(screen.getByLabelText(/Sort by amount/))
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
     })
 
     it('sorts by category (default) via the Category column header, and toggles direction on repeat click', () => {
-      const state: AppState = { ...initialState(), budgetExpenses: fixture }
+      const state: AppState = defaultState({ budgetExpenses: fixture })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       expect(getBodyRowNames(container)).toEqual(['Alpha', 'Mid', 'Zeta'])
       fireEvent.click(screen.getByLabelText('Sort by category'))
@@ -208,10 +218,9 @@ describe('BudgetPage', () => {
 
   describe('inline edit', () => {
     it('clicking Edit shows editable inputs; changing a field dispatches UPDATE_BUDGET_EXPENSE; Done exits edit mode', () => {
-      const state: AppState = {
-        ...initialState(),
-        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', category: 'Housing', amount: 1000 })],
-      }
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000 })],
+      })
       const dispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} />)
 
@@ -231,11 +240,10 @@ describe('BudgetPage', () => {
       expect(screen.queryByLabelText('Edit expense name')).toBeFalsy()
     })
 
-    it('selecting "+ Add new category…" prompts for a name and selects it locally without dispatching', () => {
-      const state: AppState = {
-        ...initialState(),
-        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', category: 'Housing', amount: 1000 })],
-      }
+    it('selecting "+ Add new category…" dispatches ADD_CATEGORY and the new category id is used on Done; no UPSERT_CATEGORY_MAPPING', () => {
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000 })],
+      })
       const dispatch = vi.fn()
       vi.spyOn(window, 'prompt').mockReturnValue('Subscriptions')
       render(<BudgetPage state={state} dispatch={dispatch} />)
@@ -246,19 +254,27 @@ describe('BudgetPage', () => {
       fireEvent.change(categorySelect, { target: { value: '__add_new' } })
 
       expect(window.prompt).toHaveBeenCalled()
-      expect(categorySelect.value).toBe('Subscriptions')
-      expect(dispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'UPDATE_BUDGET_EXPENSE', patch: expect.objectContaining({ category: expect.anything() }) })
-      )
+      const addCategoryCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
+      expect(addCategoryCall).toBeTruthy()
+      expect(addCategoryCall![0].name).toBe('Subscriptions')
+      const newId = addCategoryCall![0].id
+
+      fireEvent.click(screen.getByText('Done'))
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_EXPENSE',
+        id: 'e1',
+        patch: { categoryId: newId },
+      })
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPSERT_CATEGORY_MAPPING' }))
     })
   })
 
   describe('delete', () => {
     it('does not dispatch DELETE_BUDGET_EXPENSE when confirm is cancelled', () => {
-      const state: AppState = {
-        ...initialState(),
+      const state: AppState = defaultState({
         budgetExpenses: [makeExpense({ id: 'e1' })],
-      }
+      })
       const dispatch = vi.fn()
       vi.spyOn(window, 'confirm').mockReturnValue(false)
       render(<BudgetPage state={state} dispatch={dispatch} />)
@@ -269,10 +285,9 @@ describe('BudgetPage', () => {
     })
 
     it('dispatches DELETE_BUDGET_EXPENSE with the row id when confirm is accepted', () => {
-      const state: AppState = {
-        ...initialState(),
+      const state: AppState = defaultState({
         budgetExpenses: [makeExpense({ id: 'e1' })],
-      }
+      })
       const dispatch = vi.fn()
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       render(<BudgetPage state={state} dispatch={dispatch} />)
@@ -285,7 +300,7 @@ describe('BudgetPage', () => {
 
   describe('add expense dialog', () => {
     it('is closed by default; clicking the Add Expense button opens it', () => {
-      render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+      render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
 
       expect(screen.queryByText('Add expense')).toBeFalsy()
 
@@ -296,7 +311,7 @@ describe('BudgetPage', () => {
 
     it('filling the form and clicking Add dispatches ADD_BUDGET_EXPENSE, closes the dialog, and clears the fields', () => {
       const dispatch = vi.fn()
-      render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+      render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
       fireEvent.click(screen.getByText('Add Expense'))
       fireEvent.change(screen.getByLabelText('Expense name'), { target: { value: 'Gym' } })
@@ -307,7 +322,7 @@ describe('BudgetPage', () => {
 
       expect(dispatch).toHaveBeenCalledWith({
         type: 'ADD_BUDGET_EXPENSE',
-        expense: { name: 'Gym', category: expect.any(String), amount: 50, frequency: 'yearly' },
+        expense: { name: 'Gym', categoryId: 'cat-housing', amount: 50, frequency: 'yearly' },
       })
 
       expect(screen.queryByText('Add expense')).toBeFalsy()
@@ -319,7 +334,7 @@ describe('BudgetPage', () => {
 
     it('clicking the backdrop closes the dialog without dispatching', () => {
       const dispatch = vi.fn()
-      const { container } = render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+      const { container } = render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
       fireEvent.click(screen.getByText('Add Expense'))
       fireEvent.change(screen.getByLabelText('Expense name'), { target: { value: 'Gym' } })
@@ -333,7 +348,7 @@ describe('BudgetPage', () => {
 
     it('clicking Cancel closes the dialog without dispatching', () => {
       const dispatch = vi.fn()
-      render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+      render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
       fireEvent.click(screen.getByText('Add Expense'))
       fireEvent.change(screen.getByLabelText('Expense name'), { target: { value: 'Gym' } })
@@ -346,7 +361,7 @@ describe('BudgetPage', () => {
 
     it('does not dispatch and keeps the dialog open when the name is empty', () => {
       const dispatch = vi.fn()
-      render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+      render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
       fireEvent.click(screen.getByText('Add Expense'))
       fireEvent.change(screen.getByLabelText('Expense amount'), { target: { value: '50' } })
@@ -359,7 +374,7 @@ describe('BudgetPage', () => {
 
     it('does not dispatch and keeps the dialog open when the amount is <= 0', () => {
       const dispatch = vi.fn()
-      render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+      render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
       fireEvent.click(screen.getByText('Add Expense'))
       fireEvent.change(screen.getByLabelText('Expense name'), { target: { value: 'Gym' } })
@@ -371,10 +386,10 @@ describe('BudgetPage', () => {
       expect(screen.getByText('Add expense')).toBeTruthy()
     })
 
-    it('the "+ Add new category…" flow works inside the dialog and the new category is included in the dispatched payload', () => {
+    it('the "+ Add new category…" flow dispatches ADD_CATEGORY and the new id flows into ADD_BUDGET_EXPENSE; no UPSERT_CATEGORY_MAPPING', () => {
       const dispatch = vi.fn()
       vi.spyOn(window, 'prompt').mockReturnValue('Subscriptions')
-      render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+      render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
       fireEvent.click(screen.getByText('Add Expense'))
 
@@ -382,7 +397,10 @@ describe('BudgetPage', () => {
       fireEvent.change(categorySelect, { target: { value: '__add_new' } })
 
       expect(window.prompt).toHaveBeenCalled()
-      expect(categorySelect.value).toBe('Subscriptions')
+      const addCategoryCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
+      expect(addCategoryCall).toBeTruthy()
+      expect(addCategoryCall![0].name).toBe('Subscriptions')
+      const newId = addCategoryCall![0].id
 
       fireEvent.change(screen.getByLabelText('Expense name'), { target: { value: 'Netflix' } })
       fireEvent.change(screen.getByLabelText('Expense amount'), { target: { value: '15' } })
@@ -391,21 +409,21 @@ describe('BudgetPage', () => {
 
       expect(dispatch).toHaveBeenCalledWith({
         type: 'ADD_BUDGET_EXPENSE',
-        expense: { name: 'Netflix', category: 'Subscriptions', amount: 15, frequency: 'monthly' },
+        expense: { name: 'Netflix', categoryId: newId, amount: 15, frequency: 'monthly' },
       })
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPSERT_CATEGORY_MAPPING' }))
     })
   })
 
   describe('actual spend (T13)', () => {
     it('Budgeted card shows the same number the old Expenses card showed (regression)', () => {
-      const state: AppState = {
-        ...initialState(),
+      const state: AppState = defaultState({
         budgetExpenses: [
-          makeExpense({ amount: 1000, frequency: 'monthly', category: 'Housing' }),
-          makeExpense({ amount: 2400, frequency: 'yearly', category: 'Travel' }),
+          makeExpense({ amount: 1000, frequency: 'monthly', categoryId: 'cat-housing' }),
+          makeExpense({ amount: 2400, frequency: 'yearly', categoryId: 'cat-travel' }),
         ],
         budgetTransactions: [],
-      }
+      })
       const expectedBudgeted = state.budgetExpenses.reduce(
         (sum, e) => sum + toPeriod(e.amount, e.frequency, 'monthly'),
         0
@@ -422,14 +440,13 @@ describe('BudgetPage', () => {
     it('expense table renders Actual/Variance columns; rows sharing a category show identical values', () => {
       const now = new Date()
       const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      const state: AppState = {
-        ...initialState(),
+      const state: AppState = defaultState({
         budgetExpenses: [
-          makeExpense({ id: 'e1', name: 'Rent', category: 'Housing', amount: 1000, frequency: 'monthly' }),
-          makeExpense({ id: 'e2', name: 'Repairs', category: 'Housing', amount: 200, frequency: 'monthly' }),
+          makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' }),
+          makeExpense({ id: 'e2', name: 'Repairs', categoryId: 'cat-housing', amount: 200, frequency: 'monthly' }),
         ],
-        budgetTransactions: [makeTransaction({ date: `${currentMonth}-10`, category: 'Housing', amount: 300 })],
-      }
+        budgetTransactions: [makeTransaction({ date: `${currentMonth}-10`, categoryId: 'cat-housing', amount: 300 })],
+      })
 
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       const headerCells = Array.from(container.querySelectorAll('thead th')).map((th) => th.textContent)
@@ -458,7 +475,7 @@ describe('BudgetPage', () => {
     })
 
     it('clicking the Add button opens the Add-Expense dialog (regression after repositioning)', () => {
-      render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+      render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
 
       expect(screen.queryByText('Add expense')).toBeFalsy()
       fireEvent.click(screen.getByText('Add Expense'))
@@ -475,7 +492,7 @@ describe('BudgetPage', () => {
       vi.useFakeTimers()
       vi.setSystemTime(new Date('2025-07-22T00:00:00'))
 
-      render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+      render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
       const monthSelect = screen.getByLabelText('Select month') as HTMLSelectElement
       expect(monthSelect.value).toBe('2025-07')
 
@@ -489,19 +506,18 @@ describe('BudgetPage', () => {
 
   describe('empty state', () => {
     it('shows "No expenses to show." when budgetExpenses is empty', () => {
-      const state: AppState = { ...initialState(), budgetExpenses: [] }
+      const state: AppState = defaultState({ budgetExpenses: [] })
       render(<BudgetPage state={state} dispatch={vi.fn()} />)
       expect(screen.getByText('No expenses to show.')).toBeTruthy()
     })
 
     it('shows "No expenses to show." when a filter matches nothing, even with other expenses present', () => {
-      const state: AppState = {
-        ...initialState(),
-        budgetExpenses: [makeExpense({ id: 'e1', category: 'Housing' })],
-      }
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', categoryId: 'cat-housing' })],
+      })
       render(<BudgetPage state={state} dispatch={vi.fn()} />)
 
-      fireEvent.change(screen.getByLabelText('Filter by category'), { target: { value: 'Entertainment' } })
+      fireEvent.change(screen.getByLabelText('Filter by category'), { target: { value: 'cat-entertainment' } })
 
       expect(screen.getByText('No expenses to show.')).toBeTruthy()
     })
@@ -509,13 +525,12 @@ describe('BudgetPage', () => {
 
   describe('income click-to-edit', () => {
     function incomeState(overrides: Partial<AppState> = {}): AppState {
-      return {
-        ...initialState(),
+      return defaultState({
         budgetIncomeMonthly: 5000,
         budgetIncomeYearly: 1200,
         budgetExpenses: [],
         ...overrides,
-      }
+      })
     }
 
     it('default view shows fmtUSD(totalIncome) and no input', () => {
@@ -580,15 +595,14 @@ describe('BudgetPage', () => {
 
   describe('Records (T14)', () => {
     function recordsState(overrides: Partial<AppState> = {}): AppState {
-      return {
-        ...initialState(),
+      return defaultState({
         budgetTransactions: [
-          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', category: 'Food', amount: 60 }),
-          makeTransaction({ id: 't2', date: '2025-03-20', description: 'Rent payment', category: 'Housing', amount: 1000 }),
-          makeTransaction({ id: 't3', date: '2025-04-01', description: 'Outside period', category: 'Food', amount: 25 }),
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60 }),
+          makeTransaction({ id: 't2', date: '2025-03-20', description: 'Rent payment', categoryId: 'cat-housing', amount: 1000 }),
+          makeTransaction({ id: 't3', date: '2025-04-01', description: 'Outside period', categoryId: 'cat-food', amount: 25 }),
         ],
         ...overrides,
-      }
+      })
     }
 
     function selectMarch2025(container: HTMLElement) {
@@ -604,6 +618,16 @@ describe('BudgetPage', () => {
       expect(screen.getByText('Groceries')).toBeTruthy()
       expect(screen.getByText('Rent payment')).toBeTruthy()
       expect(screen.queryByText('Outside period')).toBeFalsy()
+    })
+
+    it('category tags on the records table resolve to the category name via categoriesById, not the raw id', () => {
+      const state = recordsState()
+      const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      selectMarch2025(container)
+
+      const row = screen.getByText('Groceries').closest('tr')!
+      expect(within(row).getByText('Food')).toBeTruthy()
+      expect(within(row).queryByText('cat-food')).toBeFalsy()
     })
 
     it('table is titled "Spend records", not "Records"', () => {
@@ -640,7 +664,7 @@ describe('BudgetPage', () => {
       vi.useRealTimers()
     })
 
-    it('editing a row and clicking Done dispatches UPDATE_BUDGET_TRANSACTION with the correct patch', () => {
+    it('editing a row and clicking Done dispatches UPDATE_BUDGET_TRANSACTION then UPSERT_CATEGORY_MAPPING', () => {
       const state = recordsState()
       const dispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} />)
@@ -656,10 +680,15 @@ describe('BudgetPage', () => {
 
       fireEvent.click(screen.getByText('Done'))
 
-      expect(dispatch).toHaveBeenCalledWith({
+      expect(dispatch).toHaveBeenNthCalledWith(1, {
         type: 'UPDATE_BUDGET_TRANSACTION',
         id: 't1',
-        patch: { date: '2025-03-05', description: 'Groceries (updated)', category: 'Food', amount: 75 },
+        patch: { date: '2025-03-05', description: 'Groceries (updated)', categoryId: 'cat-food', amount: 75 },
+      })
+      expect(dispatch).toHaveBeenNthCalledWith(2, {
+        type: 'UPSERT_CATEGORY_MAPPING',
+        description: 'Groceries (updated)',
+        categoryId: 'cat-food',
       })
     })
 
@@ -693,9 +722,9 @@ describe('BudgetPage', () => {
     })
 
     describe('manual add row', () => {
-      it('valid input dispatches ADD_BUDGET_TRANSACTION and clears description/amount fields', () => {
+      it('valid input dispatches ADD_BUDGET_TRANSACTION then UPSERT_CATEGORY_MAPPING, and clears description/amount fields', () => {
         const dispatch = vi.fn()
-        render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+        render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
         fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
         fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'Coffee' } })
@@ -703,38 +732,41 @@ describe('BudgetPage', () => {
 
         fireEvent.click(screen.getByText('Add Record'))
 
-        expect(dispatch).toHaveBeenCalledWith({
+        expect(dispatch).toHaveBeenNthCalledWith(1, {
           type: 'ADD_BUDGET_TRANSACTION',
-          tx: { date: '2025-05-01', description: 'Coffee', category: expect.any(String), amount: 4.5 },
+          tx: { date: '2025-05-01', description: 'Coffee', categoryId: 'cat-housing', amount: 4.5 },
+        })
+        expect(dispatch).toHaveBeenNthCalledWith(2, {
+          type: 'UPSERT_CATEGORY_MAPPING',
+          description: 'Coffee',
+          categoryId: 'cat-housing',
         })
 
         expect((screen.getByLabelText('Record description') as HTMLInputElement).value).toBe('')
         expect((screen.getByLabelText('Record amount') as HTMLInputElement).value).toBe('')
       })
 
-      it('blank description falls back to the selected category as the dispatched description', () => {
+      it('blank description falls back to the selected category name as the dispatched description', () => {
         const dispatch = vi.fn()
-        vi.spyOn(window, 'prompt').mockReturnValue('Utilities')
-        render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+        render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
         const categorySelect = screen.getByLabelText('Record category') as HTMLSelectElement
-        fireEvent.change(categorySelect, { target: { value: '__add_new' } })
-        expect(categorySelect.value).toBe('Utilities')
+        fireEvent.change(categorySelect, { target: { value: 'cat-entertainment' } })
 
         fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
         fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '20' } })
 
         fireEvent.click(screen.getByText('Add Record'))
 
-        expect(dispatch).toHaveBeenCalledWith({
+        expect(dispatch).toHaveBeenNthCalledWith(1, {
           type: 'ADD_BUDGET_TRANSACTION',
-          tx: { date: '2025-05-01', description: 'Utilities', category: 'Utilities', amount: 20 },
+          tx: { date: '2025-05-01', description: 'Entertainment', categoryId: 'cat-entertainment', amount: 20 },
         })
       })
 
       it('does not dispatch when date is missing', () => {
         const dispatch = vi.fn()
-        render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+        render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
         fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '20' } })
         fireEvent.click(screen.getByText('Add Record'))
@@ -745,7 +777,7 @@ describe('BudgetPage', () => {
 
       it('does not dispatch when amount is <= 0', () => {
         const dispatch = vi.fn()
-        render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+        render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
         fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
         fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '0' } })
@@ -756,10 +788,9 @@ describe('BudgetPage', () => {
       })
 
       it('a record added for a month other than the currently selected Month filter switches the filter so the record is visible', () => {
-        let state: AppState = {
-          ...initialState(),
-          budgetTransactions: [makeTransaction({ date: '2025-03-10', description: 'Old rent', category: 'Housing', amount: 900 })],
-        }
+        let state: AppState = defaultState({
+          budgetTransactions: [makeTransaction({ date: '2025-03-10', description: 'Old rent', categoryId: 'cat-housing', amount: 900 })],
+        })
         const dispatch = (action: any) => {
           state = appReducer(state, action)
         }
@@ -778,7 +809,7 @@ describe('BudgetPage', () => {
       })
 
       it('a record added for the current month appears in the Spend records table (end-to-end with real reducer)', () => {
-        let state: AppState = initialState()
+        let state: AppState = defaultState()
         const dispatch = (action: any) => {
           state = appReducer(state, action)
         }
@@ -796,6 +827,65 @@ describe('BudgetPage', () => {
 
         expect(state.budgetTransactions.length).toBe(1)
         expect(screen.getByText('Coffee')).toBeTruthy()
+      })
+
+      it('"+ Add new category…" dispatches ADD_CATEGORY with a fresh id + prompted name, and submitting uses that id', () => {
+        let state: AppState = defaultState()
+        const dispatch = vi.fn((action: any) => {
+          state = appReducer(state, action)
+        })
+        vi.spyOn(window, 'prompt').mockReturnValue('Utilities')
+        const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} />)
+
+        const categorySelect = screen.getByLabelText('Record category') as HTMLSelectElement
+        fireEvent.change(categorySelect, { target: { value: '__add_new' } })
+
+        const addCategoryCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
+        expect(addCategoryCall).toBeTruthy()
+        expect(addCategoryCall![0].name).toBe('Utilities')
+        const newId = addCategoryCall![0].id
+
+        rerender(<BudgetPage state={state} dispatch={dispatch} />)
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '20' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        const addTxCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_BUDGET_TRANSACTION')
+        expect(addTxCall).toBeTruthy()
+        expect(addTxCall![0].tx.categoryId).toBe(newId)
+      })
+
+      it('typing a description matching an existing mapping auto-selects that mapping\'s category', () => {
+        const state = defaultState({
+          categoryMappings: [{ id: 'map1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2025-01-01T00:00:00.000Z' }],
+        })
+        render(<BudgetPage state={state} dispatch={vi.fn()} />)
+
+        const descInput = screen.getByLabelText('Record description') as HTMLInputElement
+        fireEvent.change(descInput, { target: { value: 'Coffee Shop' } })
+
+        const categorySelect = screen.getByLabelText('Record category') as HTMLSelectElement
+        expect(categorySelect.value).toBe('cat-food')
+      })
+
+      it('manually changing the category select after an auto-match prevents the next description edit from overwriting it', () => {
+        const state = defaultState({
+          categoryMappings: [{ id: 'map1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2025-01-01T00:00:00.000Z' }],
+        })
+        render(<BudgetPage state={state} dispatch={vi.fn()} />)
+
+        const descInput = screen.getByLabelText('Record description') as HTMLInputElement
+        fireEvent.change(descInput, { target: { value: 'Coffee Shop' } })
+
+        const categorySelect = screen.getByLabelText('Record category') as HTMLSelectElement
+        expect(categorySelect.value).toBe('cat-food')
+
+        fireEvent.change(categorySelect, { target: { value: 'cat-travel' } })
+        expect(categorySelect.value).toBe('cat-travel')
+
+        fireEvent.change(descInput, { target: { value: 'Coffee Shop Extra' } })
+        expect(categorySelect.value).toBe('cat-travel')
       })
     })
 
@@ -842,32 +932,31 @@ VERSION:102
 </BANKMSGSRSV1>
 </OFX>`
 
-      it('pasting CSV text and clicking Import dispatches IMPORT_BUDGET_TRANSACTIONS with parsed rows', () => {
+      it('pasting CSV text and clicking Import dispatches IMPORT_BUDGET_TRANSACTIONS with parsed rows (no category field)', () => {
         const dispatch = vi.fn()
-        render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+        render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
         fireEvent.click(screen.getByText('Import transactions…'))
         fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
         fireEvent.change(screen.getByLabelText('Paste CSV text'), {
-          target: { value: '2025-05-01,Coffee,Food,4.5\n2025-05-02,Gas,Auto,40' },
+          target: { value: '2025-05-01,Coffee,4.5\n2025-05-02,Gas,40' },
         })
         fireEvent.click(screen.getByText('Import'))
 
         expect(dispatch).toHaveBeenCalledWith({
           type: 'IMPORT_BUDGET_TRANSACTIONS',
           rows: [
-            { date: '2025-05-01', description: 'Coffee', category: 'Food', amount: 4.5, accountName: 'Checking' },
-            { date: '2025-05-02', description: 'Gas', category: 'Auto', amount: 40, accountName: 'Checking' },
+            { date: '2025-05-01', description: 'Coffee', amount: 4.5, accountName: 'Checking' },
+            { date: '2025-05-02', description: 'Gas', amount: 40, accountName: 'Checking' },
           ],
         })
         expect(screen.queryByText('Import transactions')).toBeFalsy()
       })
 
       it('a duplicate-of-an-existing-transaction row is not added (end-to-end with real reducer)', () => {
-        let state: AppState = {
-          ...initialState(),
-          budgetTransactions: [makeTransaction({ id: 't1', date: '2025-05-01', description: 'Coffee', category: 'Food', amount: 4.5 })],
-        }
+        let state: AppState = defaultState({
+          budgetTransactions: [makeTransaction({ id: 't1', date: '2025-05-01', description: 'Coffee', categoryId: 'cat-food', amount: 4.5 })],
+        })
         const dispatch = (action: any) => {
           state = appReducer(state, action)
         }
@@ -876,7 +965,7 @@ VERSION:102
         fireEvent.click(screen.getByText('Import transactions…'))
         fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
         fireEvent.change(screen.getByLabelText('Paste CSV text'), {
-          target: { value: '2025-05-01,Coffee,Food,4.5\n2025-05-02,Gas,Auto,40' },
+          target: { value: '2025-05-01,Coffee,4.5\n2025-05-02,Gas,40' },
         })
         fireEvent.click(screen.getByText('Import'))
 
@@ -890,7 +979,7 @@ VERSION:102
 
       it('switching to the Upload-file tab and selecting a valid OFX file populates the textarea via csvText', async () => {
         const dispatch = vi.fn()
-        render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+        render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
         fireEvent.click(screen.getByText('Import transactions…'))
         fireEvent.click(screen.getByText('Upload file'))
@@ -907,14 +996,14 @@ VERSION:102
 
       it('import status text updates to reflect the parsed row count after a successful import', () => {
         const dispatch = vi.fn()
-        render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+        render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
         expect(screen.getByText('Never imported')).toBeTruthy()
 
         fireEvent.click(screen.getByText('Import transactions…'))
         fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
         fireEvent.change(screen.getByLabelText('Paste CSV text'), {
-          target: { value: '2025-05-01,Coffee,Food,4.5\n2025-05-02,Gas,Auto,40' },
+          target: { value: '2025-05-01,Coffee,4.5\n2025-05-02,Gas,40' },
         })
         fireEvent.click(screen.getByText('Import'))
 
@@ -923,7 +1012,7 @@ VERSION:102
 
       describe('account name gate', () => {
         it('Import is disabled with empty Account Name on the Copy-Paste tab; enabled once filled; disabled again after clearing', () => {
-          render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+          render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
           fireEvent.click(screen.getByText('Import transactions…'))
 
           const importBtn = screen.getByText('Import') as HTMLButtonElement
@@ -937,7 +1026,7 @@ VERSION:102
         })
 
         it('Import is disabled with empty Account Name on the Upload tab; enabled once filled; disabled again after clearing', () => {
-          render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+          render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
           fireEvent.click(screen.getByText('Import transactions…'))
           fireEvent.click(screen.getByText('Upload file'))
 
@@ -953,9 +1042,9 @@ VERSION:102
       })
 
       describe('OFX upload', () => {
-        it('happy path: dispatched IMPORT_BUDGET_TRANSACTIONS rows have category "Other" and the entered accountName', async () => {
+        it('happy path: dispatched IMPORT_BUDGET_TRANSACTIONS rows have the entered accountName and no category field', async () => {
           const dispatch = vi.fn()
-          render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+          render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
           fireEvent.click(screen.getByText('Import transactions…'))
           fireEvent.click(screen.getByText('Upload file'))
@@ -976,15 +1065,15 @@ VERSION:102
           expect(dispatch).toHaveBeenCalledWith({
             type: 'IMPORT_BUDGET_TRANSACTIONS',
             rows: [
-              { date: '2025-05-01', description: 'Coffee Shop', category: 'Other', amount: -4.5, accountName: 'Checking' },
-              { date: '2025-05-02', description: 'Gas Station', category: 'Other', amount: -40, accountName: 'Checking' },
+              { date: '2025-05-01', description: 'Coffee Shop', amount: -4.5, accountName: 'Checking' },
+              { date: '2025-05-02', description: 'Gas Station', amount: -40, accountName: 'Checking' },
             ],
           })
         })
 
         it('error path: a file with 0 STMTTRN blocks shows an inline error, disables Import, and dispatches nothing on click', async () => {
           const dispatch = vi.fn()
-          render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+          render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
           fireEvent.click(screen.getByText('Import transactions…'))
           fireEvent.click(screen.getByText('Upload file'))
@@ -1011,7 +1100,7 @@ VERSION:102
 
         it('the error clears when a new valid file is selected after an error', async () => {
           const dispatch = vi.fn()
-          render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+          render(<BudgetPage state={defaultState()} dispatch={dispatch} />)
 
           fireEvent.click(screen.getByText('Import transactions…'))
           fireEvent.click(screen.getByText('Upload file'))
@@ -1045,7 +1134,7 @@ VERSION:102
 
     describe('empty state', () => {
       it('shows "No records for this period." when periodFilteredTransactions is empty', () => {
-        render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+        render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
         expect(screen.getByText('No records for this period.')).toBeTruthy()
       })
     })
@@ -1053,12 +1142,11 @@ VERSION:102
 
   describe('Spend records Account column (T13)', () => {
     it('renders "—" for a row with no accountName', () => {
-      const state: AppState = {
-        ...initialState(),
+      const state: AppState = defaultState({
         budgetTransactions: [
-          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', category: 'Food', amount: 60 }),
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60 }),
         ],
-      }
+      })
       render(<BudgetPage state={state} dispatch={vi.fn()} />)
       fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
 
@@ -1066,13 +1154,12 @@ VERSION:102
       expect(within(row).getByText('—')).toBeTruthy()
     })
 
-    it('inline edit round-trip: pencil -> type Account -> Done dispatches UPDATE_BUDGET_TRANSACTION with the new accountName', () => {
-      const state: AppState = {
-        ...initialState(),
+    it('inline edit round-trip: pencil -> type Account -> Done dispatches UPDATE_BUDGET_TRANSACTION then UPSERT_CATEGORY_MAPPING with the new accountName', () => {
+      const state: AppState = defaultState({
         budgetTransactions: [
-          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', category: 'Food', amount: 60 }),
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60 }),
         ],
-      }
+      })
       const dispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} />)
       fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
@@ -1085,26 +1172,30 @@ VERSION:102
 
       fireEvent.click(screen.getByText('Done'))
 
-      expect(dispatch).toHaveBeenCalledWith({
+      expect(dispatch).toHaveBeenNthCalledWith(1, {
         type: 'UPDATE_BUDGET_TRANSACTION',
         id: 't1',
         patch: {
           date: '2025-03-05',
           description: 'Groceries',
-          category: 'Food',
+          categoryId: 'cat-food',
           accountName: 'Checking',
           amount: 60,
         },
       })
+      expect(dispatch).toHaveBeenNthCalledWith(2, {
+        type: 'UPSERT_CATEGORY_MAPPING',
+        description: 'Groceries',
+        categoryId: 'cat-food',
+      })
     })
 
     it('the Spend records total row leading cell has colSpan={4}', () => {
-      const state: AppState = {
-        ...initialState(),
+      const state: AppState = defaultState({
         budgetTransactions: [
-          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', category: 'Food', amount: 60 }),
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60 }),
         ],
-      }
+      })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
 
@@ -1121,13 +1212,12 @@ VERSION:102
     }
 
     it('shows LOSS_COLOR overlay and "Over by $X" when actual exceeds budgeted amount', () => {
-      const state: AppState = {
-        ...initialState(),
-        budgetExpenses: [makeExpense({ category: 'Housing', amount: 100, frequency: 'monthly' })],
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ categoryId: 'cat-housing', amount: 100, frequency: 'monthly' })],
         budgetTransactions: [
-          makeTransaction({ date: `${currentMonth()}-10`, category: 'Housing', amount: 150 }),
+          makeTransaction({ date: `${currentMonth()}-10`, categoryId: 'cat-housing', amount: 150 }),
         ],
-      }
+      })
 
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       const fill = container.querySelector('[data-testid="category-bar-fill"]') as HTMLElement
@@ -1136,13 +1226,12 @@ VERSION:102
     })
 
     it('shows the under-budget blue overlay and "Under by $X" (GAIN_COLOR text) when actual is at/under budget', () => {
-      const state: AppState = {
-        ...initialState(),
-        budgetExpenses: [makeExpense({ category: 'Housing', amount: 200, frequency: 'monthly' })],
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ categoryId: 'cat-housing', amount: 200, frequency: 'monthly' })],
         budgetTransactions: [
-          makeTransaction({ date: `${currentMonth()}-10`, category: 'Housing', amount: 120 }),
+          makeTransaction({ date: `${currentMonth()}-10`, categoryId: 'cat-housing', amount: 120 }),
         ],
-      }
+      })
 
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       const fill = container.querySelector('[data-testid="category-bar-fill"]') as HTMLElement
@@ -1154,27 +1243,25 @@ VERSION:102
     })
 
     it('renders no "×" delete-category button anywhere on the page', () => {
-      const state: AppState = {
-        ...initialState(),
-        budgetExpenses: [makeExpense({ category: 'Housing', amount: 200, frequency: 'monthly' })],
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ categoryId: 'cat-housing', amount: 200, frequency: 'monthly' })],
         budgetTransactions: [
-          makeTransaction({ date: `${currentMonth()}-10`, category: 'Housing', amount: 120 }),
+          makeTransaction({ date: `${currentMonth()}-10`, categoryId: 'cat-housing', amount: 120 }),
         ],
-      }
+      })
       render(<BudgetPage state={state} dispatch={vi.fn()} />)
       expect(screen.queryByText('×')).toBeFalsy()
       expect(screen.queryByLabelText(/Delete category/)).toBeFalsy()
     })
 
     it('a category present only in budgetTransactions (no matching expense) produces no breakdown row', () => {
-      const state: AppState = {
-        ...initialState(),
-        budgetExpenses: [makeExpense({ category: 'Housing', amount: 200, frequency: 'monthly' })],
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ categoryId: 'cat-housing', amount: 200, frequency: 'monthly' })],
         budgetTransactions: [
-          makeTransaction({ date: `${currentMonth()}-10`, category: 'Housing', amount: 120 }),
-          makeTransaction({ date: `${currentMonth()}-12`, category: 'Travel', amount: 75 }),
+          makeTransaction({ date: `${currentMonth()}-10`, categoryId: 'cat-housing', amount: 120 }),
+          makeTransaction({ date: `${currentMonth()}-12`, categoryId: 'cat-travel', amount: 75 }),
         ],
-      }
+      })
       const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
       const breakdownCard = screen.getByText('Category Breakdown').closest('.card') as HTMLElement
       expect(within(breakdownCard).queryByText('Travel')).toBeFalsy()
@@ -1183,8 +1270,40 @@ VERSION:102
     })
 
     it('shows "Add expenses to see the breakdown." when budgetExpenses is empty', () => {
-      render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+      render(<BudgetPage state={defaultState()} dispatch={vi.fn()} />)
       expect(screen.getByText('Add expenses to see the breakdown.')).toBeTruthy()
+    })
+  })
+
+  describe('category select options (categoryId mapping)', () => {
+    it('every category <select> renders state.categories as <option>s (name label, id value)', () => {
+      const state = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', categoryId: 'cat-housing' })],
+        budgetTransactions: [makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food' })],
+      })
+      render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+
+      fireEvent.click(screen.getByLabelText('Edit expense'))
+      const row = screen.getByText('Groceries').closest('tr')!
+      fireEvent.click(within(row).getByLabelText('Edit record'))
+      fireEvent.click(screen.getByText('Add Expense'))
+
+      const selects: HTMLSelectElement[] = [
+        screen.getByLabelText('Filter by category') as HTMLSelectElement,
+        screen.getByLabelText('Record category') as HTMLSelectElement,
+        screen.getByLabelText('Edit record category') as HTMLSelectElement,
+        screen.getByLabelText('Edit expense category') as HTMLSelectElement,
+        screen.getByLabelText('Expense category') as HTMLSelectElement,
+      ]
+
+      selects.forEach((select) => {
+        const opts = Array.from(select.querySelectorAll('option')).filter(
+          (o) => o.value !== '__all' && o.value !== '__add_new'
+        )
+        expect(opts.map((o) => o.value)).toEqual(CATEGORIES.map((c) => c.id))
+        expect(opts.map((o) => o.textContent)).toEqual(CATEGORIES.map((c) => c.name))
+      })
     })
   })
 })

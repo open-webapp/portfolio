@@ -1,10 +1,11 @@
 import { useRef, useState, type CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
+import { resolveCategoryIdForDescription } from '../lib/state'
+import { uid } from '../lib/seed'
 import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions } from '../lib/computations'
 import {
   visibleExpenses,
   categoryBreakdown,
-  allBudgetCategories,
   budgetTransactionsForPeriod,
   actualByCategory,
   availableBudgetMonths,
@@ -24,10 +25,14 @@ export interface BudgetPageProps {
  * resulting category value (e.g. set local field state, dispatch, etc.) —
  * this helper never dispatches itself.
  */
-function handleCategorySelectChange(value: string, apply: (category: string) => void) {
+function handleCategorySelectChange(value: string, dispatch: (action: any) => void, apply: (categoryId: string) => void) {
   if (value === '__add_new') {
     const result = window.prompt('New category name')
-    if (result && result.trim()) apply(result.trim())
+    if (result && result.trim()) {
+      const id = uid('category')
+      dispatch({ type: 'ADD_CATEGORY', id, name: result.trim() })
+      apply(id)
+    }
     return
   }
   apply(value)
@@ -88,17 +93,18 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
  */
 export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly')
-  const [filterCategory, setFilterCategory] = useState('__all')
+  const [filterCategoryId, setFilterCategoryId] = useState('__all')
   const [sortBy, setSortBy] = useState<'category' | 'name' | 'amount'>('category')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [showAddExpenseDialog, setShowAddExpenseDialog] = useState(false)
   const [formName, setFormName] = useState('')
-  const categories = allBudgetCategories(state.budgetExpenses, state.budgetTransactions)
-  const [formCategory, setFormCategory] = useState(categories[0] ?? '')
+  const categories = state.categories
+  const categoriesById = new Map(state.categories.map((c) => [c.id, c.name]))
+  const [formCategoryId, setFormCategoryId] = useState(state.categories[0]?.id ?? '')
   const [formAmount, setFormAmount] = useState('')
   const [formFrequency, setFormFrequency] = useState<'monthly' | 'yearly'>('monthly')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editCategoryDraft, setEditCategoryDraft] = useState<string | null>(null)
+  const [editCategoryIdDraft, setEditCategoryIdDraft] = useState<string | null>(null)
   const [editingIncome, setEditingIncome] = useState(false)
   const [incomeEditAmount, setIncomeEditAmount] = useState('')
   const [selectedMonth, setSelectedMonth] = useState(
@@ -111,13 +117,14 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
     id: string
     date: string
     description: string
-    category: string
+    categoryId: string
     accountName: string
     amount: string
   } | null>(null)
   const [recDate, setRecDate] = useState('')
   const [recDescription, setRecDescription] = useState('')
-  const [recCategory, setRecCategory] = useState(categories[0] ?? '')
+  const [recCategoryId, setRecCategoryId] = useState(state.categories[0]?.id ?? '')
+  const [recCategoryTouchedManually, setRecCategoryTouchedManually] = useState(false)
   const [recAmount, setRecAmount] = useState('')
   const [recError, setRecError] = useState('')
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -161,7 +168,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       ? availableMonths.find((m) => m.value === currentMonthValue)?.label ?? currentMonthValue
       : selectedYear
 
-  const sortedRows = visibleExpenses(state.budgetExpenses, filterCategory, sortBy, period)
+  const sortedRows = visibleExpenses(state.budgetExpenses, filterCategoryId, sortBy, period, categoriesById)
   const rows = sortDir === 'desc' ? [...sortedRows].reverse() : sortedRows
   const toggleSort = (field: 'category' | 'name' | 'amount') => {
     if (sortBy === field) {
@@ -171,7 +178,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       setSortDir('asc')
     }
   }
-  const breakdown = categoryBreakdown(state.budgetExpenses, periodFilteredTransactions, period)
+  const breakdown = categoryBreakdown(state.budgetExpenses, periodFilteredTransactions, period, state.categories)
 
   const saveIncomeEdit = () => {
     dispatch({
@@ -201,17 +208,19 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       setRecError('Amount must be greater than 0.')
       return
     }
-    const description = recDescription.trim() || recCategory
+    const description = recDescription.trim() || (categoriesById.get(recCategoryId) ?? recCategoryId)
     dispatch({
       type: 'ADD_BUDGET_TRANSACTION',
-      tx: { date: recDate, description, category: recCategory, amount },
+      tx: { date: recDate, description, categoryId: recCategoryId, amount },
     })
+    dispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, categoryId: recCategoryId })
     setSelectedMonth(recDate.slice(0, 7))
     setSelectedYear(recDate.slice(0, 4))
     setRecError('')
     setRecDate('')
     setRecDescription('')
     setRecAmount('')
+    setRecCategoryTouchedManually(false)
   }
 
   // csvText holds raw text for parsing — CSV or OFX/QFX depending on importTab.
@@ -443,25 +452,22 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                         <select
                           className="input"
                           aria-label="Edit record category"
-                          value={recordDraft!.category}
+                          value={recordDraft!.categoryId}
                           onChange={(e) =>
-                            handleCategorySelectChange(e.target.value, (cat) =>
-                              setRecordDraft((d) => (d ? { ...d, category: cat } : d))
+                            handleCategorySelectChange(e.target.value, dispatch, (categoryId) =>
+                              setRecordDraft((d) => (d ? { ...d, categoryId } : d))
                             )
                           }
                         >
                           {categories.map((cat) => (
-                            <option key={cat} value={cat}>
-                              {cat}
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name}
                             </option>
                           ))}
-                          {recordDraft && !categories.includes(recordDraft.category) && (
-                            <option value={recordDraft.category}>{recordDraft.category}</option>
-                          )}
                           <option value="__add_new">+ Add new category…</option>
                         </select>
                       ) : (
-                        <span className="tag tag-neutral">{row.category}</span>
+                        <span className="tag tag-neutral">{categoriesById.get(row.categoryId) ?? row.categoryId}</span>
                       )}
                     </td>
                     <td>
@@ -506,10 +512,15 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                               patch: {
                                 date: recordDraft!.date,
                                 description: recordDraft!.description,
-                                category: recordDraft!.category,
+                                categoryId: recordDraft!.categoryId,
                                 accountName: recordDraft!.accountName.trim() || undefined,
                                 amount: parseFloat(recordDraft!.amount) || 0,
                               },
+                            })
+                            dispatch({
+                              type: 'UPSERT_CATEGORY_MAPPING',
+                              description: recordDraft!.description,
+                              categoryId: recordDraft!.categoryId,
                             })
                             setRecordDraft(null)
                           }}
@@ -528,7 +539,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                                 id: row.id,
                                 date: row.date,
                                 description: row.description,
-                                category: row.category,
+                                categoryId: row.categoryId,
                                 accountName: row.accountName ?? '',
                                 amount: String(row.amount),
                               })
@@ -596,7 +607,14 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
               className="input"
               aria-label="Record description"
               value={recDescription}
-              onChange={(e) => setRecDescription(e.target.value)}
+              onChange={(e) => {
+                setRecDescription(e.target.value)
+                setRecCategoryTouchedManually(false)
+                if (!recCategoryTouchedManually) {
+                  const match = resolveCategoryIdForDescription(state.categoryMappings, e.target.value)
+                  if (match) setRecCategoryId(match)
+                }
+              }}
             />
           </div>
           <div className="field">
@@ -604,17 +622,19 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
             <select
               className="input"
               aria-label="Record category"
-              value={recCategory}
-              onChange={(e) => handleCategorySelectChange(e.target.value, setRecCategory)}
+              value={recCategoryId}
+              onChange={(e) =>
+                handleCategorySelectChange(e.target.value, dispatch, (categoryId) => {
+                  setRecCategoryId(categoryId)
+                  setRecCategoryTouchedManually(true)
+                })
+              }
             >
               {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
                 </option>
               ))}
-              {!categories.includes(recCategory) && recCategory !== '__add_new' && (
-                <option value={recCategory}>{recCategory}</option>
-              )}
               <option value="__add_new">+ Add new category…</option>
             </select>
           </div>
@@ -659,7 +679,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           onClick={() => {
             setShowAddExpenseDialog(false)
             setFormName('')
-            setFormCategory(categories[0] ?? '')
+            setFormCategoryId(state.categories[0]?.id ?? '')
             setFormAmount('')
             setFormFrequency('monthly')
           }}
@@ -682,17 +702,14 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 <select
                   className="input"
                   aria-label="Expense category"
-                  value={formCategory}
-                  onChange={(e) => handleCategorySelectChange(e.target.value, setFormCategory)}
+                  value={formCategoryId}
+                  onChange={(e) => handleCategorySelectChange(e.target.value, dispatch, setFormCategoryId)}
                 >
                   {categories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
                     </option>
                   ))}
-                  {!categories.includes(formCategory) && formCategory !== '__add_new' && (
-                    <option value={formCategory}>{formCategory}</option>
-                  )}
                   <option value="__add_new">+ Add new category…</option>
                 </select>
               </div>
@@ -726,7 +743,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 onClick={() => {
                   setShowAddExpenseDialog(false)
                   setFormName('')
-                  setFormCategory(categories[0] ?? '')
+                  setFormCategoryId(state.categories[0]?.id ?? '')
                   setFormAmount('')
                   setFormFrequency('monthly')
                 }}
@@ -741,11 +758,11 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                   if (!formName.trim() || !amount || amount <= 0) return
                   dispatch({
                     type: 'ADD_BUDGET_EXPENSE',
-                    expense: { name: formName.trim(), category: formCategory, amount, frequency: formFrequency },
+                    expense: { name: formName.trim(), categoryId: formCategoryId, amount, frequency: formFrequency },
                   })
                   setShowAddExpenseDialog(false)
                   setFormName('')
-                  setFormCategory(categories[0] ?? '')
+                  setFormCategoryId(state.categories[0]?.id ?? '')
                   setFormAmount('')
                   setFormFrequency('monthly')
                 }}
@@ -777,13 +794,13 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           <select
             className="input"
             aria-label="Filter by category"
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
+            value={filterCategoryId}
+            onChange={(e) => setFilterCategoryId(e.target.value)}
           >
             <option value="__all">All categories</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
+            {state.categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
               </option>
             ))}
           </select>
@@ -859,23 +876,20 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                       <select
                         className="input"
                         aria-label="Edit expense category"
-                        value={editCategoryDraft ?? row.category}
+                        value={editCategoryIdDraft ?? row.categoryId}
                         onChange={(e) =>
-                          handleCategorySelectChange(e.target.value, (cat) => setEditCategoryDraft(cat))
+                          handleCategorySelectChange(e.target.value, dispatch, (categoryId) => setEditCategoryIdDraft(categoryId))
                         }
                       >
                         {categories.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
                           </option>
                         ))}
-                        {editCategoryDraft && !categories.includes(editCategoryDraft) && (
-                          <option value={editCategoryDraft}>{editCategoryDraft}</option>
-                        )}
                         <option value="__add_new">+ Add new category…</option>
                       </select>
                     ) : (
-                      <span className="tag tag-neutral">{row.category}</span>
+                      <span className="tag tag-neutral">{categoriesById.get(row.categoryId) ?? row.categoryId}</span>
                     )}
                   </td>
                   <td>
@@ -921,18 +935,18 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                     )}
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    {fmtUSD(actualByCategoryForPeriod[row.category] ?? 0)}
+                    {fmtUSD(actualByCategoryForPeriod[row.categoryId] ?? 0)}
                   </td>
                   <td
                     style={{
                       textAlign: 'right',
                       color:
-                        toPeriod(row.amount, row.frequency, period) - (actualByCategoryForPeriod[row.category] ?? 0) >= 0
+                        toPeriod(row.amount, row.frequency, period) - (actualByCategoryForPeriod[row.categoryId] ?? 0) >= 0
                           ? GAIN_COLOR
                           : LOSS_COLOR,
                     }}
                   >
-                    {fmtUSD(toPeriod(row.amount, row.frequency, period) - (actualByCategoryForPeriod[row.category] ?? 0))}
+                    {fmtUSD(toPeriod(row.amount, row.frequency, period) - (actualByCategoryForPeriod[row.categoryId] ?? 0))}
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {isEditing ? (
@@ -940,14 +954,14 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                         type="button"
                         style={textBtnAccent}
                         onClick={() => {
-                          if (editCategoryDraft && editCategoryDraft !== row.category) {
+                          if (editCategoryIdDraft && editCategoryIdDraft !== row.categoryId) {
                             dispatch({
                               type: 'UPDATE_BUDGET_EXPENSE',
                               id: row.id,
-                              patch: { category: editCategoryDraft },
+                              patch: { categoryId: editCategoryIdDraft },
                             })
                           }
-                          setEditCategoryDraft(null)
+                          setEditCategoryIdDraft(null)
                           setEditingId(null)
                         }}
                       >
@@ -961,7 +975,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                           aria-label="Edit expense"
                           title="Edit expense"
                           onClick={() => {
-                            setEditCategoryDraft(null)
+                            setEditCategoryIdDraft(null)
                             setEditingId(row.id)
                           }}
                         >
@@ -988,8 +1002,8 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
             })}
             {(() => {
               const rowsTotalAmount = rows.reduce((sum, r) => sum + toPeriod(r.amount, r.frequency, period), 0)
-              const rowsTotalActual = [...new Set(rows.map((r) => r.category))].reduce(
-                (sum, cat) => sum + (actualByCategoryForPeriod[cat] ?? 0),
+              const rowsTotalActual = [...new Set(rows.map((r) => r.categoryId))].reduce(
+                (sum, catId) => sum + (actualByCategoryForPeriod[catId] ?? 0),
                 0
               )
               const rowsTotalVariance = rowsTotalAmount - rowsTotalActual

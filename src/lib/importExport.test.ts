@@ -41,8 +41,10 @@ function populatedState(): AppState {
     ],
     budgetIncomeMonthly: 4500,
     budgetIncomeYearly: 0,
-    budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 1800, frequency: 'monthly' }],
-    budgetTransactions: [{ id: 'btx1', date: '2024-01-05', description: 'Groceries', category: 'Food', amount: 120.5 }],
+    budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }],
+    budgetTransactions: [{ id: 'btx1', date: '2024-01-05', description: 'Groceries', categoryId: 'cat1', amount: 120.5 }],
+    categories: [{ id: 'cat1', name: 'Food' }],
+    categoryMappings: [{ id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' }],
     priceSync: {
       apiKey: 'price-api-key',
       lastFetchedDate: '2024-03-01',
@@ -78,6 +80,8 @@ describe('buildExportableState', () => {
     expect(result.budgetIncomeMonthly).toBe(4500)
     expect(result.budgetExpenses).toBe(state.budgetExpenses)
     expect(result.budgetTransactions).toBe(state.budgetTransactions)
+    expect(result.categories).toBe(state.categories)
+    expect(result.categoryMappings).toBe(state.categoryMappings)
 
     expect(result.priceSync).toEqual({ apiKey: 'price-api-key', lastRun: state.priceSync.lastRun })
     expect(result.mutualFundSync).toEqual({ apiKey: 'mf-api-key', lastRun: state.mutualFundSync.lastRun })
@@ -90,6 +94,8 @@ describe('buildExportableState', () => {
         'budgetIncomeMonthly',
         'budgetIncomeYearly',
         'budgetTransactions',
+        'categories',
+        'categoryMappings',
         'closedPositions',
         'csvMappings',
         'customInstitutions',
@@ -265,8 +271,8 @@ describe('decryptImportEnvelope', () => {
     const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
     expect(result.budgetIncomeMonthly).toBe(4500)
     expect(result.budgetIncomeYearly).toBe(0)
-    expect(result.budgetExpenses).toEqual([{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 1800, frequency: 'monthly' }])
-    expect(result.budgetTransactions).toEqual([{ id: 'btx1', date: '2024-01-05', description: 'Groceries', category: 'Food', amount: 120.5 }])
+    expect(result.budgetExpenses).toEqual([{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }])
+    expect(result.budgetTransactions).toEqual([{ id: 'btx1', date: '2024-01-05', description: 'Groceries', categoryId: 'cat1', amount: 120.5 }])
   })
 
   it('defaults budgetTransactions to [] for a legacy backup missing the field', async () => {
@@ -295,6 +301,49 @@ describe('decryptImportEnvelope', () => {
     expect(result.budgetIncomeYearly).toBe(0)
     expect(result.budgetExpenses).toEqual([])
     expect(result.budgetTransactions).toEqual([])
+  })
+
+  it('round-trips categories and categoryMappings exactly', async () => {
+    const state = populatedState()
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+    const envelope = await exportBackup(state, key, salt)
+
+    const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
+    expect(result.categories).toEqual([{ id: 'cat1', name: 'Food' }])
+    expect(result.categoryMappings).toEqual([
+      { id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' },
+    ])
+  })
+
+  it('defaults categories and categoryMappings to [] for an older export missing both keys', async () => {
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+    // Simulate an older export predating the category-mapping feature,
+    // missing both keys entirely, built directly rather than via
+    // buildExportableState.
+    const legacy = {
+      accounts: [],
+      positions: [],
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      csvMappings: [],
+      customInstitutions: [],
+      balanceEntries: [],
+      budgetIncomeMonthly: 0,
+      budgetIncomeYearly: 0,
+      budgetExpenses: [],
+      budgetTransactions: [],
+      // categories, categoryMappings intentionally omitted
+      priceSync: { apiKey: '', lastRun: null },
+      mutualFundSync: { apiKey: '', lastRun: null },
+    }
+    const envelope = await encryptState(legacy as unknown as AppState, key, salt)
+
+    const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
+    expect(result.categories).toEqual([])
+    expect(result.categoryMappings).toEqual([])
   })
 
   it('ignores a legacy budgetCategories key present in an old export without erroring', async () => {

@@ -90,7 +90,7 @@ export interface BalanceEntry {
 export interface Expense {
   id: string
   name: string
-  category: string
+  categoryId: string
   amount: number
   frequency: 'monthly' | 'yearly'
 }
@@ -99,9 +99,21 @@ export interface BudgetTransaction {
   id: string
   date: string        // YYYY-MM-DD
   description: string
-  category: string
+  categoryId: string
   accountName?: string
   amount: number
+}
+
+export interface Category {
+  id: string
+  name: string
+}
+
+export interface CategoryMapping {
+  id: string
+  substring: string
+  categoryId: string
+  updatedAt: string  // ISO
 }
 
 export const POSITIONS_REQUIRED_FIELDS = [

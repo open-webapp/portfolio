@@ -2,7 +2,7 @@
 
 See also: [design.md](design.md), [product-behavior.md](product-behavior.md)
 
-All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `mapping` (SavedCsvMapping), `bal` (BalanceEntry), `expense` (Expense).
+All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(prefix)` (`src/lib/seed.ts`): `prefix + '-' + <7 random base36 chars>`, e.g. `pos-a1b2c3d`. Prefixes used: `acc` (Account), `pos` (Position), `closed` (ClosedPosition), `tx` (Transaction), `snap` (PortfolioSnapshot), `mapping` (SavedCsvMapping), `bal` (BalanceEntry), `expense` (Expense), `budgettx` (BudgetTransaction), `category` (Category), `catmap` (CategoryMapping).
 
 ## Account
 
@@ -107,7 +107,7 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 |---|---|---|
 | `id` | `string` | `uid('expense')` |
 | `name` | `string` | User-entered, trimmed at creation; edits via `UPDATE_BUDGET_EXPENSE` are not trimmed |
-| `category` | `string` | Free string; no stored category list exists — every category `<select>` in `BudgetPage` derives its options from `allBudgetCategories(budgetExpenses, budgetTransactions)`, the live union of categories referenced by either collection |
+| `categoryId` | `string` | FK → `Category.id` |
 | `amount` | `number` | In the unit implied by `frequency` — a monthly-frequency expense's `amount` is a monthly dollar figure, a yearly-frequency expense's is a yearly figure |
 | `frequency` | `'monthly' \| 'yearly'` | |
 
@@ -119,11 +119,37 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 |---|---|---|
 | `id` | `string` | `uid('budgettx')` |
 | `date` | `string` | `YYYY-MM-DD` |
-| `description` | `string` | Falls back to the transaction's `category` if left blank on manual entry |
-| `category` | `string` | Free string; same derived-category-list caveat as `Expense.category` above |
+| `description` | `string` | Falls back to the transaction's category name if left blank on manual entry |
+| `categoryId` | `string` | FK → `Category.id`. Resolved internally by `importBudgetTransactions` (see below) — CSV/OFX import rows never carry a category column |
 | `amount` | `number` | |
 
-**Dedup on import** (`IMPORT_BUDGET_TRANSACTIONS` / `importBudgetTransactions` in `state.ts`): natural key `date|description|category|amount` (raw values, no normalization), checked against existing `budgetTransactions` and against earlier rows already accepted in the same import batch — duplicates are silently dropped.
+**Dedup on import** (`IMPORT_BUDGET_TRANSACTIONS` / `importBudgetTransactions` in `state.ts`): natural key `date|description|categoryId|amount|accountName` (raw values, no normalization), checked against existing `budgetTransactions` and against earlier rows already accepted in the same import batch — duplicates are silently dropped. `categoryId` resolution (via `CategoryMapping` substring match, falling back to "Other") happens **before** dedup, so it participates in the key.
+
+## Category
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `string` | `uid('category')` |
+| `name` | `string` | User-editable, e.g. "Groceries", "Other" |
+
+An "Other" category is always auto-vivified (see migration note below) and used as the fallback whenever no `CategoryMapping` matches. No delete action exists anywhere for `Category` — unreferenced categories simply don't render in the Settings "Categories" tab (`referencedCategories` selector is display-only; `state.categories` itself is never pruned).
+
+**Migration** (`coalesceWithDefaults`, `src/lib/persist.ts`): one-time, idempotent, runs on hydrate only when the loaded blob has no `categories` field at all (`undefined`, distinct from a present-but-empty `[]` — once `categories` exists, migration is skipped forever). Derives one `Category` row per distinct legacy `category` string found across `budgetExpenses`/`budgetTransactions` (deduped by name), always also vivifies an "Other" category even if zero expenses/transactions reference it, then rewrites every `Expense`/`BudgetTransaction`'s old `category` string field to the matching `categoryId` (unrecognized/blank values fall back to "Other"'s id).
+
+## CategoryMapping
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `string` | `uid('catmap')` |
+| `substring` | `string` | Full trimmed transaction `description` this mapping was keyed from (despite the field name, matching against it elsewhere is substring-based, not exact) |
+| `categoryId` | `string` | FK → `Category.id` |
+| `updatedAt` | `string` | ISO timestamp; latest-`updatedAt` wins when multiple mappings match a description |
+
+**Upsert**: every time a `BudgetTransaction.categoryId` is set via the Spend-records inline-edit "Done" or the manual Add Record submit, a `CategoryMapping` is upserted keyed by exact full trimmed `description` (case-insensitive dedup, latest-wins update). `Expense` category changes (Add-Expense dialog, Expenses-table inline edit) never create/touch mappings — mappings are transaction-description-driven only.
+
+**Match** (import + Add Record live-prefill): case-insensitive **substring** match of `state.categoryMappings[].substring` against the row's `description`; on multiple matches, the mapping with the latest `updatedAt` wins. No match → falls back to the "Other" category's id.
+
+**Bulk re-apply**: Settings > Categories tab's "Re-apply mappings to existing records" button rewrites every `budgetTransactions[].categoryId` from current `categoryMappings` on demand (idempotent, non-destructive, no confirm dialog).
 
 ## SavedCsvMapping
 
@@ -241,7 +267,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 - `ADD_BUDGET_TRANSACTION { tx: Omit<BudgetTransaction, 'id'> }`: Append a new `BudgetTransaction` to `budgetTransactions`, id generated (`uid('budgettx')`)
 - `UPDATE_BUDGET_TRANSACTION { id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }`: Patch fields on a `BudgetTransaction` by id; no-op if not found
 - `DELETE_BUDGET_TRANSACTION { id: string }`: Remove a `BudgetTransaction` by id; no-op if not found
-- `IMPORT_BUDGET_TRANSACTIONS { rows: Omit<BudgetTransaction, 'id'>[] }`: Append rows deduped on `date|description|category|amount` against existing `budgetTransactions` and against earlier rows in the same batch
+- `IMPORT_BUDGET_TRANSACTIONS { rows: { date, description, amount }[] }`: Resolves each row's `categoryId` via `state.categoryMappings` (case-insensitive substring match against `description`, latest-`updatedAt` wins; falls back to "Other") before dedup, then appends rows deduped on `date|description|categoryId|amount|accountName` against existing `budgetTransactions` and against earlier rows in the same batch
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
@@ -249,7 +275,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'`/`'budget'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 
-**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedMonth`/`selectedYear` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions` (see next section) ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. There is no stored category list at either layer — categories are always derived from `budgetExpenses`/`budgetTransactions`.
+**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedMonth`/`selectedYear` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions`/`categories`/`categoryMappings` (see next section) ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. `state.categories` is the source of truth for the category list (not derived) — see `## Category` above.
 
 ## Persistence envelope
 
@@ -268,6 +294,6 @@ interface EncryptedEnvelope {
 - **Google Drive** (`drive.ts` implements sync): the backup file `portfolio-state.json` is `JSON.stringify(envelope)` — identical shape and encryption as the IndexedDB envelope.
 - **Algorithm (fixed, not configurable)**: key derivation is PBKDF2-SHA256, 600,000 iterations (OWASP 2023 minimum), producing a non-extractable AES-256-GCM `CryptoKey`. Encryption is AES-256-GCM with a fresh random 12-byte IV per `encryptState` call. Salt is 16 random bytes, generated once per password and reused until rotated.
 - **Legacy-plaintext detection** (`detectEnvelopeShape`, pure/no I/O): a stored value is `'absent'` if `undefined`/`null`, `'encrypted'` if it structurally has `version === 1` and string `salt`/`iv`/`ciphertext` fields, otherwise `'legacy-plaintext'`. Purely structural — no version-field-only check, no content inspection beyond those four keys.
-- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys are silently dropped. `budgetExpenses`/`budgetTransactions` default to `[]` like every other collection (a legacy/missing blob surfaces zero budget data — there is no default category seed list; a leftover `DEFAULT_CATEGORIES` export in `computations.ts` is dead code from the retired stored-category-list design and is no longer read by any coalescing/import path).
+- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys are silently dropped. `budgetExpenses`/`budgetTransactions`/`categories`/`categoryMappings` default to `[]` like every other collection. `categories`/`categoryMappings` additionally get the one-time `categories`-migration described under `## Category` when the loaded blob has no `categories` field at all — distinct from this whitelist-default path, which only fires once that field is already present (post-migration or on a fresh install).
 - `loadPersistedApp(key: CryptoKey)` throws if the stored value is not `'encrypted'` or if decryption fails (wrong password → `OperationError` propagates).
 - `loadLegacyPlaintextApp()` reads the pre-encryption blob for one-time migration; `clearPersistedApp()` deletes the IndexedDB record entirely.

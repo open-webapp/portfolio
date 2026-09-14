@@ -25,6 +25,12 @@ import {
   deleteBudgetTransaction,
   importBudgetTransactions,
   setBudgetIncomeForPeriod,
+  addCategory,
+  renameCategory,
+  upsertCategoryMapping,
+  updateCategoryMapping,
+  addCategoryMapping,
+  reapplyCategoryMappings,
 } from './state'
 import type { AppState, BalanceEntry } from './types'
 
@@ -514,7 +520,7 @@ describe('appReducer', () => {
   describe('ADD_BUDGET_EXPENSE', () => {
     it('dispatches to addBudgetExpense state action', () => {
       const state: AppState = { ...initialState(), budgetExpenses: [] }
-      const expense = { name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' as const }
+      const expense = { name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' as const }
 
       const resultFromReducer = appReducer(state, { type: 'ADD_BUDGET_EXPENSE', expense })
       const resultDirect = addBudgetExpense(state, expense)
@@ -527,7 +533,7 @@ describe('appReducer', () => {
       const direct = resultDirect.budgetExpenses[0]
 
       expect(fromReducer.name).toBe(direct.name)
-      expect(fromReducer.category).toBe(direct.category)
+      expect(fromReducer.categoryId).toBe(direct.categoryId)
       expect(fromReducer.amount).toBe(direct.amount)
       expect(fromReducer.frequency).toBe(direct.frequency)
       expect(typeof fromReducer.id).toBe('string')
@@ -539,7 +545,7 @@ describe('appReducer', () => {
     it('dispatches to updateBudgetExpense state action for an existing id', () => {
       const state: AppState = {
         ...initialState(),
-        budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }],
+        budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }],
       }
       const patch = { amount: 2200 }
 
@@ -553,7 +559,7 @@ describe('appReducer', () => {
     it('is a no-op when the id does not exist, matching the direct call', () => {
       const state: AppState = {
         ...initialState(),
-        budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }],
+        budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }],
       }
       const patch = { amount: 999 }
 
@@ -569,7 +575,7 @@ describe('appReducer', () => {
     it('dispatches to deleteBudgetExpense state action', () => {
       const state: AppState = {
         ...initialState(),
-        budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }],
+        budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }],
       }
 
       const resultFromReducer = appReducer(state, { type: 'DELETE_BUDGET_EXPENSE', id: 'exp1' })
@@ -583,7 +589,7 @@ describe('appReducer', () => {
   describe('ADD_BUDGET_TRANSACTION', () => {
     it('dispatches to addBudgetTransaction state action', () => {
       const state: AppState = { ...initialState(), budgetTransactions: [] }
-      const tx = { date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 }
+      const tx = { date: '2026-01-15', description: 'Groceries', categoryId: 'cat-Food', amount: 85.5 }
 
       const resultFromReducer = appReducer(state, { type: 'ADD_BUDGET_TRANSACTION', tx })
       const resultDirect = addBudgetTransaction(state, tx)
@@ -596,7 +602,7 @@ describe('appReducer', () => {
 
       expect(fromReducer.date).toBe(direct.date)
       expect(fromReducer.description).toBe(direct.description)
-      expect(fromReducer.category).toBe(direct.category)
+      expect(fromReducer.categoryId).toBe(direct.categoryId)
       expect(fromReducer.amount).toBe(direct.amount)
       expect(typeof fromReducer.id).toBe('string')
       expect(fromReducer.id.length).toBeGreaterThan(0)
@@ -607,7 +613,7 @@ describe('appReducer', () => {
     it('dispatches to updateBudgetTransaction state action for an existing id', () => {
       const state: AppState = {
         ...initialState(),
-        budgetTransactions: [{ id: 'tx1', date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 }],
+        budgetTransactions: [{ id: 'tx1', date: '2026-01-15', description: 'Groceries', categoryId: 'cat-Food', amount: 85.5 }],
       }
       const patch = { amount: 90 }
 
@@ -623,7 +629,7 @@ describe('appReducer', () => {
     it('dispatches to deleteBudgetTransaction state action', () => {
       const state: AppState = {
         ...initialState(),
-        budgetTransactions: [{ id: 'tx1', date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 }],
+        budgetTransactions: [{ id: 'tx1', date: '2026-01-15', description: 'Groceries', categoryId: 'cat-Food', amount: 85.5 }],
       }
 
       const resultFromReducer = appReducer(state, { type: 'DELETE_BUDGET_TRANSACTION', id: 'tx1' })
@@ -638,8 +644,8 @@ describe('appReducer', () => {
     it('dispatches to importBudgetTransactions state action', () => {
       const state: AppState = { ...initialState(), budgetTransactions: [] }
       const rows = [
-        { date: '2026-01-15', description: 'Groceries', category: 'Food', amount: 85.5 },
-        { date: '2026-01-16', description: 'Gas', category: 'Transport', amount: 40 },
+        { date: '2026-01-15', description: 'Groceries', amount: 85.5 },
+        { date: '2026-01-16', description: 'Gas', amount: 40 },
       ]
 
       const resultFromReducer = appReducer(state, { type: 'IMPORT_BUDGET_TRANSACTIONS', rows })
@@ -664,6 +670,98 @@ describe('appReducer', () => {
       expect(resultFromReducer.budgetIncomeYearly).toBe(resultDirect.budgetIncomeYearly)
       expect(resultFromReducer.budgetIncomeMonthly).toBe(5000)
       expect(resultFromReducer.budgetIncomeYearly).toBe(0)
+    })
+  })
+
+  describe('ADD_CATEGORY', () => {
+    it('dispatches to addCategory state action', () => {
+      const state: AppState = { ...initialState(), categories: [] }
+
+      const resultFromReducer = appReducer(state, { type: 'ADD_CATEGORY', id: 'cat1', name: 'Food' })
+      const resultDirect = addCategory(state, 'cat1', 'Food')
+
+      expect(resultFromReducer.categories).toEqual(resultDirect.categories)
+      expect(resultFromReducer.categories).toEqual([{ id: 'cat1', name: 'Food' }])
+    })
+  })
+
+  describe('RENAME_CATEGORY', () => {
+    it('dispatches to renameCategory state action', () => {
+      const state: AppState = { ...initialState(), categories: [{ id: 'cat1', name: 'Food' }] }
+
+      const resultFromReducer = appReducer(state, { type: 'RENAME_CATEGORY', id: 'cat1', name: 'Groceries' })
+      const resultDirect = renameCategory(state, 'cat1', 'Groceries')
+
+      expect(resultFromReducer.categories).toEqual(resultDirect.categories)
+      expect(resultFromReducer.categories).toEqual([{ id: 'cat1', name: 'Groceries' }])
+    })
+  })
+
+  describe('UPSERT_CATEGORY_MAPPING', () => {
+    it('dispatches to upsertCategoryMapping state action', () => {
+      const state: AppState = { ...initialState(), categoryMappings: [] }
+
+      const resultFromReducer = appReducer(state, {
+        type: 'UPSERT_CATEGORY_MAPPING',
+        description: 'STARBUCKS #123',
+        categoryId: 'cat1',
+      })
+      const resultDirect = upsertCategoryMapping(state, 'STARBUCKS #123', 'cat1')
+
+      expect(resultFromReducer.categoryMappings).toHaveLength(1)
+      expect(resultFromReducer.categoryMappings).toHaveLength(resultDirect.categoryMappings.length)
+      expect(resultFromReducer.categoryMappings[0].substring).toBe('STARBUCKS #123')
+      expect(resultFromReducer.categoryMappings[0].categoryId).toBe('cat1')
+    })
+  })
+
+  describe('UPDATE_CATEGORY_MAPPING', () => {
+    it('dispatches to updateCategoryMapping state action for an existing id', () => {
+      const state: AppState = {
+        ...initialState(),
+        categoryMappings: [{ id: 'catmap1', substring: 'STARBUCKS', categoryId: 'cat1', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      }
+      const patch = { categoryId: 'cat2' }
+
+      const resultFromReducer = appReducer(state, { type: 'UPDATE_CATEGORY_MAPPING', id: 'catmap1', patch })
+      const resultDirect = updateCategoryMapping(state, 'catmap1', patch)
+
+      expect(resultFromReducer.categoryMappings).toEqual(resultDirect.categoryMappings)
+      expect(resultFromReducer.categoryMappings[0].categoryId).toBe('cat2')
+    })
+  })
+
+  describe('ADD_CATEGORY_MAPPING', () => {
+    it('dispatches to addCategoryMapping state action', () => {
+      const state: AppState = { ...initialState(), categoryMappings: [] }
+
+      const resultFromReducer = appReducer(state, { type: 'ADD_CATEGORY_MAPPING', categoryId: 'cat1', substring: 'UBER' })
+      const resultDirect = addCategoryMapping(state, 'cat1', 'UBER')
+
+      expect(resultFromReducer.categoryMappings).toHaveLength(1)
+      expect(resultFromReducer.categoryMappings).toHaveLength(resultDirect.categoryMappings.length)
+      expect(resultFromReducer.categoryMappings[0].substring).toBe('UBER')
+      expect(resultFromReducer.categoryMappings[0].categoryId).toBe('cat1')
+    })
+  })
+
+  describe('REAPPLY_CATEGORY_MAPPINGS', () => {
+    it('dispatches to reapplyCategoryMappings state action, rewriting matching budgetTransactions', () => {
+      const state: AppState = {
+        ...initialState(),
+        categoryMappings: [{ id: 'catmap1', substring: 'STARBUCKS', categoryId: 'cat-coffee', updatedAt: '2026-01-01T00:00:00.000Z' }],
+        budgetTransactions: [
+          { id: 'tx1', date: '2026-01-15', description: 'STARBUCKS #123', categoryId: 'cat-uncategorized', amount: 5.5 },
+          { id: 'tx2', date: '2026-01-16', description: 'GAS STATION', categoryId: 'cat-uncategorized', amount: 40 },
+        ],
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'REAPPLY_CATEGORY_MAPPINGS' })
+      const resultDirect = reapplyCategoryMappings(state)
+
+      expect(resultFromReducer.budgetTransactions).toEqual(resultDirect.budgetTransactions)
+      expect(resultFromReducer.budgetTransactions.find((t) => t.id === 'tx1')?.categoryId).toBe('cat-coffee')
+      expect(resultFromReducer.budgetTransactions.find((t) => t.id === 'tx2')?.categoryId).toBe('cat-uncategorized')
     })
   })
 })

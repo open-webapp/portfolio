@@ -169,11 +169,16 @@ function fixtureState(): AppState {
     regActivityFilter: 'All',
     budgetIncomeMonthly: 5000,
     budgetIncomeYearly: 60000,
+    categories: [
+      { id: 'cat-housing', name: 'Housing' },
+      { id: 'cat-other', name: 'Other' },
+    ],
+    categoryMappings: [],
     budgetExpenses: [
-      { id: 'exp1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
+      { id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' },
     ],
     budgetTransactions: [
-      { id: 'btx1', date: '2024-01-05', description: 'Rent payment', category: 'Housing', amount: -2000 },
+      { id: 'btx1', date: '2024-01-05', description: 'Rent payment', categoryId: 'cat-housing', amount: -2000 },
     ],
   }
 }
@@ -740,7 +745,7 @@ describe('IndexedDB persistence', () => {
     it('backfills missing budgetTransactions with [] from a blob that predates it (has other budget fields set)', async () => {
       await putRaw({
         budgetIncomeMonthly: 4000,
-        budgetExpenses: [{ id: 'exp1', name: 'Rent', category: 'Housing', amount: 1500, frequency: 'monthly' }],
+        budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 1500, frequency: 'monthly' }],
         // budgetTransactions key intentionally absent entirely
       })
 
@@ -752,10 +757,11 @@ describe('IndexedDB persistence', () => {
     })
 
     it('preserves an existing budgetTransactions array when present', async () => {
-      const tx = [{ id: 'btx1', date: '2024-01-05', description: 'Rent payment', category: 'Housing', amount: -2000 }]
+      const tx = [{ id: 'btx1', date: '2024-01-05', description: 'Rent payment', categoryId: 'cat-housing', amount: -2000 }]
       await putRaw({
         budgetIncomeMonthly: 4000,
         budgetTransactions: tx,
+        categories: [{ id: 'cat-housing', name: 'Housing' }],
       })
 
       const loaded = await loadLegacyPlaintextApp()
@@ -1002,6 +1008,89 @@ describe('IndexedDB persistence', () => {
           activities: [],
         },
       ])
+    })
+  })
+
+  describe('coalesceWithDefaults migrates legacy category shape to categories[]/categoryId', () => {
+    it('derives a Category from a distinct budgetExpenses.category string plus an auto-vivified "Other"', () => {
+      const loaded: Partial<AppState> = {
+        budgetExpenses: [{ id: 'e1', category: 'Food', amount: 10 } as any],
+      }
+
+      const result = coalesceWithDefaults(loaded)
+
+      expect(result.categories).toHaveLength(2)
+      const food = result.categories.find((c) => c.name === 'Food')
+      const other = result.categories.find((c) => c.name === 'Other')
+      expect(food).toBeDefined()
+      expect(other).toBeDefined()
+
+      const expense = result.budgetExpenses[0] as any
+      expect(expense.category).toBeUndefined()
+      expect(expense.categoryId).toBe(food!.id)
+    })
+
+    it('dedups two rows sharing the same category name into a single Category', () => {
+      const loaded: Partial<AppState> = {
+        budgetExpenses: [{ id: 'e1', category: 'Food', amount: 10 } as any],
+        budgetTransactions: [{ id: 't1', category: 'Food', amount: 20 } as any],
+      }
+
+      const result = coalesceWithDefaults(loaded)
+
+      const foodCategories = result.categories.filter((c) => c.name === 'Food')
+      expect(foodCategories).toHaveLength(1)
+      const foodId = foodCategories[0].id
+
+      expect((result.budgetExpenses[0] as any).categoryId).toBe(foodId)
+      expect((result.budgetTransactions[0] as any).categoryId).toBe(foodId)
+    })
+
+    it('falls back to "Other" when a row has a missing/blank/unrecognized category string', () => {
+      const loaded: Partial<AppState> = {
+        budgetExpenses: [
+          { id: 'e1', category: '', amount: 1 } as any,
+          { id: 'e2', amount: 2 } as any,
+        ],
+      }
+
+      const result = coalesceWithDefaults(loaded)
+
+      const other = result.categories.find((c) => c.name === 'Other')
+      expect(other).toBeDefined()
+      expect((result.budgetExpenses[0] as any).categoryId).toBe(other!.id)
+      expect((result.budgetExpenses[1] as any).categoryId).toBe(other!.id)
+    })
+
+    it('is idempotent: running coalesceWithDefaults on an already-migrated blob does not create new categories or touch categoryId', () => {
+      const loaded: Partial<AppState> = {
+        budgetExpenses: [{ id: 'e1', category: 'Food', amount: 10 } as any],
+      }
+
+      const firstPass = coalesceWithDefaults(loaded)
+      const secondPass = coalesceWithDefaults(firstPass)
+
+      expect(secondPass.categories).toEqual(firstPass.categories)
+      expect(secondPass.budgetExpenses).toEqual(firstPass.budgetExpenses)
+    })
+
+    it('produces exactly one "Other" category when there are zero budgetExpenses/budgetTransactions and no categories field', () => {
+      const result = coalesceWithDefaults({})
+
+      expect(result.categories).toEqual([expect.objectContaining({ name: 'Other' })])
+      expect(result.categories).toHaveLength(1)
+    })
+
+    it('leaves categories as [] when the loaded blob already has an explicitly empty categories array', () => {
+      const loaded: Partial<AppState> = {
+        categories: [],
+        budgetExpenses: [{ id: 'e1', categoryId: 'category-abc', amount: 10 } as any],
+      }
+
+      const result = coalesceWithDefaults(loaded)
+
+      expect(result.categories).toEqual([])
+      expect((result.budgetExpenses[0] as any).categoryId).toBe('category-abc')
     })
   })
 

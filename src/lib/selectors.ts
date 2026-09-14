@@ -1,5 +1,5 @@
 import type { AppState } from './state'
-import type { Position, ClosedPosition, Transaction, TaxCategory, Expense, BudgetTransaction } from './types'
+import type { Position, ClosedPosition, Transaction, TaxCategory, Expense, BudgetTransaction, Category, CategoryMapping } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod, GAIN_COLOR, LOSS_COLOR } from './computations'
 import { latestBalance } from './register'
@@ -491,34 +491,24 @@ export function shouldRetryMutualFundSync(
 /**
  * Filter expenses by category (or all) and sort by the given key.
  * When sorting by amount, compares each expense's value converted to `period`.
+ * `categoriesById` resolves each expense's `categoryId` to a display name for the
+ * category sort, so alphabetical sort reflects category names, not ids.
  */
 export function visibleExpenses(
   expenses: Expense[],
-  filterCategory: string,
+  filterCategoryId: string,
   sortBy: 'category' | 'name' | 'amount',
-  period: 'monthly' | 'yearly'
+  period: 'monthly' | 'yearly',
+  categoriesById: Map<string, string>
 ): Expense[] {
-  const visible = filterCategory === '__all' ? expenses : expenses.filter((e) => e.category === filterCategory)
+  const visible = filterCategoryId === '__all' ? expenses : expenses.filter((e) => e.categoryId === filterCategoryId)
   return [...visible].sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name)
     if (sortBy === 'amount') return toPeriod(b.amount, b.frequency, period) - toPeriod(a.amount, a.frequency, period)
-    return a.category.localeCompare(b.category) || a.name.localeCompare(b.name)
+    const nameA = categoriesById.get(a.categoryId) ?? a.categoryId
+    const nameB = categoriesById.get(b.categoryId) ?? b.categoryId
+    return nameA.localeCompare(nameB) || a.name.localeCompare(b.name)
   })
-}
-
-/**
- * Get all distinct categories referenced by either budgeted expenses or actual
- * budget transactions, sorted alphabetically.
- */
-export function allBudgetCategories(expenses: Expense[], transactions: BudgetTransaction[]): string[] {
-  const set = new Set<string>()
-  expenses.forEach((e) => {
-    if (e.category) set.add(e.category)
-  })
-  transactions.forEach((t) => {
-    if (t.category) set.add(t.category)
-  })
-  return [...set].sort((a, b) => a.localeCompare(b))
 }
 
 /**
@@ -541,7 +531,7 @@ export function budgetTransactionsForPeriod(
 export function actualByCategory(transactions: BudgetTransaction[]): Record<string, number> {
   const out: Record<string, number> = {}
   transactions.forEach((t) => {
-    out[t.category] = (out[t.category] ?? 0) + t.amount
+    out[t.categoryId] = (out[t.categoryId] ?? 0) + t.amount
   })
   return out
 }
@@ -582,7 +572,8 @@ export function availableBudgetYears(transactions: BudgetTransaction[], now: Dat
 export function categoryBreakdown(
   expenses: Expense[],
   transactions: BudgetTransaction[],
-  period: 'monthly' | 'yearly'
+  period: 'monthly' | 'yearly',
+  categories: Category[]
 ): Array<{
   name: string
   amount: number
@@ -595,15 +586,16 @@ export function categoryBreakdown(
 }> {
   const byCategory: Record<string, number> = {}
   expenses.forEach((e) => {
-    byCategory[e.category] = (byCategory[e.category] ?? 0) + toPeriod(e.amount, e.frequency, period)
+    byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + toPeriod(e.amount, e.frequency, period)
   })
   const actuals = actualByCategory(transactions)
   const maxCat = Math.max(1, ...Object.values(byCategory), ...Object.values(actuals))
   return Object.entries(byCategory)
     .sort((a, b) => b[1] - a[1])
-    .map(([name, amount]) => {
-      const actual = actuals[name] ?? 0
+    .map(([categoryId, amount]) => {
+      const actual = actuals[categoryId] ?? 0
       const variance = amount - actual
+      const name = categories.find((c) => c.id === categoryId)?.name ?? categoryId
       return {
         name,
         amount,
@@ -615,5 +607,24 @@ export function categoryBreakdown(
         varianceColor: variance >= 0 ? GAIN_COLOR : LOSS_COLOR
       }
     })
+}
+
+/**
+ * Categories referenced by at least one budgeted expense, actual budget transaction,
+ * or category mapping.
+ */
+export function referencedCategories(state: AppState): Category[] {
+  const used = new Set<string>()
+  state.budgetExpenses.forEach((e) => used.add(e.categoryId))
+  state.budgetTransactions.forEach((t) => used.add(t.categoryId))
+  state.categoryMappings.forEach((m) => used.add(m.categoryId))
+  return state.categories.filter((c) => used.has(c.id))
+}
+
+/**
+ * Category mappings for a given category, sorted alphabetically by substring.
+ */
+export function mappingsForCategory(mappings: CategoryMapping[], categoryId: string): CategoryMapping[] {
+  return mappings.filter((m) => m.categoryId === categoryId).sort((a, b) => a.substring.localeCompare(b.substring))
 }
 

@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
-import type { BalanceEntry, BudgetTransaction, Expense } from './types'
+import type { BalanceEntry, BudgetTransaction, CategoryMapping, Expense } from './types'
 
 export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
@@ -48,6 +48,12 @@ export type AppAction =
   | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
   | { type: 'IMPORT_BUDGET_TRANSACTIONS'; rows: Omit<BudgetTransaction, 'id'>[] }
   | { type: 'SET_BUDGET_INCOME_FOR_PERIOD'; period: 'monthly' | 'yearly'; amount: number }
+  | { type: 'ADD_CATEGORY'; id: string; name: string }
+  | { type: 'RENAME_CATEGORY'; id: string; name: string }
+  | { type: 'UPSERT_CATEGORY_MAPPING'; description: string; categoryId: string }
+  | { type: 'UPDATE_CATEGORY_MAPPING'; id: string; patch: Partial<Pick<CategoryMapping, 'substring' | 'categoryId'>> }
+  | { type: 'ADD_CATEGORY_MAPPING'; categoryId: string; substring: string }
+  | { type: 'REAPPLY_CATEGORY_MAPPINGS' }
 
 /**
  * Reducer function that handles all state mutations.
@@ -199,6 +205,24 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'SET_BUDGET_INCOME_FOR_PERIOD':
       return StateActions.setBudgetIncomeForPeriod(state, action.period, action.amount)
+
+    case 'ADD_CATEGORY':
+      return StateActions.addCategory(state, action.id, action.name)
+
+    case 'RENAME_CATEGORY':
+      return StateActions.renameCategory(state, action.id, action.name)
+
+    case 'UPSERT_CATEGORY_MAPPING':
+      return StateActions.upsertCategoryMapping(state, action.description, action.categoryId)
+
+    case 'UPDATE_CATEGORY_MAPPING':
+      return StateActions.updateCategoryMapping(state, action.id, action.patch)
+
+    case 'ADD_CATEGORY_MAPPING':
+      return StateActions.addCategoryMapping(state, action.categoryId, action.substring)
+
+    case 'REAPPLY_CATEGORY_MAPPINGS':
+      return StateActions.reapplyCategoryMappings(state)
 
     default:
       return state

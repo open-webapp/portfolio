@@ -139,18 +139,18 @@ export function getAllExistingAssetClasses(positions: Position[]): string[] {
  * field does NOT parse as a float (this is a known quirk, not a bug — a data row
  * whose amount field happens to be non-numeric will also be dropped).
  */
-export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; description: string; category: string; amount: number }> {
+export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; description: string; amount: number }> {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
   let rows = lines
   if (rows.length && isNaN(parseFloat(rows[0].split(',').pop() ?? ''))) rows = rows.slice(1)
-  const parsed: Array<{ date: string; description: string; category: string; amount: number }> = []
+  const parsed: Array<{ date: string; description: string; amount: number }> = []
   rows.forEach((line) => {
     const parts = line.split(',').map((p) => p.trim())
-    if (parts.length < 4) return
-    const [date, description, category, amountStr] = parts
+    if (parts.length < 3) return
+    const [date, description, amountStr] = parts
     const amount = parseFloat(amountStr)
     if (!date || isNaN(amount)) return
-    parsed.push({ date, description, category: category || 'Other', amount })
+    parsed.push({ date, description, amount })
   })
   return parsed
 }
@@ -162,8 +162,8 @@ export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; 
  * grouping in the output. Never throws; unparseable blocks are skipped and
  * a file with zero usable records yields [].
  */
-export function parseOfxTransactions(text: string): Array<{ date: string; description: string; category: string; amount: number }> {
-  const parsed: Array<{ date: string; description: string; category: string; amount: number }> = []
+export function parseOfxTransactions(text: string): Array<{ date: string; description: string; amount: number }> {
+  const parsed: Array<{ date: string; description: string; amount: number }> = []
   const blockRe = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi
   const extract = (block: string, tag: string): string | null => {
     const m = new RegExp(`<${tag}>([^<\\r\\n]*)`, 'i').exec(block)
@@ -199,7 +199,7 @@ export function parseOfxTransactions(text: string): Array<{ date: string; descri
     const amount = parseFloat(trnamtStr)
     if (isNaN(amount)) continue
 
-    parsed.push({ date, description, category: 'Other', amount })
+    parsed.push({ date, description, amount })
   }
   return parsed
 }

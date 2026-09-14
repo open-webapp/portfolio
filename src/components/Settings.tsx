@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
 import type { Portfolio } from '../lib/types'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
@@ -7,6 +8,34 @@ import { syncBackup, getConnectionSnapshot } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
 import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
+import { referencedCategories, mappingsForCategory } from '../lib/selectors'
+
+const iconBtn: CSSProperties = {
+  border: 'none',
+  background: 'none',
+  cursor: 'pointer',
+  padding: '4px',
+  display: 'inline-flex',
+  alignItems: 'center',
+}
+
+const textBtnAccent: CSSProperties = {
+  border: 'none',
+  background: 'none',
+  cursor: 'pointer',
+  color: 'var(--color-accent)',
+  fontSize: '12px',
+  fontWeight: 600,
+  padding: 0,
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+    </svg>
+  )
+}
 
 export interface SettingsPageProps {
   state: AppState
@@ -19,8 +48,8 @@ export interface SettingsPageProps {
   onPasswordEntryTimeReset: () => void
   onDriveConnected: (connection: unknown) => void
   onDriveDisconnected: () => void
-  settingsSection: 'backup' | 'encryption' | 'priceSync'
-  setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync') => void
+  settingsSection: 'backup' | 'encryption' | 'priceSync' | 'categories'
+  setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync' | 'categories') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
   runMutualFundSyncTrigger: () => Promise<void>
   tickerOverviewErrors: Record<string, string>
@@ -65,6 +94,20 @@ export function SettingsPage({
   const [mfApiKeyInput, setMfApiKeyInput] = useState(state.mutualFundSync.apiKey)
   const [fetchingMutualFunds, setFetchingMutualFunds] = useState(false)
   const mutualFundSync = state.mutualFundSync
+
+  // Categories local state
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
+  const [categoryNameDraft, setCategoryNameDraft] = useState('')
+  const [newSubstringDraftByCategory, setNewSubstringDraftByCategory] = useState<Record<string, string>>({})
+  const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
+  const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
+  const [reapplySuccess, setReapplySuccess] = useState<string | null>(null)
+
+  const handleReapplyMappings = useCallback(() => {
+    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS' })
+    setReapplySuccess('Re-applied.')
+    setTimeout(() => setReapplySuccess(null), 3000)
+  }, [dispatch])
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
@@ -174,6 +217,16 @@ export function SettingsPage({
             onClick={() => setSettingsSection('priceSync')}
           />
           Quotes API Key
+        </label>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="settingsSection"
+            checked={settingsSection === 'categories'}
+            readOnly
+            onClick={() => setSettingsSection('categories')}
+          />
+          Categories
         </label>
       </div>
       <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
@@ -360,6 +413,150 @@ export function SettingsPage({
             </ul>
           )}
         </div>
+      </section>
+      )}
+
+      {/* Categories section */}
+      {settingsSection === 'categories' && (
+      <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Categories</div>
+        {referencedCategories(state).map((category) => {
+          const isEditingCategory = editingCategoryId === category.id
+          const mappings = mappingsForCategory(state.categoryMappings, category.id)
+          const newSubstringDraft = newSubstringDraftByCategory[category.id] ?? ''
+          return (
+            <div key={category.id} style={{ marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-3)', borderBottom: '1px solid var(--border-color, #ddd)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                {isEditingCategory ? (
+                  <>
+                    <input
+                      className="input"
+                      aria-label="Edit category name"
+                      value={categoryNameDraft}
+                      onChange={(e) => setCategoryNameDraft(e.target.value)}
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      style={textBtnAccent}
+                      onClick={() => {
+                        dispatch({ type: 'RENAME_CATEGORY', id: category.id, name: categoryNameDraft.trim() })
+                        setEditingCategoryId(null)
+                      }}
+                    >
+                      Done
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontWeight: 600 }}>{category.name}</span>
+                    <button
+                      type="button"
+                      style={{ ...iconBtn, color: 'var(--color-accent)' }}
+                      aria-label={`Edit category ${category.name}`}
+                      title="Edit category"
+                      onClick={() => {
+                        setEditingCategoryId(category.id)
+                        setCategoryNameDraft(category.name)
+                      }}
+                    >
+                      <PencilIcon />
+                    </button>
+                  </>
+                )}
+              </div>
+              <div style={{ marginLeft: 'var(--space-5)', marginTop: 'var(--space-2)' }}>
+                {mappings.map((mapping) => {
+                  const isEditingMapping = editingMappingId === mapping.id
+                  return (
+                    <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                      {isEditingMapping ? (
+                        <>
+                          <input
+                            className="input"
+                            aria-label="Edit mapping substring"
+                            value={mappingSubstringDraft}
+                            onChange={(e) => setMappingSubstringDraft(e.target.value)}
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            style={textBtnAccent}
+                            onClick={() => {
+                              dispatch({
+                                type: 'UPDATE_CATEGORY_MAPPING',
+                                id: mapping.id,
+                                patch: { substring: mappingSubstringDraft.trim() },
+                              })
+                              setEditingMappingId(null)
+                            }}
+                          >
+                            Done
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span>{mapping.substring}</span>
+                          <button
+                            type="button"
+                            style={{ ...iconBtn, color: 'var(--color-accent)' }}
+                            aria-label={`Edit substring ${mapping.substring}`}
+                            title="Edit substring"
+                            onClick={() => {
+                              setEditingMappingId(mapping.id)
+                              setMappingSubstringDraft(mapping.substring)
+                            }}
+                          >
+                            <PencilIcon />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                  <input
+                    className="input"
+                    placeholder="+ add substring"
+                    aria-label={`Add substring to ${category.name}`}
+                    value={newSubstringDraft}
+                    onChange={(e) =>
+                      setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: e.target.value }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newSubstringDraft.trim()) {
+                        dispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
+                        setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    style={textBtnAccent}
+                    aria-label={`Add substring button ${category.name}`}
+                    disabled={!newSubstringDraft.trim()}
+                    onClick={() => {
+                      dispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
+                      setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+        <button
+          type="button"
+          className="btn btn-secondary blueprint"
+          onClick={handleReapplyMappings}
+        >
+          Re-apply mappings to existing records
+        </button>
+        {reapplySuccess && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>{reapplySuccess}</p>
+        )}
       </section>
       )}
     </div>

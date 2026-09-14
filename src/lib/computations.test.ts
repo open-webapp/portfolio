@@ -277,91 +277,82 @@ describe('computations', () => {
   describe('parseBudgetTransactionsCsv', () => {
     it('parses 3 valid rows with no header', () => {
       const csv = [
-        '2026-01-01,Coffee,Dining,-4.50',
-        '2026-01-02,Paycheck,Income,2000',
-        '2026-01-03,Rent,Housing,-1500',
+        '2026-01-01,Coffee,-4.50',
+        '2026-01-02,Paycheck,2000',
+        '2026-01-03,Rent,-1500',
       ].join('\n')
       const result = parseBudgetTransactionsCsv(csv)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
-        { date: '2026-01-02', description: 'Paycheck', category: 'Income', amount: 2000 },
-        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+        { date: '2026-01-01', description: 'Coffee', amount: -4.5 },
+        { date: '2026-01-02', description: 'Paycheck', amount: 2000 },
+        { date: '2026-01-03', description: 'Rent', amount: -1500 },
       ])
     })
 
     it('drops a real header row (last field non-numeric)', () => {
       const csv = [
-        'Date,Description,Category,Amount',
-        '2026-01-01,Coffee,Dining,-4.50',
-        '2026-01-02,Paycheck,Income,2000',
+        'Date,Description,Amount',
+        '2026-01-01,Coffee,-4.50',
+        '2026-01-02,Paycheck,2000',
       ].join('\n')
       const result = parseBudgetTransactionsCsv(csv)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
-        { date: '2026-01-02', description: 'Paycheck', category: 'Income', amount: 2000 },
+        { date: '2026-01-01', description: 'Coffee', amount: -4.5 },
+        { date: '2026-01-02', description: 'Paycheck', amount: 2000 },
       ])
     })
 
     it('known quirk: drops first data row when its amount field is non-numeric, mistaking it for a header', () => {
       const csv = [
-        '2026-01-01,Coffee,Dining,N/A',
-        '2026-01-02,Paycheck,Income,2000',
+        '2026-01-01,Coffee,N/A',
+        '2026-01-02,Paycheck,2000',
       ].join('\n')
       const result = parseBudgetTransactionsCsv(csv)
       // The first row is dropped as a "header" even though it was real data —
       // this is the documented behavior of the spec algorithm, not a bug.
       expect(result).toEqual([
-        { date: '2026-01-02', description: 'Paycheck', category: 'Income', amount: 2000 },
+        { date: '2026-01-02', description: 'Paycheck', amount: 2000 },
       ])
     })
 
-    it('skips a line with fewer than 4 comma-separated parts', () => {
+    it('skips a line with fewer than 3 comma-separated parts', () => {
       const csv = [
-        '2026-01-01,Coffee,Dining,-4.50',
-        '2026-01-02,Incomplete,Row',
-        '2026-01-03,Rent,Housing,-1500',
+        '2026-01-01,Coffee,-4.50',
+        '2026-01-02,Incomplete',
+        '2026-01-03,Rent,-1500',
       ].join('\n')
       const result = parseBudgetTransactionsCsv(csv)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
-        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+        { date: '2026-01-01', description: 'Coffee', amount: -4.5 },
+        { date: '2026-01-03', description: 'Rent', amount: -1500 },
       ])
     })
 
     it('skips rows with missing date or non-numeric amount', () => {
       const csv = [
-        '2026-01-01,Coffee,Dining,-4.50',
-        ',NoDate,Dining,-5.00',
-        '2026-01-04,BadAmount,Dining,abc',
-        '2026-01-03,Rent,Housing,-1500',
+        '2026-01-01,Coffee,-4.50',
+        ',NoDate,-5.00',
+        '2026-01-04,BadAmount,abc',
+        '2026-01-03,Rent,-1500',
       ].join('\n')
       const result = parseBudgetTransactionsCsv(csv)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
-        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+        { date: '2026-01-01', description: 'Coffee', amount: -4.5 },
+        { date: '2026-01-03', description: 'Rent', amount: -1500 },
       ])
-    })
-
-    it('defaults empty category field to "Other"', () => {
-      const csv = [
-        '2026-01-01,Coffee,Dining,-4.50',
-        '2026-01-02,Misc,,-10.00',
-      ].join('\n')
-      const result = parseBudgetTransactionsCsv(csv)
-      expect(result[1]).toEqual({ date: '2026-01-02', description: 'Misc', category: 'Other', amount: -10 })
     })
 
     it('ignores blank/whitespace-only lines', () => {
       const csv = [
-        '2026-01-01,Coffee,Dining,-4.50',
+        '2026-01-01,Coffee,-4.50',
         '',
         '   ',
-        '2026-01-03,Rent,Housing,-1500',
+        '2026-01-03,Rent,-1500',
       ].join('\n')
       const result = parseBudgetTransactionsCsv(csv)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
-        { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
+        { date: '2026-01-01', description: 'Coffee', amount: -4.5 },
+        { date: '2026-01-03', description: 'Rent', amount: -1500 },
       ])
     })
   })
@@ -396,8 +387,8 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Coffee Shop', category: 'Other', amount: -4.5 },
-        { date: '2026-01-02', description: 'Paycheck', category: 'Other', amount: 2000 },
+        { date: '2026-01-01', description: 'Coffee Shop', amount: -4.5 },
+        { date: '2026-01-02', description: 'Paycheck', amount: 2000 },
       ])
     })
 
@@ -452,7 +443,7 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Grocery Store', category: 'Other', amount: -5 },
+        { date: '2026-01-01', description: 'Grocery Store', amount: -5 },
       ])
     })
 
@@ -467,7 +458,7 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Fallback Memo Text', category: 'Other', amount: -5 },
+        { date: '2026-01-01', description: 'Fallback Memo Text', amount: -5 },
       ])
     })
 
@@ -487,7 +478,7 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2026-01-03', description: 'Valid Row', category: 'Other', amount: -7 },
+        { date: '2026-01-03', description: 'Valid Row', amount: -7 },
       ])
     })
 
@@ -501,7 +492,7 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2024-01-15', description: 'Timezone Txn', category: 'Other', amount: -1 },
+        { date: '2024-01-15', description: 'Timezone Txn', amount: -1 },
       ])
     })
 
@@ -515,7 +506,7 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2024-01-15', description: 'Short Date Txn', category: 'Other', amount: -1 },
+        { date: '2024-01-15', description: 'Short Date Txn', amount: -1 },
       ])
     })
 
@@ -534,7 +525,7 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2026-01-03', description: 'Valid Row', category: 'Other', amount: -9 },
+        { date: '2026-01-03', description: 'Valid Row', amount: -9 },
       ])
     })
 
@@ -553,8 +544,8 @@ describe('computations', () => {
       ].join('\n')
       const result = parseOfxTransactions(ofx)
       expect(result).toEqual([
-        { date: '2026-01-01', description: 'Negative Txn', category: 'Other', amount: -42.75 },
-        { date: '2026-01-02', description: 'Positive Txn', category: 'Other', amount: 42.75 },
+        { date: '2026-01-01', description: 'Negative Txn', amount: -42.75 },
+        { date: '2026-01-02', description: 'Positive Txn', amount: 42.75 },
       ])
     })
 

@@ -21,14 +21,25 @@ import {
   shouldRetryMutualFundSync,
   visibleExpenses,
   categoryBreakdown,
-  allBudgetCategories,
   budgetTransactionsForPeriod,
   actualByCategory,
   availableBudgetMonths,
-  availableBudgetYears
+  availableBudgetYears,
+  referencedCategories,
+  mappingsForCategory
 } from './selectors'
 import { AppState, initialState, clearAccountSelection } from './state'
-import { Account, Position, Transaction, ClosedPosition, BalanceEntry, Expense, BudgetTransaction } from './types'
+import {
+  Account,
+  Position,
+  Transaction,
+  ClosedPosition,
+  BalanceEntry,
+  Expense,
+  BudgetTransaction,
+  Category,
+  CategoryMapping
+} from './types'
 import { GAIN_COLOR, LOSS_COLOR } from './computations'
 
 describe('selectors', () => {
@@ -1542,66 +1553,103 @@ describe('selectors', () => {
 })
 
 describe('visibleExpenses', () => {
-  const rent: Expense = { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
-  const netflix: Expense = { id: 'e2', name: 'Netflix', category: 'Entertainment', amount: 180, frequency: 'yearly' }
-  const gym: Expense = { id: 'e3', name: 'Gym', category: 'Health', amount: 600, frequency: 'yearly' }
-  const groceries: Expense = { id: 'e4', name: 'Groceries', category: 'Housing', amount: 400, frequency: 'monthly' }
+  // ids deliberately reversed relative to their names: id order (cat-1, cat-2) is the
+  // OPPOSITE of name order (Housing, Entertainment) is not what we want either — we want
+  // id-alpha-order and name-alpha-order to disagree. cat-1 -> 'Zebra Category' (would sort
+  // LAST by name but FIRST by id), cat-2 -> 'Apple Category' (would sort FIRST by name but
+  // LAST by id). If the sort used raw ids, Zebra's expenses would come first; since it uses
+  // resolved names, Apple's expenses must come first instead.
+  const catZebra: Category = { id: 'cat-1', name: 'Zebra Category' }
+  const catApple: Category = { id: 'cat-2', name: 'Apple Category' }
+  const categoriesById = new Map<string, string>([
+    [catZebra.id, catZebra.name],
+    [catApple.id, catApple.name]
+  ])
+
+  const rent: Expense = { id: 'e1', name: 'Rent', categoryId: catZebra.id, amount: 2000, frequency: 'monthly' }
+  const netflix: Expense = {
+    id: 'e2',
+    name: 'Netflix',
+    categoryId: catApple.id,
+    amount: 180,
+    frequency: 'yearly'
+  }
+  const gym: Expense = { id: 'e3', name: 'Gym', categoryId: catZebra.id, amount: 600, frequency: 'yearly' }
+  const groceries: Expense = {
+    id: 'e4',
+    name: 'Groceries',
+    categoryId: catApple.id,
+    amount: 400,
+    frequency: 'monthly'
+  }
   const expenses = [rent, netflix, gym, groceries]
 
   it('__all returns everything', () => {
-    const result = visibleExpenses(expenses, '__all', 'name', 'monthly')
+    const result = visibleExpenses(expenses, '__all', 'name', 'monthly', categoriesById)
     expect(result).toHaveLength(4)
   })
 
-  it('filters by specific category', () => {
-    const result = visibleExpenses(expenses, 'Housing', 'name', 'monthly')
-    expect(result.map((e) => e.id)).toEqual(['e4', 'e1'])
+  it('filters by specific categoryId', () => {
+    const result = visibleExpenses(expenses, catZebra.id, 'name', 'monthly', categoriesById)
+    expect(result.map((e) => e.id)).toEqual(['e3', 'e1'])
   })
 
   it('sortBy name gives alpha order', () => {
-    const result = visibleExpenses(expenses, '__all', 'name', 'monthly')
+    const result = visibleExpenses(expenses, '__all', 'name', 'monthly', categoriesById)
     expect(result.map((e) => e.name)).toEqual(['Groceries', 'Gym', 'Netflix', 'Rent'])
   })
 
   it('sortBy amount sorts descending by toPeriod value (monthly period)', () => {
     // monthly equivalents: rent=2000, netflix=15, gym=50, groceries=400
-    const result = visibleExpenses(expenses, '__all', 'amount', 'monthly')
+    const result = visibleExpenses(expenses, '__all', 'amount', 'monthly', categoriesById)
     expect(result.map((e) => e.id)).toEqual(['e1', 'e4', 'e3', 'e2'])
   })
 
   it('sortBy amount sorts descending by toPeriod value (yearly period)', () => {
     // yearly equivalents: rent=24000, netflix=180, gym=600, groceries=4800
-    const result = visibleExpenses(expenses, '__all', 'amount', 'yearly')
+    const result = visibleExpenses(expenses, '__all', 'amount', 'yearly', categoriesById)
     expect(result.map((e) => e.id)).toEqual(['e1', 'e4', 'e3', 'e2'])
   })
 
-  it('sortBy category groups by category then name', () => {
-    const result = visibleExpenses(expenses, '__all', 'category', 'monthly')
-    expect(result.map((e) => e.name)).toEqual(['Netflix', 'Gym', 'Groceries', 'Rent'])
+  it('sortBy category groups by resolved category NAME (not raw categoryId) then name', () => {
+    // categoryId alpha order would put catZebra (cat-1) first, catApple (cat-2) second —
+    // i.e. Rent/Gym before Netflix/Groceries. But name-alpha order puts 'Apple Category'
+    // before 'Zebra Category', so Netflix/Groceries (Apple) must come first.
+    const result = visibleExpenses(expenses, '__all', 'category', 'monthly', categoriesById)
+    expect(result.map((e) => e.name)).toEqual(['Groceries', 'Netflix', 'Gym', 'Rent'])
   })
 
   it('empty input returns empty array', () => {
-    expect(visibleExpenses([], '__all', 'name', 'monthly')).toEqual([])
+    expect(visibleExpenses([], '__all', 'name', 'monthly', categoriesById)).toEqual([])
   })
 
   it('does not mutate the original array', () => {
     const original = [rent, netflix, gym, groceries]
     const originalOrder = original.map((e) => e.id)
-    visibleExpenses(original, '__all', 'name', 'monthly')
+    visibleExpenses(original, '__all', 'name', 'monthly', categoriesById)
     expect(original.map((e) => e.id)).toEqual(originalOrder)
   })
 })
 
 describe('categoryBreakdown', () => {
+  const catHousing: Category = { id: 'cat-housing', name: 'Housing' }
+  const catEntertainment: Category = { id: 'cat-entertainment', name: 'Entertainment' }
+  const catHealth: Category = { id: 'cat-health', name: 'Health' }
+  const catFood: Category = { id: 'cat-food', name: 'Food' }
+  const catA: Category = { id: 'cat-a', name: 'A' }
+  const catB: Category = { id: 'cat-b', name: 'B' }
+  const catC: Category = { id: 'cat-c', name: 'C' }
+  const allCats = [catHousing, catEntertainment, catHealth, catFood, catA, catB, catC]
+
   it('returns empty array for no expenses', () => {
-    expect(categoryBreakdown([], [], 'monthly')).toEqual([])
+    expect(categoryBreakdown([], [], 'monthly', allCats)).toEqual([])
   })
 
-  it('returns one entry with budgetPct 100 for a single category with no actuals', () => {
+  it('returns one entry with budgetPct 100 for a single category with no actuals, name resolved from categories', () => {
     const expenses: Expense[] = [
-      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' }
+      { id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly')
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
     expect(result).toEqual([
       {
         name: 'Housing',
@@ -1616,13 +1664,21 @@ describe('categoryBreakdown', () => {
     ])
   })
 
+  it('falls back to categoryId as name when category is unknown', () => {
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'Mystery', categoryId: 'cat-unknown', amount: 500, frequency: 'monthly' }
+    ]
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
+    expect(result[0].name).toBe('cat-unknown')
+  })
+
   it('sorts multiple categories descending by amount', () => {
     const expenses: Expense[] = [
-      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
-      { id: 'e2', name: 'Netflix', category: 'Entertainment', amount: 15, frequency: 'monthly' },
-      { id: 'e3', name: 'Gym', category: 'Health', amount: 50, frequency: 'monthly' }
+      { id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' },
+      { id: 'e2', name: 'Netflix', categoryId: catEntertainment.id, amount: 15, frequency: 'monthly' },
+      { id: 'e3', name: 'Gym', categoryId: catHealth.id, amount: 50, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly')
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
     expect(result.map((r) => r.name)).toEqual(['Housing', 'Health', 'Entertainment'])
   })
 
@@ -1630,11 +1686,11 @@ describe('categoryBreakdown', () => {
     // Categories: A=100, B=100, C=200. Sum=400.
     // Sum-based pct for C would be 50%; max-based pct for C is 100%.
     const expenses: Expense[] = [
-      { id: 'e1', name: 'A1', category: 'A', amount: 100, frequency: 'monthly' },
-      { id: 'e2', name: 'B1', category: 'B', amount: 100, frequency: 'monthly' },
-      { id: 'e3', name: 'C1', category: 'C', amount: 200, frequency: 'monthly' }
+      { id: 'e1', name: 'A1', categoryId: catA.id, amount: 100, frequency: 'monthly' },
+      { id: 'e2', name: 'B1', categoryId: catB.id, amount: 100, frequency: 'monthly' },
+      { id: 'e3', name: 'C1', categoryId: catC.id, amount: 200, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly')
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
     const cEntry = result.find((r) => r.name === 'C')
     const aEntry = result.find((r) => r.name === 'A')
     expect(cEntry?.budgetPct).toBe(100)
@@ -1643,15 +1699,15 @@ describe('categoryBreakdown', () => {
 
   it('converts mixed monthly/yearly expenses via toPeriod before summing', () => {
     const expenses: Expense[] = [
-      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
-      { id: 'e2', name: 'Property Tax', category: 'Housing', amount: 12000, frequency: 'yearly' }
+      { id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' },
+      { id: 'e2', name: 'Property Tax', categoryId: catHousing.id, amount: 12000, frequency: 'yearly' }
     ]
     // monthly period: rent=2000, property tax=1000 -> total 3000
-    const monthlyResult = categoryBreakdown(expenses, [], 'monthly')
+    const monthlyResult = categoryBreakdown(expenses, [], 'monthly', allCats)
     expect(monthlyResult[0]).toMatchObject({ name: 'Housing', amount: 3000, budgetPct: 100 })
 
     // yearly period: rent=24000, property tax=12000 -> total 36000
-    const yearlyResult = categoryBreakdown(expenses, [], 'yearly')
+    const yearlyResult = categoryBreakdown(expenses, [], 'yearly', allCats)
     expect(yearlyResult[0]).toMatchObject({ name: 'Housing', amount: 36000, budgetPct: 100 })
   })
 
@@ -1660,14 +1716,14 @@ describe('categoryBreakdown', () => {
     // Food: budget 500, actual 300 -> under budget (variance 200)
     // maxCat = max(2000, 500, 2500, 300) = 2500
     const expenses: Expense[] = [
-      { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
-      { id: 'e2', name: 'Groceries', category: 'Food', amount: 500, frequency: 'monthly' }
+      { id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' },
+      { id: 'e2', name: 'Groceries', categoryId: catFood.id, amount: 500, frequency: 'monthly' }
     ]
     const transactions: BudgetTransaction[] = [
-      { id: 't1', date: '2026-09-05', description: 'Rent', category: 'Housing', amount: 2500 },
-      { id: 't2', date: '2026-09-10', description: 'Groceries', category: 'Food', amount: 300 }
+      { id: 't1', date: '2026-09-05', description: 'Rent', categoryId: catHousing.id, amount: 2500 },
+      { id: 't2', date: '2026-09-10', description: 'Groceries', categoryId: catFood.id, amount: 300 }
     ]
-    const result = categoryBreakdown(expenses, transactions, 'monthly')
+    const result = categoryBreakdown(expenses, transactions, 'monthly', allCats)
     const housing = result.find((r) => r.name === 'Housing')
     const food = result.find((r) => r.name === 'Food')
 
@@ -1695,30 +1751,12 @@ describe('categoryBreakdown', () => {
 })
 
 describe('budget selectors', () => {
-  describe('allBudgetCategories', () => {
-    it('unions and sorts categories from both sources, de-duped', () => {
-      const expenses: Expense[] = [
-        { id: 'e1', name: 'Rent', category: 'Housing', amount: 2000, frequency: 'monthly' },
-        { id: 'e2', name: 'Netflix', category: 'Entertainment', amount: 15, frequency: 'monthly' }
-      ]
-      const transactions: BudgetTransaction[] = [
-        { id: 't1', date: '2026-09-01', description: 'x', category: 'Food', amount: 50 },
-        { id: 't2', date: '2026-09-02', description: 'y', category: 'Housing', amount: 100 }
-      ]
-      expect(allBudgetCategories(expenses, transactions)).toEqual(['Entertainment', 'Food', 'Housing'])
-    })
-
-    it('returns empty array when both sources are empty', () => {
-      expect(allBudgetCategories([], [])).toEqual([])
-    })
-  })
-
   describe('budgetTransactionsForPeriod', () => {
     const transactions: BudgetTransaction[] = [
-      { id: 't1', date: '2026-08-31', description: 'a', category: 'Food', amount: 10 },
-      { id: 't2', date: '2026-09-01', description: 'b', category: 'Food', amount: 20 },
-      { id: 't3', date: '2026-09-30', description: 'c', category: 'Food', amount: 30 },
-      { id: 't4', date: '2025-09-15', description: 'd', category: 'Food', amount: 40 }
+      { id: 't1', date: '2026-08-31', description: 'a', categoryId: 'cat-food', amount: 10 },
+      { id: 't2', date: '2026-09-01', description: 'b', categoryId: 'cat-food', amount: 20 },
+      { id: 't3', date: '2026-09-30', description: 'c', categoryId: 'cat-food', amount: 30 },
+      { id: 't4', date: '2025-09-15', description: 'd', categoryId: 'cat-food', amount: 40 }
     ]
 
     it('filters by YYYY-MM prefix for monthly period, boundary dates included', () => {
@@ -1743,17 +1781,71 @@ describe('budget selectors', () => {
   })
 
   describe('actualByCategory', () => {
-    it('sums amounts per category', () => {
+    it('sums amounts per categoryId', () => {
       const transactions: BudgetTransaction[] = [
-        { id: 't1', date: '2026-09-01', description: 'a', category: 'Food', amount: 10 },
-        { id: 't2', date: '2026-09-02', description: 'b', category: 'Food', amount: 20 },
-        { id: 't3', date: '2026-09-03', description: 'c', category: 'Housing', amount: 100 }
+        { id: 't1', date: '2026-09-01', description: 'a', categoryId: 'cat-food', amount: 10 },
+        { id: 't2', date: '2026-09-02', description: 'b', categoryId: 'cat-food', amount: 20 },
+        { id: 't3', date: '2026-09-03', description: 'c', categoryId: 'cat-housing', amount: 100 }
       ]
-      expect(actualByCategory(transactions)).toEqual({ Food: 30, Housing: 100 })
+      expect(actualByCategory(transactions)).toEqual({ 'cat-food': 30, 'cat-housing': 100 })
     })
 
     it('returns empty object for empty input', () => {
       expect(actualByCategory([])).toEqual({})
+    })
+  })
+
+  describe('referencedCategories', () => {
+    const catHousing: Category = { id: 'cat-housing', name: 'Housing' }
+    const catFood: Category = { id: 'cat-food', name: 'Food' }
+    const catUnused: Category = { id: 'cat-unused', name: 'Unused' }
+    const catMappingOnly: Category = { id: 'cat-mapping-only', name: 'Mapping Only' }
+
+    it('includes a category referenced only via a CategoryMapping (zero expense/transaction refs)', () => {
+      const state: AppState = {
+        ...initialState(),
+        categories: [catHousing, catMappingOnly],
+        budgetExpenses: [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }],
+        budgetTransactions: [],
+        categoryMappings: [
+          { id: 'm1', substring: 'STARBUCKS', categoryId: catMappingOnly.id, updatedAt: '2026-01-01T00:00:00Z' }
+        ]
+      }
+      const result = referencedCategories(state)
+      expect(result.map((c) => c.id)).toEqual(expect.arrayContaining([catHousing.id, catMappingOnly.id]))
+    })
+
+    it('excludes a category with zero references anywhere (expenses, transactions, or mappings)', () => {
+      const state: AppState = {
+        ...initialState(),
+        categories: [catHousing, catFood, catUnused],
+        budgetExpenses: [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }],
+        budgetTransactions: [{ id: 't1', date: '2026-09-01', description: 'a', categoryId: catFood.id, amount: 10 }],
+        categoryMappings: []
+      }
+      const result = referencedCategories(state)
+      expect(result.map((c) => c.id)).toEqual(expect.arrayContaining([catHousing.id, catFood.id]))
+      expect(result.find((c) => c.id === catUnused.id)).toBeUndefined()
+    })
+  })
+
+  describe('mappingsForCategory', () => {
+    it('filters by categoryId and sorts by substring', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'Whole Foods', categoryId: 'cat-food', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm2', substring: 'Amazon', categoryId: 'cat-food', updatedAt: '2026-01-02T00:00:00Z' },
+        { id: 'm3', substring: 'Netflix', categoryId: 'cat-entertainment', updatedAt: '2026-01-03T00:00:00Z' },
+        { id: 'm4', substring: 'Costco', categoryId: 'cat-food', updatedAt: '2026-01-04T00:00:00Z' }
+      ]
+      const result = mappingsForCategory(mappings, 'cat-food')
+      expect(result.map((m) => m.id)).toEqual(['m2', 'm4', 'm1'])
+    })
+
+    it('returns empty array when no mappings match', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'Whole Foods', categoryId: 'cat-food', updatedAt: '2026-01-01T00:00:00Z' }
+      ]
+      expect(mappingsForCategory(mappings, 'cat-other')).toEqual([])
     })
   })
 
@@ -1767,8 +1859,8 @@ describe('budget selectors', () => {
     it('unions transaction months with current month, sorted descending', () => {
       const now = new Date('2026-09-13T12:00:00Z')
       const transactions: BudgetTransaction[] = [
-        { id: 't1', date: '2026-06-01', description: 'a', category: 'Food', amount: 10 },
-        { id: 't2', date: '2026-12-01', description: 'b', category: 'Food', amount: 10 }
+        { id: 't1', date: '2026-06-01', description: 'a', categoryId: 'cat-food', amount: 10 },
+        { id: 't2', date: '2026-12-01', description: 'b', categoryId: 'cat-food', amount: 10 }
       ]
       const result = availableBudgetMonths(transactions, now)
       expect(result.map((m) => m.value)).toEqual(['2026-12', '2026-09', '2026-06'])
@@ -1784,8 +1876,8 @@ describe('budget selectors', () => {
     it('unions transaction years with current year, sorted descending', () => {
       const now = new Date('2026-09-13T12:00:00Z')
       const transactions: BudgetTransaction[] = [
-        { id: 't1', date: '2024-06-01', description: 'a', category: 'Food', amount: 10 },
-        { id: 't2', date: '2025-12-01', description: 'b', category: 'Food', amount: 10 }
+        { id: 't1', date: '2024-06-01', description: 'a', categoryId: 'cat-food', amount: 10 },
+        { id: 't2', date: '2025-12-01', description: 'b', categoryId: 'cat-food', amount: 10 }
       ]
       expect(availableBudgetYears(transactions, now)).toEqual(['2026', '2025', '2024'])
     })

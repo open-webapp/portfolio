@@ -13,6 +13,8 @@ import type {
   BalanceEntry,
   Expense,
   BudgetTransaction,
+  Category,
+  CategoryMapping,
 } from './types'
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
@@ -33,6 +35,8 @@ export interface AppState {
   budgetIncomeYearly: number
   budgetExpenses: Expense[]
   budgetTransactions: BudgetTransaction[]
+  categories: Category[]
+  categoryMappings: CategoryMapping[]
 
   // UI state
   view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'
@@ -81,6 +85,8 @@ export function initialState(): AppState {
     budgetIncomeYearly: 0,
     budgetExpenses: [],
     budgetTransactions: [],
+    categories: [],
+    categoryMappings: [],
 
     // UI state
     view: 'accounts',
@@ -540,6 +546,8 @@ export function replaceImportedState(state: AppState, data: ExportableState): Ap
     budgetIncomeMonthly: data.budgetIncomeMonthly,
     budgetIncomeYearly: data.budgetIncomeYearly,
     budgetExpenses: data.budgetExpenses,
+    categories: data.categories ?? [],
+    categoryMappings: data.categoryMappings ?? [],
     priceSync: {
       ...state.priceSync,
       apiKey: data.priceSync.apiKey,
@@ -597,16 +605,26 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
 }
 
 /**
- * Import budget transactions, deduping on natural key (date|description|category|amount|accountName)
- * against existing transactions AND within the same import batch (accumulating Set).
+ * Import budget transactions, resolving each row's categoryId from category mappings
+ * (falling back to the 'Other' category), then deduping on natural key
+ * (date|description|categoryId|amount|accountName) against existing transactions AND
+ * within the same import batch (accumulating Set).
  */
-export function importBudgetTransactions(state: AppState, rows: Omit<BudgetTransaction, 'id'>[]): AppState {
+export function importBudgetTransactions(
+  state: AppState,
+  rows: Array<{ date: string; description: string; amount: number; accountName?: string }>
+): AppState {
+  const otherId = state.categories.find((c) => c.name === 'Other')?.id ?? state.categories[0]?.id ?? ''
+  const withCategory = rows.map((r) => ({
+    ...r,
+    categoryId: resolveCategoryIdForDescription(state.categoryMappings, r.description) ?? otherId,
+  }))
   const seen = new Set(
-    state.budgetTransactions.map((t) => `${t.date}|${t.description}|${t.category}|${t.amount}|${t.accountName ?? ''}`)
+    state.budgetTransactions.map((t) => `${t.date}|${t.description}|${t.categoryId}|${t.amount}|${t.accountName ?? ''}`)
   )
   const toAdd: BudgetTransaction[] = []
-  for (const r of rows) {
-    const key = `${r.date}|${r.description}|${r.category}|${r.amount}|${r.accountName ?? ''}`
+  for (const r of withCategory) {
+    const key = `${r.date}|${r.description}|${r.categoryId}|${r.amount}|${r.accountName ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
     toAdd.push({ ...r, id: uid('budgettx') })
@@ -620,6 +638,84 @@ export function setBudgetIncomeForPeriod(state: AppState, period: 'monthly' | 'y
   return period === 'monthly'
     ? { ...state, budgetIncomeMonthly: clamped, budgetIncomeYearly: 0 }
     : { ...state, budgetIncomeYearly: clamped, budgetIncomeMonthly: 0 }
+}
+
+/** Add a new category with a caller-supplied id (so the caller can synchronously know the new id). */
+export function addCategory(state: AppState, id: string, name: string): AppState {
+  return { ...state, categories: [...state.categories, { id, name }] }
+}
+
+/** Rename a category by ID. No-op if the ID isn't found. */
+export function renameCategory(state: AppState, id: string, name: string): AppState {
+  return { ...state, categories: state.categories.map((c) => (c.id === id ? { ...c, name } : c)) }
+}
+
+/**
+ * Upsert a category mapping by description substring, case-insensitive.
+ * If a mapping with the same substring (case-insensitively) already exists, its
+ * categoryId/updatedAt are updated in place; otherwise a new mapping is created.
+ * Blank/whitespace-only descriptions are a no-op.
+ */
+export function upsertCategoryMapping(state: AppState, description: string, categoryId: string): AppState {
+  const trimmed = description.trim()
+  if (!trimmed) return state
+  const now = new Date().toISOString()
+  const existing = state.categoryMappings.find((m) => m.substring.toLowerCase() === trimmed.toLowerCase())
+  if (existing) {
+    return {
+      ...state,
+      categoryMappings: state.categoryMappings.map((m) =>
+        m.id === existing.id ? { ...m, categoryId, updatedAt: now } : m
+      ),
+    }
+  }
+  const mapping: CategoryMapping = { id: uid('catmap'), substring: trimmed, categoryId, updatedAt: now }
+  return { ...state, categoryMappings: [...state.categoryMappings, mapping] }
+}
+
+/** Patch an existing category mapping by ID. No-op if the ID isn't found. */
+export function updateCategoryMapping(state: AppState, id: string, patch: Partial<Pick<CategoryMapping, 'substring' | 'categoryId'>>): AppState {
+  const now = new Date().toISOString()
+  return {
+    ...state,
+    categoryMappings: state.categoryMappings.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: now } : m)),
+  }
+}
+
+/** Add a new category mapping. Blank/whitespace-only substrings are a no-op. */
+export function addCategoryMapping(state: AppState, categoryId: string, substring: string): AppState {
+  const trimmed = substring.trim()
+  if (!trimmed) return state
+  const mapping: CategoryMapping = { id: uid('catmap'), substring: trimmed, categoryId, updatedAt: new Date().toISOString() }
+  return { ...state, categoryMappings: [...state.categoryMappings, mapping] }
+}
+
+/**
+ * Resolve the categoryId for a transaction description by finding all mappings
+ * whose substring (case-insensitive) appears in the description, and returning
+ * the categoryId of the one with the latest updatedAt. Returns null if no
+ * mapping matches.
+ */
+export function resolveCategoryIdForDescription(mappings: CategoryMapping[], description: string): string | null {
+  const lower = description.toLowerCase()
+  const matches = mappings.filter((m) => m.substring && lower.includes(m.substring.toLowerCase()))
+  if (matches.length === 0) return null
+  return matches.reduce((latest, m) => (m.updatedAt > latest.updatedAt ? m : latest)).categoryId
+}
+
+/**
+ * Re-run category mapping resolution against all existing budget transactions,
+ * rewriting categoryId for any transaction whose description matches a mapping.
+ * Transactions with no match are left untouched.
+ */
+export function reapplyCategoryMappings(state: AppState): AppState {
+  return {
+    ...state,
+    budgetTransactions: state.budgetTransactions.map((t) => {
+      const resolved = resolveCategoryIdForDescription(state.categoryMappings, t.description)
+      return resolved ? { ...t, categoryId: resolved } : t
+    }),
+  }
 }
 
 

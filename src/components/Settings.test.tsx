@@ -797,4 +797,137 @@ describe('SettingsPage', () => {
     })
   })
 
+  describe('Categories', () => {
+    function categoriesFixture() {
+      const state = initialState()
+      state.categories = [
+        { id: 'cat-groceries', name: 'Groceries' },
+        { id: 'cat-rent', name: 'Rent' },
+        { id: 'cat-unused', name: 'Unused Category' },
+      ]
+      state.categoryMappings = [
+        { id: 'map-1', substring: 'WHOLE FOODS', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'map-2', substring: 'TRADER JOES', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      state.budgetExpenses = [
+        { id: 'exp-1', name: 'Rent', categoryId: 'cat-rent', amount: 2000, frequency: 'monthly' } as any,
+      ]
+      return state
+    }
+
+    it('renders the 4th "Categories" tab; clicking it switches settingsSection and shows the Categories card while hiding the other 3', () => {
+      const { unmount } = renderSettings({ settingsSection: 'backup' })
+
+      const categoriesInput = screen.getByLabelText('Categories') as HTMLInputElement
+      fireEvent.click(categoriesInput)
+      expect(mockSetSettingsSection).toHaveBeenCalledWith('categories')
+      unmount()
+
+      const state = categoriesFixture()
+      const { container } = renderSettings({ state, settingsSection: 'categories' })
+      expect(screen.getAllByText('Categories').length).toBeGreaterThan(0)
+      expect(container.querySelector('.card-title')?.textContent).toBe('Categories')
+      expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
+      expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
+      expect(screen.queryByText('Polygon.io API Key')).toBeFalsy()
+    })
+
+    it('shows only referencedCategories(state) output - a zero-ref category is absent', () => {
+      const state = categoriesFixture()
+      renderSettings({ state, settingsSection: 'categories' })
+
+      expect(screen.getByText('Groceries')).toBeTruthy()
+      expect(screen.getByText('Rent')).toBeTruthy()
+      expect(screen.queryByText('Unused Category')).toBeFalsy()
+    })
+
+    it('renaming a category (pencil -> edit -> Done) dispatches RENAME_CATEGORY with correct id/name', () => {
+      const state = categoriesFixture()
+      renderSettings({ state, settingsSection: 'categories' })
+
+      fireEvent.click(screen.getByLabelText('Edit category Groceries'))
+      const input = screen.getByLabelText('Edit category name') as HTMLInputElement
+      fireEvent.change(input, { target: { value: 'Food & Groceries' } })
+      fireEvent.click(screen.getByText('Done'))
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'RENAME_CATEGORY',
+        id: 'cat-groceries',
+        name: 'Food & Groceries',
+      })
+    })
+
+    it('editing an existing mapping substring dispatches UPDATE_CATEGORY_MAPPING', () => {
+      const state = categoriesFixture()
+      renderSettings({ state, settingsSection: 'categories' })
+
+      fireEvent.click(screen.getByLabelText('Edit substring WHOLE FOODS'))
+      const input = screen.getByLabelText('Edit mapping substring') as HTMLInputElement
+      fireEvent.change(input, { target: { value: 'WHOLEFOODS' } })
+      fireEvent.click(screen.getByText('Done'))
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_CATEGORY_MAPPING',
+        id: 'map-1',
+        patch: { substring: 'WHOLEFOODS' },
+      })
+    })
+
+    it('adding a new substring under a category dispatches ADD_CATEGORY_MAPPING with that category id and typed substring', () => {
+      const state = categoriesFixture()
+      renderSettings({ state, settingsSection: 'categories' })
+
+      const addInput = screen.getByLabelText('Add substring to Groceries') as HTMLInputElement
+      fireEvent.change(addInput, { target: { value: 'COSTCO' } })
+      fireEvent.click(screen.getByLabelText('Add substring button Groceries'))
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'ADD_CATEGORY_MAPPING',
+        categoryId: 'cat-groceries',
+        substring: 'COSTCO',
+      })
+    })
+
+    it('a category with zero mappings renders with an empty substring list and a working "+ add substring" input', () => {
+      const state = categoriesFixture()
+      renderSettings({ state, settingsSection: 'categories' })
+
+      const addInput = screen.getByLabelText('Add substring to Rent') as HTMLInputElement
+      expect(addInput).toBeTruthy()
+
+      fireEvent.change(addInput, { target: { value: 'LANDLORD LLC' } })
+      fireEvent.keyDown(addInput, { key: 'Enter' })
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'ADD_CATEGORY_MAPPING',
+        categoryId: 'cat-rent',
+        substring: 'LANDLORD LLC',
+      })
+    })
+
+    it('renders no delete button/icon anywhere in this tab', () => {
+      const state = categoriesFixture()
+      const { container } = renderSettings({ state, settingsSection: 'categories' })
+
+      const cardTitle = Array.from(container.querySelectorAll('.card-title')).find((el) => el.textContent === 'Categories')!
+      const section = cardTitle.closest('section') as HTMLElement
+      const deleteLikeButtons = Array.from(section.querySelectorAll('button')).filter((btn) => {
+        const label = btn.getAttribute('aria-label') || ''
+        const title = btn.getAttribute('title') || ''
+        return /delete|trash|remove/i.test(label) || /delete|trash|remove/i.test(title)
+      })
+      expect(deleteLikeButtons.length).toBe(0)
+      expect(container.querySelectorAll('svg path[d*="M3 6h18"]').length).toBe(0)
+    })
+
+    it('"Re-apply mappings to existing records" button dispatches REAPPLY_CATEGORY_MAPPINGS with no extra payload fields', () => {
+      const state = categoriesFixture()
+      renderSettings({ state, settingsSection: 'categories' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Re-apply mappings to existing records' }))
+
+      expect(mockDispatch).toHaveBeenCalledWith({ type: 'REAPPLY_CATEGORY_MAPPINGS' })
+    })
+  })
+
 })

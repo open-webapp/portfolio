@@ -13,6 +13,8 @@ import type {
   PriceSyncLastRun,
   Expense,
   BudgetTransaction,
+  Category,
+  CategoryMapping,
 } from './types'
 import { encryptState, decryptState, deriveKey, detectEnvelopeShape, type EncryptedEnvelope } from './crypto'
 
@@ -35,6 +37,8 @@ export interface ExportableState {
   budgetIncomeYearly: number
   budgetExpenses: Expense[]
   budgetTransactions: BudgetTransaction[]
+  categories: Category[]
+  categoryMappings: CategoryMapping[]
   priceSync: {
     apiKey: string
     lastRun: PriceSyncLastRun | null
@@ -63,6 +67,8 @@ export function buildExportableState(state: AppState): ExportableState {
     budgetIncomeYearly: state.budgetIncomeYearly,
     budgetExpenses: state.budgetExpenses,
     budgetTransactions: state.budgetTransactions,
+    categories: state.categories,
+    categoryMappings: state.categoryMappings,
     priceSync: {
       apiKey: state.priceSync.apiKey,
       lastRun: state.priceSync.lastRun,
@@ -188,6 +194,8 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
     budgetIncomeYearly: decrypted.budgetIncomeYearly ?? 0,
     budgetExpenses: decrypted.budgetExpenses ?? [],
     budgetTransactions: decrypted.budgetTransactions ?? [],
+    categories: decrypted.categories ?? [],
+    categoryMappings: decrypted.categoryMappings ?? [],
     priceSync: {
       apiKey: decrypted.priceSync?.apiKey ?? '',
       lastRun: decrypted.priceSync?.lastRun ?? null,

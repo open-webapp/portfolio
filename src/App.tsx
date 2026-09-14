@@ -95,7 +95,7 @@ function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   // Which section of the Settings page is active
-  const [settingsSection, setSettingsSection] = useState<'backup' | 'encryption' | 'priceSync'>('backup')
+  const [settingsSection, setSettingsSection] = useState<'backup' | 'encryption' | 'priceSync' | 'categories'>('backup')
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
