@@ -154,3 +154,52 @@ export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; 
   })
   return parsed
 }
+
+/**
+ * Parses transactions out of an OFX (classic SGML, not valid XML) statement
+ * export via string scanning rather than DOMParser. Flattens <STMTTRN>
+ * blocks across every <STMTRS> account section in the file — no per-account
+ * grouping in the output. Never throws; unparseable blocks are skipped and
+ * a file with zero usable records yields [].
+ */
+export function parseOfxTransactions(text: string): Array<{ date: string; description: string; category: string; amount: number }> {
+  const parsed: Array<{ date: string; description: string; category: string; amount: number }> = []
+  const blockRe = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi
+  const extract = (block: string, tag: string): string | null => {
+    const m = new RegExp(`<${tag}>([^<\\r\\n]*)`, 'i').exec(block)
+    return m ? m[1].trim() : null
+  }
+  let match: RegExpExecArray | null
+  while ((match = blockRe.exec(text)) !== null) {
+    const block = match[1]
+    const dtposted = extract(block, 'DTPOSTED')
+    if (!dtposted) continue
+
+    let date: string | null = null
+    if (dtposted.length >= 8) {
+      const y = dtposted.slice(0, 4)
+      const m = dtposted.slice(4, 6)
+      const d = dtposted.slice(6, 8)
+      date = `${y}-${m}-${d}`
+    } else if (dtposted.length >= 6) {
+      const yy = dtposted.slice(0, 2)
+      const m = dtposted.slice(2, 4)
+      const d = dtposted.slice(4, 6)
+      date = `20${yy}-${m}-${d}`
+    }
+    if (!date) continue
+
+    const name = extract(block, 'NAME')
+    const memo = extract(block, 'MEMO')
+    const description = name && name.trim() ? name : memo && memo.trim() ? memo : null
+    if (!description) continue
+
+    const trnamtStr = extract(block, 'TRNAMT')
+    if (trnamtStr === null) continue
+    const amount = parseFloat(trnamtStr)
+    if (isNaN(amount)) continue
+
+    parsed.push({ date, description, category: 'Other', amount })
+  }
+  return parsed
+}

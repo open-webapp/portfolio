@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent, glColor, GAIN_COLOR, LOSS_COLOR, toMonthly, toYearly, toPeriod, DEFAULT_CATEGORIES, parseBudgetTransactionsCsv } from './computations'
+import { computePosition, allocationByAssetClass, fmtUSD, fmtPct, fmtPortfolioPercent, glColor, GAIN_COLOR, LOSS_COLOR, toMonthly, toYearly, toPeriod, DEFAULT_CATEGORIES, parseBudgetTransactionsCsv, parseOfxTransactions } from './computations'
 import { Position } from './types'
 
 describe('computations', () => {
@@ -363,6 +363,212 @@ describe('computations', () => {
         { date: '2026-01-01', description: 'Coffee', category: 'Dining', amount: -4.5 },
         { date: '2026-01-03', description: 'Rent', category: 'Housing', amount: -1500 },
       ])
+    })
+  })
+
+  describe('parseOfxTransactions', () => {
+    it('parses a single-account OFX fixture with 2 STMTTRN blocks', () => {
+      const ofx = [
+        '<OFX>',
+        '<BANKMSGSRSV1>',
+        '<STMTTRNRS>',
+        '<STMTRS>',
+        '<BANKTRANLIST>',
+        '<STMTTRN>',
+        '<TRNTYPE>DEBIT',
+        '<DTPOSTED>20260101120000',
+        '<TRNAMT>-4.50',
+        '<NAME>Coffee Shop',
+        '<MEMO>Latte',
+        '</STMTTRN>',
+        '<STMTTRN>',
+        '<TRNTYPE>CREDIT',
+        '<DTPOSTED>20260102120000',
+        '<TRNAMT>2000.00',
+        '<NAME>Paycheck',
+        '<MEMO>Payroll',
+        '</STMTTRN>',
+        '</BANKTRANLIST>',
+        '</STMTRS>',
+        '</STMTTRNRS>',
+        '</BANKMSGSRSV1>',
+        '</OFX>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Coffee Shop', category: 'Other', amount: -4.5 },
+        { date: '2026-01-02', description: 'Paycheck', category: 'Other', amount: 2000 },
+      ])
+    })
+
+    it('flattens STMTTRN blocks from multiple STMTRS sections (multi-account) into one array', () => {
+      const ofx = [
+        '<OFX>',
+        '<STMTRS>',
+        '<BANKTRANLIST>',
+        '<STMTTRN>',
+        '<DTPOSTED>20260101',
+        '<TRNAMT>-10.00',
+        '<NAME>Account1 Txn1',
+        '</STMTTRN>',
+        '<STMTTRN>',
+        '<DTPOSTED>20260102',
+        '<TRNAMT>-20.00',
+        '<NAME>Account1 Txn2',
+        '</STMTTRN>',
+        '</BANKTRANLIST>',
+        '</STMTRS>',
+        '<STMTRS>',
+        '<BANKTRANLIST>',
+        '<STMTTRN>',
+        '<DTPOSTED>20260201',
+        '<TRNAMT>-30.00',
+        '<NAME>Account2 Txn1',
+        '</STMTTRN>',
+        '<STMTTRN>',
+        '<DTPOSTED>20260202',
+        '<TRNAMT>-40.00',
+        '<NAME>Account2 Txn2',
+        '</STMTTRN>',
+        '</BANKTRANLIST>',
+        '</STMTRS>',
+        '</OFX>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result.length).toBe(4)
+      expect(result.map((r) => r.description)).toEqual([
+        'Account1 Txn1', 'Account1 Txn2', 'Account2 Txn1', 'Account2 Txn2',
+      ])
+    })
+
+    it('uses NAME as description when present', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>20260101',
+        '<TRNAMT>-5.00',
+        '<NAME>Grocery Store',
+        '<MEMO>Weekly shop',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Grocery Store', category: 'Other', amount: -5 },
+      ])
+    })
+
+    it('falls back to MEMO when NAME is blank/whitespace-only', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>20260101',
+        '<TRNAMT>-5.00',
+        '<NAME>   ',
+        '<MEMO>Fallback Memo Text',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Fallback Memo Text', category: 'Other', amount: -5 },
+      ])
+    })
+
+    it('skips a block when both NAME and MEMO are missing/blank', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>20260101',
+        '<TRNAMT>-5.00',
+        '<NAME>   ',
+        '<MEMO>',
+        '</STMTTRN>',
+        '<STMTTRN>',
+        '<DTPOSTED>20260103',
+        '<TRNAMT>-7.00',
+        '<NAME>Valid Row',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2026-01-03', description: 'Valid Row', category: 'Other', amount: -7 },
+      ])
+    })
+
+    it('parses DTPOSTED with trailing time/timezone suffix', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>20240115120000[-5:EST]',
+        '<TRNAMT>-1.00',
+        '<NAME>Timezone Txn',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2024-01-15', description: 'Timezone Txn', category: 'Other', amount: -1 },
+      ])
+    })
+
+    it('parses a 6-char YYMMDD DTPOSTED, prepending 20 to the year', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>240115',
+        '<TRNAMT>-1.00',
+        '<NAME>Short Date Txn',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2024-01-15', description: 'Short Date Txn', category: 'Other', amount: -1 },
+      ])
+    })
+
+    it('skips a block whose DTPOSTED is shorter than 6 chars, keeping other valid blocks', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>2401',
+        '<TRNAMT>-1.00',
+        '<NAME>Too Short Date',
+        '</STMTTRN>',
+        '<STMTTRN>',
+        '<DTPOSTED>20260103',
+        '<TRNAMT>-9.00',
+        '<NAME>Valid Row',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2026-01-03', description: 'Valid Row', category: 'Other', amount: -9 },
+      ])
+    })
+
+    it('preserves negative and positive TRNAMT signs without flipping', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>20260101',
+        '<TRNAMT>-42.75',
+        '<NAME>Negative Txn',
+        '</STMTTRN>',
+        '<STMTTRN>',
+        '<DTPOSTED>20260102',
+        '<TRNAMT>42.75',
+        '<NAME>Positive Txn',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Negative Txn', category: 'Other', amount: -42.75 },
+        { date: '2026-01-02', description: 'Positive Txn', category: 'Other', amount: 42.75 },
+      ])
+    })
+
+    it('returns [] for input with zero STMTTRN blocks', () => {
+      const ofx = '<OFX><STMTRS><BANKTRANLIST></BANKTRANLIST></STMTRS></OFX>'
+      expect(parseOfxTransactions(ofx)).toEqual([])
+    })
+
+    it('returns [] and does not throw on malformed/truncated OFX text', () => {
+      const malformed = '<OFX><STMTRS><BANKTRANLIST><STMTTRN><DTPOSTED>2026<TRNAMT>garbage no closing tag'
+      expect(() => parseOfxTransactions(malformed)).not.toThrow()
+      expect(parseOfxTransactions(malformed)).toEqual([])
+      expect(parseOfxTransactions('')).toEqual([])
+      expect(parseOfxTransactions('not even xml at all, just random text')).toEqual([])
     })
   })
 })

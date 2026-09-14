@@ -1,6 +1,6 @@
 import { useRef, useState, type CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
-import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv } from '../lib/computations'
+import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions } from '../lib/computations'
 import {
   visibleExpenses,
   categoryBreakdown,
@@ -112,6 +112,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
     date: string
     description: string
     category: string
+    accountName: string
     amount: string
   } | null>(null)
   const [recDate, setRecDate] = useState('')
@@ -123,7 +124,9 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const [importTab, setImportTab] = useState<'paste' | 'upload'>('paste')
   const [csvText, setCsvText] = useState('')
   const [importFileName, setImportFileName] = useState('')
+  const [importAccountName, setImportAccountName] = useState('')
   const [importStatus, setImportStatus] = useState('Never imported')
+  const [importError, setImportError] = useState<string | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
   const totalIncome =
@@ -211,7 +214,9 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
     setRecAmount('')
   }
 
+  // csvText holds raw text for parsing — CSV or OFX/QFX depending on importTab.
   const handleImportFileSelect = (file: File | null) => {
+    setImportError(null)
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
@@ -221,17 +226,35 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
     setImportFileName(file.name)
   }
 
-  const handleImportCsv = () => {
-    const parsed = parseBudgetTransactionsCsv(csvText)
-    dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: parsed })
-    setImportStatus(`${parsed.length} row(s) detected`)
-    setShowImportDialog(false)
-    setCsvText('')
+  const handleImport = () => {
+    if (importTab === 'paste') {
+      const parsed = parseBudgetTransactionsCsv(csvText).map((r) => ({ ...r, accountName: importAccountName.trim() }))
+      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: parsed })
+      setImportStatus(`${parsed.length} row(s) detected`)
+      setShowImportDialog(false)
+      setCsvText('')
+      setImportAccountName('')
+    } else {
+      const parsed = parseOfxTransactions(csvText)
+      if (parsed.length === 0) {
+        setImportError("No transactions found in file — check it's a valid OFX/QFX export")
+        return
+      }
+      const withAccount = parsed.map((r) => ({ ...r, accountName: importAccountName.trim() }))
+      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount })
+      setImportStatus(`${withAccount.length} row(s) detected`)
+      setShowImportDialog(false)
+      setCsvText('')
+      setImportAccountName('')
+      setImportError(null)
+    }
   }
 
   const closeImportDialog = () => {
     setShowImportDialog(false)
     setCsvText('')
+    setImportAccountName('')
+    setImportError(null)
   }
 
   return (
@@ -375,6 +398,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 <th>Date</th>
                 <th>Description</th>
                 <th>Category</th>
+                <th>Account</th>
                 <th style={{ textAlign: 'right' }}>Amount</th>
                 <th style={{ width: '110px' }}></th>
               </tr>
@@ -440,6 +464,21 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                         <span className="tag tag-neutral">{row.category}</span>
                       )}
                     </td>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          className="input"
+                          aria-label="Edit record account"
+                          value={recordDraft!.accountName}
+                          onChange={(e) =>
+                            setRecordDraft((d) => (d ? { ...d, accountName: e.target.value } : d))
+                          }
+                        />
+                      ) : (
+                        row.accountName || '—'
+                      )}
+                    </td>
                     <td style={{ textAlign: 'right' }}>
                       {isEditing ? (
                         <input
@@ -468,6 +507,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                                 date: recordDraft!.date,
                                 description: recordDraft!.description,
                                 category: recordDraft!.category,
+                                accountName: recordDraft!.accountName.trim() || undefined,
                                 amount: parseFloat(recordDraft!.amount) || 0,
                               },
                             })
@@ -489,6 +529,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                                 date: row.date,
                                 description: row.description,
                                 category: row.category,
+                                accountName: row.accountName ?? '',
                                 amount: String(row.amount),
                               })
                             }
@@ -517,7 +558,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 )
               })}
               <tr data-testid="records-total-row">
-                <td colSpan={3} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                <td colSpan={4} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
                   Total
                 </td>
                 <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
@@ -1056,6 +1097,17 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           <div className="dialog blueprint" onClick={(e) => e.stopPropagation()}>
             <div className="dialog-title">Import transactions</div>
             <div className="dialog-body">
+              <div className="field" style={{ marginBottom: 'var(--space-3)' }}>
+                <label>Account name</label>
+                <input
+                  type="text"
+                  className="input"
+                  aria-label="Import account name"
+                  value={importAccountName}
+                  onChange={(e) => setImportAccountName(e.target.value)}
+                />
+              </div>
+
               <div className="seg" style={{ marginBottom: 'var(--space-3)' }}>
                 <label className="seg-opt" onClick={() => setImportTab('paste')}>
                   <input type="radio" name="importTab" checked={importTab === 'paste'} readOnly />
@@ -1080,7 +1132,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 </div>
               ) : (
                 <div className="field">
-                  <label>CSV file</label>
+                  <label>OFX/QFX file</label>
                   <div
                     onClick={() => importFileInputRef.current?.click()}
                     onDrop={(e) => {
@@ -1102,8 +1154,8 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                     <input
                       ref={importFileInputRef}
                       type="file"
-                      accept=".csv"
-                      aria-label="CSV file"
+                      accept=".ofx,.qfx"
+                      aria-label="OFX/QFX file"
                       onChange={(e) => handleImportFileSelect(e.target.files?.[0] || null)}
                       style={{ display: 'none' }}
                     />
@@ -1114,12 +1166,23 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                   </div>
                 </div>
               )}
+
+              {importError && (
+                <div className="text-muted" style={{ color: 'var(--color-danger)', marginTop: 'var(--space-2)' }}>
+                  {importError}
+                </div>
+              )}
             </div>
             <div className="dialog-actions">
               <button type="button" className="btn btn-secondary" onClick={closeImportDialog}>
                 Cancel
               </button>
-              <button type="button" className="btn btn-primary" onClick={handleImportCsv}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleImport}
+                disabled={!importAccountName.trim() || (importTab === 'upload' && !!importError)}
+              >
                 Import
               </button>
             </div>

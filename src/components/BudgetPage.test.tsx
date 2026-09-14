@@ -800,11 +800,54 @@ describe('BudgetPage', () => {
     })
 
     describe('import dialog', () => {
+      const VALID_OFX = `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+
+<OFX>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<STMTRS>
+<BANKTRANLIST>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20250501120000
+<TRNAMT>-4.50
+<NAME>Coffee Shop
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20250502120000
+<TRNAMT>-40.00
+<NAME>Gas Station
+</STMTTRN>
+</BANKTRANLIST>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>`
+
+      const EMPTY_OFX = `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+
+<OFX>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<STMTRS>
+<BANKTRANLIST>
+</BANKTRANLIST>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>`
+
       it('pasting CSV text and clicking Import dispatches IMPORT_BUDGET_TRANSACTIONS with parsed rows', () => {
         const dispatch = vi.fn()
         render(<BudgetPage state={initialState()} dispatch={dispatch} />)
 
         fireEvent.click(screen.getByText('Import transactions…'))
+        fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
         fireEvent.change(screen.getByLabelText('Paste CSV text'), {
           target: { value: '2025-05-01,Coffee,Food,4.5\n2025-05-02,Gas,Auto,40' },
         })
@@ -813,8 +856,8 @@ describe('BudgetPage', () => {
         expect(dispatch).toHaveBeenCalledWith({
           type: 'IMPORT_BUDGET_TRANSACTIONS',
           rows: [
-            { date: '2025-05-01', description: 'Coffee', category: 'Food', amount: 4.5 },
-            { date: '2025-05-02', description: 'Gas', category: 'Auto', amount: 40 },
+            { date: '2025-05-01', description: 'Coffee', category: 'Food', amount: 4.5, accountName: 'Checking' },
+            { date: '2025-05-02', description: 'Gas', category: 'Auto', amount: 40, accountName: 'Checking' },
           ],
         })
         expect(screen.queryByText('Import transactions')).toBeFalsy()
@@ -831,6 +874,7 @@ describe('BudgetPage', () => {
         const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} />)
 
         fireEvent.click(screen.getByText('Import transactions…'))
+        fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
         fireEvent.change(screen.getByLabelText('Paste CSV text'), {
           target: { value: '2025-05-01,Coffee,Food,4.5\n2025-05-02,Gas,Auto,40' },
         })
@@ -838,25 +882,26 @@ describe('BudgetPage', () => {
 
         rerender(<BudgetPage state={state} dispatch={dispatch} />)
 
-        expect(state.budgetTransactions.length).toBe(2)
+        // The existing record has no accountName, so the pasted row with
+        // accountName 'Checking' has a different natural key and is NOT a
+        // duplicate — both rows are added, plus the original = 3.
+        expect(state.budgetTransactions.length).toBe(3)
       })
 
-      it('switching to the Upload-file tab and selecting a file populates the textarea via csvText', async () => {
+      it('switching to the Upload-file tab and selecting a valid OFX file populates the textarea via csvText', async () => {
         const dispatch = vi.fn()
         render(<BudgetPage state={initialState()} dispatch={dispatch} />)
 
         fireEvent.click(screen.getByText('Import transactions…'))
         fireEvent.click(screen.getByText('Upload file'))
 
-        const file = new File(['2025-05-01,Coffee,Food,4.5'], 'transactions.csv', { type: 'text/csv' })
-        const input = screen.getByLabelText('CSV file') as HTMLInputElement
+        const file = new File([VALID_OFX], 'transactions.ofx', { type: 'application/x-ofx' })
+        const input = screen.getByLabelText('OFX/QFX file') as HTMLInputElement
         fireEvent.change(input, { target: { files: [file] } })
 
         await vi.waitFor(() => {
           fireEvent.click(screen.getByText('Copy-Paste'))
-          expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe(
-            '2025-05-01,Coffee,Food,4.5'
-          )
+          expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe(VALID_OFX)
         })
       })
 
@@ -867,12 +912,134 @@ describe('BudgetPage', () => {
         expect(screen.getByText('Never imported')).toBeTruthy()
 
         fireEvent.click(screen.getByText('Import transactions…'))
+        fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
         fireEvent.change(screen.getByLabelText('Paste CSV text'), {
           target: { value: '2025-05-01,Coffee,Food,4.5\n2025-05-02,Gas,Auto,40' },
         })
         fireEvent.click(screen.getByText('Import'))
 
         expect(screen.getByText('2 row(s) detected')).toBeTruthy()
+      })
+
+      describe('account name gate', () => {
+        it('Import is disabled with empty Account Name on the Copy-Paste tab; enabled once filled; disabled again after clearing', () => {
+          render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+          fireEvent.click(screen.getByText('Import transactions…'))
+
+          const importBtn = screen.getByText('Import') as HTMLButtonElement
+          expect(importBtn.disabled).toBe(true)
+
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+          expect(importBtn.disabled).toBe(false)
+
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: '' } })
+          expect(importBtn.disabled).toBe(true)
+        })
+
+        it('Import is disabled with empty Account Name on the Upload tab; enabled once filled; disabled again after clearing', () => {
+          render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
+          fireEvent.click(screen.getByText('Import transactions…'))
+          fireEvent.click(screen.getByText('Upload file'))
+
+          const importBtn = screen.getByText('Import') as HTMLButtonElement
+          expect(importBtn.disabled).toBe(true)
+
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+          expect(importBtn.disabled).toBe(false)
+
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: '' } })
+          expect(importBtn.disabled).toBe(true)
+        })
+      })
+
+      describe('OFX upload', () => {
+        it('happy path: dispatched IMPORT_BUDGET_TRANSACTIONS rows have category "Other" and the entered accountName', async () => {
+          const dispatch = vi.fn()
+          render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+
+          fireEvent.click(screen.getByText('Import transactions…'))
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+
+          const file = new File([VALID_OFX], 'transactions.ofx', { type: 'application/x-ofx' })
+          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [file] } })
+
+          // Wait for the async FileReader to finish populating csvText before
+          // importing — confirmed via the Copy-Paste tab's textarea value.
+          await vi.waitFor(() => {
+            fireEvent.click(screen.getByText('Copy-Paste'))
+            expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe(VALID_OFX)
+          })
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.click(screen.getByText('Import'))
+
+          expect(dispatch).toHaveBeenCalledWith({
+            type: 'IMPORT_BUDGET_TRANSACTIONS',
+            rows: [
+              { date: '2025-05-01', description: 'Coffee Shop', category: 'Other', amount: -4.5, accountName: 'Checking' },
+              { date: '2025-05-02', description: 'Gas Station', category: 'Other', amount: -40, accountName: 'Checking' },
+            ],
+          })
+        })
+
+        it('error path: a file with 0 STMTTRN blocks shows an inline error, disables Import, and dispatches nothing on click', async () => {
+          const dispatch = vi.fn()
+          render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+
+          fireEvent.click(screen.getByText('Import transactions…'))
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+
+          const file = new File([EMPTY_OFX], 'empty.ofx', { type: 'application/x-ofx' })
+          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [file] } })
+
+          await vi.waitFor(() => {
+            fireEvent.click(screen.getByText('Copy-Paste'))
+            expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe(EMPTY_OFX)
+          })
+          fireEvent.click(screen.getByText('Upload file'))
+
+          const importBtn = screen.getByText('Import') as HTMLButtonElement
+          fireEvent.click(importBtn)
+
+          expect(
+            await screen.findByText("No transactions found in file — check it's a valid OFX/QFX export")
+          ).toBeTruthy()
+          expect(importBtn.disabled).toBe(true)
+          expect(dispatch).not.toHaveBeenCalled()
+        })
+
+        it('the error clears when a new valid file is selected after an error', async () => {
+          const dispatch = vi.fn()
+          render(<BudgetPage state={initialState()} dispatch={dispatch} />)
+
+          fireEvent.click(screen.getByText('Import transactions…'))
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+
+          const emptyFile = new File([EMPTY_OFX], 'empty.ofx', { type: 'application/x-ofx' })
+          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [emptyFile] } })
+
+          await vi.waitFor(() => {
+            fireEvent.click(screen.getByText('Copy-Paste'))
+            expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe(EMPTY_OFX)
+          })
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.click(screen.getByText('Import'))
+
+          expect(
+            await screen.findByText("No transactions found in file — check it's a valid OFX/QFX export")
+          ).toBeTruthy()
+
+          const validFile = new File([VALID_OFX], 'transactions.ofx', { type: 'application/x-ofx' })
+          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [validFile] } })
+
+          await vi.waitFor(() => {
+            expect(
+              screen.queryByText("No transactions found in file — check it's a valid OFX/QFX export")
+            ).toBeFalsy()
+          })
+        })
       })
     })
 
@@ -881,6 +1048,69 @@ describe('BudgetPage', () => {
         render(<BudgetPage state={initialState()} dispatch={vi.fn()} />)
         expect(screen.getByText('No records for this period.')).toBeTruthy()
       })
+    })
+  })
+
+  describe('Spend records Account column (T13)', () => {
+    it('renders "—" for a row with no accountName', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', category: 'Food', amount: 60 }),
+        ],
+      }
+      render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+
+      const row = screen.getByText('Groceries').closest('tr')!
+      expect(within(row).getByText('—')).toBeTruthy()
+    })
+
+    it('inline edit round-trip: pencil -> type Account -> Done dispatches UPDATE_BUDGET_TRANSACTION with the new accountName', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', category: 'Food', amount: 60 }),
+        ],
+      }
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} />)
+      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+
+      const row = screen.getByText('Groceries').closest('tr')!
+      fireEvent.click(within(row).getByLabelText('Edit record'))
+
+      const accountInput = screen.getByLabelText('Edit record account') as HTMLInputElement
+      fireEvent.change(accountInput, { target: { value: 'Checking' } })
+
+      fireEvent.click(screen.getByText('Done'))
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_TRANSACTION',
+        id: 't1',
+        patch: {
+          date: '2025-03-05',
+          description: 'Groceries',
+          category: 'Food',
+          accountName: 'Checking',
+          amount: 60,
+        },
+      })
+    })
+
+    it('the Spend records total row leading cell has colSpan={4}', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', category: 'Food', amount: 60 }),
+        ],
+      }
+      const { container } = render(<BudgetPage state={state} dispatch={vi.fn()} />)
+      fireEvent.change(screen.getByLabelText('Select month'), { target: { value: '2025-03' } })
+
+      const totalRow = container.querySelector('[data-testid="records-total-row"]')!
+      const leadCell = totalRow.querySelector('td')!
+      expect(leadCell.getAttribute('colspan')).toBe('4')
     })
   })
 

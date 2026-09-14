@@ -597,16 +597,16 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
 }
 
 /**
- * Import budget transactions, deduping on natural key (date|description|category|amount)
+ * Import budget transactions, deduping on natural key (date|description|category|amount|accountName)
  * against existing transactions AND within the same import batch (accumulating Set).
  */
 export function importBudgetTransactions(state: AppState, rows: Omit<BudgetTransaction, 'id'>[]): AppState {
   const seen = new Set(
-    state.budgetTransactions.map((t) => `${t.date}|${t.description}|${t.category}|${t.amount}`)
+    state.budgetTransactions.map((t) => `${t.date}|${t.description}|${t.category}|${t.amount}|${t.accountName ?? ''}`)
   )
   const toAdd: BudgetTransaction[] = []
   for (const r of rows) {
-    const key = `${r.date}|${r.description}|${r.category}|${r.amount}`
+    const key = `${r.date}|${r.description}|${r.category}|${r.amount}|${r.accountName ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
     toAdd.push({ ...r, id: uid('budgettx') })

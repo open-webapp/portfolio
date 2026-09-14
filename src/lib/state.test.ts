@@ -1180,6 +1180,33 @@ describe('state helpers', () => {
       expect(updated.budgetTransactions).toHaveLength(1)
       expect(updated.budgetTransactions[0]).toMatchObject(row)
     })
+
+    it('dedups rows with no accountName (both undefined) as before, regression', () => {
+      const existing: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Rent', category: 'Housing', amount: 2000 }
+      const state = { ...initialState(), budgetTransactions: [existing] }
+      const updated = importBudgetTransactions(state, [
+        { date: '2026-01-01', description: 'Rent', category: 'Housing', amount: 2000 },
+      ])
+      expect(updated.budgetTransactions).toEqual([existing])
+    })
+
+    it('keeps two rows identical on date/description/category/amount but differing accountName', () => {
+      const state = initialState()
+      const rowA = { date: '2026-01-01', description: 'Rent', category: 'Housing', amount: 2000, accountName: 'Checking' }
+      const rowB = { date: '2026-01-01', description: 'Rent', category: 'Housing', amount: 2000, accountName: 'Savings' }
+      const updated = importBudgetTransactions(state, [rowA, rowB])
+      expect(updated.budgetTransactions).toHaveLength(2)
+      expect(updated.budgetTransactions[0]).toMatchObject(rowA)
+      expect(updated.budgetTransactions[1]).toMatchObject(rowB)
+    })
+
+    it('drops the second row when date/description/category/amount/accountName all match', () => {
+      const state = initialState()
+      const row = { date: '2026-01-01', description: 'Rent', category: 'Housing', amount: 2000, accountName: 'Checking' }
+      const updated = importBudgetTransactions(state, [row, { ...row }])
+      expect(updated.budgetTransactions).toHaveLength(1)
+      expect(updated.budgetTransactions[0]).toMatchObject(row)
+    })
   })
 
   describe('setBudgetIncomeForPeriod', () => {
