@@ -526,6 +526,13 @@ export function budgetTransactionsForPeriod(
 }
 
 /**
+ * Set of category ids marked excludeFromSpend, used to filter actual-spend figures.
+ */
+export function excludedCategoryIdSet(categories: Category[]): Set<string> {
+  return new Set(categories.filter((c) => c.excludeFromSpend).map((c) => c.id))
+}
+
+/**
  * Sum actual spend per category from budget transactions.
  */
 export function actualByCategory(transactions: BudgetTransaction[]): Record<string, number> {
@@ -584,8 +591,10 @@ export function categoryBreakdown(
   actualColor: string
   varianceColor: string
 }> {
+  const excludedIds = excludedCategoryIdSet(categories)
   const byCategory: Record<string, number> = {}
   expenses.forEach((e) => {
+    if (excludedIds.has(e.categoryId)) return
     byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + toPeriod(e.amount, e.frequency, period)
   })
   const actuals = actualByCategory(transactions)

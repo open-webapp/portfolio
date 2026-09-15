@@ -11,6 +11,7 @@ import {
   actualByCategory,
   availableBudgetMonths,
   availableBudgetYears,
+  excludedCategoryIdSet,
 } from '../lib/selectors'
 
 export interface BudgetPageProps {
@@ -165,8 +166,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     currentMonthValue,
     selectedYear
   )
-  const totalActual = periodFilteredTransactions.reduce((sum, t) => sum + t.amount, 0)
-  const actualByCategoryForPeriod = actualByCategory(periodFilteredTransactions)
+  const excludedCategoryIds = excludedCategoryIdSet(categories)
+  const nonExcludedTransactions = periodFilteredTransactions.filter(
+    (t) => !excludedCategoryIds.has(t.categoryId)
+  )
+  const totalActual = nonExcludedTransactions.reduce((sum, t) => sum + t.amount, 0)
+  const actualByCategoryForPeriod = actualByCategory(nonExcludedTransactions)
   const variance = totalExpense - totalActual
   const rangeLabel =
     period === 'monthly'

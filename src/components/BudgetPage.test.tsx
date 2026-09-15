@@ -506,6 +506,106 @@ describe('BudgetPage', () => {
       expect(varianceCells[1]).toBe('-$100.00')
     })
 
+    it('excludeFromSpend category: its transactions are excluded from Actual spend/Variance summary cards and from its own Expenses row, while non-excluded transactions still count (Budgeted unaffected)', () => {
+      const now = new Date()
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const categoriesWithExcluded: Category[] = CATEGORIES.map((c) =>
+        c.id === 'cat-housing' ? { ...c, excludeFromSpend: true } : c
+      )
+      const state: AppState = defaultState({
+        budgetExpenses: [
+          makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' }),
+          makeExpense({ id: 'e2', name: 'Groceries', categoryId: 'cat-food', amount: 300, frequency: 'monthly' }),
+        ],
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: `${currentMonth}-10`, categoryId: 'cat-housing', amount: 900 }),
+          makeTransaction({ id: 't2', date: `${currentMonth}-12`, categoryId: 'cat-food', amount: 150 }),
+        ],
+      })
+      const expectedBudgeted = state.budgetExpenses.reduce(
+        (sum, e) => sum + toPeriod(e.amount, e.frequency, 'monthly'),
+        0
+      )
+
+      const { container } = render(
+        <BudgetPage state={state} dispatch={vi.fn()} categories={categoriesWithExcluded} categoryMappings={[]} categoryDispatch={vi.fn()} />
+      )
+      fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
+
+      const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
+      const budgetedValue = within(summary).getByText('Budgeted (Monthly)').nextElementSibling as HTMLElement
+      const actualLabel = Array.from(summary.querySelectorAll('.text-muted')).find((el) =>
+        el.textContent?.startsWith('Actual spend')
+      ) as HTMLElement
+      const actualValue = actualLabel.nextElementSibling as HTMLElement
+      const varianceValue = within(summary).getByText('Variance').nextElementSibling as HTMLElement
+
+      // Budgeted unaffected by exclusion.
+      expect(budgetedValue.textContent).toBe(fmtUSD(expectedBudgeted))
+      // Actual spend excludes the $900 housing transaction; only the $150 food transaction counts.
+      expect(actualValue.textContent).toBe(fmtUSD(150))
+      expect(varianceValue.textContent).toBe(fmtUSD(expectedBudgeted - 150))
+
+      const expensesTable = container.querySelectorAll('table')[1]
+      const bodyRows = expensesTable.querySelectorAll('tbody tr:not([data-testid="expenses-total-row"])')
+      const rentRow = Array.from(bodyRows).find((tr) => tr.textContent?.includes('Rent')) as HTMLElement
+      const groceriesRow = Array.from(bodyRows).find((tr) => tr.textContent?.includes('Groceries')) as HTMLElement
+
+      // Budgeted column (index 3) unaffected.
+      expect(rentRow.querySelectorAll('td')[3].textContent).toBe(fmtUSD(1000))
+      // Actual/Variance for the excluded category row: as if the transaction didn't exist.
+      expect(rentRow.querySelectorAll('td')[4].textContent).toBe(fmtUSD(0))
+      expect(rentRow.querySelectorAll('td')[5].textContent).toBe(fmtUSD(1000))
+      // Non-excluded category row still reflects its transaction normally.
+      expect(groceriesRow.querySelectorAll('td')[4].textContent).toBe(fmtUSD(150))
+      expect(groceriesRow.querySelectorAll('td')[5].textContent).toBe(fmtUSD(300 - 150))
+    })
+
+    it('all transactions in excluded categories: Actual spend is $0, Variance equals full Budgeted, and every excluded row shows Actual $0', () => {
+      const now = new Date()
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const categoriesWithExcluded: Category[] = CATEGORIES.map((c) =>
+        c.id === 'cat-housing' || c.id === 'cat-food' ? { ...c, excludeFromSpend: true } : c
+      )
+      const state: AppState = defaultState({
+        budgetExpenses: [
+          makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' }),
+          makeExpense({ id: 'e2', name: 'Groceries', categoryId: 'cat-food', amount: 300, frequency: 'monthly' }),
+        ],
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: `${currentMonth}-10`, categoryId: 'cat-housing', amount: 900 }),
+          makeTransaction({ id: 't2', date: `${currentMonth}-12`, categoryId: 'cat-food', amount: 150 }),
+        ],
+      })
+      const expectedBudgeted = state.budgetExpenses.reduce(
+        (sum, e) => sum + toPeriod(e.amount, e.frequency, 'monthly'),
+        0
+      )
+
+      const { container } = render(
+        <BudgetPage state={state} dispatch={vi.fn()} categories={categoriesWithExcluded} categoryMappings={[]} categoryDispatch={vi.fn()} />
+      )
+      fireEvent.click(within(container.querySelector('.seg')!).getByText('Monthly'))
+
+      const summary = container.querySelector('[data-testid="summary-cards"]') as HTMLElement
+      const budgetedValue = within(summary).getByText('Budgeted (Monthly)').nextElementSibling as HTMLElement
+      const actualLabel = Array.from(summary.querySelectorAll('.text-muted')).find((el) =>
+        el.textContent?.startsWith('Actual spend')
+      ) as HTMLElement
+      const actualValue = actualLabel.nextElementSibling as HTMLElement
+      const varianceValue = within(summary).getByText('Variance').nextElementSibling as HTMLElement
+
+      expect(budgetedValue.textContent).toBe(fmtUSD(expectedBudgeted))
+      expect(actualValue.textContent).toBe(fmtUSD(0))
+      expect(varianceValue.textContent).toBe(fmtUSD(expectedBudgeted))
+
+      const expensesTable = container.querySelectorAll('table')[1]
+      const bodyRows = expensesTable.querySelectorAll('tbody tr:not([data-testid="expenses-total-row"])')
+      Array.from(bodyRows).forEach((tr) => {
+        expect(tr.querySelectorAll('td')[4].textContent).toBe(fmtUSD(0))
+      })
+    })
+
     it('clicking the Add button opens the Add-Expense dialog (regression after repositioning)', () => {
       render(<BudgetPage state={defaultState()} dispatch={vi.fn()} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
 
