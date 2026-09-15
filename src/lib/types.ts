@@ -109,6 +109,7 @@ export interface Category {
   name: string
   updatedAt: string  // ISO
   deletedAt?: string  // ISO
+  excludeFromSpend?: boolean
 }
 
 export interface CategoryMapping {

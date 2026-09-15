@@ -599,7 +599,7 @@ describe('BudgetPage', () => {
       expect(actualValue.textContent).toBe(fmtUSD(0))
       expect(varianceValue.textContent).toBe(fmtUSD(expectedBudgeted))
 
-      const expensesTable = container.querySelectorAll('table')[1]
+      const expensesTable = container.querySelector('[data-testid="expenses-total-row"]')!.closest('table')!
       const bodyRows = expensesTable.querySelectorAll('tbody tr:not([data-testid="expenses-total-row"])')
       Array.from(bodyRows).forEach((tr) => {
         expect(tr.querySelectorAll('td')[4].textContent).toBe(fmtUSD(0))
@@ -1603,6 +1603,93 @@ VERSION:102
         expect(screen.queryByLabelText('Edit record amount')).toBeFalsy()
       })
     })
+
+    describe('Show excluded toggle', () => {
+      const categoriesWithExcludedZoo: Category[] = CATEGORIES.map((c) =>
+        c.id === 'cat-zoo' ? { ...c, excludeFromSpend: true } : c
+      )
+
+      it('hides excluded-category transactions by default; checking "Show excluded" reveals them; unchecking hides them again', () => {
+        const state = scopedRecordsState()
+        render(
+          <BudgetPage
+            state={state}
+            dispatch={vi.fn()}
+            categories={categoriesWithExcludedZoo}
+            categoryMappings={[]}
+            categoryDispatch={vi.fn()}
+          />
+        )
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        expect(screen.queryByText('Zoo tickets')).toBeFalsy()
+        expect(screen.getByText('Groceries')).toBeTruthy()
+        expect(screen.getByText('Rent payment')).toBeTruthy()
+
+        fireEvent.click(screen.getByLabelText('Show excluded'))
+        expect(screen.getByText('Zoo tickets')).toBeTruthy()
+
+        fireEvent.click(screen.getByLabelText('Show excluded'))
+        expect(screen.queryByText('Zoo tickets')).toBeFalsy()
+      })
+
+      it('resets pagination to page 0 when toggled, search/sort continue to operate on whichever row set is active, and the Total row reflects only the currently-visible rows', () => {
+        const txs: BudgetTransaction[] = Array.from({ length: 501 }, (_, i) =>
+          makeTransaction({
+            id: `tx-${i}`,
+            date: `2025-01-${String((i % 28) + 1).padStart(2, '0')}`,
+            description: `Item ${String(i).padStart(4, '0')}`,
+            categoryId: 'cat-food',
+            amount: 10 + i,
+          })
+        )
+        // One extra excluded-category transaction so toggling changes the visible set.
+        txs.push(
+          makeTransaction({
+            id: 'tx-excluded',
+            date: '2025-01-15',
+            description: 'Zoo excluded item',
+            categoryId: 'cat-zoo',
+            amount: 5000,
+          })
+        )
+        const state = defaultState({ budgetTransactions: txs })
+        render(
+          <BudgetPage
+            state={state}
+            dispatch={vi.fn()}
+            categories={categoriesWithExcludedZoo}
+            categoryMappings={[]}
+            categoryDispatch={vi.fn()}
+          />
+        )
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        const pagination = screen.getByTestId('records-pagination')
+        fireEvent.click(within(pagination).getByText('Next'))
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 6')).toBeTruthy()
+
+        fireEvent.click(screen.getByLabelText('Show excluded'))
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 6')).toBeTruthy()
+
+        // Search still filters within the now-visible (excluded-included) set.
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'Zoo excluded' } })
+        expect(screen.getByText('Zoo excluded item')).toBeTruthy()
+        const totalRow = screen.getByTestId('records-total-row')
+        expect(totalRow.textContent).toContain(fmtUSD(5000))
+
+        // Clear search, uncheck the toggle: excluded item drops out, and Total
+        // reflects only the non-excluded visible rows again.
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: '' } })
+        fireEvent.click(screen.getByLabelText('Show excluded'))
+        expect(screen.queryByText('Zoo excluded item')).toBeFalsy()
+
+        const expectedTotal = txs
+          .filter((t) => t.categoryId !== 'cat-zoo')
+          .reduce((sum, t) => sum + t.amount, 0)
+        expect(screen.getByTestId('records-total-row').textContent).toContain(fmtUSD(expectedTotal))
+      })
+    })
   })
 
   describe('category breakdown (T15)', () => {
@@ -1706,6 +1793,37 @@ VERSION:102
         expect(opts.map((o) => o.value)).toEqual(CATEGORIES.map((c) => c.id))
         expect(opts.map((o) => o.textContent)).toEqual(CATEGORIES.map((c) => c.name))
       })
+    })
+
+    it('excludeFromSpend does not remove a category from selectability: it still appears as an option in the Add Record and per-cell Category edit selects', () => {
+      const categoriesWithExcluded: Category[] = CATEGORIES.map((c) =>
+        c.id === 'cat-zoo' ? { ...c, excludeFromSpend: true } : c
+      )
+      const state = defaultState({
+        budgetTransactions: [makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food' })],
+      })
+      render(
+        <BudgetPage
+          state={state}
+          dispatch={vi.fn()}
+          categories={categoriesWithExcluded}
+          categoryMappings={[]}
+          categoryDispatch={vi.fn()}
+        />
+      )
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+      // Add Record category select
+      const recordSelect = screen.getByLabelText('Record category') as HTMLSelectElement
+      const recordOptionValues = Array.from(recordSelect.querySelectorAll('option')).map((o) => o.value)
+      expect(recordOptionValues).toContain('cat-zoo')
+
+      // Per-cell Category edit select on the Spend Records table
+      const row = screen.getByText('Groceries').closest('tr')!
+      fireEvent.click(within(row).getByText('Food'))
+      const cellSelect = screen.getByLabelText('Edit record category') as HTMLSelectElement
+      const cellOptionValues = Array.from(cellSelect.querySelectorAll('option')).map((o) => o.value)
+      expect(cellOptionValues).toContain('cat-zoo')
     })
   })
 })

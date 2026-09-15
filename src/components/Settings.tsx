@@ -541,6 +541,21 @@ export function SettingsPage({
                     </button>
                   </>
                 )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginLeft: 'var(--space-2)' }}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Exclude ${category.name} from spend tracking`}
+                    checked={category.excludeFromSpend ?? false}
+                    onChange={(e) =>
+                      categoryDispatch({
+                        type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND',
+                        id: category.id,
+                        exclude: e.target.checked,
+                      })
+                    }
+                  />
+                  Exclude from spend tracking
+                </label>
               </div>
               <div style={{ marginLeft: 'var(--space-5)', marginTop: 'var(--space-2)' }}>
                 {mappings.map((mapping) => {

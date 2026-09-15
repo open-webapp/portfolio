@@ -1748,6 +1748,56 @@ describe('categoryBreakdown', () => {
       varianceColor: GAIN_COLOR
     })
   })
+
+  it('excludes categories flagged excludeFromSpend, leaving non-excluded categories intact', () => {
+    const excludedCat: Category = { id: 'cat-excluded', name: 'Transfers', excludeFromSpend: true }
+    const cats = [...allCats, excludedCat]
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' },
+      { id: 'e2', name: 'Transfer', categoryId: excludedCat.id, amount: 1000, frequency: 'monthly' }
+    ]
+    const transactions: BudgetTransaction[] = [
+      { id: 't1', date: '2026-09-05', description: 'Rent', categoryId: catHousing.id, amount: 2000 },
+      { id: 't2', date: '2026-09-06', description: 'Transfer', categoryId: excludedCat.id, amount: 1000 }
+    ]
+    const result = categoryBreakdown(expenses, transactions, 'monthly', cats)
+    expect(result.find((r) => r.name === 'Transfers')).toBeUndefined()
+    expect(result).toEqual([
+      {
+        name: 'Housing',
+        amount: 2000,
+        actual: 2000,
+        variance: 0,
+        budgetPct: 100,
+        actualPct: 100,
+        actualColor: '#3b6ef6',
+        varianceColor: GAIN_COLOR
+      }
+    ])
+  })
+
+  it('returns empty array without throwing when all categories are excluded', () => {
+    const excludedA: Category = { ...catA, excludeFromSpend: true }
+    const excludedB: Category = { ...catB, excludeFromSpend: true }
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'A1', categoryId: catA.id, amount: 100, frequency: 'monthly' },
+      { id: 'e2', name: 'B1', categoryId: catB.id, amount: 200, frequency: 'monthly' }
+    ]
+    const transactions: BudgetTransaction[] = [
+      { id: 't1', date: '2026-09-05', description: 'A1', categoryId: catA.id, amount: 90 }
+    ]
+    expect(() => categoryBreakdown(expenses, transactions, 'monthly', [excludedA, excludedB])).not.toThrow()
+    expect(categoryBreakdown(expenses, transactions, 'monthly', [excludedA, excludedB])).toEqual([])
+  })
+
+  it('excludes a category with only budgeted expenses and no actual transactions entirely', () => {
+    const excludedCat: Category = { id: 'cat-excluded2', name: 'Savings', excludeFromSpend: true }
+    const expenses: Expense[] = [
+      { id: 'e1', name: 'Savings deposit', categoryId: excludedCat.id, amount: 500, frequency: 'monthly' }
+    ]
+    const result = categoryBreakdown(expenses, [], 'monthly', [excludedCat])
+    expect(result).toEqual([])
+  })
 })
 
 describe('budget selectors', () => {

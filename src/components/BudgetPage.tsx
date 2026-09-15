@@ -110,6 +110,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
   const [recPage, setRecPage] = useState(0)
+  const [showExcludedRecords, setShowExcludedRecords] = useState(false)
   const [formName, setFormName] = useState('')
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
   const [formCategoryId, setFormCategoryId] = useState(categories[0]?.id ?? '')
@@ -199,8 +200,11 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setEditingIncome(false)
   }
 
+  const recordSourceTransactions = showExcludedRecords
+    ? periodFilteredTransactions
+    : periodFilteredTransactions.filter((t) => !excludedCategoryIds.has(t.categoryId))
   const filteredRecords = recordSearch.trim()
-    ? periodFilteredTransactions.filter((t) => {
+    ? recordSourceTransactions.filter((t) => {
         const searchLower = recordSearch.toLowerCase()
         const categoryName = categoriesById.get(t.categoryId) ?? t.categoryId
         return (
@@ -209,7 +213,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           (t.accountName ?? '').toLowerCase().includes(searchLower)
         )
       })
-    : periodFilteredTransactions
+    : recordSourceTransactions
   const toggleRecSort = (field: 'date' | 'description' | 'category' | 'account' | 'amount') => {
     if (recSortBy === field) {
       setRecSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -499,17 +503,32 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           }}
         >
           <div className="card-title">Spend records ({rangeLabel})</div>
-          <div className="field" style={{ margin: 0, width: '220px' }}>
-            <input
-              className="input"
-              aria-label="Search records"
-              placeholder="Search records"
-              value={recordSearch}
-              onChange={(e) => {
-                setRecordSearch(e.target.value)
-                setRecPage(0)
-              }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <label
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '12px' }}
+            >
+              <input
+                type="checkbox"
+                checked={showExcludedRecords}
+                onChange={(e) => {
+                  setShowExcludedRecords(e.target.checked)
+                  setRecPage(0)
+                }}
+              />
+              Show excluded
+            </label>
+            <div className="field" style={{ margin: 0, width: '220px' }}>
+              <input
+                className="input"
+                aria-label="Search records"
+                placeholder="Search records"
+                value={recordSearch}
+                onChange={(e) => {
+                  setRecordSearch(e.target.value)
+                  setRecPage(0)
+                }}
+              />
+            </div>
           </div>
         </div>
 

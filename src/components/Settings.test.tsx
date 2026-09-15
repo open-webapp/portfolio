@@ -933,6 +933,73 @@ describe('SettingsPage', () => {
 
       expect(mockDispatch).toHaveBeenCalledWith({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings })
     })
+
+    it('renders an unchecked "Exclude from spend tracking" checkbox by default; clicking dispatches SET_CATEGORY_EXCLUDE_FROM_SPEND with exclude:true and the re-render reflects the checked state', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      const { rerender } = renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
+
+      const checkbox = screen.getByLabelText('Exclude Groceries from spend tracking') as HTMLInputElement
+      expect(checkbox.checked).toBe(false)
+
+      fireEvent.click(checkbox)
+
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
+        type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND',
+        id: 'cat-groceries',
+        exclude: true,
+      })
+
+      const updatedCategories = categories.map((c) =>
+        c.id === 'cat-groceries' ? { ...c, excludeFromSpend: true } : c
+      )
+      rerender(
+        <SettingsPage
+          {...{
+            state,
+            activePortfolio: { id: 'p1', name: 'Test Portfolio', dbName: 'portfolio_p1', createdAt: 0 },
+            dispatch: mockDispatch,
+            sessionKey,
+            sessionSalt,
+            onKeyChange: mockOnKeyChange,
+            onPasswordEntryTimeReset: mockOnPasswordEntryTimeReset,
+            onDriveConnected: mockOnDriveConnected,
+            onDriveDisconnected: mockOnDriveDisconnected,
+            settingsSection: 'categories',
+            setSettingsSection: mockSetSettingsSection,
+            runPriceSyncTrigger: mockRunPriceSyncTrigger,
+            runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
+            tickerOverviewErrors: {},
+            mutualFundSyncErrors: {},
+            categories: updatedCategories,
+            categoryMappings,
+            categoryDispatch: mockCategoryDispatch,
+            categoriesHydrated: true,
+          }}
+        />
+      )
+
+      const updatedCheckbox = screen.getByLabelText('Exclude Groceries from spend tracking') as HTMLInputElement
+      expect(updatedCheckbox.checked).toBe(true)
+    })
+
+    it('a category flagged excludeFromSpend:true renders pre-checked; unchecking dispatches exclude:false', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      const flaggedCategories = categories.map((c) =>
+        c.id === 'cat-rent' ? { ...c, excludeFromSpend: true } : c
+      )
+      renderSettings({ state, categories: flaggedCategories, categoryMappings, settingsSection: 'categories' })
+
+      const checkbox = screen.getByLabelText('Exclude Rent from spend tracking') as HTMLInputElement
+      expect(checkbox.checked).toBe(true)
+
+      fireEvent.click(checkbox)
+
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
+        type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND',
+        id: 'cat-rent',
+        exclude: false,
+      })
+    })
   })
 
   describe('Category Mapping backup card', () => {

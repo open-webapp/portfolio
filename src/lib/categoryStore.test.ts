@@ -3,6 +3,7 @@ import {
   initialGlobalCategoryState,
   addCategory,
   renameCategory,
+  setCategoryExcludeFromSpend,
   deleteCategory,
   upsertCategoryMapping,
   updateCategoryMapping,
@@ -39,6 +40,24 @@ describe('categoryStore', () => {
     it('is a no-op when the id is unknown', () => {
       const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categories: [{ id: 'cat-1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }] }
       const updated = renameCategory(s, 'cat-nope', 'Food & Dining')
+      expect(updated.categories).toEqual(s.categories)
+    })
+  })
+
+  describe('SET_CATEGORY_EXCLUDE_FROM_SPEND / setCategoryExcludeFromSpend', () => {
+    it('sets excludeFromSpend: true and stamps updatedAt, and toggling back to false clears it', () => {
+      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categories: [{ id: 'cat-1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }] }
+      const excluded = categoryStoreReducer(s, { type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND', id: 'cat-1', exclude: true })
+      expect(excluded.categories[0].excludeFromSpend).toBe(true)
+      expect(excluded.categories[0].updatedAt).not.toBe('2026-01-01T00:00:00.000Z')
+
+      const included = categoryStoreReducer(excluded, { type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND', id: 'cat-1', exclude: false })
+      expect(included.categories[0].excludeFromSpend).toBe(false)
+    })
+
+    it('is a no-op when the id is unknown', () => {
+      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categories: [{ id: 'cat-1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }] }
+      const updated = setCategoryExcludeFromSpend(s, 'cat-nope', true)
       expect(updated.categories).toEqual(s.categories)
     })
   })

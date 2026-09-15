@@ -24,6 +24,12 @@ export function renameCategory(s: GlobalCategoryState, id: string, name: string)
   return { ...s, categories: s.categories.map((c) => (c.id === id ? { ...c, name, updatedAt: now } : c)) }
 }
 
+/** Set a category's excludeFromSpend flag by ID, stamping updatedAt. No-op if the ID isn't found. */
+export function setCategoryExcludeFromSpend(s: GlobalCategoryState, id: string, exclude: boolean): GlobalCategoryState {
+  const now = new Date().toISOString()
+  return { ...s, categories: s.categories.map((c) => (c.id === id ? { ...c, excludeFromSpend: exclude, updatedAt: now } : c)) }
+}
+
 /** Tombstone a category by ID (sets deletedAt + updatedAt). No-op if the ID isn't found. */
 export function deleteCategory(s: GlobalCategoryState, id: string): GlobalCategoryState {
   if (!s.categories.some((c) => c.id === id)) return s
@@ -125,6 +131,7 @@ export function reapplyMappingsToTransactions(transactions: BudgetTransaction[],
 export type CategoryAction =
   | { type: 'ADD_CATEGORY'; id: string; name: string }
   | { type: 'RENAME_CATEGORY'; id: string; name: string }
+  | { type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND'; id: string; exclude: boolean }
   | { type: 'DELETE_CATEGORY'; id: string }
   | { type: 'UPSERT_CATEGORY_MAPPING'; description: string; categoryId: string }
   | { type: 'UPDATE_CATEGORY_MAPPING'; id: string; patch: Partial<Pick<CategoryMapping, 'substring' | 'categoryId'>> }
@@ -143,6 +150,8 @@ export function categoryStoreReducer(s: GlobalCategoryState, a: CategoryAction):
       return addCategory(s, a.id, a.name)
     case 'RENAME_CATEGORY':
       return renameCategory(s, a.id, a.name)
+    case 'SET_CATEGORY_EXCLUDE_FROM_SPEND':
+      return setCategoryExcludeFromSpend(s, a.id, a.exclude)
     case 'DELETE_CATEGORY':
       return deleteCategory(s, a.id)
     case 'UPSERT_CATEGORY_MAPPING':

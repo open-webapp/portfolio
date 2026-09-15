@@ -133,8 +133,9 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 |---|---|---|
 | `id` | `string` | `uid('category')` |
 | `name` | `string` | User-editable, e.g. "Groceries", "Other" |
-| `updatedAt` | `string` | ISO timestamp; stamped on every create/rename/delete |
+| `updatedAt` | `string` | ISO timestamp; stamped on every create/rename/delete/exclude-toggle |
 | `deletedAt?` | `string` | ISO timestamp tombstone. Delete = set `deletedAt` (+ refresh `updatedAt`), record kept forever, never physically removed. No delete UI exists anywhere — this field exists for the merge algorithm and future use |
+| `excludeFromSpend?` | `boolean` | Default absent (`undefined`/falsy) = included/not excluded. When `true`, Budget page treats every transaction in this category as excluded from all actual-spend-derived figures app-wide (Actual-spend/Variance summary cards, Expenses table per-row Actual/Variance, Category Breakdown panel — which drops the category's row entirely) and Spend records hides its rows by default. Budgeted/planned figures are never affected. Category `<select>` controls elsewhere in the app are unaffected — excluded categories stay selectable. Set via Settings > Categories tab checkbox, dispatching `SET_CATEGORY_EXCLUDE_FROM_SPEND` on the Global Category Store |
 
 An "Other" category is always auto-vivified (see migration note below) and used as the fallback whenever no `CategoryMapping` matches. `visibleCategories()` (`src/lib/categoryStore.ts`) filters out tombstoned (`deletedAt`-set) records for every UI list; unreferenced-but-live categories simply don't render in the Settings "Categories" tab (`referencedCategories` selector is display-only on top of that — nothing is pruned from the store itself).
 
