@@ -25,14 +25,9 @@ import {
   deleteBudgetTransaction,
   importBudgetTransactions,
   setBudgetIncomeForPeriod,
-  addCategory,
-  renameCategory,
-  upsertCategoryMapping,
-  updateCategoryMapping,
-  addCategoryMapping,
-  reapplyCategoryMappings,
+  reapplyCategoryMappingsToState,
 } from './state'
-import type { AppState, BalanceEntry } from './types'
+import type { AppState, BalanceEntry, Category, CategoryMapping } from './types'
 
 describe('appReducer', () => {
   describe('CLOSE_POSITION', () => {
@@ -647,9 +642,16 @@ describe('appReducer', () => {
         { date: '2026-01-15', description: 'Groceries', amount: 85.5 },
         { date: '2026-01-16', description: 'Gas', amount: 40 },
       ]
+      const categories: Category[] = [{ id: 'cat-other', name: 'Other' }]
+      const categoryMappings: CategoryMapping[] = []
 
-      const resultFromReducer = appReducer(state, { type: 'IMPORT_BUDGET_TRANSACTIONS', rows })
-      const resultDirect = importBudgetTransactions(state, rows)
+      const resultFromReducer = appReducer(state, {
+        type: 'IMPORT_BUDGET_TRANSACTIONS',
+        rows,
+        categories,
+        categoryMappings,
+      })
+      const resultDirect = importBudgetTransactions(state, rows, categories, categoryMappings)
 
       expect(resultFromReducer.budgetTransactions).toHaveLength(2)
       expect(resultFromReducer.budgetTransactions).toHaveLength(resultDirect.budgetTransactions.length)
@@ -673,91 +675,21 @@ describe('appReducer', () => {
     })
   })
 
-  describe('ADD_CATEGORY', () => {
-    it('dispatches to addCategory state action', () => {
-      const state: AppState = { ...initialState(), categories: [] }
-
-      const resultFromReducer = appReducer(state, { type: 'ADD_CATEGORY', id: 'cat1', name: 'Food' })
-      const resultDirect = addCategory(state, 'cat1', 'Food')
-
-      expect(resultFromReducer.categories).toEqual(resultDirect.categories)
-      expect(resultFromReducer.categories).toEqual([{ id: 'cat1', name: 'Food' }])
-    })
-  })
-
-  describe('RENAME_CATEGORY', () => {
-    it('dispatches to renameCategory state action', () => {
-      const state: AppState = { ...initialState(), categories: [{ id: 'cat1', name: 'Food' }] }
-
-      const resultFromReducer = appReducer(state, { type: 'RENAME_CATEGORY', id: 'cat1', name: 'Groceries' })
-      const resultDirect = renameCategory(state, 'cat1', 'Groceries')
-
-      expect(resultFromReducer.categories).toEqual(resultDirect.categories)
-      expect(resultFromReducer.categories).toEqual([{ id: 'cat1', name: 'Groceries' }])
-    })
-  })
-
-  describe('UPSERT_CATEGORY_MAPPING', () => {
-    it('dispatches to upsertCategoryMapping state action', () => {
-      const state: AppState = { ...initialState(), categoryMappings: [] }
-
-      const resultFromReducer = appReducer(state, {
-        type: 'UPSERT_CATEGORY_MAPPING',
-        description: 'STARBUCKS #123',
-        categoryId: 'cat1',
-      })
-      const resultDirect = upsertCategoryMapping(state, 'STARBUCKS #123', 'cat1')
-
-      expect(resultFromReducer.categoryMappings).toHaveLength(1)
-      expect(resultFromReducer.categoryMappings).toHaveLength(resultDirect.categoryMappings.length)
-      expect(resultFromReducer.categoryMappings[0].substring).toBe('STARBUCKS #123')
-      expect(resultFromReducer.categoryMappings[0].categoryId).toBe('cat1')
-    })
-  })
-
-  describe('UPDATE_CATEGORY_MAPPING', () => {
-    it('dispatches to updateCategoryMapping state action for an existing id', () => {
-      const state: AppState = {
-        ...initialState(),
-        categoryMappings: [{ id: 'catmap1', substring: 'STARBUCKS', categoryId: 'cat1', updatedAt: '2026-01-01T00:00:00.000Z' }],
-      }
-      const patch = { categoryId: 'cat2' }
-
-      const resultFromReducer = appReducer(state, { type: 'UPDATE_CATEGORY_MAPPING', id: 'catmap1', patch })
-      const resultDirect = updateCategoryMapping(state, 'catmap1', patch)
-
-      expect(resultFromReducer.categoryMappings).toEqual(resultDirect.categoryMappings)
-      expect(resultFromReducer.categoryMappings[0].categoryId).toBe('cat2')
-    })
-  })
-
-  describe('ADD_CATEGORY_MAPPING', () => {
-    it('dispatches to addCategoryMapping state action', () => {
-      const state: AppState = { ...initialState(), categoryMappings: [] }
-
-      const resultFromReducer = appReducer(state, { type: 'ADD_CATEGORY_MAPPING', categoryId: 'cat1', substring: 'UBER' })
-      const resultDirect = addCategoryMapping(state, 'cat1', 'UBER')
-
-      expect(resultFromReducer.categoryMappings).toHaveLength(1)
-      expect(resultFromReducer.categoryMappings).toHaveLength(resultDirect.categoryMappings.length)
-      expect(resultFromReducer.categoryMappings[0].substring).toBe('UBER')
-      expect(resultFromReducer.categoryMappings[0].categoryId).toBe('cat1')
-    })
-  })
-
   describe('REAPPLY_CATEGORY_MAPPINGS', () => {
-    it('dispatches to reapplyCategoryMappings state action, rewriting matching budgetTransactions', () => {
+    it('dispatches to reapplyCategoryMappingsToState state action, rewriting matching budgetTransactions', () => {
+      const categoryMappings: CategoryMapping[] = [
+        { id: 'catmap1', substring: 'STARBUCKS', categoryId: 'cat-coffee', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
       const state: AppState = {
         ...initialState(),
-        categoryMappings: [{ id: 'catmap1', substring: 'STARBUCKS', categoryId: 'cat-coffee', updatedAt: '2026-01-01T00:00:00.000Z' }],
         budgetTransactions: [
           { id: 'tx1', date: '2026-01-15', description: 'STARBUCKS #123', categoryId: 'cat-uncategorized', amount: 5.5 },
           { id: 'tx2', date: '2026-01-16', description: 'GAS STATION', categoryId: 'cat-uncategorized', amount: 40 },
         ],
       }
 
-      const resultFromReducer = appReducer(state, { type: 'REAPPLY_CATEGORY_MAPPINGS' })
-      const resultDirect = reapplyCategoryMappings(state)
+      const resultFromReducer = appReducer(state, { type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings })
+      const resultDirect = reapplyCategoryMappingsToState(state, categoryMappings)
 
       expect(resultFromReducer.budgetTransactions).toEqual(resultDirect.budgetTransactions)
       expect(resultFromReducer.budgetTransactions.find((t) => t.id === 'tx1')?.categoryId).toBe('cat-coffee')

@@ -2,55 +2,6 @@ import type { AppState } from './state'
 import { initialState } from './state'
 import { decryptState, detectEnvelopeShape, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
-import type { Category } from './types'
-import { uid } from './seed'
-
-/**
- * One-time idempotent migration: pre-migration blobs have no `categories`
- * field at all and store `category: string` directly on budgetExpenses/
- * budgetTransactions rows. Derives `Category` rows from the distinct
- * category strings found in those rows (always auto-vivifying an "Other"
- * category), and rewrites each row's `category` field to `categoryId`.
- * Already-migrated blobs (categories present, including `[]`) pass through
- * unchanged.
- */
-function migrateCategoriesIfNeeded(
-  loaded: Partial<AppState>,
-): { categories: Category[]; expenses: any[]; transactions: any[] } {
-  if (loaded.categories !== undefined) {
-    return {
-      categories: loaded.categories,
-      expenses: loaded.budgetExpenses ?? [],
-      transactions: loaded.budgetTransactions ?? [],
-    }
-  }
-  const rawExpenses = (loaded.budgetExpenses ?? []) as unknown as Array<Record<string, unknown>>
-  const rawTransactions = (loaded.budgetTransactions ?? []) as unknown as Array<Record<string, unknown>>
-  const names = new Set<string>()
-  rawExpenses.forEach((e) => {
-    if (typeof e.category === 'string' && e.category) names.add(e.category)
-  })
-  rawTransactions.forEach((t) => {
-    if (typeof t.category === 'string' && t.category) names.add(t.category)
-  })
-  names.add('Other')
-  const nameToId = new Map<string, string>()
-  const categories: Category[] = [...names].map((name) => {
-    const id = uid('category')
-    nameToId.set(name, id)
-    return { id, name }
-  })
-  const rewrite = (rows: Array<Record<string, unknown>>) =>
-    rows.map((row) => {
-      const { category, ...rest } = row
-      const categoryId =
-        typeof category === 'string' && nameToId.has(category)
-          ? nameToId.get(category)!
-          : nameToId.get('Other')!
-      return { ...rest, categoryId }
-    })
-  return { categories, expenses: rewrite(rawExpenses), transactions: rewrite(rawTransactions) }
-}
 
 const STORE_NAME = 'app_state'
 const STATE_KEY = 'current'
@@ -112,7 +63,6 @@ function base64ToBytes(b64: string): Uint8Array {
  */
 export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
   const defaults = initialState()
-  const migrated = migrateCategoriesIfNeeded(loaded)
   return {
     // Data collections
     accounts: (loaded.accounts ?? defaults.accounts).map((a) => ({
@@ -179,10 +129,8 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     regActivityFilter: loaded.regActivityFilter ?? defaults.regActivityFilter,
     budgetIncomeMonthly: loaded.budgetIncomeMonthly ?? defaults.budgetIncomeMonthly,
     budgetIncomeYearly: loaded.budgetIncomeYearly ?? defaults.budgetIncomeYearly,
-    budgetExpenses: migrated.expenses,
-    budgetTransactions: migrated.transactions,
-    categories: migrated.categories,
-    categoryMappings: loaded.categoryMappings ?? [],
+    budgetExpenses: loaded.budgetExpenses ?? defaults.budgetExpenses,
+    budgetTransactions: loaded.budgetTransactions ?? defaults.budgetTransactions,
   }
 }
 
@@ -231,13 +179,16 @@ export async function peekStoredSalt(): Promise<Uint8Array | null> {
 }
 
 /**
- * Loads and decrypts the persisted AppState from the active portfolio's database.
- * Returns null if nothing was saved.
- * Throws if the stored value is not an encrypted envelope (caller bug — the
- * gate must never call this on an absent envelope) or if decryption
- * fails (e.g. wrong password → OperationError propagates uncaught).
+ * Decrypts the persisted blob from the active portfolio's database and
+ * returns the raw parsed object, BEFORE coalesceWithDefaults runs. Returns
+ * null if nothing was saved. Throws if the stored value is not an encrypted
+ * envelope (caller bug — the gate must never call this on an absent
+ * envelope) or if decryption fails (e.g. wrong password → OperationError
+ * propagates uncaught).
  */
-export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null> {
+export async function loadRawPersistedBlob(
+  key: CryptoKey,
+): Promise<(Partial<AppState> & Record<string, unknown>) | null> {
   const raw = await readRawFromActiveDb()
 
   if (raw === undefined || raw === null) {
@@ -248,8 +199,19 @@ export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null>
     throw new Error('loadPersistedApp called on a non-encrypted envelope')
   }
 
-  const decrypted = await decryptState(raw as EncryptedEnvelope, key)
-  return coalesceWithDefaults(decrypted)
+  return (await decryptState(raw as EncryptedEnvelope, key)) as Partial<AppState> & Record<string, unknown>
+}
+
+/**
+ * Loads and decrypts the persisted AppState from the active portfolio's database.
+ * Returns null if nothing was saved.
+ * Throws if the stored value is not an encrypted envelope (caller bug — the
+ * gate must never call this on an absent envelope) or if decryption
+ * fails (e.g. wrong password → OperationError propagates uncaught).
+ */
+export async function loadPersistedApp(key: CryptoKey): Promise<AppState | null> {
+  const raw = await loadRawPersistedBlob(key)
+  return raw ? coalesceWithDefaults(raw) : null
 }
 
 /**

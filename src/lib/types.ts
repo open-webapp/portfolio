@@ -107,6 +107,8 @@ export interface BudgetTransaction {
 export interface Category {
   id: string
   name: string
+  updatedAt: string  // ISO
+  deletedAt?: string  // ISO
 }
 
 export interface CategoryMapping {
@@ -114,6 +116,7 @@ export interface CategoryMapping {
   substring: string
   categoryId: string
   updatedAt: string  // ISO
+  deletedAt?: string  // ISO
 }
 
 export const POSITIONS_REQUIRED_FIELDS = [

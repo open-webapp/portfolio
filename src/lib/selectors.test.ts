@@ -1802,28 +1802,22 @@ describe('budget selectors', () => {
     const catMappingOnly: Category = { id: 'cat-mapping-only', name: 'Mapping Only' }
 
     it('includes a category referenced only via a CategoryMapping (zero expense/transaction refs)', () => {
-      const state: AppState = {
-        ...initialState(),
-        categories: [catHousing, catMappingOnly],
-        budgetExpenses: [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }],
-        budgetTransactions: [],
-        categoryMappings: [
-          { id: 'm1', substring: 'STARBUCKS', categoryId: catMappingOnly.id, updatedAt: '2026-01-01T00:00:00Z' }
-        ]
-      }
-      const result = referencedCategories(state)
+      const categories = [catHousing, catMappingOnly]
+      const budgetExpenses: Expense[] = [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }]
+      const budgetTransactions: BudgetTransaction[] = []
+      const categoryMappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'STARBUCKS', categoryId: catMappingOnly.id, updatedAt: '2026-01-01T00:00:00Z' }
+      ]
+      const result = referencedCategories(categories, categoryMappings, budgetExpenses, budgetTransactions)
       expect(result.map((c) => c.id)).toEqual(expect.arrayContaining([catHousing.id, catMappingOnly.id]))
     })
 
     it('excludes a category with zero references anywhere (expenses, transactions, or mappings)', () => {
-      const state: AppState = {
-        ...initialState(),
-        categories: [catHousing, catFood, catUnused],
-        budgetExpenses: [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }],
-        budgetTransactions: [{ id: 't1', date: '2026-09-01', description: 'a', categoryId: catFood.id, amount: 10 }],
-        categoryMappings: []
-      }
-      const result = referencedCategories(state)
+      const categories = [catHousing, catFood, catUnused]
+      const budgetExpenses: Expense[] = [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }]
+      const budgetTransactions: BudgetTransaction[] = [{ id: 't1', date: '2026-09-01', description: 'a', categoryId: catFood.id, amount: 10 }]
+      const categoryMappings: CategoryMapping[] = []
+      const result = referencedCategories(categories, categoryMappings, budgetExpenses, budgetTransactions)
       expect(result.map((c) => c.id)).toEqual(expect.arrayContaining([catHousing.id, catFood.id]))
       expect(result.find((c) => c.id === catUnused.id)).toBeUndefined()
     })

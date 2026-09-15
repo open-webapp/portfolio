@@ -13,10 +13,9 @@ import type {
   PriceSyncLastRun,
   Expense,
   BudgetTransaction,
-  Category,
-  CategoryMapping,
 } from './types'
 import { encryptState, decryptState, deriveKey, detectEnvelopeShape, type EncryptedEnvelope } from './crypto'
+import type { GlobalCategoryState } from './categoryStore'
 
 /**
  * The subset of AppState that gets exported to a backup file: data
@@ -37,8 +36,6 @@ export interface ExportableState {
   budgetIncomeYearly: number
   budgetExpenses: Expense[]
   budgetTransactions: BudgetTransaction[]
-  categories: Category[]
-  categoryMappings: CategoryMapping[]
   priceSync: {
     apiKey: string
     lastRun: PriceSyncLastRun | null
@@ -67,8 +64,6 @@ export function buildExportableState(state: AppState): ExportableState {
     budgetIncomeYearly: state.budgetIncomeYearly,
     budgetExpenses: state.budgetExpenses,
     budgetTransactions: state.budgetTransactions,
-    categories: state.categories,
-    categoryMappings: state.categoryMappings,
     priceSync: {
       apiKey: state.priceSync.apiKey,
       lastRun: state.priceSync.lastRun,
@@ -92,16 +87,32 @@ export async function exportBackup(state: AppState, key: CryptoKey, salt: Uint8A
 }
 
 /**
- * Triggers a browser download of the given envelope as a JSON file.
+ * Shared Blob-creation/anchor-click download dance used by both
+ * downloadEnvelopeAsFile and downloadJsonAsFile.
  */
-export function downloadEnvelopeAsFile(envelope: EncryptedEnvelope, filename: string): void {
-  const blob = new Blob([JSON.stringify(envelope)], { type: 'application/json' })
+function downloadAsJsonFile(data: unknown, filename: string): void {
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = filename
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+/**
+ * Triggers a browser download of the given envelope as a JSON file.
+ */
+export function downloadEnvelopeAsFile(envelope: EncryptedEnvelope, filename: string): void {
+  downloadAsJsonFile(envelope, filename)
+}
+
+/**
+ * Triggers a browser download of arbitrary unencrypted JSON data as a file
+ * (e.g. category/mapping exports, which aren't secrets worth encrypting).
+ */
+export function downloadJsonAsFile(data: unknown, filename: string): void {
+  downloadAsJsonFile(data, filename)
 }
 
 // Import-side functionality for restoring app state from a backup file.
@@ -194,8 +205,6 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
     budgetIncomeYearly: decrypted.budgetIncomeYearly ?? 0,
     budgetExpenses: decrypted.budgetExpenses ?? [],
     budgetTransactions: decrypted.budgetTransactions ?? [],
-    categories: decrypted.categories ?? [],
-    categoryMappings: decrypted.categoryMappings ?? [],
     priceSync: {
       apiKey: decrypted.priceSync?.apiKey ?? '',
       lastRun: decrypted.priceSync?.lastRun ?? null,
@@ -205,4 +214,62 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
       lastRun: decrypted.mutualFundSync?.lastRun ?? null,
     },
   }
+}
+
+// Import-side functionality for the global category/mapping export (a
+// separate, unencrypted JSON file distinct from the encrypted backup above).
+
+/**
+ * Thrown when a category-mapping import file isn't valid JSON, or is valid
+ * JSON that doesn't have the expected { categories, categoryMappings } shape.
+ */
+export class CategoryMappingImportError extends Error {}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isValidCategoryShape(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string'
+  )
+}
+
+function isValidCategoryMappingShape(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === 'string' &&
+    typeof value.substring === 'string' &&
+    typeof value.categoryId === 'string'
+  )
+}
+
+/**
+ * Parses raw file text into a GlobalCategoryState. Throws
+ * CategoryMappingImportError if the text isn't valid JSON, or if it doesn't
+ * have the { categories: Category[], categoryMappings: CategoryMapping[] }
+ * shape (including malformed items within either array).
+ */
+export function parseCategoryMappingImportFile(text: string): GlobalCategoryState {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new CategoryMappingImportError('Import file is not valid JSON.')
+  }
+
+  if (!isPlainObject(parsed) || !Array.isArray(parsed.categories) || !Array.isArray(parsed.categoryMappings)) {
+    throw new CategoryMappingImportError('Import file is not a recognized category-mapping export.')
+  }
+
+  if (!parsed.categories.every(isValidCategoryShape)) {
+    throw new CategoryMappingImportError('Import file contains a malformed category entry.')
+  }
+  if (!parsed.categoryMappings.every(isValidCategoryMappingShape)) {
+    throw new CategoryMappingImportError('Import file contains a malformed category mapping entry.')
+  }
+
+  return parsed as unknown as GlobalCategoryState
 }

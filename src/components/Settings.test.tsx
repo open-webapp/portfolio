@@ -26,7 +26,7 @@ configure({ asyncUtilTimeout: 5000 })
 // touches browser download APIs (Blob/URL/anchor click) not needed here.
 vi.mock('../lib/importExport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/importExport')>()
-  return { ...actual, downloadEnvelopeAsFile: vi.fn() }
+  return { ...actual, downloadEnvelopeAsFile: vi.fn(), downloadJsonAsFile: vi.fn() }
 })
 
 // Mock functions for drive.project('app').pickFile(), referenced by the
@@ -121,6 +121,7 @@ const mockOnDriveDisconnected = vi.fn()
 const mockSetSettingsSection = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
 const mockRunMutualFundSyncTrigger = vi.fn()
+const mockCategoryDispatch = vi.fn()
 
 // The Alphavantage sub-block is a plain <div>, not a labeled landmark, so it
 // has to be located structurally: it's the second `input[type="password"]`
@@ -179,6 +180,10 @@ describe('SettingsPage', () => {
       runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
       tickerOverviewErrors: {},
       mutualFundSyncErrors: {},
+      categories: [],
+      categoryMappings: [],
+      categoryDispatch: mockCategoryDispatch,
+      categoriesHydrated: true,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -790,8 +795,8 @@ describe('SettingsPage', () => {
       expect(filename).toMatch(/^ledger-backup-\d{4}-\d{2}-\d{2}\.json$/)
     })
 
-    it('no longer renders a file input on the Download section (upload UI removed)', () => {
-      const { container } = renderSettings({ settingsSection: 'backup' })
+    it('no longer renders the old encrypted-backup upload file input (upload UI removed) - only the category-mapping import input can exist, and only once categories are hydrated', () => {
+      const { container } = renderSettings({ settingsSection: 'backup', categoriesHydrated: false })
 
       expect(container.querySelector('input[type="file"]')).toBeFalsy()
     })
@@ -800,19 +805,19 @@ describe('SettingsPage', () => {
   describe('Categories', () => {
     function categoriesFixture() {
       const state = initialState()
-      state.categories = [
-        { id: 'cat-groceries', name: 'Groceries' },
-        { id: 'cat-rent', name: 'Rent' },
-        { id: 'cat-unused', name: 'Unused Category' },
+      const categories = [
+        { id: 'cat-groceries', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'cat-rent', name: 'Rent', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'cat-unused', name: 'Unused Category', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      state.categoryMappings = [
+      const categoryMappings = [
         { id: 'map-1', substring: 'WHOLE FOODS', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
         { id: 'map-2', substring: 'TRADER JOES', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
       state.budgetExpenses = [
         { id: 'exp-1', name: 'Rent', categoryId: 'cat-rent', amount: 2000, frequency: 'monthly' } as any,
       ]
-      return state
+      return { state, categories, categoryMappings }
     }
 
     it('renders the 4th "Categories" tab; clicking it switches settingsSection and shows the Categories card while hiding the other 3', () => {
@@ -823,8 +828,8 @@ describe('SettingsPage', () => {
       expect(mockSetSettingsSection).toHaveBeenCalledWith('categories')
       unmount()
 
-      const state = categoriesFixture()
-      const { container } = renderSettings({ state, settingsSection: 'categories' })
+      const { state, categories, categoryMappings } = categoriesFixture()
+      const { container } = renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
       expect(screen.getAllByText('Categories').length).toBeGreaterThan(0)
       expect(container.querySelector('.card-title')?.textContent).toBe('Categories')
       expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
@@ -832,56 +837,56 @@ describe('SettingsPage', () => {
       expect(screen.queryByText('Polygon.io API Key')).toBeFalsy()
     })
 
-    it('shows only referencedCategories(state) output - a zero-ref category is absent', () => {
-      const state = categoriesFixture()
-      renderSettings({ state, settingsSection: 'categories' })
+    it('shows only referencedCategories(...) output - a zero-ref category is absent', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       expect(screen.getByText('Groceries')).toBeTruthy()
       expect(screen.getByText('Rent')).toBeTruthy()
       expect(screen.queryByText('Unused Category')).toBeFalsy()
     })
 
-    it('renaming a category (pencil -> edit -> Done) dispatches RENAME_CATEGORY with correct id/name', () => {
-      const state = categoriesFixture()
-      renderSettings({ state, settingsSection: 'categories' })
+    it('renaming a category (pencil -> edit -> Done) dispatches RENAME_CATEGORY via categoryDispatch with correct id/name', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       fireEvent.click(screen.getByLabelText('Edit category Groceries'))
       const input = screen.getByLabelText('Edit category name') as HTMLInputElement
       fireEvent.change(input, { target: { value: 'Food & Groceries' } })
       fireEvent.click(screen.getByText('Done'))
 
-      expect(mockDispatch).toHaveBeenCalledWith({
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'RENAME_CATEGORY',
         id: 'cat-groceries',
         name: 'Food & Groceries',
       })
     })
 
-    it('editing an existing mapping substring dispatches UPDATE_CATEGORY_MAPPING', () => {
-      const state = categoriesFixture()
-      renderSettings({ state, settingsSection: 'categories' })
+    it('editing an existing mapping substring dispatches UPDATE_CATEGORY_MAPPING via categoryDispatch', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       fireEvent.click(screen.getByLabelText('Edit substring WHOLE FOODS'))
       const input = screen.getByLabelText('Edit mapping substring') as HTMLInputElement
       fireEvent.change(input, { target: { value: 'WHOLEFOODS' } })
       fireEvent.click(screen.getByText('Done'))
 
-      expect(mockDispatch).toHaveBeenCalledWith({
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'UPDATE_CATEGORY_MAPPING',
         id: 'map-1',
         patch: { substring: 'WHOLEFOODS' },
       })
     })
 
-    it('adding a new substring under a category dispatches ADD_CATEGORY_MAPPING with that category id and typed substring', () => {
-      const state = categoriesFixture()
-      renderSettings({ state, settingsSection: 'categories' })
+    it('adding a new substring under a category dispatches ADD_CATEGORY_MAPPING via categoryDispatch with that category id and typed substring', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       const addInput = screen.getByLabelText('Add substring to Groceries') as HTMLInputElement
       fireEvent.change(addInput, { target: { value: 'COSTCO' } })
       fireEvent.click(screen.getByLabelText('Add substring button Groceries'))
 
-      expect(mockDispatch).toHaveBeenCalledWith({
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'ADD_CATEGORY_MAPPING',
         categoryId: 'cat-groceries',
         substring: 'COSTCO',
@@ -889,8 +894,8 @@ describe('SettingsPage', () => {
     })
 
     it('a category with zero mappings renders with an empty substring list and a working "+ add substring" input', () => {
-      const state = categoriesFixture()
-      renderSettings({ state, settingsSection: 'categories' })
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       const addInput = screen.getByLabelText('Add substring to Rent') as HTMLInputElement
       expect(addInput).toBeTruthy()
@@ -898,7 +903,7 @@ describe('SettingsPage', () => {
       fireEvent.change(addInput, { target: { value: 'LANDLORD LLC' } })
       fireEvent.keyDown(addInput, { key: 'Enter' })
 
-      expect(mockDispatch).toHaveBeenCalledWith({
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'ADD_CATEGORY_MAPPING',
         categoryId: 'cat-rent',
         substring: 'LANDLORD LLC',
@@ -906,8 +911,8 @@ describe('SettingsPage', () => {
     })
 
     it('renders no delete button/icon anywhere in this tab', () => {
-      const state = categoriesFixture()
-      const { container } = renderSettings({ state, settingsSection: 'categories' })
+      const { state, categories, categoryMappings } = categoriesFixture()
+      const { container } = renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       const cardTitle = Array.from(container.querySelectorAll('.card-title')).find((el) => el.textContent === 'Categories')!
       const section = cardTitle.closest('section') as HTMLElement
@@ -920,13 +925,75 @@ describe('SettingsPage', () => {
       expect(container.querySelectorAll('svg path[d*="M3 6h18"]').length).toBe(0)
     })
 
-    it('"Re-apply mappings to existing records" button dispatches REAPPLY_CATEGORY_MAPPINGS with no extra payload fields', () => {
-      const state = categoriesFixture()
-      renderSettings({ state, settingsSection: 'categories' })
+    it('"Re-apply mappings to existing records" button dispatches REAPPLY_CATEGORY_MAPPINGS with the current categoryMappings payload', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       fireEvent.click(screen.getByRole('button', { name: 'Re-apply mappings to existing records' }))
 
-      expect(mockDispatch).toHaveBeenCalledWith({ type: 'REAPPLY_CATEGORY_MAPPINGS' })
+      expect(mockDispatch).toHaveBeenCalledWith({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings })
+    })
+  })
+
+  describe('Category Mapping backup card', () => {
+    function fixture() {
+      const categories = [{ id: 'cat-groceries', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }]
+      const categoryMappings = [
+        { id: 'map-1', substring: 'WHOLE FOODS', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      return { categories, categoryMappings }
+    }
+
+    it('clicking "Download Category Mapping" calls downloadJsonAsFile with current categories/categoryMappings and a dated filename', () => {
+      const { categories, categoryMappings } = fixture()
+      renderSettings({ categories, categoryMappings, categoriesHydrated: true, settingsSection: 'backup' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download Category Mapping' }))
+
+      expect(importExportModule.downloadJsonAsFile).toHaveBeenCalledTimes(1)
+      const [data, filename] = vi.mocked(importExportModule.downloadJsonAsFile).mock.calls[0]
+      expect(data).toEqual({ categories, categoryMappings })
+      expect(filename).toMatch(/^category-mappings-\d{4}-\d{2}-\d{2}\.json$/)
+    })
+
+    it('selecting a valid category-mapping JSON file dispatches __MERGE_IMPORTED with the parsed content', async () => {
+      const { categories, categoryMappings } = fixture()
+      const imported = {
+        categories: [{ id: 'cat-rent', name: 'Rent', updatedAt: '2026-02-01T00:00:00.000Z' }],
+        categoryMappings: [{ id: 'map-2', substring: 'LANDLORD', categoryId: 'cat-rent', updatedAt: '2026-02-01T00:00:00.000Z' }],
+      }
+      renderSettings({ categories, categoryMappings, categoriesHydrated: true, settingsSection: 'backup' })
+
+      const input = screen.getByLabelText('Import Category Mapping file') as HTMLInputElement
+      const file = new File([JSON.stringify(imported)], 'category-mappings.json', { type: 'application/json' })
+      fireEvent.change(input, { target: { files: [file] } })
+
+      await waitFor(() => {
+        expect(mockCategoryDispatch).toHaveBeenCalledWith({ type: '__MERGE_IMPORTED', imported })
+      })
+    })
+
+    it('selecting a malformed file shows an inline error and does not dispatch', async () => {
+      const { categories, categoryMappings } = fixture()
+      renderSettings({ categories, categoryMappings, categoriesHydrated: true, settingsSection: 'backup' })
+
+      const input = screen.getByLabelText('Import Category Mapping file') as HTMLInputElement
+      const file = new File(['not json'], 'bad.json', { type: 'application/json' })
+      fireEvent.change(input, { target: { files: [file] } })
+
+      await waitFor(() => {
+        expect(screen.getByText('Import file is not valid JSON.')).toBeTruthy()
+      })
+      expect(mockCategoryDispatch).not.toHaveBeenCalled()
+    })
+
+    it('renders neither button when categoriesHydrated is false', () => {
+      const { categories, categoryMappings } = fixture()
+      renderSettings({ categories, categoryMappings, categoriesHydrated: false, settingsSection: 'backup' })
+
+      expect(screen.queryByRole('button', { name: 'Download Category Mapping' })).toBeFalsy()
+      expect(screen.queryByRole('button', { name: 'Import Category Mapping' })).toBeFalsy()
+      expect(screen.queryByLabelText('Import Category Mapping file')).toBeFalsy()
     })
   })
 

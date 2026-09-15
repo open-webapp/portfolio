@@ -50,7 +50,7 @@ function driveProjectIdFor(portfolio: Portfolio): string {
  * built for the now-deleted `DriveRestorePanel` component. Not exported
  * itself.
  */
-const legacyDriveSync = createDriveSync({
+export const legacyDriveSync = createDriveSync({
   appId: 'portfolio',
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
   folderPath: ['OpenWebApp', 'Portfolio'],

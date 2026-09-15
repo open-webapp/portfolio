@@ -1,7 +1,8 @@
 import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState, type AppState } from './lib/state'
 import { appReducer } from './lib/reducer'
-import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb } from './lib/persist'
+import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb, loadRawPersistedBlob } from './lib/persist'
+import { useGlobalCategories } from './hooks/useGlobalCategories'
 import { Nav } from './components/Nav'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
@@ -81,6 +82,15 @@ function App() {
   const [syncing, setSyncing] = useState(false)
   const [backupFileId, setBackupFileId] = useState<string | null>(null)
   const { connected } = useDriveConnection(getDriveAuthFor(activePortfolio ?? NO_ACTIVE_PORTFOLIO))
+
+  // Global (cross-portfolio) categories/mappings store: hydrates/saves/syncs
+  // independently of the per-portfolio state above. Called unconditionally so
+  // hook order stays stable across renders; the hook itself tolerates a null
+  // driveAuth by just staying local-only until a real portfolio activates.
+  const globalCategories = useGlobalCategories(
+    activePortfolio ? getDriveAuthFor(activePortfolio) : null,
+    connected
+  )
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
     remoteModifiedTime?: string
@@ -121,6 +131,10 @@ function App() {
   // portfolios" (needs a full unlock-state reset) from "resolving the first
   // portfolio after mount" (nothing was unlocked yet, nothing to reset).
   const prevActivePortfolioIdRef = useRef<string | null>(null)
+  // Tracks the id of the portfolio the one-shot global-categories seed has
+  // already run for, so the hydrate-triggered seed effect below fires at most
+  // once per portfolio activation rather than on every re-render.
+  const categoriesSeededPortfolioIdRef = useRef<string | null>(null)
 
   // Activates a resolved portfolio as the active one. If this is a real
   // switch away from a DIFFERENT, previously-active portfolio (as opposed to
@@ -628,6 +642,26 @@ function App() {
     }
   }, [state, isHydrated, sessionKey, sessionSalt, activePortfolio?.id])
 
+  // One-shot global-categories seed trigger: once a portfolio is unlocked and
+  // hydrated, re-decrypt the raw (pre-coalesceWithDefaults) persisted blob —
+  // coalesceWithDefaults strips any legacy `categories`/`categoryMappings`
+  // fields that no longer belong on AppState, so the migration needs the raw
+  // shape — and hand it to the global store's own migration entry point.
+  // Gated the same way as the other post-unlock effects above (sessionKey +
+  // isHydrated + activePortfolio), with an additional ref guard keyed on the
+  // portfolio id so this doesn't re-run on every re-render/state change.
+  useEffect(() => {
+    if (sessionKey === null || !isHydrated || !activePortfolio) return
+    if (categoriesSeededPortfolioIdRef.current === activePortfolio.id) return
+    categoriesSeededPortfolioIdRef.current = activePortfolio.id
+    loadRawPersistedBlob(sessionKey)
+      .then((rawBlob) => globalCategories.seedGlobalCategoriesIfNeeded(activePortfolio, rawBlob ?? {}))
+      .catch((error) => {
+        console.error('Failed to seed global categories:', error)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey, isHydrated, activePortfolio?.id])
+
   // Picker route: render the portfolio picker instead of the gate/app shell.
   // No load/persist/drive effects run against a portfolio here since
   // `activePortfolio` stays null while this route is active.
@@ -716,7 +750,13 @@ function App() {
         {state.view === 'budget' ? (
           /* Budget page view */
           <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
-            <BudgetPage state={state} dispatch={dispatch} />
+            <BudgetPage
+              state={state}
+              dispatch={dispatch}
+              categories={globalCategories.categories}
+              categoryMappings={globalCategories.categoryMappings}
+              categoryDispatch={globalCategories.dispatch}
+            />
           </div>
         ) : state.view === 'accounts' ? (
           /* Accounts page view */
@@ -758,6 +798,10 @@ function App() {
               runMutualFundSyncTrigger={runMutualFundSyncTrigger}
               tickerOverviewErrors={tickerOverviewErrors}
               mutualFundSyncErrors={mutualFundSyncErrors}
+              categories={globalCategories.categories}
+              categoryMappings={globalCategories.categoryMappings}
+              categoryDispatch={globalCategories.dispatch}
+              categoriesHydrated={globalCategories.hydrated}
             />
           </div>
         )}

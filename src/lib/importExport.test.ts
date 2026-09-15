@@ -4,11 +4,14 @@ import {
   buildExportableState,
   exportBackup,
   downloadEnvelopeAsFile,
+  downloadJsonAsFile,
   parseImportFile,
   decryptImportEnvelope,
   getEnvelopeSaltBytes,
   ImportDecryptError,
   ImportMalformedFileError,
+  parseCategoryMappingImportFile,
+  CategoryMappingImportError,
 } from './importExport'
 import { deriveKey, decryptState, encryptState, generateSalt } from './crypto'
 import type { ExportableState } from './importExport'
@@ -43,8 +46,6 @@ function populatedState(): AppState {
     budgetIncomeYearly: 0,
     budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }],
     budgetTransactions: [{ id: 'btx1', date: '2024-01-05', description: 'Groceries', categoryId: 'cat1', amount: 120.5 }],
-    categories: [{ id: 'cat1', name: 'Food' }],
-    categoryMappings: [{ id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' }],
     priceSync: {
       apiKey: 'price-api-key',
       lastFetchedDate: '2024-03-01',
@@ -80,8 +81,6 @@ describe('buildExportableState', () => {
     expect(result.budgetIncomeMonthly).toBe(4500)
     expect(result.budgetExpenses).toBe(state.budgetExpenses)
     expect(result.budgetTransactions).toBe(state.budgetTransactions)
-    expect(result.categories).toBe(state.categories)
-    expect(result.categoryMappings).toBe(state.categoryMappings)
 
     expect(result.priceSync).toEqual({ apiKey: 'price-api-key', lastRun: state.priceSync.lastRun })
     expect(result.mutualFundSync).toEqual({ apiKey: 'mf-api-key', lastRun: state.mutualFundSync.lastRun })
@@ -94,8 +93,6 @@ describe('buildExportableState', () => {
         'budgetIncomeMonthly',
         'budgetIncomeYearly',
         'budgetTransactions',
-        'categories',
-        'categoryMappings',
         'closedPositions',
         'csvMappings',
         'customInstitutions',
@@ -176,6 +173,37 @@ describe('downloadEnvelopeAsFile', () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1)
     expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob)
     expect(anchor.download).toBe('backup.json')
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+
+    createElementSpy.mockRestore()
+  })
+})
+
+describe('downloadJsonAsFile', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('creates an object URL for a Blob, downloads it via an anchor, then revokes the URL', () => {
+    const createObjectURL = vi.fn(() => 'blob:mock-url')
+    const revokeObjectURL = vi.fn()
+    // jsdom doesn't implement these
+    // @ts-expect-error partial stub for test
+    URL.createObjectURL = createObjectURL
+    // @ts-expect-error partial stub for test
+    URL.revokeObjectURL = revokeObjectURL
+
+    const clickSpy = vi.fn()
+    const anchor = document.createElement('a')
+    vi.spyOn(anchor, 'click').mockImplementation(clickSpy)
+    const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(anchor)
+
+    downloadJsonAsFile({ categories: [], categoryMappings: [] }, 'categories.json')
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob)
+    expect(anchor.download).toBe('categories.json')
     expect(clickSpy).toHaveBeenCalledTimes(1)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
 
@@ -303,49 +331,6 @@ describe('decryptImportEnvelope', () => {
     expect(result.budgetTransactions).toEqual([])
   })
 
-  it('round-trips categories and categoryMappings exactly', async () => {
-    const state = populatedState()
-    const salt = generateSalt()
-    const key = await deriveKey('correct horse battery staple', salt)
-    const envelope = await exportBackup(state, key, salt)
-
-    const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
-    expect(result.categories).toEqual([{ id: 'cat1', name: 'Food' }])
-    expect(result.categoryMappings).toEqual([
-      { id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' },
-    ])
-  })
-
-  it('defaults categories and categoryMappings to [] for an older export missing both keys', async () => {
-    const salt = generateSalt()
-    const key = await deriveKey('correct horse battery staple', salt)
-    // Simulate an older export predating the category-mapping feature,
-    // missing both keys entirely, built directly rather than via
-    // buildExportableState.
-    const legacy = {
-      accounts: [],
-      positions: [],
-      closedPositions: [],
-      transactions: [],
-      snapshots: [],
-      csvMappings: [],
-      customInstitutions: [],
-      balanceEntries: [],
-      budgetIncomeMonthly: 0,
-      budgetIncomeYearly: 0,
-      budgetExpenses: [],
-      budgetTransactions: [],
-      // categories, categoryMappings intentionally omitted
-      priceSync: { apiKey: '', lastRun: null },
-      mutualFundSync: { apiKey: '', lastRun: null },
-    }
-    const envelope = await encryptState(legacy as unknown as AppState, key, salt)
-
-    const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
-    expect(result.categories).toEqual([])
-    expect(result.categoryMappings).toEqual([])
-  })
-
   it('ignores a legacy budgetCategories key present in an old export without erroring', async () => {
     const salt = generateSalt()
     const key = await deriveKey('correct horse battery staple', salt)
@@ -372,5 +357,45 @@ describe('decryptImportEnvelope', () => {
     const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
     expect(result.budgetTransactions).toEqual([])
     expect(result).not.toHaveProperty('budgetCategories')
+  })
+})
+
+describe('parseCategoryMappingImportFile', () => {
+  it('parses valid category-mapping JSON', () => {
+    const data = {
+      categories: [{ id: 'cat1', name: 'Food' }],
+      categoryMappings: [{ id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' }],
+    }
+    const result = parseCategoryMappingImportFile(JSON.stringify(data))
+    expect(result).toEqual(data)
+  })
+
+  it('parses an empty-but-valid categories/categoryMappings payload fine', () => {
+    const result = parseCategoryMappingImportFile(JSON.stringify({ categories: [], categoryMappings: [] }))
+    expect(result).toEqual({ categories: [], categoryMappings: [] })
+  })
+
+  it('throws CategoryMappingImportError on non-JSON text', () => {
+    expect(() => parseCategoryMappingImportFile('not json at all {{{')).toThrow(CategoryMappingImportError)
+  })
+
+  it('throws CategoryMappingImportError when the categories key is missing', () => {
+    expect(() => parseCategoryMappingImportFile(JSON.stringify({ categoryMappings: [] }))).toThrow(
+      CategoryMappingImportError
+    )
+  })
+
+  it('throws CategoryMappingImportError when the categoryMappings key is missing', () => {
+    expect(() => parseCategoryMappingImportFile(JSON.stringify({ categories: [] }))).toThrow(CategoryMappingImportError)
+  })
+
+  it('throws CategoryMappingImportError when a category entry is missing required keys', () => {
+    const data = { categories: [{ id: 'cat1' }], categoryMappings: [] }
+    expect(() => parseCategoryMappingImportFile(JSON.stringify(data))).toThrow(CategoryMappingImportError)
+  })
+
+  it('throws CategoryMappingImportError when a mapping entry is missing required keys', () => {
+    const data = { categories: [], categoryMappings: [{ id: 'cm1', substring: 'grocer' }] }
+    expect(() => parseCategoryMappingImportFile(JSON.stringify(data))).toThrow(CategoryMappingImportError)
   })
 })

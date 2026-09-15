@@ -31,13 +31,6 @@ import {
   deleteBudgetTransaction,
   importBudgetTransactions,
   setBudgetIncomeForPeriod,
-  addCategory,
-  renameCategory,
-  upsertCategoryMapping,
-  updateCategoryMapping,
-  addCategoryMapping,
-  resolveCategoryIdForDescription,
-  reapplyCategoryMappings,
 } from './state'
 import type { AppState } from './types'
 import type { BalanceEntry, Expense, BudgetTransaction, CategoryMapping, Category } from './types'
@@ -1169,98 +1162,89 @@ describe('state helpers', () => {
 
     it('skips a row matching an existing (date,description,categoryId,amount) exactly', () => {
       const existing: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Rent', categoryId: 'cat-other', amount: 2000 }
-      const state = { ...initialState(), categories, budgetTransactions: [existing] }
+      const state = { ...initialState(), budgetTransactions: [existing] }
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Rent', amount: 2000 },
-      ])
+      ], categories, [])
       expect(updated.budgetTransactions).toEqual([existing])
     })
 
     it('adds a row differing in any one field from an existing transaction', () => {
       const existing: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Rent', categoryId: 'cat-other', amount: 2000 }
-      const state = { ...initialState(), categories, budgetTransactions: [existing] }
+      const state = { ...initialState(), budgetTransactions: [existing] }
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Rent', amount: 2001 },
-      ])
+      ], categories, [])
       expect(updated.budgetTransactions).toHaveLength(2)
       expect(updated.budgetTransactions[1]).toMatchObject({ date: '2026-01-01', description: 'Rent', categoryId: 'cat-other', amount: 2001 })
     })
 
     it('dedups two identical rows within the same import batch, adding only one', () => {
-      const state = { ...initialState(), categories }
+      const state = initialState()
       const row = { date: '2026-01-01', description: 'Coffee', amount: 5 }
-      const updated = importBudgetTransactions(state, [row, row])
+      const updated = importBudgetTransactions(state, [row, row], categories, [])
       expect(updated.budgetTransactions).toHaveLength(1)
       expect(updated.budgetTransactions[0]).toMatchObject({ ...row, categoryId: 'cat-other' })
     })
 
     it('dedups rows with no accountName (both undefined) as before, regression', () => {
       const existing: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Rent', categoryId: 'cat-other', amount: 2000 }
-      const state = { ...initialState(), categories, budgetTransactions: [existing] }
+      const state = { ...initialState(), budgetTransactions: [existing] }
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Rent', amount: 2000 },
-      ])
+      ], categories, [])
       expect(updated.budgetTransactions).toEqual([existing])
     })
 
     it('keeps two rows identical on date/description/categoryId/amount but differing accountName', () => {
-      const state = { ...initialState(), categories }
+      const state = initialState()
       const rowA = { date: '2026-01-01', description: 'Rent', amount: 2000, accountName: 'Checking' }
       const rowB = { date: '2026-01-01', description: 'Rent', amount: 2000, accountName: 'Savings' }
-      const updated = importBudgetTransactions(state, [rowA, rowB])
+      const updated = importBudgetTransactions(state, [rowA, rowB], categories, [])
       expect(updated.budgetTransactions).toHaveLength(2)
       expect(updated.budgetTransactions[0]).toMatchObject({ ...rowA, categoryId: 'cat-other' })
       expect(updated.budgetTransactions[1]).toMatchObject({ ...rowB, categoryId: 'cat-other' })
     })
 
     it('drops the second row when date/description/categoryId/amount/accountName all match', () => {
-      const state = { ...initialState(), categories }
+      const state = initialState()
       const row = { date: '2026-01-01', description: 'Rent', amount: 2000, accountName: 'Checking' }
-      const updated = importBudgetTransactions(state, [row, { ...row }])
+      const updated = importBudgetTransactions(state, [row, { ...row }], categories, [])
       expect(updated.budgetTransactions).toHaveLength(1)
       expect(updated.budgetTransactions[0]).toMatchObject({ ...row, categoryId: 'cat-other' })
     })
 
     it('resolves categoryId from a matching category mapping instead of defaulting to Other', () => {
-      const state = {
-        ...initialState(),
-        categories,
-        categoryMappings: [
-          { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
-        ],
-      }
+      const state = initialState()
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Monthly Rent Payment', amount: 2000 },
-      ])
+      ], categories, mappings)
       expect(updated.budgetTransactions[0].categoryId).toBe('cat-housing')
     })
 
     it('falls back to the "Other" category id when no mapping matches', () => {
-      const state = {
-        ...initialState(),
-        categories,
-        categoryMappings: [
-          { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
-        ],
-      }
+      const state = initialState()
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
-      ])
+      ], categories, mappings)
       expect(updated.budgetTransactions[0].categoryId).toBe('cat-other')
     })
 
     it('when two mappings match the same description, the mapping with the latest updatedAt wins', () => {
-      const state = {
-        ...initialState(),
-        categories,
-        categoryMappings: [
-          { id: 'm1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2026-01-01T00:00:00Z' },
-          { id: 'm2', substring: 'coffee shop', categoryId: 'cat-housing', updatedAt: '2026-02-01T00:00:00Z' },
-        ],
-      }
+      const state = initialState()
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm2', substring: 'coffee shop', categoryId: 'cat-housing', updatedAt: '2026-02-01T00:00:00Z' },
+      ]
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
-      ])
+      ], categories, mappings)
       expect(updated.budgetTransactions[0].categoryId).toBe('cat-housing')
     })
   })
@@ -1493,146 +1477,4 @@ describe('state helpers', () => {
     })
   })
 
-  describe('categories and category mappings', () => {
-    describe('addCategory', () => {
-      it('appends a new category with the given id and name', () => {
-        const state = initialState()
-        const updated = addCategory(state, 'cat-1', 'Groceries')
-        expect(updated.categories).toEqual([{ id: 'cat-1', name: 'Groceries' }])
-      })
-    })
-
-    describe('renameCategory', () => {
-      it('patches the name of the matching category', () => {
-        const state = { ...initialState(), categories: [{ id: 'cat-1', name: 'Groceries' }] }
-        const updated = renameCategory(state, 'cat-1', 'Food & Dining')
-        expect(updated.categories).toEqual([{ id: 'cat-1', name: 'Food & Dining' }])
-      })
-
-      it('is a no-op when the id is unknown', () => {
-        const state = { ...initialState(), categories: [{ id: 'cat-1', name: 'Groceries' }] }
-        const updated = renameCategory(state, 'cat-nope', 'Food & Dining')
-        expect(updated.categories).toEqual(state.categories)
-      })
-    })
-
-    describe('upsertCategoryMapping', () => {
-      it('creates a new mapping for a new description', () => {
-        const state = initialState()
-        const updated = upsertCategoryMapping(state, 'Costco', 'cat-1')
-        expect(updated.categoryMappings).toHaveLength(1)
-        expect(updated.categoryMappings[0]).toMatchObject({ substring: 'Costco', categoryId: 'cat-1' })
-      })
-
-      it('matches an existing mapping case-insensitively and updates it instead of duplicating', () => {
-        const state = initialState()
-        const first = upsertCategoryMapping(state, 'Costco', 'cat-1')
-        const firstMapping = first.categoryMappings[0]
-        const second = upsertCategoryMapping(first, 'COSTCO', 'cat-2')
-        expect(second.categoryMappings).toHaveLength(1)
-        expect(second.categoryMappings[0].id).toBe(firstMapping.id)
-        expect(second.categoryMappings[0].categoryId).toBe('cat-2')
-        expect(second.categoryMappings[0].updatedAt >= firstMapping.updatedAt).toBe(true)
-      })
-
-      it('is a no-op for a blank/whitespace-only description', () => {
-        const state = initialState()
-        const updated = upsertCategoryMapping(state, '   ', 'cat-1')
-        expect(updated).toEqual(state)
-      })
-    })
-
-    describe('updateCategoryMapping', () => {
-      it('patches an existing mapping by id', () => {
-        const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', categoryId: 'cat-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-        const state = { ...initialState(), categoryMappings: [mapping] }
-        const updated = updateCategoryMapping(state, 'map-1', { categoryId: 'cat-2' })
-        expect(updated.categoryMappings[0].categoryId).toBe('cat-2')
-        expect(updated.categoryMappings[0].substring).toBe('Costco')
-        expect(updated.categoryMappings[0].updatedAt).not.toBe(mapping.updatedAt)
-      })
-
-      it('is a no-op when the id is unknown', () => {
-        const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', categoryId: 'cat-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-        const state = { ...initialState(), categoryMappings: [mapping] }
-        const updated = updateCategoryMapping(state, 'map-nope', { categoryId: 'cat-2' })
-        expect(updated.categoryMappings).toEqual([mapping])
-      })
-    })
-
-    describe('addCategoryMapping', () => {
-      it('appends a new mapping', () => {
-        const state = initialState()
-        const updated = addCategoryMapping(state, 'cat-1', 'Costco')
-        expect(updated.categoryMappings).toHaveLength(1)
-        expect(updated.categoryMappings[0]).toMatchObject({ substring: 'Costco', categoryId: 'cat-1' })
-      })
-
-      it('is a no-op for a blank/whitespace-only substring', () => {
-        const state = initialState()
-        const updated = addCategoryMapping(state, 'cat-1', '   ')
-        expect(updated).toEqual(state)
-      })
-    })
-
-    describe('resolveCategoryIdForDescription', () => {
-      it('returns the categoryId for a single match', () => {
-        const mappings: CategoryMapping[] = [
-          { id: 'map-1', substring: 'Costco', categoryId: 'cat-1', updatedAt: '2026-01-01T00:00:00.000Z' },
-        ]
-        expect(resolveCategoryIdForDescription(mappings, 'COSTCO WHSE #123')).toBe('cat-1')
-      })
-
-      it('matches case-insensitively', () => {
-        const mappings: CategoryMapping[] = [
-          { id: 'map-1', substring: 'Grocery', categoryId: 'cat-1', updatedAt: '2026-01-01T00:00:00.000Z' },
-        ]
-        expect(resolveCategoryIdForDescription(mappings, 'grocery store')).toBe('cat-1')
-      })
-
-      it('returns null when there is no match', () => {
-        const mappings: CategoryMapping[] = [
-          { id: 'map-1', substring: 'Costco', categoryId: 'cat-1', updatedAt: '2026-01-01T00:00:00.000Z' },
-        ]
-        expect(resolveCategoryIdForDescription(mappings, 'Netflix')).toBeNull()
-      })
-
-      it('returns the categoryId of the latest-updatedAt match among multiple matches, regardless of substring length', () => {
-        const mappings: CategoryMapping[] = [
-          { id: 'map-1', substring: 'Whole Foods Market', categoryId: 'cat-longer-older', updatedAt: '2026-01-01T00:00:00.000Z' },
-          { id: 'map-2', substring: 'Whole Foods', categoryId: 'cat-shorter-newer', updatedAt: '2026-06-01T00:00:00.000Z' },
-        ]
-        expect(resolveCategoryIdForDescription(mappings, 'Whole Foods Market #42')).toBe('cat-shorter-newer')
-      })
-    })
-
-    describe('reapplyCategoryMappings', () => {
-      it('rewrites categoryId for matching transactions and leaves non-matching ones untouched', () => {
-        const mappings: CategoryMapping[] = [
-          { id: 'map-1', substring: 'Costco', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
-        ]
-        const txMatching: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Costco Gas', categoryId: 'cat-old', amount: 40 }
-        const txNonMatching: BudgetTransaction = { id: 'tx-2', date: '2026-01-02', description: 'Netflix', categoryId: 'cat-subs', amount: 15 }
-        const state = { ...initialState(), categoryMappings: mappings, budgetTransactions: [txMatching, txNonMatching] }
-
-        const updated = reapplyCategoryMappings(state)
-
-        expect(updated.budgetTransactions.find((t) => t.id === 'tx-1')?.categoryId).toBe('cat-groceries')
-        expect(updated.budgetTransactions.find((t) => t.id === 'tx-2')).toEqual(txNonMatching)
-      })
-
-      it('is idempotent when run twice', () => {
-        const mappings: CategoryMapping[] = [
-          { id: 'map-1', substring: 'Costco', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
-        ]
-        const tx: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Costco Gas', categoryId: 'cat-old', amount: 40 }
-        const state = { ...initialState(), categoryMappings: mappings, budgetTransactions: [tx] }
-
-        const once = reapplyCategoryMappings(state)
-        const twice = reapplyCategoryMappings(once)
-
-        expect(twice).toEqual(once)
-      })
-    })
-  })
 })

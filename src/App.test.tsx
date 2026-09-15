@@ -147,7 +147,84 @@ vi.mock('./lib/persist', () => ({
   peekEnvelopeShape: vi.fn(),
   savePersistedApp: vi.fn().mockResolvedValue(undefined),
   setActivePortfolioDb: vi.fn(),
+  loadRawPersistedBlob: vi.fn().mockResolvedValue({}),
 }))
+
+// Controllable fixture for the global-categories hook: tests can mutate
+// mockGlobalCategoriesFixture.current's fields per-test (e.g. hydrated:
+// false) without changing the default the other tests rely on.
+const { mockGlobalCategoriesFixture, seedGlobalCategoriesIfNeededMock } = vi.hoisted(() => {
+  const seedGlobalCategoriesIfNeededMock = vi.fn().mockResolvedValue(undefined)
+  return {
+    seedGlobalCategoriesIfNeededMock,
+    mockGlobalCategoriesFixture: {
+      current: {
+        categories: [] as unknown[],
+        categoryMappings: [] as unknown[],
+        dispatch: vi.fn(),
+        hydrated: true,
+        seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
+      },
+    },
+  }
+})
+
+vi.mock('./hooks/useGlobalCategories', () => ({
+  useGlobalCategories: () => mockGlobalCategoriesFixture.current,
+}))
+
+// BudgetPage/SettingsPage are rendered for real (many tests below assert on
+// their actual rendered content, e.g. "Add Expense" / "Google Drive Sync"),
+// but wrapped here so tests can also assert exactly which props App.tsx
+// passed them (the 3 new categories/categoryMappings/categoryDispatch props,
+// plus categoriesHydrated for Settings).
+const { budgetPagePropsCapture, settingsPagePropsCapture } = vi.hoisted(() => ({
+  budgetPagePropsCapture: { current: undefined as unknown },
+  settingsPagePropsCapture: { current: undefined as unknown },
+}))
+
+// Swallows a render error from the wrapped real component (used below for
+// BudgetPage, which as of this task still reads the now-removed
+// `state.categories`/`state.categoryMappings` fields pending T13's prop-
+// threading sweep — a pre-existing, already-red intermediate state per this
+// plan's own T9 acceptance note, not something this task's tests need to
+// route around by asserting on rendered content).
+class SwallowRenderErrors extends (await import('react')).Component<{ children: React.ReactNode }, { errored: boolean }> {
+  state = { errored: false }
+  static getDerivedStateFromError() {
+    return { errored: true }
+  }
+  componentDidCatch() {}
+  render() {
+    return this.state.errored ? null : this.props.children
+  }
+}
+
+vi.mock('./components/BudgetPage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/BudgetPage')>()
+  return {
+    ...actual,
+    BudgetPage: (props: Record<string, unknown>) => {
+      budgetPagePropsCapture.current = props
+      return (
+        <SwallowRenderErrors>
+          <actual.BudgetPage {...(props as any)} />
+        </SwallowRenderErrors>
+      )
+    },
+  }
+})
+
+vi.mock('./components/Settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/Settings')>()
+  return {
+    ...actual,
+    SettingsPage: (props: Record<string, unknown>) => {
+      settingsPagePropsCapture.current = props
+      return <actual.SettingsPage {...(props as any)} />
+    },
+  }
+})
 
 // PasswordGate is a full-replacement screen with its own real-crypto/form flow that's
 // exercised in PasswordGate.test.tsx; here we stub it so App.tsx's own gating logic
@@ -746,6 +823,82 @@ describe('price sync trigger', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(runPriceSyncMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('global categories wiring', () => {
+  beforeEach(() => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    mockUnlockLoadedState.current = undefined
+    seedGlobalCategoriesIfNeededMock.mockClear()
+    mockGlobalCategoriesFixture.current = {
+      categories: [{ id: 'cat-1', name: 'Groceries' }],
+      categoryMappings: [{ description: 'trader joes', categoryId: 'cat-1' }],
+      dispatch: vi.fn(),
+      hydrated: true,
+      seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
+    }
+  })
+
+  afterEach(() => {
+    mockUnlockLoadedState.current = undefined
+  })
+
+  it('passes categories/categoryMappings/categoryDispatch to BudgetPage', async () => {
+    // BudgetPage itself hasn't been migrated off `state.categories` yet (T13,
+    // not this task) so it currently throws on render — a pre-existing,
+    // already-red intermediate state per plan T9's own acceptance note.
+    // SwallowRenderErrors above keeps that from failing this test, which only
+    // cares about what App.tsx handed it as props, not what it renders.
+    await renderUnlockedApp()
+
+    fireEvent.click(navTab('Budget'))
+    await waitFor(() => {
+      expect(budgetPagePropsCapture.current).toBeTruthy()
+    })
+
+    const props = budgetPagePropsCapture.current as Record<string, unknown>
+    expect(props.categories).toBe(mockGlobalCategoriesFixture.current.categories)
+    expect(props.categoryMappings).toBe(mockGlobalCategoriesFixture.current.categoryMappings)
+    expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
+  })
+
+  it('passes categories/categoryMappings/categoryDispatch/categoriesHydrated to SettingsPage', async () => {
+    await renderUnlockedApp()
+
+    fireEvent.click(screen.getByTitle('Settings'))
+    await waitFor(() => {
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+    })
+
+    const props = settingsPagePropsCapture.current as Record<string, unknown>
+    expect(props.categories).toBe(mockGlobalCategoriesFixture.current.categories)
+    expect(props.categoryMappings).toBe(mockGlobalCategoriesFixture.current.categoryMappings)
+    expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
+    expect(props.categoriesHydrated).toBe(true)
+  })
+
+  it('calls seedGlobalCategoriesIfNeeded exactly once per portfolio activation with (activePortfolio, rawBlob)', async () => {
+    const persistModule = await import('./lib/persist')
+    vi.mocked(persistModule.loadRawPersistedBlob).mockResolvedValue({ categories: [{ id: 'legacy-1', name: 'Legacy' }] })
+
+    const portfolio = await resetRegistryAndOpenDefaultPortfolio()
+    await renderUnlockedApp()
+
+    await waitFor(() => {
+      expect(seedGlobalCategoriesIfNeededMock).toHaveBeenCalledTimes(1)
+    })
+    expect(seedGlobalCategoriesIfNeededMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: portfolio.id }),
+      { categories: [{ id: 'legacy-1', name: 'Legacy' }] }
+    )
+
+    // Further state changes / re-renders must not re-trigger the seed.
+    fireEvent.click(navTab('Register'))
+    await waitFor(() => {
+      expect(screen.getByText('Record Balances')).toBeTruthy()
+    })
+    expect(seedGlobalCategoriesIfNeededMock).toHaveBeenCalledTimes(1)
   })
 })
 

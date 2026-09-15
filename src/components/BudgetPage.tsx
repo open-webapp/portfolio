@@ -1,6 +1,7 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { AppState } from '../lib/state'
-import { resolveCategoryIdForDescription } from '../lib/state'
+import { resolveCategoryIdForDescription, type CategoryAction } from '../lib/categoryStore'
+import type { Category, CategoryMapping } from '../lib/types'
 import { uid } from '../lib/seed'
 import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions } from '../lib/computations'
 import {
@@ -15,6 +16,9 @@ import {
 export interface BudgetPageProps {
   state: AppState
   dispatch: (action: any) => void
+  categories: Category[]
+  categoryMappings: CategoryMapping[]
+  categoryDispatch: (action: CategoryAction) => void
 }
 
 /**
@@ -25,12 +29,16 @@ export interface BudgetPageProps {
  * resulting category value (e.g. set local field state, dispatch, etc.) —
  * this helper never dispatches itself.
  */
-function handleCategorySelectChange(value: string, dispatch: (action: any) => void, apply: (categoryId: string) => void) {
+function handleCategorySelectChange(
+  value: string,
+  categoryDispatch: (action: CategoryAction) => void,
+  apply: (categoryId: string) => void
+) {
   if (value === '__add_new') {
     const result = window.prompt('New category name')
     if (result && result.trim()) {
       const id = uid('category')
-      dispatch({ type: 'ADD_CATEGORY', id, name: result.trim() })
+      categoryDispatch({ type: 'ADD_CATEGORY', id, name: result.trim() })
       apply(id)
     }
     return
@@ -91,7 +99,7 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
  * the expense table (inline edit/delete). Category management is added by
  * a later task extending this same component.
  */
-export function BudgetPage({ state, dispatch }: BudgetPageProps) {
+export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch }: BudgetPageProps) {
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly')
   const [filterCategoryId, setFilterCategoryId] = useState('__all')
   const [sortBy, setSortBy] = useState<'category' | 'name' | 'amount'>('category')
@@ -102,9 +110,8 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
   const [recPage, setRecPage] = useState(0)
   const [formName, setFormName] = useState('')
-  const categories = state.categories
-  const categoriesById = new Map(state.categories.map((c) => [c.id, c.name]))
-  const [formCategoryId, setFormCategoryId] = useState(state.categories[0]?.id ?? '')
+  const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
+  const [formCategoryId, setFormCategoryId] = useState(categories[0]?.id ?? '')
   const [formAmount, setFormAmount] = useState('')
   const [formFrequency, setFormFrequency] = useState<'monthly' | 'yearly'>('monthly')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -122,7 +129,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
   const [recDescription, setRecDescription] = useState('')
-  const [recCategoryId, setRecCategoryId] = useState(state.categories[0]?.id ?? '')
+  const [recCategoryId, setRecCategoryId] = useState(categories[0]?.id ?? '')
   const [recCategoryTouchedManually, setRecCategoryTouchedManually] = useState(false)
   const [recAmount, setRecAmount] = useState('')
   const [recError, setRecError] = useState('')
@@ -176,7 +183,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       setSortDir('asc')
     }
   }
-  const breakdown = categoryBreakdown(state.budgetExpenses, periodFilteredTransactions, period, state.categories)
+  const breakdown = categoryBreakdown(state.budgetExpenses, periodFilteredTransactions, period, categories)
 
   const saveIncomeEdit = () => {
     dispatch({
@@ -312,7 +319,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
       type: 'ADD_BUDGET_TRANSACTION',
       tx: { date: recDate, description, categoryId: recCategoryId, amount },
     })
-    dispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, categoryId: recCategoryId })
+    categoryDispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, categoryId: recCategoryId })
     setSelectedYear(recDate.slice(0, 4))
     setRecError('')
     setRecDate('')
@@ -336,7 +343,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
   const handleImport = () => {
     if (importTab === 'paste') {
       const parsed = parseBudgetTransactionsCsv(csvText).map((r) => ({ ...r, accountName: importAccountName.trim() }))
-      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: parsed })
+      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: parsed, categories, categoryMappings })
       setImportStatus(`${parsed.length} row(s) detected`)
       setShowImportDialog(false)
       setCsvText('')
@@ -348,7 +355,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
         return
       }
       const withAccount = parsed.map((r) => ({ ...r, accountName: importAccountName.trim() }))
-      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount })
+      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount, categories, categoryMappings })
       setImportStatus(`${withAccount.length} row(s) detected`)
       setShowImportDialog(false)
       setCsvText('')
@@ -606,13 +613,13 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                           autoFocus
                           value={cellDraft}
                           onChange={(e) =>
-                            handleCategorySelectChange(e.target.value, dispatch, (categoryId) => {
+                            handleCategorySelectChange(e.target.value, categoryDispatch, (categoryId) => {
                               dispatch({
                                 type: 'UPDATE_BUDGET_TRANSACTION',
                                 id: row.id,
                                 patch: { categoryId },
                               })
-                              dispatch({
+                              categoryDispatch({
                                 type: 'UPSERT_CATEGORY_MAPPING',
                                 description: row.description,
                                 categoryId,
@@ -761,7 +768,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 setRecDescription(e.target.value)
                 setRecCategoryTouchedManually(false)
                 if (!recCategoryTouchedManually) {
-                  const match = resolveCategoryIdForDescription(state.categoryMappings, e.target.value)
+                  const match = resolveCategoryIdForDescription(categoryMappings, e.target.value)
                   if (match) setRecCategoryId(match)
                 }
               }}
@@ -774,7 +781,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
               aria-label="Record category"
               value={recCategoryId}
               onChange={(e) =>
-                handleCategorySelectChange(e.target.value, dispatch, (categoryId) => {
+                handleCategorySelectChange(e.target.value, categoryDispatch, (categoryId) => {
                   setRecCategoryId(categoryId)
                   setRecCategoryTouchedManually(true)
                 })
@@ -829,7 +836,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
           onClick={() => {
             setShowAddExpenseDialog(false)
             setFormName('')
-            setFormCategoryId(state.categories[0]?.id ?? '')
+            setFormCategoryId(categories[0]?.id ?? '')
             setFormAmount('')
             setFormFrequency('monthly')
           }}
@@ -853,7 +860,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                   className="input"
                   aria-label="Expense category"
                   value={formCategoryId}
-                  onChange={(e) => handleCategorySelectChange(e.target.value, dispatch, setFormCategoryId)}
+                  onChange={(e) => handleCategorySelectChange(e.target.value, categoryDispatch, setFormCategoryId)}
                 >
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
@@ -893,7 +900,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                 onClick={() => {
                   setShowAddExpenseDialog(false)
                   setFormName('')
-                  setFormCategoryId(state.categories[0]?.id ?? '')
+                  setFormCategoryId(categories[0]?.id ?? '')
                   setFormAmount('')
                   setFormFrequency('monthly')
                 }}
@@ -912,7 +919,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                   })
                   setShowAddExpenseDialog(false)
                   setFormName('')
-                  setFormCategoryId(state.categories[0]?.id ?? '')
+                  setFormCategoryId(categories[0]?.id ?? '')
                   setFormAmount('')
                   setFormFrequency('monthly')
                 }}
@@ -948,7 +955,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
             onChange={(e) => setFilterCategoryId(e.target.value)}
           >
             <option value="__all">All categories</option>
-            {state.categories.map((cat) => (
+            {categories.map((cat) => (
               <option key={cat.id} value={cat.id}>
                 {cat.name}
               </option>
@@ -1028,7 +1035,7 @@ export function BudgetPage({ state, dispatch }: BudgetPageProps) {
                         aria-label="Edit expense category"
                         value={editCategoryIdDraft ?? row.categoryId}
                         onChange={(e) =>
-                          handleCategorySelectChange(e.target.value, dispatch, (categoryId) => setEditCategoryIdDraft(categoryId))
+                          handleCategorySelectChange(e.target.value, categoryDispatch, (categoryId) => setEditCategoryIdDraft(categoryId))
                         }
                       >
                         {categories.map((cat) => (

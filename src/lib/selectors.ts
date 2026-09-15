@@ -613,12 +613,17 @@ export function categoryBreakdown(
  * Categories referenced by at least one budgeted expense, actual budget transaction,
  * or category mapping.
  */
-export function referencedCategories(state: AppState): Category[] {
+export function referencedCategories(
+  categories: Category[],
+  categoryMappings: CategoryMapping[],
+  budgetExpenses: Expense[],
+  budgetTransactions: BudgetTransaction[]
+): Category[] {
   const used = new Set<string>()
-  state.budgetExpenses.forEach((e) => used.add(e.categoryId))
-  state.budgetTransactions.forEach((t) => used.add(t.categoryId))
-  state.categoryMappings.forEach((m) => used.add(m.categoryId))
-  return state.categories.filter((c) => used.has(c.id))
+  budgetExpenses.forEach((e) => used.add(e.categoryId))
+  budgetTransactions.forEach((t) => used.add(t.categoryId))
+  categoryMappings.forEach((m) => used.add(m.categoryId))
+  return categories.filter((c) => used.has(c.id))
 }
 
 /**

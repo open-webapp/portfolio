@@ -127,16 +127,24 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 
 ## Category
 
+**Not part of `AppState`'s persistence envelope.** Lives in the standalone Global Category Store (see `## Global Category Store` below) — `AppState`/the encrypted per-portfolio envelope/`ExportableState` backup format no longer carry `categories`/`categoryMappings` at all.
+
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `string` | `uid('category')` |
 | `name` | `string` | User-editable, e.g. "Groceries", "Other" |
+| `updatedAt` | `string` | ISO timestamp; stamped on every create/rename/delete |
+| `deletedAt?` | `string` | ISO timestamp tombstone. Delete = set `deletedAt` (+ refresh `updatedAt`), record kept forever, never physically removed. No delete UI exists anywhere — this field exists for the merge algorithm and future use |
 
-An "Other" category is always auto-vivified (see migration note below) and used as the fallback whenever no `CategoryMapping` matches. No delete action exists anywhere for `Category` — unreferenced categories simply don't render in the Settings "Categories" tab (`referencedCategories` selector is display-only; `state.categories` itself is never pruned).
+An "Other" category is always auto-vivified (see migration note below) and used as the fallback whenever no `CategoryMapping` matches. `visibleCategories()` (`src/lib/categoryStore.ts`) filters out tombstoned (`deletedAt`-set) records for every UI list; unreferenced-but-live categories simply don't render in the Settings "Categories" tab (`referencedCategories` selector is display-only on top of that — nothing is pruned from the store itself).
 
-**Migration** (`coalesceWithDefaults`, `src/lib/persist.ts`): one-time, idempotent, runs on hydrate only when the loaded blob has no `categories` field at all (`undefined`, distinct from a present-but-empty `[]` — once `categories` exists, migration is skipped forever). Derives one `Category` row per distinct legacy `category` string found across `budgetExpenses`/`budgetTransactions` (deduped by name), always also vivifies an "Other" category even if zero expenses/transactions reference it, then rewrites every `Expense`/`BudgetTransaction`'s old `category` string field to the matching `categoryId` (unrecognized/blank values fall back to "Other"'s id).
+**One-time cross-portfolio seed migration** (`src/lib/categoryMigration.ts`, `seedGlobalCategoriesIfNeeded`): runs once, the first time ANY portfolio is hydrated in a session after this store shipped (checked via the global store's own `meta`/`'migration'` marker, not per-portfolio). Copies that portfolio's raw pre-coalesce `categories`/`categoryMappings` (if present) into the Global Category Store verbatim — same ids, same fields, no dedupe/remap/merge. Every other portfolio's own old `categories`/`categoryMappings` are left behind, never merged in; their `Expense`/`BudgetTransaction` rows whose `categoryId` doesn't resolve in the global store display as uncategorized until the user manually recreates matching categories.
+
+**Legacy pre-`categoryId` migration** (superseded by the above, no longer performed by `coalesceWithDefaults`): older blobs that predate `CategoryMapping` entirely (bare `category` string on `Expense`/`BudgetTransaction`, no `categoryId`) are handled only inside `computeSeedFromPortfolio`'s legacy-shape fallback during the one-time seed above, not by any per-load `persist.ts` step.
 
 ## CategoryMapping
+
+**Not part of `AppState`'s persistence envelope** — see `## Category` above; lives in the Global Category Store.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -144,12 +152,37 @@ An "Other" category is always auto-vivified (see migration note below) and used 
 | `substring` | `string` | Full trimmed transaction `description` this mapping was keyed from (despite the field name, matching against it elsewhere is substring-based, not exact) |
 | `categoryId` | `string` | FK → `Category.id` |
 | `updatedAt` | `string` | ISO timestamp; latest-`updatedAt` wins when multiple mappings match a description |
+| `deletedAt?` | `string` | ISO timestamp tombstone, same semantics as `Category.deletedAt`. No delete UI exists; field is merge/future-use only |
 
-**Upsert**: every time a `BudgetTransaction.categoryId` is set via the Spend-records inline-edit "Done" or the manual Add Record submit, a `CategoryMapping` is upserted keyed by exact full trimmed `description` (case-insensitive dedup, latest-wins update). `Expense` category changes (Add-Expense dialog, Expenses-table inline edit) never create/touch mappings — mappings are transaction-description-driven only.
+**Upsert**: every time a `BudgetTransaction.categoryId` is set via the Spend-records inline-edit "Done" or the manual Add Record submit, a `CategoryMapping` is upserted keyed by exact full trimmed `description` (case-insensitive dedup, latest-wins update; the dedup lookup skips tombstoned mappings, so a tombstoned mapping sharing the same substring never blocks creating a fresh one). `Expense` category changes (Add-Expense dialog, Expenses-table inline edit) never create/touch mappings — mappings are transaction-description-driven only.
 
-**Match** (import + Add Record live-prefill): case-insensitive **substring** match of `state.categoryMappings[].substring` against the row's `description`; on multiple matches, the mapping with the latest `updatedAt` wins. No match → falls back to the "Other" category's id.
+**Match** (import + Add Record live-prefill): `resolveCategoryIdForDescription(mappings, description)` (`src/lib/categoryStore.ts`) does a case-insensitive **substring** match against the row's `description`, filtering out tombstoned mappings first; on multiple live matches, the mapping with the latest `updatedAt` wins. No match → falls back to the "Other" category's id.
 
-**Bulk re-apply**: Settings > Categories tab's "Re-apply mappings to existing records" button rewrites every `budgetTransactions[].categoryId` from current `categoryMappings` on demand (idempotent, non-destructive, no confirm dialog).
+**Bulk re-apply**: Settings > Categories tab's "Re-apply mappings to existing records" button dispatches `REAPPLY_CATEGORY_MAPPINGS { categoryMappings }` (main `AppState` reducer, since it mutates `budgetTransactions`), rewriting every `budgetTransactions[].categoryId` from the given `categoryMappings` on demand (idempotent, non-destructive, no confirm dialog).
+
+## Global Category Store
+
+Standalone, cross-portfolio store for `Category`/`CategoryMapping` — independent of any per-portfolio `AppState`, its `useReducer`, its debounce-save, or its encryption. Wired into `App.tsx` via `src/hooks/useGlobalCategories.ts`; pure helpers/types in `src/lib/categoryStore.ts`, merge algorithm in `src/lib/categoryMerge.ts`, local persistence in `src/lib/categoryPersist.ts`, Drive I/O in `src/lib/categoryDrive.ts`, one-time seed in `src/lib/categoryMigration.ts`.
+
+**Local IndexedDB**: `ledger_global_categories_v1`, two object stores, both explicit-key `put(value, key)` (no `keyPath`):
+
+| Store | Key | Value |
+|---|---|---|
+| `state` | `'current'` | `GlobalCategoryState = { categories: Category[]; categoryMappings: CategoryMapping[] }` — single document, whole-state overwrite on every save |
+| `meta` | `'migration'` | `{ seeded: boolean }` — one-shot marker for the cross-portfolio seed migration |
+| `meta` | `'driveSync'` | `{ lastKnownRemoteModifiedTime?: string }` — bookmark for the 60s poll's metadata-only newer-check |
+
+Unencrypted — plaintext throughout, unlike every per-portfolio store.
+
+**Google Drive file**: `OpenWebApp/Portfolio/category-mappings.json` (Drive-root level, sibling to per-portfolio subfolders — not scoped to any one portfolio), via `legacyDriveSync.project('category-mappings')`. Content is `JSON.stringify({ categories: Category[], categoryMappings: CategoryMapping[] })`, **unencrypted** (unlike the per-portfolio `portfolio-state.json` backup, which is an `EncryptedEnvelope`).
+
+**Sync model**: auto-push (no debounce) on every local edit when a Drive connection is currently active (the same single `connected` flag from `useDriveConnection(getDriveAuthFor(activePortfolio))` already live in `App.tsx`); one auto-pull the first time a connection resolves post-hydrate (ref-guarded, once per session); a 60s poll that checks `files.get`/`files.status` `modifiedTime` only and does a full pull+merge only when it's newer than the local `lastKnownRemoteModifiedTime` bookmark; fully local/offline-capable when never connected. Local save to `ledger_global_categories_v1` is debounced 500ms, same constant as the per-portfolio save debounce.
+
+**Merge algorithm** (`mergeCategoryState(a, b)`, `src/lib/categoryMerge.ts`, pure/no IO): applied independently to `categories` and `categoryMappings`. Union by `id`. For an id present on both sides, keep whichever record has the larger `deletedAt ?? updatedAt` timestamp (a tombstoned record's `deletedAt` counts as its effective last-write time); ties keep the local/`a`-side record. Ids present on only one side pass through unchanged. Used identically for the initial post-connect pull, each poll pull, and the Settings backup card's manual JSON import (`__MERGE_IMPORTED` action, merges the imported file's `GlobalCategoryState` into the current one).
+
+**Migration/seed**: see `## Category` above (`computeSeedFromPortfolio`/`seedGlobalCategoriesIfNeeded`) — copies the first-unlocked portfolio's `categories`/`categoryMappings` verbatim, one-shot, gated on the `meta`/`'migration'` doc.
+
+**Manual export/import** (Settings > Backup card): "Download Category Mapping" writes `{categories, categoryMappings}` as unencrypted JSON (`downloadJsonAsFile`, `src/lib/importExport.ts`); "Import Category Mapping" reads a JSON file (`parseCategoryMappingImportFile`, throws `CategoryMappingImportError` on malformed content) and merges it into the store via the same `mergeCategoryState` algorithm — not a replace.
 
 ## SavedCsvMapping
 
@@ -267,7 +300,10 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 - `ADD_BUDGET_TRANSACTION { tx: Omit<BudgetTransaction, 'id'> }`: Append a new `BudgetTransaction` to `budgetTransactions`, id generated (`uid('budgettx')`)
 - `UPDATE_BUDGET_TRANSACTION { id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }`: Patch fields on a `BudgetTransaction` by id; no-op if not found
 - `DELETE_BUDGET_TRANSACTION { id: string }`: Remove a `BudgetTransaction` by id; no-op if not found
-- `IMPORT_BUDGET_TRANSACTIONS { rows: { date, description, amount }[] }`: Resolves each row's `categoryId` via `state.categoryMappings` (case-insensitive substring match against `description`, latest-`updatedAt` wins; falls back to "Other") before dedup, then appends rows deduped on `date|description|categoryId|amount|accountName` against existing `budgetTransactions` and against earlier rows in the same batch
+- `IMPORT_BUDGET_TRANSACTIONS { rows: { date, description, amount, accountName? }[]; categories: Category[]; categoryMappings: CategoryMapping[] }`: Resolves each row's `categoryId` via the action's own `categories`/`categoryMappings` (case-insensitive substring match against `description`, latest-`updatedAt` wins among live/non-tombstoned mappings; falls back to "Other") before dedup, then appends rows deduped on `date|description|categoryId|amount|accountName` against existing `budgetTransactions` and against earlier rows in the same batch. `categories`/`categoryMappings` are supplied by the caller (`BudgetPage`, via its global-store props) — this action no longer reads them off `AppState`
+- `REAPPLY_CATEGORY_MAPPINGS { categoryMappings: CategoryMapping[] }`: Bulk-rewrites every `budgetTransactions[].categoryId` from the given `categoryMappings` (supplied by the caller — `Settings`, via its global-store prop); stays on the main reducer since it mutates `AppState.budgetTransactions`, even though `categoryMappings` themselves live in the Global Category Store
+
+Note: `Category`/`CategoryMapping` CRUD (`ADD_CATEGORY`, `RENAME_CATEGORY`, `DELETE_CATEGORY`, `UPSERT_CATEGORY_MAPPING`, `UPDATE_CATEGORY_MAPPING`, `ADD_CATEGORY_MAPPING`, `DELETE_CATEGORY_MAPPING`) is **not** part of `AppAction`/`appReducer` — it dispatches through the Global Category Store's own `CategoryAction`/`categoryStoreReducer` (`src/lib/categoryStore.ts`), see `## Global Category Store` above.
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
@@ -275,7 +311,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 
 On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'`/`'budget'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 
-**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedYear`/Spend-records `recordSearch`/`recSortBy`/`recSortDir`/`recPage`/`editingCell`/`cellDraft` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions`/`categories`/`categoryMappings` (see next section) ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. `state.categories` is the source of truth for the category list (not derived) — see `## Category` above.
+**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedYear`/Spend-records `recordSearch`/`recSortBy`/`recSortDir`/`recPage`/`editingCell`/`cellDraft` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions` ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. `categories`/`categoryMappings` are **not** `AppState` fields at all — they're sourced from the Global Category Store (`useGlobalCategories`, see `## Global Category Store` above) and reach `BudgetPage`/`SettingsPage` as props.
 
 ## Persistence envelope
 
@@ -294,6 +330,8 @@ interface EncryptedEnvelope {
 - **Google Drive** (`drive.ts` implements sync): the backup file `portfolio-state.json` is `JSON.stringify(envelope)` — identical shape and encryption as the IndexedDB envelope.
 - **Algorithm (fixed, not configurable)**: key derivation is PBKDF2-SHA256, 600,000 iterations (OWASP 2023 minimum), producing a non-extractable AES-256-GCM `CryptoKey`. Encryption is AES-256-GCM with a fresh random 12-byte IV per `encryptState` call. Salt is 16 random bytes, generated once per password and reused until rotated.
 - **Legacy-plaintext detection** (`detectEnvelopeShape`, pure/no I/O): a stored value is `'absent'` if `undefined`/`null`, `'encrypted'` if it structurally has `version === 1` and string `salt`/`iv`/`ciphertext` fields, otherwise `'legacy-plaintext'`. Purely structural — no version-field-only check, no content inspection beyond those four keys.
-- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys are silently dropped. `budgetExpenses`/`budgetTransactions`/`categories`/`categoryMappings` default to `[]` like every other collection. `categories`/`categoryMappings` additionally get the one-time `categories`-migration described under `## Category` when the loaded blob has no `categories` field at all — distinct from this whitelist-default path, which only fires once that field is already present (post-migration or on a fresh install).
-- `loadPersistedApp(key: CryptoKey)` throws if the stored value is not `'encrypted'` or if decryption fails (wrong password → `OperationError` propagates).
+- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys (including a legacy blob's own `categories`/`categoryMappings`, which `AppState` no longer has fields for) are silently dropped. `budgetExpenses`/`budgetTransactions` default to `[]` like every other collection. `coalesceWithDefaults` no longer performs any category migration itself — the one-time cross-portfolio seed (`## Category` above) reads the **raw pre-coalesce blob** instead, via `loadRawPersistedBlob(key)` (a new export factored out of `loadPersistedApp`: decrypt+parse only, no coalescing), so a portfolio's legacy `categories`/`categoryMappings`/bare `category` strings remain visible to the seed step even though `coalesceWithDefaults` itself ignores them.
+- `loadPersistedApp(key: CryptoKey)` — now `const raw = await loadRawPersistedBlob(key); return raw ? coalesceWithDefaults(raw) : null` — throws if the stored value is not `'encrypted'` or if decryption fails (wrong password → `OperationError` propagates).
 - `loadLegacyPlaintextApp()` reads the pre-encryption blob for one-time migration; `clearPersistedApp()` deletes the IndexedDB record entirely.
+
+`ExportableState` (`src/lib/importExport.ts`, the manual backup-download/restore-file format) likewise no longer includes `categories`/`categoryMappings` — `buildExportableState`/`decryptImportEnvelope`/`replaceImportedState` don't read or write those fields; an old export file's `categories`/`categoryMappings` keys are simply ignored on import (that data lives only in the Global Category Store now, exported/imported separately via the Settings backup card's "Download/Import Category Mapping" controls — see `## Global Category Store` above).

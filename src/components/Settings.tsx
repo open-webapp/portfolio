@@ -1,13 +1,20 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
-import type { Portfolio } from '../lib/types'
+import type { Portfolio, Category, CategoryMapping } from '../lib/types'
+import type { CategoryAction } from '../lib/categoryStore'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
 import type { DriveAuthHandle } from '@open-webapp/drive-connect'
 import { syncBackup, getConnectionSnapshot } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
-import { exportBackup, downloadEnvelopeAsFile } from '../lib/importExport'
+import {
+  exportBackup,
+  downloadEnvelopeAsFile,
+  downloadJsonAsFile,
+  parseCategoryMappingImportFile,
+  CategoryMappingImportError,
+} from '../lib/importExport'
 import { referencedCategories, mappingsForCategory } from '../lib/selectors'
 
 const iconBtn: CSSProperties = {
@@ -54,6 +61,10 @@ export interface SettingsPageProps {
   runMutualFundSyncTrigger: () => Promise<void>
   tickerOverviewErrors: Record<string, string>
   mutualFundSyncErrors: Record<string, string>
+  categories: Category[]
+  categoryMappings: CategoryMapping[]
+  categoryDispatch: (action: CategoryAction) => void
+  categoriesHydrated: boolean
 }
 
 /**
@@ -76,6 +87,10 @@ export function SettingsPage({
   runMutualFundSyncTrigger,
   tickerOverviewErrors,
   mutualFundSyncErrors,
+  categories,
+  categoryMappings,
+  categoryDispatch,
+  categoriesHydrated,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -103,11 +118,37 @@ export function SettingsPage({
   const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
   const [reapplySuccess, setReapplySuccess] = useState<string | null>(null)
 
+  // Category mapping import/export local state
+  const categoryImportFileInputRef = useRef<HTMLInputElement>(null)
+  const [categoryImportError, setCategoryImportError] = useState<string | null>(null)
+
   const handleReapplyMappings = useCallback(() => {
-    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS' })
+    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings })
     setReapplySuccess('Re-applied.')
     setTimeout(() => setReapplySuccess(null), 3000)
-  }, [dispatch])
+  }, [dispatch, categoryMappings])
+
+  const handleCategoryImportFileSelect = useCallback(
+    (file: File | null) => {
+      setCategoryImportError(null)
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          const imported = parseCategoryMappingImportFile(String(reader.result ?? ''))
+          categoryDispatch({ type: '__MERGE_IMPORTED', imported })
+        } catch (error) {
+          if (error instanceof CategoryMappingImportError) {
+            setCategoryImportError(error.message)
+          } else {
+            throw error
+          }
+        }
+      }
+      reader.readAsText(file)
+    },
+    [categoryDispatch]
+  )
 
   const handleFetchPricesNow = useCallback(async () => {
     setFetchingPrices(true)
@@ -260,6 +301,42 @@ export function SettingsPage({
         >
           Download Backup
         </button>
+        {categoriesHydrated && (
+          <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--border-color, #ddd)', display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+            <button
+              className="btn btn-primary blueprint"
+              onClick={() => {
+                const now = new Date()
+                const yyyy = now.getFullYear()
+                const mm = String(now.getMonth() + 1).padStart(2, '0')
+                const dd = String(now.getDate()).padStart(2, '0')
+                downloadJsonAsFile({ categories, categoryMappings }, `category-mappings-${yyyy}-${mm}-${dd}.json`)
+              }}
+            >
+              Download Category Mapping
+            </button>
+            <button
+              className="btn btn-secondary blueprint"
+              onClick={() => categoryImportFileInputRef.current?.click()}
+            >
+              Import Category Mapping
+            </button>
+            <input
+              ref={categoryImportFileInputRef}
+              type="file"
+              accept="application/json"
+              aria-label="Import Category Mapping file"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                handleCategoryImportFileSelect(e.target.files?.[0] || null)
+                e.target.value = ''
+              }}
+            />
+          </div>
+        )}
+        {categoryImportError && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{categoryImportError}</p>
+        )}
       </section>
       )}
 
@@ -420,9 +497,9 @@ export function SettingsPage({
       {settingsSection === 'categories' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Categories</div>
-        {referencedCategories(state).map((category) => {
+        {referencedCategories(categories, categoryMappings, state.budgetExpenses, state.budgetTransactions).map((category) => {
           const isEditingCategory = editingCategoryId === category.id
-          const mappings = mappingsForCategory(state.categoryMappings, category.id)
+          const mappings = mappingsForCategory(categoryMappings, category.id)
           const newSubstringDraft = newSubstringDraftByCategory[category.id] ?? ''
           return (
             <div key={category.id} style={{ marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-3)', borderBottom: '1px solid var(--border-color, #ddd)' }}>
@@ -440,7 +517,7 @@ export function SettingsPage({
                       type="button"
                       style={textBtnAccent}
                       onClick={() => {
-                        dispatch({ type: 'RENAME_CATEGORY', id: category.id, name: categoryNameDraft.trim() })
+                        categoryDispatch({ type: 'RENAME_CATEGORY', id: category.id, name: categoryNameDraft.trim() })
                         setEditingCategoryId(null)
                       }}
                     >
@@ -483,7 +560,7 @@ export function SettingsPage({
                             type="button"
                             style={textBtnAccent}
                             onClick={() => {
-                              dispatch({
+                              categoryDispatch({
                                 type: 'UPDATE_CATEGORY_MAPPING',
                                 id: mapping.id,
                                 patch: { substring: mappingSubstringDraft.trim() },
@@ -525,7 +602,7 @@ export function SettingsPage({
                     }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newSubstringDraft.trim()) {
-                        dispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
+                        categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
                         setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
                       }
                     }}
@@ -536,7 +613,7 @@ export function SettingsPage({
                     aria-label={`Add substring button ${category.name}`}
                     disabled={!newSubstringDraft.trim()}
                     onClick={() => {
-                      dispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
+                      categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
                       setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
                     }}
                   >

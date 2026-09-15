@@ -4,6 +4,7 @@ import {
   peekEnvelopeShape,
   peekStoredSalt,
   loadPersistedApp,
+  loadRawPersistedBlob,
   savePersistedApp,
   coalesceWithDefaults,
   setActivePortfolioDb,
@@ -168,11 +169,6 @@ function fixtureState(): AppState {
     regActivityFilter: 'All',
     budgetIncomeMonthly: 5000,
     budgetIncomeYearly: 60000,
-    categories: [
-      { id: 'cat-housing', name: 'Housing' },
-      { id: 'cat-other', name: 'Other' },
-    ],
-    categoryMappings: [],
     budgetExpenses: [
       { id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' },
     ],
@@ -375,6 +371,47 @@ describe('IndexedDB persistence', () => {
       const raw = await getRaw()
 
       expect(JSON.stringify(raw)).not.toContain(password)
+    })
+  })
+
+  describe('loadRawPersistedBlob', () => {
+    it('returns the raw pre-coalesce object, including stale keys like categories/categoryMappings if present', async () => {
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+      const stateWithStaleKeys = {
+        ...fixtureState(),
+        categories: [{ id: 'cat-housing', name: 'Housing' }],
+        categoryMappings: [{ id: 'map1', pattern: 'RENT', categoryId: 'cat-housing' }],
+      }
+
+      await savePersistedApp(stateWithStaleKeys as unknown as AppState, key, salt)
+      const raw = await loadRawPersistedBlob(key)
+
+      expect(raw).not.toBeNull()
+      expect((raw as any).categories).toEqual(stateWithStaleKeys.categories)
+      expect((raw as any).categoryMappings).toEqual(stateWithStaleKeys.categoryMappings)
+      expect(raw?.budgetExpenses).toEqual(stateWithStaleKeys.budgetExpenses)
+    })
+
+    it('returns null when nothing was saved', async () => {
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+
+      expect(await loadRawPersistedBlob(key)).toBeNull()
+    })
+
+    it('loadPersistedApp still round-trips end-to-end (decrypt -> coalesce) via the two-function split', async () => {
+      const originalState = fixtureState()
+      const salt = generateSalt()
+      const key = await deriveKey('pw', salt)
+
+      await savePersistedApp(originalState, key, salt)
+      const raw = await loadRawPersistedBlob(key)
+      const loaded = await loadPersistedApp(key)
+
+      expect(raw).toEqual(originalState)
+      expect(loaded).toEqual(coalesceWithDefaults(raw!))
+      expect(loaded).toEqual(originalState)
     })
   })
 
@@ -908,26 +945,8 @@ describe('IndexedDB persistence', () => {
     })
   })
 
-  describe('coalesceWithDefaults migrates legacy category shape to categories[]/categoryId', () => {
-    it('derives a Category from a distinct budgetExpenses.category string plus an auto-vivified "Other"', () => {
-      const loaded: Partial<AppState> = {
-        budgetExpenses: [{ id: 'e1', category: 'Food', amount: 10 } as any],
-      }
-
-      const result = coalesceWithDefaults(loaded)
-
-      expect(result.categories).toHaveLength(2)
-      const food = result.categories.find((c) => c.name === 'Food')
-      const other = result.categories.find((c) => c.name === 'Other')
-      expect(food).toBeDefined()
-      expect(other).toBeDefined()
-
-      const expense = result.budgetExpenses[0] as any
-      expect(expense.category).toBeUndefined()
-      expect(expense.categoryId).toBe(food!.id)
-    })
-
-    it('dedups two rows sharing the same category name into a single Category', () => {
+  describe('coalesceWithDefaults no longer rewrites legacy category shape', () => {
+    it('passes rows with old bare `category` strings (no categoryId) through unchanged', () => {
       const loaded: Partial<AppState> = {
         budgetExpenses: [{ id: 'e1', category: 'Food', amount: 10 } as any],
         budgetTransactions: [{ id: 't1', category: 'Food', amount: 20 } as any],
@@ -935,59 +954,10 @@ describe('IndexedDB persistence', () => {
 
       const result = coalesceWithDefaults(loaded)
 
-      const foodCategories = result.categories.filter((c) => c.name === 'Food')
-      expect(foodCategories).toHaveLength(1)
-      const foodId = foodCategories[0].id
-
-      expect((result.budgetExpenses[0] as any).categoryId).toBe(foodId)
-      expect((result.budgetTransactions[0] as any).categoryId).toBe(foodId)
-    })
-
-    it('falls back to "Other" when a row has a missing/blank/unrecognized category string', () => {
-      const loaded: Partial<AppState> = {
-        budgetExpenses: [
-          { id: 'e1', category: '', amount: 1 } as any,
-          { id: 'e2', amount: 2 } as any,
-        ],
-      }
-
-      const result = coalesceWithDefaults(loaded)
-
-      const other = result.categories.find((c) => c.name === 'Other')
-      expect(other).toBeDefined()
-      expect((result.budgetExpenses[0] as any).categoryId).toBe(other!.id)
-      expect((result.budgetExpenses[1] as any).categoryId).toBe(other!.id)
-    })
-
-    it('is idempotent: running coalesceWithDefaults on an already-migrated blob does not create new categories or touch categoryId', () => {
-      const loaded: Partial<AppState> = {
-        budgetExpenses: [{ id: 'e1', category: 'Food', amount: 10 } as any],
-      }
-
-      const firstPass = coalesceWithDefaults(loaded)
-      const secondPass = coalesceWithDefaults(firstPass)
-
-      expect(secondPass.categories).toEqual(firstPass.categories)
-      expect(secondPass.budgetExpenses).toEqual(firstPass.budgetExpenses)
-    })
-
-    it('produces exactly one "Other" category when there are zero budgetExpenses/budgetTransactions and no categories field', () => {
-      const result = coalesceWithDefaults({})
-
-      expect(result.categories).toEqual([expect.objectContaining({ name: 'Other' })])
-      expect(result.categories).toHaveLength(1)
-    })
-
-    it('leaves categories as [] when the loaded blob already has an explicitly empty categories array', () => {
-      const loaded: Partial<AppState> = {
-        categories: [],
-        budgetExpenses: [{ id: 'e1', categoryId: 'category-abc', amount: 10 } as any],
-      }
-
-      const result = coalesceWithDefaults(loaded)
-
-      expect(result.categories).toEqual([])
-      expect((result.budgetExpenses[0] as any).categoryId).toBe('category-abc')
+      expect(result.budgetExpenses).toEqual(loaded.budgetExpenses)
+      expect(result.budgetTransactions).toEqual(loaded.budgetTransactions)
+      expect(result).not.toHaveProperty('categories')
+      expect(result).not.toHaveProperty('categoryMappings')
     })
   })
 
