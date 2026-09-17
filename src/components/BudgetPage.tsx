@@ -1,8 +1,10 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { AppState } from '../lib/state'
+import { resolveBudgetExpensesForYear, resolveBudgetIncomeForYear, currentBudgetYear } from '../lib/state'
 import { resolveCategoryIdForDescription, type CategoryAction } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
 import { uid } from '../lib/seed'
+import { BudgetAnalytics } from './BudgetAnalytics'
 import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions } from '../lib/computations'
 import {
   visibleExpenses,
@@ -101,7 +103,7 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
  * a later task extending this same component.
  */
 export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch }: BudgetPageProps) {
-  const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly')
+  const [period, setPeriod] = useState<'monthly' | 'yearly' | 'analytics'>('yearly')
   const [filterCategoryId, setFilterCategoryId] = useState('__all')
   const [sortBy, setSortBy] = useState<'category' | 'name' | 'amount'>('category')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -144,13 +146,21 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importError, setImportError] = useState<string | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
+  // Monthly/Yearly-only computations below take a strict 'monthly' | 'yearly'
+  // period; when the Analytics tab is active these values aren't rendered, so
+  // fall back to 'yearly' just to keep them well-typed and side-effect-free.
+  const effectivePeriod: 'monthly' | 'yearly' = period === 'monthly' ? 'monthly' : 'yearly'
+  const activeYear = period === 'monthly' ? currentBudgetYear() : selectedYear
+  const activeYearExpenses = resolveBudgetExpensesForYear(state.budgetExpensesByYear, activeYear)
+  const activeYearIncome = resolveBudgetIncomeForYear(state.budgetIncomeByYear, activeYear)
+
   const totalIncome =
     period === 'monthly'
-      ? state.budgetIncomeMonthly + state.budgetIncomeYearly / 12
-      : state.budgetIncomeMonthly * 12 + state.budgetIncomeYearly
+      ? activeYearIncome.monthly + activeYearIncome.yearly / 12
+      : activeYearIncome.monthly * 12 + activeYearIncome.yearly
 
-  const totalExpense = state.budgetExpenses.reduce(
-    (sum, e) => sum + toPeriod(e.amount, e.frequency, period),
+  const totalExpense = activeYearExpenses.reduce(
+    (sum, e) => sum + toPeriod(e.amount, e.frequency, effectivePeriod),
     0
   )
 
@@ -163,7 +173,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   // (Monthly) or the selected Year (Yearly).
   const periodFilteredTransactions = budgetTransactionsForPeriod(
     state.budgetTransactions,
-    period,
+    effectivePeriod,
     currentMonthValue,
     selectedYear
   )
@@ -179,7 +189,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       ? availableMonths.find((m) => m.value === currentMonthValue)?.label ?? currentMonthValue
       : selectedYear
 
-  const sortedRows = visibleExpenses(state.budgetExpenses, filterCategoryId, sortBy, period, categoriesById)
+  const sortedRows = visibleExpenses(activeYearExpenses, filterCategoryId, sortBy, effectivePeriod, categoriesById)
   const rows = sortDir === 'desc' ? [...sortedRows].reverse() : sortedRows
   const toggleSort = (field: 'category' | 'name' | 'amount') => {
     if (sortBy === field) {
@@ -189,13 +199,14 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       setSortDir('asc')
     }
   }
-  const breakdown = categoryBreakdown(state.budgetExpenses, periodFilteredTransactions, period, categories)
+  const breakdown = categoryBreakdown(activeYearExpenses, periodFilteredTransactions, effectivePeriod, categories)
 
   const saveIncomeEdit = () => {
+    const amount = parseFloat(incomeEditAmount) || 0
     dispatch({
-      type: 'SET_BUDGET_INCOME_FOR_PERIOD',
-      period,
-      amount: parseFloat(incomeEditAmount) || 0,
+      type: 'SET_BUDGET_INCOME',
+      year: activeYear,
+      patch: period === 'monthly' ? { monthly: amount } : { yearly: amount },
     })
     setEditingIncome(false)
   }
@@ -393,7 +404,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       >
         <div className="card-title">Budget</div>
         <div className="seg">
-          {(['monthly', 'yearly'] as const).map((opt) => (
+          {(['monthly', 'yearly', 'analytics'] as const).map((opt) => (
             <label
               key={opt}
               className="seg-opt"
@@ -403,7 +414,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               }}
             >
               <input type="radio" name="budgetPeriod" checked={period === opt} readOnly />
-              <span>{opt === 'monthly' ? 'Monthly' : 'Yearly'}</span>
+              <span>{opt === 'monthly' ? 'Monthly' : opt === 'yearly' ? 'Yearly' : 'Analytics'}</span>
             </label>
           ))}
         </div>
@@ -432,6 +443,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         </div>
       )}
 
+      {period === 'analytics' ? (
+        <BudgetAnalytics state={state} categories={categories} />
+      ) : (
+      <>
       <div
         data-testid="summary-cards"
         style={{
@@ -465,7 +480,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 title="Edit income"
                 onClick={() => {
                   setIncomeEditAmount(
-                    String(period === 'monthly' ? state.budgetIncomeMonthly : state.budgetIncomeYearly)
+                    String(period === 'monthly' ? activeYearIncome.monthly : activeYearIncome.yearly)
                   )
                   setEditingIncome(true)
                 }}
@@ -939,6 +954,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   if (!formName.trim() || !amount || amount <= 0) return
                   dispatch({
                     type: 'ADD_BUDGET_EXPENSE',
+                    year: activeYear,
                     expense: { name: formName.trim(), categoryId: formCategoryId, amount, frequency: formFrequency },
                   })
                   setShowAddExpenseDialog(false)
@@ -1045,7 +1061,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                         aria-label="Edit expense name"
                         value={row.name}
                         onChange={(e) =>
-                          dispatch({ type: 'UPDATE_BUDGET_EXPENSE', id: row.id, patch: { name: e.target.value } })
+                          dispatch({ type: 'UPDATE_BUDGET_EXPENSE', year: activeYear, id: row.id, patch: { name: e.target.value } })
                         }
                       />
                     ) : (
@@ -1082,6 +1098,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                         onChange={(e) =>
                           dispatch({
                             type: 'UPDATE_BUDGET_EXPENSE',
+                            year: activeYear,
                             id: row.id,
                             patch: { frequency: e.target.value as 'monthly' | 'yearly' },
                           })
@@ -1106,6 +1123,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                         onChange={(e) =>
                           dispatch({
                             type: 'UPDATE_BUDGET_EXPENSE',
+                            year: activeYear,
                             id: row.id,
                             patch: { amount: parseFloat(e.target.value) || 0 },
                           })
@@ -1138,6 +1156,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                           if (editCategoryIdDraft && editCategoryIdDraft !== row.categoryId) {
                             dispatch({
                               type: 'UPDATE_BUDGET_EXPENSE',
+                              year: activeYear,
                               id: row.id,
                               patch: { categoryId: editCategoryIdDraft },
                             })
@@ -1169,7 +1188,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                           title="Delete expense"
                           onClick={() => {
                             if (window.confirm('Delete this expense? This cannot be undone.')) {
-                              dispatch({ type: 'DELETE_BUDGET_EXPENSE', id: row.id })
+                              dispatch({ type: 'DELETE_BUDGET_EXPENSE', year: activeYear, id: row.id })
                             }
                           }}
                         >
@@ -1228,7 +1247,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
           Category Breakdown
         </div>
-        {state.budgetExpenses.length === 0 ? (
+        {activeYearExpenses.length === 0 ? (
           <div className="text-muted" style={{ fontSize: '12px' }}>
             Add expenses to see the breakdown.
           </div>
@@ -1285,7 +1304,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         )}
       </div>
       </div>
-
+      </>
+      )}
 
       {showImportDialog && (
         <div className="dialog-backdrop" onClick={closeImportDialog}>

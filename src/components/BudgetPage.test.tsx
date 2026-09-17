@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { BudgetPage } from './BudgetPage'
-import { initialState, type AppState } from '../lib/state'
+import { initialState, resolveBudgetExpensesForYear, type AppState } from '../lib/state'
 import type { Expense, BudgetTransaction, Category, CategoryMapping } from '../lib/types'
 import { GAIN_COLOR, LOSS_COLOR, fmtUSD, toPeriod } from '../lib/computations'
 import { appReducer } from '../lib/reducer'
@@ -31,8 +31,38 @@ const CATEGORIES: Category[] = [
   { id: 'cat-auto', name: 'Auto', updatedAt: CATEGORY_UPDATED_AT },
 ]
 
-function defaultState(overrides: Partial<AppState> = {}): AppState {
-  return { ...initialState(), ...overrides }
+/**
+ * Builds an AppState for tests. Accepts the current `AppState` shape
+ * (`budgetExpensesByYear`/`budgetIncomeByYear`) plus legacy flat-shape
+ * shorthands (`budgetExpenses`/`budgetIncomeMonthly`/`budgetIncomeYearly`)
+ * for convenience — the legacy shorthands are stored under a single
+ * arbitrary year key ('2000') so `resolveBudgetExpensesForYear`/
+ * `resolveBudgetIncomeForYear`'s nearest-year fallback resolves to them
+ * regardless of which year the component under test actually requests.
+ */
+function defaultState(
+  overrides: Partial<AppState> & {
+    budgetExpenses?: Expense[]
+    budgetIncomeMonthly?: number
+    budgetIncomeYearly?: number
+  } = {}
+): AppState {
+  const { budgetExpenses, budgetIncomeMonthly, budgetIncomeYearly, ...rest } = overrides
+  const base: AppState = { ...initialState(), ...rest }
+  if (budgetExpenses !== undefined) {
+    base.budgetExpensesByYear = { ...base.budgetExpensesByYear, '2000': budgetExpenses }
+  }
+  if (budgetIncomeMonthly !== undefined || budgetIncomeYearly !== undefined) {
+    const existing = base.budgetIncomeByYear['2000'] ?? { monthly: 0, yearly: 0 }
+    base.budgetIncomeByYear = {
+      ...base.budgetIncomeByYear,
+      '2000': {
+        monthly: budgetIncomeMonthly ?? existing.monthly,
+        yearly: budgetIncomeYearly ?? existing.yearly,
+      },
+    }
+  }
+  return base
 }
 
 /**
@@ -154,14 +184,16 @@ describe('BudgetPage', () => {
     const seg = container.querySelector('.seg')
     expect(seg).toBeTruthy()
     const radios = seg!.querySelectorAll('input[type="radio"]')
-    expect(radios.length).toBe(2)
+    expect(radios.length).toBe(3)
     expect((radios[0] as HTMLInputElement).checked).toBe(false)
     expect((radios[1] as HTMLInputElement).checked).toBe(true) // Yearly is default
+    expect((radios[2] as HTMLInputElement).checked).toBe(false)
 
     fireEvent.click(within(seg!).getByText('Monthly'))
     const radiosAfter = seg!.querySelectorAll('input[type="radio"]')
     expect((radiosAfter[0] as HTMLInputElement).checked).toBe(true)
     expect((radiosAfter[1] as HTMLInputElement).checked).toBe(false)
+    expect((radiosAfter[2] as HTMLInputElement).checked).toBe(false)
   })
 
   it('shows GAIN_COLOR for the Variance card when budgeted >= actual', () => {
@@ -260,6 +292,7 @@ describe('BudgetPage', () => {
       fireEvent.change(nameInput, { target: { value: 'Rent 2' } })
       expect(dispatch).toHaveBeenCalledWith({
         type: 'UPDATE_BUDGET_EXPENSE',
+        year: expect.any(String),
         id: 'e1',
         patch: { name: 'Rent 2' },
       })
@@ -292,6 +325,7 @@ describe('BudgetPage', () => {
 
       expect(dispatch).toHaveBeenCalledWith({
         type: 'UPDATE_BUDGET_EXPENSE',
+        year: expect.any(String),
         id: 'e1',
         patch: { categoryId: newId },
       })
@@ -323,7 +357,7 @@ describe('BudgetPage', () => {
 
       fireEvent.click(screen.getByLabelText('Delete expense'))
 
-      expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_BUDGET_EXPENSE', id: 'e1' })
+      expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_BUDGET_EXPENSE', year: expect.any(String), id: 'e1' })
     })
   })
 
@@ -351,6 +385,7 @@ describe('BudgetPage', () => {
 
       expect(dispatch).toHaveBeenCalledWith({
         type: 'ADD_BUDGET_EXPENSE',
+        year: expect.any(String),
         expense: { name: 'Gym', categoryId: 'cat-housing', amount: 50, frequency: 'yearly' },
       })
 
@@ -439,6 +474,7 @@ describe('BudgetPage', () => {
 
       expect(dispatch).toHaveBeenCalledWith({
         type: 'ADD_BUDGET_EXPENSE',
+        year: expect.any(String),
         expense: { name: 'Netflix', categoryId: newId, amount: 15, frequency: 'monthly' },
       })
       expect(categoryDispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPSERT_CATEGORY_MAPPING' }))
@@ -454,7 +490,7 @@ describe('BudgetPage', () => {
         ],
         budgetTransactions: [],
       })
-      const expectedBudgeted = state.budgetExpenses.reduce(
+      const expectedBudgeted = resolveBudgetExpensesForYear(state.budgetExpensesByYear, '2000').reduce(
         (sum, e) => sum + toPeriod(e.amount, e.frequency, 'monthly'),
         0
       )
@@ -522,7 +558,7 @@ describe('BudgetPage', () => {
           makeTransaction({ id: 't2', date: `${currentMonth}-12`, categoryId: 'cat-food', amount: 150 }),
         ],
       })
-      const expectedBudgeted = state.budgetExpenses.reduce(
+      const expectedBudgeted = resolveBudgetExpensesForYear(state.budgetExpensesByYear, '2000').reduce(
         (sum, e) => sum + toPeriod(e.amount, e.frequency, 'monthly'),
         0
       )
@@ -577,7 +613,7 @@ describe('BudgetPage', () => {
           makeTransaction({ id: 't2', date: `${currentMonth}-12`, categoryId: 'cat-food', amount: 150 }),
         ],
       })
-      const expectedBudgeted = state.budgetExpenses.reduce(
+      const expectedBudgeted = resolveBudgetExpensesForYear(state.budgetExpensesByYear, '2000').reduce(
         (sum, e) => sum + toPeriod(e.amount, e.frequency, 'monthly'),
         0
       )
@@ -654,9 +690,8 @@ describe('BudgetPage', () => {
   describe('income click-to-edit', () => {
     function incomeState(overrides: Partial<AppState> = {}): AppState {
       return defaultState({
-        budgetIncomeMonthly: 5000,
-        budgetIncomeYearly: 1200,
-        budgetExpenses: [],
+        budgetIncomeByYear: { '2000': { monthly: 5000, yearly: 1200 } },
+        budgetExpensesByYear: { '2000': [] },
         ...overrides,
       })
     }
@@ -689,9 +724,9 @@ describe('BudgetPage', () => {
       fireEvent.keyDown(input, { key: 'Enter' })
 
       expect(dispatch).toHaveBeenCalledWith({
-        type: 'SET_BUDGET_INCOME_FOR_PERIOD',
-        period: 'monthly',
-        amount: 6000,
+        type: 'SET_BUDGET_INCOME',
+        year: expect.any(String),
+        patch: { monthly: 6000 },
       })
       expect(screen.queryByLabelText('Income amount')).toBeFalsy()
     })
@@ -718,10 +753,143 @@ describe('BudgetPage', () => {
       fireEvent.keyDown(input, { key: 'Enter' })
 
       expect(dispatch).toHaveBeenCalledWith({
-        type: 'SET_BUDGET_INCOME_FOR_PERIOD',
-        period: 'monthly',
-        amount: 0,
+        type: 'SET_BUDGET_INCOME',
+        year: expect.any(String),
+        patch: { monthly: 0 },
       })
+    })
+  })
+
+  describe('per-year expense/income plumbing', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it("Monthly mode's expenses table and income display read/write only the current-year snapshot, regardless of selectedYear", () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-06-15T00:00:00'))
+      let state: AppState = defaultState({
+        budgetExpensesByYear: {
+          '2026': [makeExpense({ id: 'e-2026', name: 'Rent 2026', amount: 500, frequency: 'monthly' })],
+          '2020': [makeExpense({ id: 'e-2020', name: 'Rent 2020', amount: 300, frequency: 'monthly' })],
+        },
+        budgetIncomeByYear: {
+          '2026': { monthly: 4000, yearly: 0 },
+          '2020': { monthly: 2000, yearly: 0 },
+        },
+        budgetTransactions: [makeTransaction({ date: '2020-01-01', categoryId: 'cat-housing', amount: 10 })],
+      })
+      const dispatch = (action: any) => {
+        state = appReducer(state, action)
+      }
+      const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
+      expect(screen.getByText('Rent 2026')).toBeTruthy()
+      expect(screen.queryByText('Rent 2020')).toBeFalsy()
+
+      // Switch to Yearly and select the 2020 snapshot.
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Yearly'))
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2020' } })
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+      expect(screen.getByText('Rent 2020')).toBeTruthy()
+      expect(screen.queryByText('Rent 2026')).toBeFalsy()
+
+      // Switching back to Monthly is unaffected by selectedYear still being '2020'.
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+      expect(screen.getByText('Rent 2026')).toBeTruthy()
+      expect(screen.queryByText('Rent 2020')).toBeFalsy()
+      // Monthly income: 4000 + 0/12 = 4000 (current-year snapshot), not the 2020 one.
+      expect(screen.getAllByText('$4,000.00').length).toBeGreaterThan(0)
+    })
+
+    it("Yearly mode's add/edit/delete and income-edit dispatches carry the currently-selected selectedYear", () => {
+      let state: AppState = defaultState({
+        budgetTransactions: [makeTransaction({ date: '2021-01-01', categoryId: 'cat-housing', amount: 10 })],
+      })
+      const dispatch = (action: any) => {
+        state = appReducer(state, action)
+      }
+      const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2021' } })
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      // Add
+      fireEvent.click(screen.getByText('Add Expense'))
+      fireEvent.change(screen.getByLabelText('Expense name'), { target: { value: 'Gym' } })
+      fireEvent.change(screen.getByLabelText('Expense amount'), { target: { value: '50' } })
+      fireEvent.click(screen.getByText('Add'))
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      expect(state.budgetExpensesByYear['2021']?.some((e) => e.name === 'Gym')).toBe(true)
+      const gymId = state.budgetExpensesByYear['2021']!.find((e) => e.name === 'Gym')!.id
+
+      // Edit (only one row exists at this point, so query by label directly)
+      fireEvent.click(screen.getByLabelText('Edit expense'))
+      fireEvent.change(screen.getByLabelText('Edit expense amount'), { target: { value: '75' } })
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+      expect(state.budgetExpensesByYear['2021']!.find((e) => e.id === gymId)?.amount).toBe(75)
+      fireEvent.click(screen.getByText('Done'))
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      // Delete
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      fireEvent.click(screen.getByLabelText('Delete expense'))
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+      expect(state.budgetExpensesByYear['2021']!.some((e) => e.id === gymId)).toBe(false)
+
+      // Income edit
+      fireEvent.click(screen.getByLabelText('Edit income'))
+      fireEvent.change(screen.getByLabelText('Income amount'), { target: { value: '9999' } })
+      fireEvent.keyDown(screen.getByLabelText('Income amount'), { key: 'Enter' })
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+      expect(state.budgetIncomeByYear['2021']?.yearly).toBe(9999)
+    })
+
+    it('selecting a not-yet-seeded year and adding an expense / editing income seeds from the nearest prior year and keeps the new edit', () => {
+      let state: AppState = defaultState({
+        budgetExpensesByYear: {
+          '2019': [makeExpense({ id: 'e-old', name: 'Old Rent', amount: 200, frequency: 'monthly' })],
+        },
+        budgetIncomeByYear: {
+          '2019': { monthly: 1000, yearly: 500 },
+        },
+        budgetTransactions: [
+          makeTransaction({ date: '2019-01-01', categoryId: 'cat-housing', amount: 10 }),
+          makeTransaction({ date: '2023-01-01', categoryId: 'cat-housing', amount: 10 }),
+        ],
+      })
+      const dispatch = (action: any) => {
+        state = appReducer(state, action)
+      }
+      const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2023' } })
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      // Seeded from 2019 before any edit.
+      expect(screen.getByText('Old Rent')).toBeTruthy()
+
+      fireEvent.click(screen.getByText('Add Expense'))
+      fireEvent.change(screen.getByLabelText('Expense name'), { target: { value: 'New Rent' } })
+      fireEvent.change(screen.getByLabelText('Expense amount'), { target: { value: '250' } })
+      fireEvent.click(screen.getByText('Add'))
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      fireEvent.click(screen.getByLabelText('Edit income'))
+      fireEvent.change(screen.getByLabelText('Income amount'), { target: { value: '1500' } })
+      fireEvent.keyDown(screen.getByLabelText('Income amount'), { key: 'Enter' })
+      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      const seeded2023 = state.budgetExpensesByYear['2023']
+      expect(seeded2023?.some((e) => e.name === 'Old Rent')).toBe(true)
+      expect(seeded2023?.some((e) => e.name === 'New Rent')).toBe(true)
+      expect(state.budgetIncomeByYear['2023']?.yearly).toBe(1500)
+      // 2019's own snapshot is untouched.
+      expect(state.budgetExpensesByYear['2019']).toEqual([makeExpense({ id: 'e-old', name: 'Old Rent', amount: 200, frequency: 'monthly' })])
+      expect(state.budgetIncomeByYear['2019']).toEqual({ monthly: 1000, yearly: 500 })
     })
   })
 
@@ -1824,6 +1992,65 @@ VERSION:102
       const cellSelect = screen.getByLabelText('Edit record category') as HTMLSelectElement
       const cellOptionValues = Array.from(cellSelect.querySelectorAll('option')).map((o) => o.value)
       expect(cellOptionValues).toContain('cat-zoo')
+    })
+  })
+
+  describe('Analytics tab', () => {
+    it('renders a 3rd "Analytics" tab option alongside Monthly/Yearly', () => {
+      renderBudgetPage()
+      const seg = document.querySelector('.seg') as HTMLElement
+      const labels = Array.from(seg.querySelectorAll('.seg-opt span')).map((el) => el.textContent)
+      expect(labels).toEqual(['Monthly', 'Yearly', 'Analytics'])
+    })
+
+    it('selecting Analytics hides Monthly/Yearly-only content and shows the BudgetAnalytics shell', () => {
+      const state = defaultState({
+        budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' })],
+        budgetTransactions: [makeTransaction({ date: '2025-03-05' })],
+      })
+      const { container } = renderBudgetPage({ state })
+
+      fireEvent.click(screen.getByText('Analytics'))
+
+      expect(container.querySelector('[data-testid="summary-cards"]')).toBeNull()
+      expect(screen.queryByLabelText('Select year')).toBeNull()
+      expect(screen.queryByText('Expenses')).toBeNull()
+      expect(screen.queryByText(/Spend records/)).toBeNull()
+
+      // BudgetAnalytics shell renders its 7 section placeholders
+      expect(screen.getByText('Areas of concern')).toBeTruthy()
+      expect(screen.getByText('Biggest movers')).toBeTruthy()
+    })
+
+    it('switching back to Monthly restores the prior content unchanged', () => {
+      const state = defaultState({
+        budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' })],
+        budgetTransactions: [makeTransaction({ date: '2025-03-05' })],
+      })
+      const { container } = renderBudgetPage({ state })
+
+      fireEvent.click(screen.getByText('Analytics'))
+      fireEvent.click(screen.getByText('Monthly'))
+
+      expect(container.querySelector('[data-testid="summary-cards"]')).toBeTruthy()
+      expect(screen.getByText('Expenses')).toBeTruthy()
+      expect(screen.queryByText('Areas of concern')).toBeNull()
+    })
+
+    it('switching back to Yearly restores the prior content unchanged', () => {
+      const state = defaultState({
+        budgetExpenses: [makeExpense({ amount: 1000, frequency: 'monthly' })],
+        budgetTransactions: [makeTransaction({ date: '2025-03-05' })],
+      })
+      const { container } = renderBudgetPage({ state })
+
+      fireEvent.click(screen.getByText('Analytics'))
+      fireEvent.click(screen.getByText('Yearly'))
+
+      expect(container.querySelector('[data-testid="summary-cards"]')).toBeTruthy()
+      expect(screen.getByLabelText('Select year')).toBeTruthy()
+      expect(screen.getByText('Expenses')).toBeTruthy()
+      expect(screen.queryByText('Areas of concern')).toBeNull()
     })
   })
 })
