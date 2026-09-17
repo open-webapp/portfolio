@@ -94,6 +94,30 @@ export function getPickerDriveAuth() {
   return pickerDriveAuth
 }
 
+let categoryDriveAuth: ReturnType<typeof createDriveAuth> | undefined
+
+/**
+ * Returns the (cached, lazily-created) Drive auth handle for the global,
+ * cross-portfolio `category-mappings.json` file (see `categoryDrive.ts`).
+ * Fixed project id `'category-mappings'`, matching the id `categoryDrive.ts`
+ * uses for `legacyDriveSync.project(...)` file I/O — the two MUST use the
+ * same project id, since drive-sync stores/looks up tokens keyed by
+ * `(appId, projectId)`. Categories are shared across every portfolio, so
+ * this is deliberately its own connection rather than a per-portfolio one
+ * from `getDriveAuthFor` (whose project id is the portfolio's own, a
+ * different key that would never hold a valid token for this file's I/O).
+ */
+export function getCategoryDriveAuth() {
+  if (!categoryDriveAuth) {
+    categoryDriveAuth = createDriveAuth({
+      drive: legacyDriveSync,
+      projectId: 'category-mappings',
+      tokenBufferMs: 5 * 60 * 1000,
+    })
+  }
+  return categoryDriveAuth
+}
+
 /**
  * Lists the immediate subfolders of the app's Drive root
  * (`OpenWebApp/Portfolio`) — each one is expected to be a per-portfolio

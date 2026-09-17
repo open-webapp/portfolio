@@ -113,6 +113,7 @@ vi.mock('@open-webapp/drive-sync', () => ({
 }))
 
 import { RemoteChangedError, NeedsReauthError } from '@open-webapp/drive-sync'
+import { createDriveAuth } from '@open-webapp/drive-connect'
 import {
   DriveDecryptError,
   DriveMalformedBackupError,
@@ -120,6 +121,7 @@ import {
   decryptDriveFolderBackup,
   getDriveAuthFor,
   getPickerDriveAuth,
+  getCategoryDriveAuth,
   getBackupFileId,
   getBackupFileStatus,
   getConnectionSnapshot,
@@ -428,6 +430,27 @@ describe('conflict-reconcile helpers', () => {
       // Both map to the fixed 'app' project id, so they must resolve to the
       // exact same cached auth handle despite differing `id`/`name`.
       expect(authOne).toBe(authTwo)
+    })
+  })
+
+  describe('getCategoryDriveAuth', () => {
+    it('authenticates under project id "category-mappings" — the SAME id categoryDrive.ts uses for its legacyDriveSync.project(...) file I/O', () => {
+      getCategoryDriveAuth()
+
+      const categoryCall = vi
+        .mocked(createDriveAuth)
+        .mock.calls.find((call) => (call[0] as { projectId?: string }).projectId === 'category-mappings')
+
+      expect(categoryCall).toBeDefined()
+    })
+
+    it('is a distinct, stable singleton from any per-portfolio driveAuth — regression for the "categories never sync" bug where categoryDrive.ts was handed a portfolio-scoped driveAuth (authenticated under the PORTFOLIO\'s project id) while its own file I/O ran under the unrelated "category-mappings" project id, so drive-sync (which stores tokens keyed by (appId, projectId)) never found a valid token for it', () => {
+      const a1 = getCategoryDriveAuth()
+      const a2 = getCategoryDriveAuth()
+      expect(a1).toBe(a2)
+
+      const portfolioAuth = getDriveAuthFor(testPortfolio)
+      expect(a1).not.toBe(portfolioAuth)
     })
   })
 

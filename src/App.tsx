@@ -14,6 +14,7 @@ import { SyncConflictDialog } from './components/SyncConflictDialog'
 import { PortfolioPicker } from './components/PortfolioPicker'
 import {
   getDriveAuthFor,
+  getCategoryDriveAuth,
   getBackupFileId,
   syncBackup,
   overwriteLocalWithRemote,
@@ -84,13 +85,14 @@ function App() {
   const { connected } = useDriveConnection(getDriveAuthFor(activePortfolio ?? NO_ACTIVE_PORTFOLIO))
 
   // Global (cross-portfolio) categories/mappings store: hydrates/saves/syncs
-  // independently of the per-portfolio state above. Called unconditionally so
-  // hook order stays stable across renders; the hook itself tolerates a null
-  // driveAuth by just staying local-only until a real portfolio activates.
-  const globalCategories = useGlobalCategories(
-    activePortfolio ? getDriveAuthFor(activePortfolio) : null,
-    connected
-  )
+  // independently of the per-portfolio state above, using its OWN Drive
+  // connection (`getCategoryDriveAuth`) rather than the active portfolio's —
+  // categories are shared across every portfolio, and drive-sync tokens are
+  // keyed by project id, so reusing the portfolio's driveAuth here would
+  // authenticate the wrong project id and every category sync call would
+  // silently fail.
+  const { connected: categoriesConnected } = useDriveConnection(getCategoryDriveAuth())
+  const globalCategories = useGlobalCategories(getCategoryDriveAuth(), categoriesConnected)
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
     remoteModifiedTime?: string
