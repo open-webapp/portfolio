@@ -113,6 +113,22 @@ Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matc
 
 **Derived, never stored** (`src/lib/computations.ts`): `toMonthly(amount, freq)` (`freq === 'yearly' ? amount / 12 : amount`), `toYearly(amount, freq)` (`freq === 'yearly' ? amount : amount * 12`), `toPeriod(amount, freq, period)` (dispatches to one of the above by the caller's selected display period, independent of the expense's own `frequency`).
 
+## Year-scoped budget storage: `budgetExpensesByYear` / `budgetIncomeByYear`
+
+`AppState` fields (`src/lib/state.ts`), superseding the old flat `budgetExpenses: Expense[]` / `budgetIncomeMonthly: number` / `budgetIncomeYearly: number`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `budgetExpensesByYear` | `Record<string, Expense[]>` | Key = calendar year as string (e.g. `"2026"`). One `Expense[]` snapshot per year |
+| `budgetIncomeByYear` | `Record<string, { monthly: number; yearly: number }>` | Key = calendar year as string. One `{monthly, yearly}` pair per year, same mutual-exclusivity semantics as before (`SET_BUDGET_INCOME_FOR_PERIOD` zeroes the sibling field within that year's entry) |
+
+**Year-scoping note** (`src/lib/state.ts`, mirrors the Category migration-note format above):
+- `currentBudgetYear(now)`: current calendar year as a string key.
+- Monthly mode always reads/writes `[currentBudgetYear()]`; Yearly mode reads/writes whichever year is selected via the Year dropdown (`BudgetPage`'s local `selectedYear` state).
+- **Seed-from-nearest** (`nearestBudgetExpensesYear`/`nearestBudgetIncomeYear`, consulted by `addBudgetExpense`/`updateBudgetExpense`/`deleteBudgetExpense`/`setBudgetIncome`): selecting/editing a year with no existing entry copies the nearest existing year's data (closest by absolute year distance; ties resolve to the earlier year) into a new entry for that year; if no year exists at all, the new entry starts empty (`[]` for expenses, `{monthly:0, yearly:0}` for income).
+- **Rollover on load** (`rolloverBudgetExpensesIfNeeded`/`rolloverBudgetIncomeIfNeeded`, dispatched via `ROLLOVER_BUDGET_EXPENSES_IF_NEEDED`/`ROLLOVER_BUDGET_INCOME_IF_NEEDED` at app load): if the current calendar year has no entry yet but an earlier year does, the nearest prior year's data is auto-copied forward as the new current year's starting entry.
+- Applies identically and independently to `budgetExpensesByYear` and `budgetIncomeByYear`.
+
 ## BudgetTransaction
 
 | Field | Type | Notes |
@@ -292,12 +308,11 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 - `SET_MUTUAL_FUND_SYNC_API_KEY`, `RECORD_MUTUAL_FUND_SYNC_RUN`: Alphavantage mutual-fund NAV-sync API key + run result
 
 **Budget**
-- `SET_BUDGET_INCOME_MONTHLY { amount: number }`: Set `budgetIncomeMonthly`, clamped to `>= 0` (unused by `BudgetPage`, which always dispatches `SET_BUDGET_INCOME_FOR_PERIOD` instead)
-- `SET_BUDGET_INCOME_YEARLY { amount: number }`: Set `budgetIncomeYearly`, clamped to `>= 0` (same caveat)
-- `SET_BUDGET_INCOME_FOR_PERIOD { period: 'monthly' | 'yearly'; amount: number }`: Set the field matching `period`, clamped `>= 0`, and **zero the other period's field** in the same write (mutually exclusive by design)
-- `ADD_BUDGET_EXPENSE { expense: Omit<Expense, 'id'> }`: Append a new `Expense` to `budgetExpenses`, id generated (`uid('expense')`)
-- `UPDATE_BUDGET_EXPENSE { id: string; patch: Partial<Omit<Expense, 'id'>> }`: Patch fields on an `Expense` by id; no-op if not found
-- `DELETE_BUDGET_EXPENSE { id: string }`: Remove an `Expense` by id; no-op if not found
+- `SET_BUDGET_INCOME { year: string; patch: Partial<{ monthly: number; yearly: number }> }`: Patch the given year's `budgetIncomeByYear[year]` entry (seeded from nearest year, or empty, first if absent); `BudgetPage` always passes the current year in Monthly mode or the selected year in Yearly mode, and — since setting one period zeroes the other — dispatches `patch: { monthly: amount, yearly: 0 }` or vice versa (mutually exclusive by design), clamped `>= 0`
+- `ADD_BUDGET_EXPENSE { year: string; expense: Omit<Expense, 'id'> }`: Append a new `Expense` to `budgetExpensesByYear[year]` (seeded from nearest year, or empty, first if absent), id generated (`uid('expense')`)
+- `UPDATE_BUDGET_EXPENSE { year: string; id: string; patch: Partial<Omit<Expense, 'id'>> }`: Patch fields on an `Expense` by id within `budgetExpensesByYear[year]`; no-op if not found
+- `DELETE_BUDGET_EXPENSE { year: string; id: string }`: Remove an `Expense` by id within `budgetExpensesByYear[year]`; no-op if not found
+- `ROLLOVER_BUDGET_EXPENSES_IF_NEEDED` / `ROLLOVER_BUDGET_INCOME_IF_NEEDED`: dispatched once at app load — runs `rolloverBudgetExpensesIfNeeded`/`rolloverBudgetIncomeIfNeeded` (see Year-scoped budget storage note above)
 - `ADD_BUDGET_TRANSACTION { tx: Omit<BudgetTransaction, 'id'> }`: Append a new `BudgetTransaction` to `budgetTransactions`, id generated (`uid('budgettx')`)
 - `UPDATE_BUDGET_TRANSACTION { id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }`: Patch fields on a `BudgetTransaction` by id; no-op if not found
 - `DELETE_BUDGET_TRANSACTION { id: string }`: Remove a `BudgetTransaction` by id; no-op if not found
@@ -312,7 +327,7 @@ Note: `Category`/`CategoryMapping` CRUD (`ADD_CATEGORY`, `RENAME_CATEGORY`, `DEL
 
 On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'`/`'budget'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 
-**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedYear`/Spend-records `recordSearch`/`recSortBy`/`recSortDir`/`recPage`/`editingCell`/`cellDraft` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeMonthly`/`budgetIncomeYearly`/`budgetExpenses`/`budgetTransactions` ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. `categories`/`categoryMappings` are **not** `AppState` fields at all — they're sourced from the Global Category Store (`useGlobalCategories`, see `## Global Category Store` above) and reach `BudgetPage`/`SettingsPage` as props.
+**Budget page fields are split across two layers**: `BudgetPage`'s `period`/`filterCategory`/`sortBy`/`sortDir`/dialog & form drafts/`editingId`/`selectedYear`/Spend-records `recordSearch`/`recSortBy`/`recSortDir`/`recPage`/`editingCell`/`cellDraft` are intentionally component-local `useState` — NOT part of `AppState`, never persisted, reset on remount. By contrast `budgetIncomeByYear`/`budgetExpensesByYear`/`budgetTransactions` ARE persisted `AppState` fields, coalesced/defaulted like every other domain collection on load. `categories`/`categoryMappings` are **not** `AppState` fields at all — they're sourced from the Global Category Store (`useGlobalCategories`, see `## Global Category Store` above) and reach `BudgetPage`/`SettingsPage` as props.
 
 ## Persistence envelope
 
@@ -331,7 +346,7 @@ interface EncryptedEnvelope {
 - **Google Drive** (`drive.ts` implements sync): the backup file `portfolio-state.json` is `JSON.stringify(envelope)` — identical shape and encryption as the IndexedDB envelope.
 - **Algorithm (fixed, not configurable)**: key derivation is PBKDF2-SHA256, 600,000 iterations (OWASP 2023 minimum), producing a non-extractable AES-256-GCM `CryptoKey`. Encryption is AES-256-GCM with a fresh random 12-byte IV per `encryptState` call. Salt is 16 random bytes, generated once per password and reused until rotated.
 - **Legacy-plaintext detection** (`detectEnvelopeShape`, pure/no I/O): a stored value is `'absent'` if `undefined`/`null`, `'encrypted'` if it structurally has `version === 1` and string `salt`/`iv`/`ciphertext` fields, otherwise `'legacy-plaintext'`. Purely structural — no version-field-only check, no content inspection beyond those four keys.
-- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys (including a legacy blob's own `categories`/`categoryMappings`, which `AppState` no longer has fields for) are silently dropped. `budgetExpenses`/`budgetTransactions` default to `[]` like every other collection. `coalesceWithDefaults` no longer performs any category migration itself — the one-time cross-portfolio seed (`## Category` above) reads the **raw pre-coalesce blob** instead, via `loadRawPersistedBlob(key)` (a new export factored out of `loadPersistedApp`: decrypt+parse only, no coalescing), so a portfolio's legacy `categories`/`categoryMappings`/bare `category` strings remain visible to the seed step even though `coalesceWithDefaults` itself ignores them.
+- **Migration-tolerant field coalescing**: `loadPersistedApp`/`loadLegacyPlaintextApp` both rebuild the `AppState` field-by-field from a fixed whitelist against `initialState()` defaults — a blob missing a newer collection/field loads with that field defaulted, and stale keys (including a legacy blob's own `categories`/`categoryMappings`, which `AppState` no longer has fields for) are silently dropped. `budgetExpensesByYear`/`budgetIncomeByYear` default to `{}`, `budgetTransactions` defaults to `[]`, like every other collection. `coalesceWithDefaults` no longer performs any category migration itself — the one-time cross-portfolio seed (`## Category` above) reads the **raw pre-coalesce blob** instead, via `loadRawPersistedBlob(key)` (a new export factored out of `loadPersistedApp`: decrypt+parse only, no coalescing), so a portfolio's legacy `categories`/`categoryMappings`/bare `category` strings remain visible to the seed step even though `coalesceWithDefaults` itself ignores them.
 - `loadPersistedApp(key: CryptoKey)` — now `const raw = await loadRawPersistedBlob(key); return raw ? coalesceWithDefaults(raw) : null` — throws if the stored value is not `'encrypted'` or if decryption fails (wrong password → `OperationError` propagates).
 - `loadLegacyPlaintextApp()` reads the pre-encryption blob for one-time migration; `clearPersistedApp()` deletes the IndexedDB record entirely.
 

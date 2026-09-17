@@ -32,9 +32,8 @@ export interface ExportableState {
   csvMappings: SavedCsvMapping[]
   customInstitutions: string[]
   balanceEntries: BalanceEntry[]
-  budgetIncomeMonthly: number
-  budgetIncomeYearly: number
-  budgetExpenses: Expense[]
+  budgetIncomeByYear: Record<string, { monthly: number; yearly: number }>
+  budgetExpensesByYear: Record<string, Expense[]>
   budgetTransactions: BudgetTransaction[]
   priceSync: {
     apiKey: string
@@ -60,9 +59,8 @@ export function buildExportableState(state: AppState): ExportableState {
     csvMappings: state.csvMappings,
     customInstitutions: state.customInstitutions,
     balanceEntries: state.balanceEntries,
-    budgetIncomeMonthly: state.budgetIncomeMonthly,
-    budgetIncomeYearly: state.budgetIncomeYearly,
-    budgetExpenses: state.budgetExpenses,
+    budgetIncomeByYear: state.budgetIncomeByYear,
+    budgetExpensesByYear: state.budgetExpensesByYear,
     budgetTransactions: state.budgetTransactions,
     priceSync: {
       apiKey: state.priceSync.apiKey,
@@ -201,9 +199,8 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
     csvMappings: decrypted.csvMappings ?? [],
     customInstitutions: decrypted.customInstitutions ?? [],
     balanceEntries: decrypted.balanceEntries ?? [],
-    budgetIncomeMonthly: decrypted.budgetIncomeMonthly ?? 0,
-    budgetIncomeYearly: decrypted.budgetIncomeYearly ?? 0,
-    budgetExpenses: decrypted.budgetExpenses ?? [],
+    budgetIncomeByYear: decrypted.budgetIncomeByYear ?? {},
+    budgetExpensesByYear: decrypted.budgetExpensesByYear ?? {},
     budgetTransactions: decrypted.budgetTransactions ?? [],
     priceSync: {
       apiKey: decrypted.priceSync?.apiKey ?? '',

@@ -38,11 +38,12 @@ export type AppAction =
   | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
   | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
-  | { type: 'SET_BUDGET_INCOME_MONTHLY'; amount: number }
-  | { type: 'SET_BUDGET_INCOME_YEARLY'; amount: number }
-  | { type: 'ADD_BUDGET_EXPENSE'; expense: Omit<Expense, 'id'> }
-  | { type: 'UPDATE_BUDGET_EXPENSE'; id: string; patch: Partial<Omit<Expense, 'id'>> }
-  | { type: 'DELETE_BUDGET_EXPENSE'; id: string }
+  | { type: 'SET_BUDGET_INCOME'; year: string; patch: Partial<{ monthly: number; yearly: number }> }
+  | { type: 'ADD_BUDGET_EXPENSE'; year: string; expense: Omit<Expense, 'id'> }
+  | { type: 'UPDATE_BUDGET_EXPENSE'; year: string; id: string; patch: Partial<Omit<Expense, 'id'>> }
+  | { type: 'DELETE_BUDGET_EXPENSE'; year: string; id: string }
+  | { type: 'ROLLOVER_BUDGET_EXPENSES_IF_NEEDED' }
+  | { type: 'ROLLOVER_BUDGET_INCOME_IF_NEEDED' }
   | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
   | { type: 'UPDATE_BUDGET_TRANSACTION'; id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }
   | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
@@ -52,7 +53,6 @@ export type AppAction =
       categories: Category[]
       categoryMappings: CategoryMapping[]
     }
-  | { type: 'SET_BUDGET_INCOME_FOR_PERIOD'; period: 'monthly' | 'yearly'; amount: number }
   | { type: 'REAPPLY_CATEGORY_MAPPINGS'; categoryMappings: CategoryMapping[] }
 
 /**
@@ -176,20 +176,23 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return StateActions.setRegActivityFilter(state, action.filter)
 
     // Budget page
-    case 'SET_BUDGET_INCOME_MONTHLY':
-      return StateActions.setBudgetIncomeMonthly(state, action.amount)
-
-    case 'SET_BUDGET_INCOME_YEARLY':
-      return StateActions.setBudgetIncomeYearly(state, action.amount)
+    case 'SET_BUDGET_INCOME':
+      return StateActions.setBudgetIncome(state, action.year, action.patch)
 
     case 'ADD_BUDGET_EXPENSE':
-      return StateActions.addBudgetExpense(state, action.expense)
+      return StateActions.addBudgetExpense(state, action.year, action.expense)
 
     case 'UPDATE_BUDGET_EXPENSE':
-      return StateActions.updateBudgetExpense(state, action.id, action.patch)
+      return StateActions.updateBudgetExpense(state, action.year, action.id, action.patch)
 
     case 'DELETE_BUDGET_EXPENSE':
-      return StateActions.deleteBudgetExpense(state, action.id)
+      return StateActions.deleteBudgetExpense(state, action.year, action.id)
+
+    case 'ROLLOVER_BUDGET_EXPENSES_IF_NEEDED':
+      return StateActions.rolloverBudgetExpensesIfNeeded(state)
+
+    case 'ROLLOVER_BUDGET_INCOME_IF_NEEDED':
+      return StateActions.rolloverBudgetIncomeIfNeeded(state)
 
     case 'ADD_BUDGET_TRANSACTION':
       return StateActions.addBudgetTransaction(state, action.tx)
@@ -202,9 +205,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'IMPORT_BUDGET_TRANSACTIONS':
       return StateActions.importBudgetTransactions(state, action.rows, action.categories, action.categoryMappings)
-
-    case 'SET_BUDGET_INCOME_FOR_PERIOD':
-      return StateActions.setBudgetIncomeForPeriod(state, action.period, action.amount)
 
     case 'REAPPLY_CATEGORY_MAPPINGS':
       return StateActions.reapplyCategoryMappingsToState(state, action.categoryMappings)

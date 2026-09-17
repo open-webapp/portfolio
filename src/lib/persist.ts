@@ -1,5 +1,5 @@
 import type { AppState } from './state'
-import { initialState } from './state'
+import { initialState, currentBudgetYear } from './state'
 import { decryptState, detectEnvelopeShape, encryptState } from './crypto'
 import type { EncryptedEnvelope } from './crypto'
 
@@ -51,6 +51,48 @@ function base64ToBytes(b64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i)
   }
   return bytes
+}
+
+/**
+ * Migration tolerance: raw pre-coalesce blob with a flat `budgetExpenses`
+ * array (pre-multi-year budgets) gets folded into `budgetExpensesByYear`
+ * under the current budget year. No-ops if `budgetExpensesByYear` is already
+ * present (even `{}`), including for blobs with neither field.
+ */
+export function migrateBudgetExpensesByYearIfNeeded(raw: Record<string, unknown>): Record<string, unknown> {
+  if ('budgetExpensesByYear' in raw) return raw
+  if (Array.isArray(raw.budgetExpenses)) {
+    return {
+      ...raw,
+      budgetExpensesByYear: { [currentBudgetYear()]: raw.budgetExpenses },
+      budgetExpenses: undefined,
+    }
+  }
+  return { ...raw, budgetExpensesByYear: {} }
+}
+
+/**
+ * Migration tolerance: raw pre-coalesce blob with flat `budgetIncomeMonthly`/
+ * `budgetIncomeYearly` scalars (pre-multi-year budgets) gets folded into
+ * `budgetIncomeByYear` under the current budget year. No-ops if
+ * `budgetIncomeByYear` is already present (even `{}`).
+ */
+export function migrateBudgetIncomeByYearIfNeeded(raw: Record<string, unknown>): Record<string, unknown> {
+  if ('budgetIncomeByYear' in raw) return raw
+  if ('budgetIncomeMonthly' in raw || 'budgetIncomeYearly' in raw) {
+    return {
+      ...raw,
+      budgetIncomeByYear: {
+        [currentBudgetYear()]: {
+          monthly: (raw.budgetIncomeMonthly as number | undefined) ?? 0,
+          yearly: (raw.budgetIncomeYearly as number | undefined) ?? 0,
+        },
+      },
+      budgetIncomeMonthly: undefined,
+      budgetIncomeYearly: undefined,
+    }
+  }
+  return { ...raw, budgetIncomeByYear: {} }
 }
 
 /**
@@ -127,9 +169,8 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     regAccountId: loaded.regAccountId ?? defaults.regAccountId,
     regExpanded: loaded.regExpanded ?? defaults.regExpanded,
     regActivityFilter: loaded.regActivityFilter ?? defaults.regActivityFilter,
-    budgetIncomeMonthly: loaded.budgetIncomeMonthly ?? defaults.budgetIncomeMonthly,
-    budgetIncomeYearly: loaded.budgetIncomeYearly ?? defaults.budgetIncomeYearly,
-    budgetExpenses: loaded.budgetExpenses ?? defaults.budgetExpenses,
+    budgetExpensesByYear: loaded.budgetExpensesByYear ?? defaults.budgetExpensesByYear,
+    budgetIncomeByYear: loaded.budgetIncomeByYear ?? defaults.budgetIncomeByYear,
     budgetTransactions: loaded.budgetTransactions ?? defaults.budgetTransactions,
   }
 }
@@ -199,7 +240,10 @@ export async function loadRawPersistedBlob(
     throw new Error('loadPersistedApp called on a non-encrypted envelope')
   }
 
-  return (await decryptState(raw as EncryptedEnvelope, key)) as Partial<AppState> & Record<string, unknown>
+  const decrypted = (await decryptState(raw as EncryptedEnvelope, key)) as Partial<AppState> & Record<string, unknown>
+  const withExpensesMigrated = migrateBudgetExpensesByYearIfNeeded(decrypted)
+  const withIncomeMigrated = migrateBudgetIncomeByYearIfNeeded(withExpensesMigrated)
+  return withIncomeMigrated as Partial<AppState> & Record<string, unknown>
 }
 
 /**

@@ -26,7 +26,22 @@ import {
   availableBudgetMonths,
   availableBudgetYears,
   referencedCategories,
-  mappingsForCategory
+  mappingsForCategory,
+  monthsPresentInYear,
+  yearTotalSpend,
+  yearCategoryTotalSpend,
+  monthTotalSpend,
+  overBudgetConcern,
+  spendTrendConcern,
+  spikeMonthConcern,
+  savingsRateShrinkingConcern,
+  concentrationRiskConcern,
+  savingsRateByYear,
+  categoryShareOverTime,
+  monthlySeasonality,
+  budgetAccuracyByYear,
+  categoryTrendsYoY,
+  topMovers
 } from './selectors'
 import { AppState, initialState, clearAccountSelection } from './state'
 import {
@@ -1924,6 +1939,614 @@ describe('budget selectors', () => {
         { id: 't2', date: '2025-12-01', description: 'b', categoryId: 'cat-food', amount: 10 }
       ]
       expect(availableBudgetYears(transactions, now)).toEqual(['2026', '2025', '2024'])
+    })
+  })
+
+  describe('monthsPresentInYear', () => {
+    const categories: Category[] = [
+      { id: 'cat-food', name: 'Food', updatedAt: '2026-01-01' },
+      { id: 'cat-excluded', name: 'Transfers', updatedAt: '2026-01-01', excludeFromSpend: true }
+    ]
+
+    it('returns distinct sorted months with non-excluded transactions', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 10 },
+        { id: 't2', date: '2026-03-05', description: 'b', categoryId: 'cat-food', amount: 20 },
+        { id: 't3', date: '2026-09-05', description: 'c', categoryId: 'cat-food', amount: 30 }
+      ]
+      expect(monthsPresentInYear(transactions, categories, '2026')).toEqual([1, 3, 9])
+    })
+
+    it('does not count a month whose only transaction is in an excluded category', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 10 },
+        { id: 't2', date: '2026-05-05', description: 'b', categoryId: 'cat-excluded', amount: 999 }
+      ]
+      expect(monthsPresentInYear(transactions, categories, '2026')).toEqual([1])
+    })
+
+    it('returns empty array for a year with zero transactions', () => {
+      expect(monthsPresentInYear([], categories, '2026')).toEqual([])
+    })
+  })
+
+  describe('yearTotalSpend / yearCategoryTotalSpend / monthTotalSpend', () => {
+    const categories: Category[] = [
+      { id: 'cat-food', name: 'Food', updatedAt: '2026-01-01' },
+      { id: 'cat-rent', name: 'Rent', updatedAt: '2026-01-01' },
+      { id: 'cat-excluded', name: 'Transfers', updatedAt: '2026-01-01', excludeFromSpend: true }
+    ]
+    const transactions: BudgetTransaction[] = [
+      { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 10 },
+      { id: 't2', date: '2026-01-20', description: 'b', categoryId: 'cat-rent', amount: 100 },
+      { id: 't3', date: '2026-02-05', description: 'c', categoryId: 'cat-food', amount: 25 },
+      { id: 't4', date: '2026-01-15', description: 'd', categoryId: 'cat-excluded', amount: 5000 },
+      { id: 't5', date: '2025-01-15', description: 'e', categoryId: 'cat-food', amount: 40 }
+    ]
+
+    it('yearTotalSpend excludes excluded-category amounts', () => {
+      expect(yearTotalSpend(transactions, categories, '2026')).toBe(135)
+    })
+
+    it('yearTotalSpend returns 0 for a year with zero transactions', () => {
+      expect(yearTotalSpend(transactions, categories, '2030')).toBe(0)
+    })
+
+    it('yearCategoryTotalSpend sums only the given category', () => {
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-food')).toBe(35)
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-rent')).toBe(100)
+    })
+
+    it('yearCategoryTotalSpend returns 0 for an excluded category', () => {
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-excluded')).toBe(0)
+    })
+
+    it('yearCategoryTotalSpend returns 0 for a category not present in transactions', () => {
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-unknown')).toBe(0)
+    })
+
+    it('monthTotalSpend sums only the given year+month, excluding excluded categories', () => {
+      expect(monthTotalSpend(transactions, categories, '2026', 1)).toBe(110)
+      expect(monthTotalSpend(transactions, categories, '2026', 2)).toBe(25)
+    })
+
+    it('monthTotalSpend returns 0 for a month with zero transactions', () => {
+      expect(monthTotalSpend(transactions, categories, '2026', 12)).toBe(0)
+    })
+  })
+
+  describe('budget analytics concern selectors', () => {
+    const categories: Category[] = [
+      { id: 'cat-food', name: 'Food', updatedAt: '2026-01-01' },
+      { id: 'cat-rent', name: 'Rent', updatedAt: '2026-01-01' },
+      { id: 'cat-excluded', name: 'Transfers', updatedAt: '2026-01-01', excludeFromSpend: true }
+    ]
+
+    // 2025: food=100 (month1), rent=900 (month1), excluded=5000 (month1, ignored)
+    // 2026: food=150+150=300 (months 1,2), rent=1000+1000=2000 (months 1,2), excluded=9999 (month1, ignored)
+    const transactions: BudgetTransaction[] = [
+      { id: 't25-food', date: '2025-01-05', description: 'food', categoryId: 'cat-food', amount: 100 },
+      { id: 't25-rent', date: '2025-01-05', description: 'rent', categoryId: 'cat-rent', amount: 900 },
+      { id: 't25-excl', date: '2025-01-05', description: 'transfer', categoryId: 'cat-excluded', amount: 5000 },
+      { id: 't26-food-1', date: '2026-01-05', description: 'food', categoryId: 'cat-food', amount: 150 },
+      { id: 't26-food-2', date: '2026-02-05', description: 'food', categoryId: 'cat-food', amount: 150 },
+      { id: 't26-rent-1', date: '2026-01-05', description: 'rent', categoryId: 'cat-rent', amount: 1000 },
+      { id: 't26-rent-2', date: '2026-02-05', description: 'rent', categoryId: 'cat-rent', amount: 1000 },
+      { id: 't26-excl', date: '2026-01-05', description: 'transfer', categoryId: 'cat-excluded', amount: 9999 }
+    ]
+
+    const years = ['2026', '2025'] // descending, most-recent-first
+
+    describe('overBudgetConcern', () => {
+      const budgetExpensesByYear: Record<string, Expense[]> = {
+        '2026': [
+          { id: 'e-food', name: 'Food', categoryId: 'cat-food', amount: 100, frequency: 'monthly' },
+          { id: 'e-rent', name: 'Rent', categoryId: 'cat-rent', amount: 1000, frequency: 'monthly' },
+          { id: 'e-excl', name: 'Transfers', categoryId: 'cat-excluded', amount: 10, frequency: 'monthly' }
+        ]
+      }
+
+      it('flags a category whose latest-year monthly average exceeds budget by >15%', () => {
+        // food: total=300 over 2 months present -> avg=150; budget monthly=100; 100*1.15=115; 150>115 -> over
+        // rent: total=2000 over 2 months -> avg=1000; budget monthly=1000; 1000*1.15=1150; 1000 not > 1150 -> not over
+        const result = overBudgetConcern(years, transactions, categories, budgetExpensesByYear)
+        expect(result).toEqual({ count: 1, categoryNames: ['Food'] })
+      })
+
+      it('ignores an excludeFromSpend category even with a huge budgeted expense', () => {
+        // cat-excluded actual is forced to 0 by yearCategoryTotalSpend regardless of its 9999 transaction
+        const result = overBudgetConcern(years, transactions, categories, budgetExpensesByYear)
+        expect(result.categoryNames).not.toContain('Transfers')
+      })
+
+      it('returns a zero result when there are no years', () => {
+        expect(overBudgetConcern([], transactions, categories, budgetExpensesByYear)).toEqual({ count: 0, categoryNames: [] })
+      })
+    })
+
+    describe('spendTrendConcern', () => {
+      it('computes pct change in monthly-average total spend between the two latest years', () => {
+        // 2026: yearTotalSpend = 300 (food) + 2000 (rent) = 2300 (excluded ignored); months=2 -> avg=1150
+        // 2025: yearTotalSpend = 100 (food) + 900 (rent) = 1000 (excluded ignored); months=1 -> avg=1000
+        // pctChange = (1150/1000 - 1) * 100 = 15
+        const result = spendTrendConcern(years, transactions, categories)
+        expect(result).not.toBeNull()
+        expect(result!.pctChange).toBeCloseTo(15, 10)
+      })
+
+      it('returns null when fewer than 2 years are available', () => {
+        expect(spendTrendConcern(['2026'], transactions, categories)).toBeNull()
+      })
+
+      it('returns null when the prior year average is 0 (would divide by zero)', () => {
+        const onlyExcludedPrevYear: BudgetTransaction[] = [
+          { id: 'x1', date: '2025-01-05', description: 'transfer', categoryId: 'cat-excluded', amount: 500 },
+          { id: 'x2', date: '2026-01-05', description: 'food', categoryId: 'cat-food', amount: 100 }
+        ]
+        expect(spendTrendConcern(years, onlyExcludedPrevYear, categories)).toBeNull()
+      })
+    })
+
+    describe('spikeMonthConcern', () => {
+      // Population (N) vs sample (N-1) stddev give visibly different z-scores here.
+      // Totals per month (cat-excluded's 5000 in month 2 is ignored): month1=10, month2=10, month3=40
+      // mean = (10+10+40)/3 = 20
+      // population variance = ((10-20)^2 + (10-20)^2 + (40-20)^2) / 3 = (100+100+400)/3 = 200
+      // population stddev = sqrt(200) ≈ 14.142135623730951
+      // population z for month3 = (40-20)/14.142135623730951 ≈ 1.4142135623730951
+      // (sample stddev, divide by N-1=2, would give variance=300, stddev≈17.32, z≈1.1547 -- NOT what we assert)
+      const spikeCategories: Category[] = [
+        { id: 'cat-food', name: 'Food', updatedAt: '2020-01-01' },
+        { id: 'cat-excluded', name: 'Transfers', updatedAt: '2020-01-01', excludeFromSpend: true }
+      ]
+      const spikeTransactions: BudgetTransaction[] = [
+        { id: 's1', date: '2020-01-05', description: 'food', categoryId: 'cat-food', amount: 10 },
+        { id: 's2', date: '2020-02-05', description: 'food', categoryId: 'cat-food', amount: 10 },
+        { id: 's3', date: '2020-02-15', description: 'transfer', categoryId: 'cat-excluded', amount: 5000 },
+        { id: 's4', date: '2020-03-05', description: 'food', categoryId: 'cat-food', amount: 40 }
+      ]
+
+      it('finds the highest population-z-score month using population (N) stddev, not sample (N-1)', () => {
+        const result = spikeMonthConcern(['2020'], spikeTransactions, spikeCategories)
+        expect(result).not.toBeNull()
+        expect(result).toMatchObject({ year: '2020', month: 3, total: 40 })
+        expect(result!.zScore).toBeCloseTo(Math.sqrt(2), 10) // 20/sqrt(200) = sqrt(2) ≈ 1.41421356
+        expect(result!.zScore).not.toBeCloseTo(20 / Math.sqrt(300), 5) // sample-stddev z would differ
+      })
+
+      it('returns null when there is no data at all', () => {
+        expect(spikeMonthConcern([], [], [])).toBeNull()
+      })
+
+      it('returns null when stddev is 0 (all months equal)', () => {
+        const flat: BudgetTransaction[] = [
+          { id: 'f1', date: '2021-01-05', description: 'food', categoryId: 'cat-food', amount: 10 },
+          { id: 'f2', date: '2021-02-05', description: 'food', categoryId: 'cat-food', amount: 10 }
+        ]
+        expect(spikeMonthConcern(['2021'], flat, spikeCategories)).toBeNull()
+      })
+    })
+
+    describe('savingsRateShrinkingConcern', () => {
+      const budgetIncomeByYear: Record<string, { monthly: number; yearly: number }> = {
+        '2025': { monthly: 2000, yearly: 24000 },
+        '2026': { monthly: 2500, yearly: 30000 }
+      }
+
+      it('compares savings rate between the earliest and latest of the given years', () => {
+        // 2025 (first/earliest): income = 2000*1 month = 2000; spend = 1000; rate = (2000-1000)/2000*100 = 50
+        // 2026 (last/latest): income = 2500*2 months = 5000; spend = 2300; rate = (5000-2300)/5000*100 = 54
+        // drop = firstRate - lastRate = 50 - 54 = -4
+        const result = savingsRateShrinkingConcern(years, transactions, categories, budgetIncomeByYear)
+        expect(result).not.toBeNull()
+        expect(result!.firstYear).toBe('2025')
+        expect(result!.lastYear).toBe('2026')
+        expect(result!.firstRate).toBeCloseTo(50, 10)
+        expect(result!.lastRate).toBeCloseTo(54, 10)
+        expect(result!.drop).toBeCloseTo(-4, 10)
+      })
+
+      it('returns null when fewer than 2 years are available', () => {
+        expect(savingsRateShrinkingConcern(['2026'], transactions, categories, budgetIncomeByYear)).toBeNull()
+      })
+
+      it('returns null when an endpoint year has 0 monthly income', () => {
+        const zeroIncome = { '2025': { monthly: 0, yearly: 0 }, '2026': { monthly: 2500, yearly: 30000 } }
+        expect(savingsRateShrinkingConcern(years, transactions, categories, zeroIncome)).toBeNull()
+      })
+    })
+
+    describe('concentrationRiskConcern', () => {
+      it('identifies the top spending category and whether it exceeds 40% share', () => {
+        // 2026 total = 300 (food) + 2000 (rent) = 2300 (excluded ignored)
+        // top = rent (2000); topSharePct = 2000/2300*100 ≈ 86.9565217...
+        const result = concentrationRiskConcern(years, transactions, categories)
+        expect(result).not.toBeNull()
+        expect(result!.categoryName).toBe('Rent')
+        expect(result!.topSharePct).toBeCloseTo((2000 / 2300) * 100, 10)
+        expect(result!.isHighRisk).toBe(true)
+      })
+
+      it('never picks an excludeFromSpend category as the top, even with far larger raw spend', () => {
+        const result = concentrationRiskConcern(years, transactions, categories)
+        expect(result!.categoryName).not.toBe('Transfers')
+      })
+
+      it('returns null when there are no years', () => {
+        expect(concentrationRiskConcern([], transactions, categories)).toBeNull()
+      })
+
+      it('returns null when total spend is 0', () => {
+        expect(concentrationRiskConcern(['2099'], transactions, categories)).toBeNull()
+      })
+    })
+
+    describe('savingsRateByYear', () => {
+      const budgetIncomeByYear: Record<string, { monthly: number; yearly: number }> = {
+        '2025': { monthly: 1000, yearly: 12000 },
+        '2026': { monthly: 2500, yearly: 30000 }
+      }
+
+      it('matches hand-computed savings rate per year, in input year order', () => {
+        // 2026: income = 2500 * 2 months = 5000; spend = 300 + 2000 = 2300; pct = (5000-2300)/5000*100 = 54
+        // 2025: income = 1000 * 1 month = 1000; spend = 100 + 900 = 1000; pct = (1000-1000)/1000*100 = 0
+        const result = savingsRateByYear(years, transactions, categories, budgetIncomeByYear)
+        expect(result).toEqual([
+          { year: '2026', pct: 54, isPositive: true },
+          { year: '2025', pct: 0, isPositive: true }
+        ])
+      })
+
+      it('returns pct: 0 (not NaN/Infinity) for a year with 0 income', () => {
+        const zeroIncome: Record<string, { monthly: number; yearly: number }> = { '2026': { monthly: 0, yearly: 0 } }
+        const result = savingsRateByYear(['2026'], transactions, categories, zeroIncome)
+        expect(result).toEqual([{ year: '2026', pct: 0, isPositive: true }])
+      })
+
+      it('preserves the order given in `years`, regardless of chronology', () => {
+        const result = savingsRateByYear(['2025', '2026'], transactions, categories, budgetIncomeByYear)
+        expect(result.map((r) => r.year)).toEqual(['2025', '2026'])
+      })
+    })
+
+    describe('categoryShareOverTime', () => {
+      // Stability fixture: cat-A is #1 in year2 (latest) but only #3 by its OWN totals in year1.
+      const stableCategories: Category[] = [
+        { id: 'cat-a', name: 'A', updatedAt: '2026-01-01' },
+        { id: 'cat-b', name: 'B', updatedAt: '2026-01-01' },
+        { id: 'cat-c', name: 'C', updatedAt: '2026-01-01' },
+        { id: 'cat-excl', name: 'Excluded', updatedAt: '2026-01-01', excludeFromSpend: true }
+      ]
+      // year1 (own ranking): C=300, B=200, A=100 (A is last)
+      // year2 (latest, drives global ranking): A=500, B=100, C=50 (A is first)
+      const stableTransactions: BudgetTransaction[] = [
+        { id: 'y1-a', date: '2025-01-05', description: 'a', categoryId: 'cat-a', amount: 100 },
+        { id: 'y1-b', date: '2025-01-05', description: 'b', categoryId: 'cat-b', amount: 200 },
+        { id: 'y1-c', date: '2025-01-05', description: 'c', categoryId: 'cat-c', amount: 300 },
+        { id: 'y1-excl', date: '2025-01-05', description: 'x', categoryId: 'cat-excl', amount: 9999 },
+        { id: 'y2-a', date: '2026-01-05', description: 'a', categoryId: 'cat-a', amount: 500 },
+        { id: 'y2-b', date: '2026-01-05', description: 'b', categoryId: 'cat-b', amount: 100 },
+        { id: 'y2-c', date: '2026-01-05', description: 'c', categoryId: 'cat-c', amount: 50 }
+      ]
+      const stableYears = ['2026', '2025'] // descending, latest first
+
+      it('orders segments by the LATEST year ranking, stable across all years (not each year’s own rank)', () => {
+        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories)
+        // latest-year (2026) ranking by amount: A(500) > B(100) > C(50)
+        const order = (year: string) => result.rows.find((r) => r.year === year)!.segments.map((s) => s.categoryId)
+        expect(order('2026')).toEqual(['cat-a', 'cat-b', 'cat-c'])
+        // year1's own ranking would be C > B > A, but segment order must still follow latest-year ranking
+        expect(order('2025')).toEqual(['cat-a', 'cat-b', 'cat-c'])
+        expect(result.legend.map((l) => l.categoryId)).toEqual(['cat-a', 'cat-b', 'cat-c'])
+      })
+
+      it('excludes excludeFromSpend categories entirely from ranking, legend, and segments', () => {
+        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories)
+        expect(result.legend.some((l) => l.categoryId === 'cat-excl')).toBe(false)
+        result.rows.forEach((row) => {
+          expect(row.segments.some((s) => s.categoryId === 'cat-excl')).toBe(false)
+        })
+      })
+
+      it('segments per year sum to ~100% except years with 0 total spend (all zero)', () => {
+        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories)
+        result.rows.forEach((row) => {
+          const sum = row.segments.reduce((s, seg) => s + seg.pct, 0)
+          expect(sum).toBeCloseTo(100, 5)
+        })
+
+        const zeroSpendResult = categoryShareOverTime(['2099'], stableTransactions, stableCategories)
+        const zeroRow = zeroSpendResult.rows.find((r) => r.year === '2099')!
+        zeroRow.segments.forEach((seg) => expect(seg.pct).toBe(0))
+      })
+
+      it('caps legend at 6 entries even with 8+ non-excluded categories', () => {
+        const manyCategories: Category[] = Array.from({ length: 8 }, (_, i) => ({
+          id: `cat-${i}`,
+          name: `Cat ${i}`,
+          updatedAt: '2026-01-01'
+        }))
+        const manyTransactions: BudgetTransaction[] = manyCategories.map((c, i) => ({
+          id: `t-${i}`,
+          date: '2026-01-05',
+          description: c.name,
+          categoryId: c.id,
+          amount: 100 - i
+        }))
+        const result = categoryShareOverTime(['2026'], manyTransactions, manyCategories)
+        expect(result.legend.length).toBe(6)
+        expect(result.rows[0].segments.length).toBe(8)
+      })
+    })
+  })
+
+  describe('monthlySeasonality', () => {
+    const catFood: Category = { id: 'cat-food', name: 'Food', updatedAt: '2026-01-01' }
+    const catExcluded: Category = { id: 'cat-excluded', name: 'Transfers', updatedAt: '2026-01-01', excludeFromSpend: true }
+    const categories: Category[] = [catFood, catExcluded]
+
+    it('averages a month only over years that have it present, without diluting via missing years', () => {
+      // 2025 has Dec spend, 2026 has NO Dec transactions at all (month absent).
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2025-12-05', description: 'a', categoryId: 'cat-food', amount: 100 },
+        { id: 't2', date: '2026-01-05', description: 'b', categoryId: 'cat-food', amount: 50 }
+      ]
+      const result = monthlySeasonality(['2025', '2026'], transactions, categories)
+      const dec = result.find((m) => m.month === 12)!
+      // Should be 100 (average over just 2025), NOT 50 (100+0)/2.
+      expect(dec.avgSpend).toBe(100)
+    })
+
+    it('flags the single highest-average month as peak, first occurring on ties', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 10 },
+        { id: 't2', date: '2026-06-05', description: 'b', categoryId: 'cat-food', amount: 500 },
+        { id: 't3', date: '2026-09-05', description: 'c', categoryId: 'cat-food', amount: 10 }
+      ]
+      const result = monthlySeasonality(['2026'], transactions, categories)
+      expect(result.length).toBe(12)
+      expect(result.find((m) => m.month === 6)!.isPeak).toBe(true)
+      expect(result.filter((m) => m.isPeak).length).toBe(1)
+      expect(result.find((m) => m.month === 1)!.label).toBe('Jan')
+      expect(result.find((m) => m.month === 12)!.label).toBe('Dec')
+    })
+
+    it('a month with 0 years present has avgSpend 0 and is not incorrectly picked as peak over a real month', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-03-05', description: 'a', categoryId: 'cat-food', amount: 25 }
+      ]
+      const result = monthlySeasonality(['2026'], transactions, categories)
+      expect(result.find((m) => m.month === 3)!.isPeak).toBe(true)
+      result
+        .filter((m) => m.month !== 3)
+        .forEach((m) => {
+          expect(m.avgSpend).toBe(0)
+          expect(m.isPeak).toBe(false)
+        })
+    })
+
+    it('a category whose only transaction is excluded-from-spend does not make that month present or affect the average', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 20 },
+        // December's ONLY transaction is in the excluded category -> Dec is absent, not a 0-spend present month.
+        { id: 't2', date: '2026-12-05', description: 'b', categoryId: 'cat-excluded', amount: 9999 }
+      ]
+      const result = monthlySeasonality(['2026'], transactions, categories)
+      const dec = result.find((m) => m.month === 12)!
+      expect(dec.avgSpend).toBe(0)
+      // Jan is the only present month with spend, so it's the peak, not diluted/skewed by the excluded Dec amount.
+      expect(result.find((m) => m.month === 1)!.isPeak).toBe(true)
+    })
+  })
+
+  describe('budgetAccuracyByYear', () => {
+    const catFood: Category = { id: 'cat-food', name: 'Food', updatedAt: '2026-01-01' }
+    const categories: Category[] = [catFood]
+    const currentYear = String(new Date().getFullYear())
+
+    it('falls back to the current year snapshot when the target year has no expense snapshot at all', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2020-01-05', description: 'a', categoryId: 'cat-food', amount: 40 }
+      ]
+      const budgetExpensesByYear: Record<string, Expense[]> = {
+        [currentYear]: [{ id: 'e1', name: 'Groceries', categoryId: 'cat-food', amount: 100, frequency: 'monthly' }]
+      }
+      // '2020' has no entry in budgetExpensesByYear -> must fall back to currentYear's snapshot (100/mo),
+      // not treat budget as 0/undefined.
+      const result = budgetAccuracyByYear(['2020'], transactions, categories, budgetExpensesByYear)
+      expect(result.length).toBe(1)
+      const monthCount = monthsPresentInYear(transactions, categories, '2020').length
+      expect(monthCount).toBe(1)
+      expect(result[0].budgetTotal).toBe(100 * monthCount)
+      expect(result[0].budgetTotal).not.toBe(0)
+    })
+
+    it('computes correct variance sign: non-negative when budget >= actual, negative when over budget', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 50 },
+        { id: 't2', date: '2026-02-05', description: 'b', categoryId: 'cat-food', amount: 500 }
+      ]
+      const budgetExpensesByYear: Record<string, Expense[]> = {
+        '2026': [{ id: 'e1', name: 'Groceries', categoryId: 'cat-food', amount: 100, frequency: 'monthly' }]
+      }
+      const result = budgetAccuracyByYear(['2026'], transactions, categories, budgetExpensesByYear)
+      // 2 months present, budgetTotal = 100*2 = 200, actualTotal = 550 -> over budget, variance negative.
+      expect(result[0].budgetTotal).toBe(200)
+      expect(result[0].actualTotal).toBe(550)
+      expect(result[0].variance).toBe(200 - 550)
+      expect(result[0].variance).toBeLessThan(0)
+
+      const underBudgetTransactions: BudgetTransaction[] = [
+        { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 10 }
+      ]
+      const underResult = budgetAccuracyByYear(['2026'], underBudgetTransactions, categories, budgetExpensesByYear)
+      // 1 month present, budgetTotal = 100, actualTotal = 10 -> under budget, variance non-negative.
+      expect(underResult[0].budgetTotal).toBe(100)
+      expect(underResult[0].actualTotal).toBe(10)
+      expect(underResult[0].variance).toBe(90)
+      expect(underResult[0].variance).toBeGreaterThanOrEqual(0)
+    })
+
+    it('preserves input year order and computes budgetPct/actualPct relative to the larger total', () => {
+      const transactions: BudgetTransaction[] = [
+        { id: 't1', date: '2019-01-05', description: 'a', categoryId: 'cat-food', amount: 300 }
+      ]
+      const budgetExpensesByYear: Record<string, Expense[]> = {
+        '2019': [{ id: 'e1', name: 'Groceries', categoryId: 'cat-food', amount: 100, frequency: 'monthly' }],
+        [currentYear]: [{ id: 'e2', name: 'Groceries', categoryId: 'cat-food', amount: 999, frequency: 'monthly' }]
+      }
+      const result = budgetAccuracyByYear(['2019', '2020'], transactions, categories, budgetExpensesByYear)
+      expect(result.map((r) => r.year)).toEqual(['2019', '2020'])
+      // 2019: 1 month present -> budgetTotal=100, actualTotal=300 -> denom=300
+      expect(result[0].budgetTotal).toBe(100)
+      expect(result[0].actualTotal).toBe(300)
+      expect(result[0].budgetPct).toBeCloseTo((100 / 300) * 100)
+      expect(result[0].actualPct).toBeCloseTo((300 / 300) * 100)
+    })
+  })
+
+  describe('categoryTrendsYoY and topMovers', () => {
+    const categories: Category[] = [
+      { id: 'cat-food', name: 'Food', updatedAt: '2026-01-01' },
+      { id: 'cat-rent', name: 'Rent', updatedAt: '2026-01-01' },
+      { id: 'cat-entertainment', name: 'Entertainment', updatedAt: '2026-01-01' },
+      { id: 'cat-utilities', name: 'Utilities', updatedAt: '2026-01-01' },
+      { id: 'cat-transport', name: 'Transport', updatedAt: '2026-01-01' },
+      { id: 'cat-shopping', name: 'Shopping', updatedAt: '2026-01-01' },
+      { id: 'cat-new', name: 'NewThing', updatedAt: '2026-01-01' },
+      { id: 'cat-excluded', name: 'Transfers', updatedAt: '2026-01-01', excludeFromSpend: true }
+    ]
+
+    // Single month present in each year (Jan), so monthly-avg === total for that year.
+    // 2026 totals: food=180 rent=1000 entertainment=50 utilities=80 transport=60 shopping=10 new=50 excluded=9999
+    // 2025 totals: food=100 rent=1000 entertainment=150 utilities=80 transport=20 shopping=90 new=0  excluded=500
+    const transactions: BudgetTransaction[] = [
+      { id: 't26-food', date: '2026-01-05', description: 'food', categoryId: 'cat-food', amount: 180 },
+      { id: 't26-rent', date: '2026-01-05', description: 'rent', categoryId: 'cat-rent', amount: 1000 },
+      { id: 't26-ent', date: '2026-01-05', description: 'fun', categoryId: 'cat-entertainment', amount: 50 },
+      { id: 't26-util', date: '2026-01-05', description: 'util', categoryId: 'cat-utilities', amount: 80 },
+      { id: 't26-transport', date: '2026-01-05', description: 'gas', categoryId: 'cat-transport', amount: 60 },
+      { id: 't26-shop', date: '2026-01-05', description: 'shop', categoryId: 'cat-shopping', amount: 10 },
+      { id: 't26-new', date: '2026-01-05', description: 'new', categoryId: 'cat-new', amount: 50 },
+      { id: 't26-excl', date: '2026-01-05', description: 'transfer', categoryId: 'cat-excluded', amount: 9999 },
+      { id: 't25-food', date: '2025-01-05', description: 'food', categoryId: 'cat-food', amount: 100 },
+      { id: 't25-rent', date: '2025-01-05', description: 'rent', categoryId: 'cat-rent', amount: 1000 },
+      { id: 't25-ent', date: '2025-01-05', description: 'fun', categoryId: 'cat-entertainment', amount: 150 },
+      { id: 't25-util', date: '2025-01-05', description: 'util', categoryId: 'cat-utilities', amount: 80 },
+      { id: 't25-transport', date: '2025-01-05', description: 'gas', categoryId: 'cat-transport', amount: 20 },
+      { id: 't25-shop', date: '2025-01-05', description: 'shop', categoryId: 'cat-shopping', amount: 90 },
+      { id: 't25-excl', date: '2025-01-05', description: 'transfer', categoryId: 'cat-excluded', amount: 500 }
+    ]
+
+    const years = ['2026', '2025']
+
+    const budgetExpensesByYear: Record<string, Expense[]> = {
+      '2026': [
+        { id: 'e-food', name: 'Food', categoryId: 'cat-food', amount: 100, frequency: 'monthly' },
+        { id: 'e-rent', name: 'Rent', categoryId: 'cat-rent', amount: 1000, frequency: 'monthly' }
+      ]
+    }
+
+    describe('categoryTrendsYoY', () => {
+      it('returns null when fewer than 2 years', () => {
+        expect(categoryTrendsYoY(['2026'], transactions, categories, budgetExpensesByYear)).toBeNull()
+      })
+
+      it('sorts rows by delta descending, matching hand-computed deltas', () => {
+        // deltas (1 month present each year, avg === total):
+        // transport: (60/20-1)*100 = 200
+        // new: prevAvg=0, lastAvg=50>0 -> sentinel 100
+        // food: (180/100-1)*100 = 80
+        // rent: (1000/1000-1)*100 = 0
+        // utilities: (80/80-1)*100 = 0
+        // entertainment: (50/150-1)*100 = -66.667
+        // shopping: (10/90-1)*100 = -88.889
+        const result = categoryTrendsYoY(years, transactions, categories, budgetExpensesByYear)
+        expect(result).not.toBeNull()
+        expect(result!.year1).toBe('2026')
+        expect(result!.year2).toBe('2025')
+        const byId = new Map(result!.rows.map((r) => [r.categoryId, r]))
+        expect(byId.get('cat-transport')!.delta).toBeCloseTo(200, 5)
+        expect(byId.get('cat-new')!.delta).toBeCloseTo(100, 5)
+        expect(byId.get('cat-food')!.delta).toBeCloseTo(80, 5)
+        expect(byId.get('cat-rent')!.delta).toBeCloseTo(0, 5)
+        expect(byId.get('cat-entertainment')!.delta).toBeCloseTo(-66.6667, 3)
+        expect(byId.get('cat-shopping')!.delta).toBeCloseTo(-88.8889, 3)
+
+        const ids = result!.rows.map((r) => r.categoryId)
+        expect(ids[0]).toBe('cat-transport')
+        expect(ids[1]).toBe('cat-new')
+        expect(ids[2]).toBe('cat-food')
+        expect(ids[ids.length - 1]).toBe('cat-shopping')
+        expect(ids[ids.length - 2]).toBe('cat-entertainment')
+
+        // sorted descending overall
+        for (let i = 1; i < result!.rows.length; i++) {
+          expect(result!.rows[i - 1].delta).toBeGreaterThanOrEqual(result!.rows[i].delta)
+        }
+      })
+
+      it('flags overBudget correctly per hand-computed monthly budget comparisons', () => {
+        const result = categoryTrendsYoY(years, transactions, categories, budgetExpensesByYear)!
+        const byId = new Map(result.rows.map((r) => [r.categoryId, r]))
+        // food: lastAvg=180 > 100*1.15=115 -> over
+        expect(byId.get('cat-food')!.overBudget).toBe(true)
+        // rent: lastAvg=1000, not > 1000*1.15=1150 -> not over
+        expect(byId.get('cat-rent')!.overBudget).toBe(false)
+        // no budget entry -> never over
+        expect(byId.get('cat-transport')!.overBudget).toBe(false)
+      })
+
+      it('totalsByYear includes an entry for every year in the input years array', () => {
+        const result = categoryTrendsYoY(years, transactions, categories, budgetExpensesByYear)!
+        const food = result.rows.find((r) => r.categoryId === 'cat-food')!
+        expect(food.totalsByYear).toEqual({ '2026': 180, '2025': 100 })
+      })
+
+      it('handles a category present in one year but 0 in the other without crashing, using the sentinel delta', () => {
+        const result = categoryTrendsYoY(years, transactions, categories, budgetExpensesByYear)!
+        const newRow = result.rows.find((r) => r.categoryId === 'cat-new')!
+        expect(newRow.totalsByYear).toEqual({ '2026': 50, '2025': 0 })
+        expect(newRow.delta).toBe(100)
+      })
+
+      it('never includes an excludeFromSpend category as a row, even with large spend both years', () => {
+        const result = categoryTrendsYoY(years, transactions, categories, budgetExpensesByYear)!
+        expect(result.rows.some((r) => r.categoryId === 'cat-excluded')).toBe(false)
+      })
+    })
+
+    describe('topMovers', () => {
+      it('returns null when fewer than 2 years', () => {
+        expect(topMovers(['2026'], transactions, categories)).toBeNull()
+      })
+
+      it('picks top 3 increases and bottom 3 (reversed) decreases from a 7-category fixture', () => {
+        // diffs (monthly avg deltas, 1 month present each year):
+        // food: 180-100=80, new: 50-0=50, transport: 60-20=40  -> increases
+        // rent: 0, utilities: 0                                -> excluded (not >0 / <0)
+        // entertainment: 50-150=-100, shopping: 10-90=-80      -> decreases
+        const result = topMovers(years, transactions, categories)
+        expect(result).not.toBeNull()
+        expect(result!.increases.map((m) => m.categoryId)).toEqual(['cat-food', 'cat-new', 'cat-transport'])
+        expect(result!.increases.map((m) => m.diff)).toEqual([80, 50, 40])
+        expect(result!.decreases.map((m) => m.categoryId)).toEqual(['cat-entertainment', 'cat-shopping'])
+        expect(result!.decreases.map((m) => m.diff)).toEqual([-100, -80])
+      })
+
+      it('excludes a category with an exact $0 diff from both increases and decreases', () => {
+        const result = topMovers(years, transactions, categories)!
+        expect(result.increases.some((m) => m.categoryId === 'cat-rent')).toBe(false)
+        expect(result.decreases.some((m) => m.categoryId === 'cat-rent')).toBe(false)
+        expect(result.increases.some((m) => m.categoryId === 'cat-utilities')).toBe(false)
+        expect(result.decreases.some((m) => m.categoryId === 'cat-utilities')).toBe(false)
+      })
+
+      it('never includes an excludeFromSpend category as a mover, even with large spend both years', () => {
+        const result = topMovers(years, transactions, categories)!
+        expect(result.increases.some((m) => m.categoryId === 'cat-excluded')).toBe(false)
+        expect(result.decreases.some((m) => m.categoryId === 'cat-excluded')).toBe(false)
+      })
     })
   })
 })

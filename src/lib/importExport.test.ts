@@ -42,9 +42,8 @@ function populatedState(): AppState {
     balanceEntries: [
       { id: 'bal1', accountId: 'acc1', date: '2024-01-01', balance: 5000, activities: [{ type: 'Contribution', amount: 100, note: 'note' }] },
     ],
-    budgetIncomeMonthly: 4500,
-    budgetIncomeYearly: 0,
-    budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }],
+    budgetIncomeByYear: { '2024': { monthly: 4500, yearly: 0 } },
+    budgetExpensesByYear: { '2024': [{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }] },
     budgetTransactions: [{ id: 'btx1', date: '2024-01-05', description: 'Groceries', categoryId: 'cat1', amount: 120.5 }],
     priceSync: {
       apiKey: 'price-api-key',
@@ -78,8 +77,8 @@ describe('buildExportableState', () => {
     expect(result.csvMappings).toBe(state.csvMappings)
     expect(result.customInstitutions).toBe(state.customInstitutions)
     expect(result.balanceEntries).toBe(state.balanceEntries)
-    expect(result.budgetIncomeMonthly).toBe(4500)
-    expect(result.budgetExpenses).toBe(state.budgetExpenses)
+    expect(result.budgetIncomeByYear).toBe(state.budgetIncomeByYear)
+    expect(result.budgetExpensesByYear).toBe(state.budgetExpensesByYear)
     expect(result.budgetTransactions).toBe(state.budgetTransactions)
 
     expect(result.priceSync).toEqual({ apiKey: 'price-api-key', lastRun: state.priceSync.lastRun })
@@ -89,9 +88,8 @@ describe('buildExportableState', () => {
       [
         'accounts',
         'balanceEntries',
-        'budgetExpenses',
-        'budgetIncomeMonthly',
-        'budgetIncomeYearly',
+        'budgetExpensesByYear',
+        'budgetIncomeByYear',
         'budgetTransactions',
         'closedPositions',
         'csvMappings',
@@ -290,16 +288,29 @@ describe('decryptImportEnvelope', () => {
     expect(result.snapshots).not.toBeUndefined()
   })
 
-  it('round-trips all budget fields (including budget transactions) exactly', async () => {
+  it('round-trips all budget fields (including budget transactions and multiple years) exactly', async () => {
     const state = populatedState()
+    state.budgetIncomeByYear = {
+      '2023': { monthly: 4000, yearly: 0 },
+      '2024': { monthly: 4500, yearly: 0 },
+    }
+    state.budgetExpensesByYear = {
+      '2023': [{ id: 'exp0', name: 'Rent', categoryId: 'cat1', amount: 1700, frequency: 'monthly' }],
+      '2024': [{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }],
+    }
     const salt = generateSalt()
     const key = await deriveKey('correct horse battery staple', salt)
     const envelope = await exportBackup(state, key, salt)
 
     const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
-    expect(result.budgetIncomeMonthly).toBe(4500)
-    expect(result.budgetIncomeYearly).toBe(0)
-    expect(result.budgetExpenses).toEqual([{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }])
+    expect(result.budgetIncomeByYear).toEqual({
+      '2023': { monthly: 4000, yearly: 0 },
+      '2024': { monthly: 4500, yearly: 0 },
+    })
+    expect(result.budgetExpensesByYear).toEqual({
+      '2023': [{ id: 'exp0', name: 'Rent', categoryId: 'cat1', amount: 1700, frequency: 'monthly' }],
+      '2024': [{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }],
+    })
     expect(result.budgetTransactions).toEqual([{ id: 'btx1', date: '2024-01-05', description: 'Groceries', categoryId: 'cat1', amount: 120.5 }])
   })
 
@@ -317,17 +328,16 @@ describe('decryptImportEnvelope', () => {
       csvMappings: [],
       customInstitutions: [],
       balanceEntries: [],
-      // budgetIncomeMonthly, budgetIncomeYearly, budgetExpenses,
-      // budgetTransactions intentionally omitted
+      // budgetIncomeByYear, budgetExpensesByYear, budgetTransactions
+      // intentionally omitted
       priceSync: { apiKey: '', lastRun: null },
       mutualFundSync: { apiKey: '', lastRun: null },
     }
     const envelope = await encryptState(legacy as unknown as AppState, key, salt)
 
     const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
-    expect(result.budgetIncomeMonthly).toBe(0)
-    expect(result.budgetIncomeYearly).toBe(0)
-    expect(result.budgetExpenses).toEqual([])
+    expect(result.budgetIncomeByYear).toEqual({})
+    expect(result.budgetExpensesByYear).toEqual({})
     expect(result.budgetTransactions).toEqual([])
   })
 
@@ -357,6 +367,34 @@ describe('decryptImportEnvelope', () => {
     const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
     expect(result.budgetTransactions).toEqual([])
     expect(result).not.toHaveProperty('budgetCategories')
+  })
+
+  it('restores an OLD-shape export (flat budgetExpenses/income, no year-keyed fields) with empty year-keyed defaults, no migration', async () => {
+    const salt = generateSalt()
+    const key = await deriveKey('correct horse battery staple', salt)
+    // Old export shape: flat budgetExpenses array + income scalars, no
+    // budgetExpensesByYear/budgetIncomeByYear keys at all.
+    const oldShape = {
+      accounts: [],
+      positions: [],
+      closedPositions: [],
+      transactions: [],
+      snapshots: [],
+      csvMappings: [],
+      customInstitutions: [],
+      balanceEntries: [],
+      budgetIncomeMonthly: 4500,
+      budgetIncomeYearly: 0,
+      budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat1', amount: 1800, frequency: 'monthly' }],
+      budgetTransactions: [],
+      priceSync: { apiKey: '', lastRun: null },
+      mutualFundSync: { apiKey: '', lastRun: null },
+    }
+    const envelope = await encryptState(oldShape as unknown as AppState, key, salt)
+
+    const result = await decryptImportEnvelope(envelope, 'correct horse battery staple')
+    expect(result.budgetExpensesByYear).toEqual({})
+    expect(result.budgetIncomeByYear).toEqual({})
   })
 })
 

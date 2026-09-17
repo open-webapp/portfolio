@@ -146,6 +146,7 @@ function App() {
   // already run for, so the hydrate-triggered seed effect below fires at most
   // once per portfolio activation rather than on every re-render.
   const categoriesSeededPortfolioIdRef = useRef<string | null>(null)
+  const budgetRolloverPortfolioIdRef = useRef<string | null>(null)
 
   // Activates a resolved portfolio as the active one. If this is a real
   // switch away from a DIFFERENT, previously-active portfolio (as opposed to
@@ -671,6 +672,18 @@ function App() {
         console.error('Failed to seed global categories:', error)
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey, isHydrated, activePortfolio?.id])
+
+  // One-shot budget year-rollover trigger: once a portfolio is unlocked and
+  // hydrated, ensure the current budget year has expenses/income entries
+  // (seeded from the nearest prior year, or empty), same gating/ref-guard
+  // pattern as the global-categories seed effect above.
+  useEffect(() => {
+    if (sessionKey === null || !isHydrated || !activePortfolio) return
+    if (budgetRolloverPortfolioIdRef.current === activePortfolio.id) return
+    budgetRolloverPortfolioIdRef.current = activePortfolio.id
+    dispatch({ type: 'ROLLOVER_BUDGET_EXPENSES_IF_NEEDED' })
+    dispatch({ type: 'ROLLOVER_BUDGET_INCOME_IF_NEEDED' })
   }, [sessionKey, isHydrated, activePortfolio?.id])
 
   // Picker route: render the portfolio picker instead of the gate/app shell.

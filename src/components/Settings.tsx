@@ -497,7 +497,7 @@ export function SettingsPage({
       {settingsSection === 'categories' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Categories</div>
-        {referencedCategories(categories, categoryMappings, state.budgetExpenses, state.budgetTransactions).map((category) => {
+        {referencedCategories(categories, categoryMappings, Object.values(state.budgetExpensesByYear).flat(), state.budgetTransactions).map((category) => {
           const isEditingCategory = editingCategoryId === category.id
           const mappings = mappingsForCategory(categoryMappings, category.id)
           const newSubstringDraft = newSubstringDraftByCategory[category.id] ?? ''

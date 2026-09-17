@@ -8,9 +8,11 @@ import {
   savePersistedApp,
   coalesceWithDefaults,
   setActivePortfolioDb,
+  migrateBudgetExpensesByYearIfNeeded,
+  migrateBudgetIncomeByYearIfNeeded,
 } from './persist'
 import { deriveKey, generateSalt } from './crypto'
-import { initialState } from './state'
+import { initialState, currentBudgetYear } from './state'
 import type { AppState } from './state'
 
 // Computed at runtime so the stale collection name never appears literally in source
@@ -167,11 +169,14 @@ function fixtureState(): AppState {
     regAccountId: null,
     regExpanded: {},
     regActivityFilter: 'All',
-    budgetIncomeMonthly: 5000,
-    budgetIncomeYearly: 60000,
-    budgetExpenses: [
-      { id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' },
-    ],
+    budgetIncomeByYear: {
+      [currentBudgetYear()]: { monthly: 5000, yearly: 60000 },
+    },
+    budgetExpensesByYear: {
+      [currentBudgetYear()]: [
+        { id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' },
+      ],
+    },
     budgetTransactions: [
       { id: 'btx1', date: '2024-01-05', description: 'Rent payment', categoryId: 'cat-housing', amount: -2000 },
     ],
@@ -224,9 +229,8 @@ describe('IndexedDB persistence', () => {
       const loaded = await loadPersistedApp(key)
 
       expect(loaded).toEqual(originalState)
-      expect(loaded?.budgetIncomeMonthly).toBe(originalState.budgetIncomeMonthly)
-      expect(loaded?.budgetIncomeYearly).toBe(originalState.budgetIncomeYearly)
-      expect(loaded?.budgetExpenses).toEqual(originalState.budgetExpenses)
+      expect(loaded?.budgetIncomeByYear).toEqual(originalState.budgetIncomeByYear)
+      expect(loaded?.budgetExpensesByYear).toEqual(originalState.budgetExpensesByYear)
       expect(loaded?.budgetTransactions).toEqual(originalState.budgetTransactions)
     })
 
@@ -390,7 +394,7 @@ describe('IndexedDB persistence', () => {
       expect(raw).not.toBeNull()
       expect((raw as any).categories).toEqual(stateWithStaleKeys.categories)
       expect((raw as any).categoryMappings).toEqual(stateWithStaleKeys.categoryMappings)
-      expect(raw?.budgetExpenses).toEqual(stateWithStaleKeys.budgetExpenses)
+      expect(raw?.budgetExpensesByYear).toEqual(stateWithStaleKeys.budgetExpensesByYear)
     })
 
     it('returns null when nothing was saved', async () => {
@@ -710,27 +714,28 @@ describe('IndexedDB persistence', () => {
       expect(loaded.regAccountId).toBe(null)
       expect(loaded.regExpanded).toEqual({})
       expect(loaded.regActivityFilter).toBe('All')
-      expect(loaded.budgetIncomeMonthly).toBe(0)
-      expect(loaded.budgetIncomeYearly).toBe(0)
-      expect(loaded.budgetExpenses).toEqual([])
+      expect(loaded.budgetIncomeByYear).toEqual({})
+      expect(loaded.budgetExpensesByYear).toEqual({})
       expect(loaded.budgetTransactions).toEqual([])
     })
 
     it('backfills missing budgetTransactions with [] from a blob that predates it (has other budget fields set)', () => {
       const loaded = coalesceWithDefaults({
-        budgetIncomeMonthly: 4000,
-        budgetExpenses: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 1500, frequency: 'monthly' }],
+        budgetIncomeByYear: { '2024': { monthly: 4000, yearly: 48000 } },
+        budgetExpensesByYear: {
+          '2024': [{ id: 'exp1', name: 'Rent', categoryId: 'cat-housing', amount: 1500, frequency: 'monthly' }],
+        },
         // budgetTransactions key intentionally absent entirely
       } as any)
 
-      expect(loaded.budgetIncomeMonthly).toBe(4000)
+      expect(loaded.budgetIncomeByYear).toEqual({ '2024': { monthly: 4000, yearly: 48000 } })
       expect(loaded.budgetTransactions).toEqual([])
     })
 
     it('preserves an existing budgetTransactions array when present', () => {
       const tx = [{ id: 'btx1', date: '2024-01-05', description: 'Rent payment', categoryId: 'cat-housing', amount: -2000 }]
       const loaded = coalesceWithDefaults({
-        budgetIncomeMonthly: 4000,
+        budgetIncomeByYear: { '2024': { monthly: 4000, yearly: 48000 } },
         budgetTransactions: tx,
         categories: [{ id: 'cat-housing', name: 'Housing' }],
       } as any)
@@ -740,7 +745,7 @@ describe('IndexedDB persistence', () => {
 
     it('does not error on a stray legacy budgetCategories key, and the key is absent from the returned AppState', () => {
       const loaded = coalesceWithDefaults({
-        budgetIncomeMonthly: 4000,
+        budgetIncomeByYear: { '2024': { monthly: 4000, yearly: 48000 } },
         budgetCategories: ['Housing', 'Food'],
       } as any)
 
@@ -948,13 +953,13 @@ describe('IndexedDB persistence', () => {
   describe('coalesceWithDefaults no longer rewrites legacy category shape', () => {
     it('passes rows with old bare `category` strings (no categoryId) through unchanged', () => {
       const loaded: Partial<AppState> = {
-        budgetExpenses: [{ id: 'e1', category: 'Food', amount: 10 } as any],
+        budgetExpensesByYear: { '2024': [{ id: 'e1', category: 'Food', amount: 10 } as any] },
         budgetTransactions: [{ id: 't1', category: 'Food', amount: 20 } as any],
       }
 
       const result = coalesceWithDefaults(loaded)
 
-      expect(result.budgetExpenses).toEqual(loaded.budgetExpenses)
+      expect(result.budgetExpensesByYear).toEqual(loaded.budgetExpensesByYear)
       expect(result.budgetTransactions).toEqual(loaded.budgetTransactions)
       expect(result).not.toHaveProperty('categories')
       expect(result).not.toHaveProperty('categoryMappings')
@@ -1011,6 +1016,84 @@ describe('IndexedDB persistence', () => {
       await expect(freshPersist.savePersistedApp(initialState(), key, salt)).rejects.toThrow(
         'No active portfolio set — call setActivePortfolioDb() first',
       )
+    })
+  })
+
+  describe('migrateBudgetExpensesByYearIfNeeded', () => {
+    it('folds a legacy flat budgetExpenses array into budgetExpensesByYear under the current year', () => {
+      const expenses = [{ id: 'e1', name: 'Rent', amount: 1000 }]
+      const result = migrateBudgetExpensesByYearIfNeeded({ budgetExpenses: expenses })
+      expect(result.budgetExpensesByYear).toEqual({ [currentBudgetYear()]: expenses })
+      expect(result.budgetExpenses).toBeUndefined()
+    })
+
+    it('is idempotent when budgetExpensesByYear is already present, even as {}', () => {
+      const raw = { budgetExpensesByYear: {}, budgetExpenses: [{ id: 'e1' }] }
+      expect(migrateBudgetExpensesByYearIfNeeded(raw)).toBe(raw)
+    })
+
+    it('produces an empty budgetExpensesByYear when neither old nor new field is present', () => {
+      const result = migrateBudgetExpensesByYearIfNeeded({})
+      expect(result.budgetExpensesByYear).toEqual({})
+    })
+  })
+
+  describe('migrateBudgetIncomeByYearIfNeeded', () => {
+    it('folds legacy flat budgetIncomeMonthly/budgetIncomeYearly into budgetIncomeByYear under the current year', () => {
+      const result = migrateBudgetIncomeByYearIfNeeded({ budgetIncomeMonthly: 500, budgetIncomeYearly: 6000 })
+      expect(result.budgetIncomeByYear).toEqual({ [currentBudgetYear()]: { monthly: 500, yearly: 6000 } })
+      expect(result.budgetIncomeMonthly).toBeUndefined()
+      expect(result.budgetIncomeYearly).toBeUndefined()
+    })
+
+    it('defaults the missing scalar to 0 when only one of the two legacy fields is present', () => {
+      const result = migrateBudgetIncomeByYearIfNeeded({ budgetIncomeMonthly: 500 })
+      expect(result.budgetIncomeByYear).toEqual({ [currentBudgetYear()]: { monthly: 500, yearly: 0 } })
+    })
+
+    it('is idempotent when budgetIncomeByYear is already present, even as {}', () => {
+      const raw = { budgetIncomeByYear: {}, budgetIncomeMonthly: 500 }
+      expect(migrateBudgetIncomeByYearIfNeeded(raw)).toBe(raw)
+    })
+
+    it('produces an empty budgetIncomeByYear when neither old nor new field is present', () => {
+      const result = migrateBudgetIncomeByYearIfNeeded({})
+      expect(result.budgetIncomeByYear).toEqual({})
+    })
+  })
+
+  describe('loadRawPersistedBlob applies budget-by-year migrations before coalesce', () => {
+    let key: CryptoKey
+    let salt: Uint8Array
+
+    beforeEach(async () => {
+      setActivePortfolioDb('test-db-budget-migration')
+      salt = generateSalt()
+      key = await deriveKey('password', salt)
+    })
+
+    it('migrates old-shape budgetExpenses/budgetIncome fields on load, and coalesce drops the old fields', async () => {
+      const legacyState = {
+        ...initialState(),
+        budgetExpenses: [{ id: 'e1', name: 'Rent', amount: 1000 }],
+        budgetIncomeMonthly: 500,
+        budgetIncomeYearly: 6000,
+      } as unknown as AppState
+      delete (legacyState as any).budgetExpensesByYear
+      delete (legacyState as any).budgetIncomeByYear
+      await savePersistedApp(legacyState, key, salt)
+
+      const raw = await loadRawPersistedBlob(key)
+      expect(raw!.budgetExpensesByYear).toEqual({ [currentBudgetYear()]: [{ id: 'e1', name: 'Rent', amount: 1000 }] })
+      expect(raw!.budgetIncomeByYear).toEqual({ [currentBudgetYear()]: { monthly: 500, yearly: 6000 } })
+      expect((raw as any).budgetExpenses).toBeUndefined()
+
+      const coalesced = coalesceWithDefaults(raw!)
+      expect(coalesced).not.toHaveProperty('budgetExpenses')
+      expect(coalesced).not.toHaveProperty('budgetIncomeMonthly')
+      expect(coalesced).not.toHaveProperty('budgetIncomeYearly')
+      expect(coalesced.budgetExpensesByYear).toEqual({ [currentBudgetYear()]: [{ id: 'e1', name: 'Rent', amount: 1000 }] })
+      expect(coalesced.budgetIncomeByYear).toEqual({ [currentBudgetYear()]: { monthly: 500, yearly: 6000 } })
     })
   })
 })

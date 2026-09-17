@@ -21,16 +21,24 @@ import {
   toggleRegCategoryExpanded,
   setRegActivityFilter,
   replaceImportedState,
-  setBudgetIncomeMonthly,
-  setBudgetIncomeYearly,
+  nearestBudgetExpensesYear,
+  resolveBudgetExpensesForYear,
+  resolveBudgetExpensesForAnalyticsYear,
+  seedBudgetExpensesForYear,
+  rolloverBudgetExpensesIfNeeded,
   addBudgetExpense,
   updateBudgetExpense,
   deleteBudgetExpense,
+  nearestBudgetIncomeYear,
+  resolveBudgetIncomeForYear,
+  resolveBudgetIncomeForAnalyticsYear,
+  seedBudgetIncomeForYear,
+  rolloverBudgetIncomeIfNeeded,
+  setBudgetIncome,
   addBudgetTransaction,
   updateBudgetTransaction,
   deleteBudgetTransaction,
   importBudgetTransactions,
-  setBudgetIncomeForPeriod,
 } from './state'
 import type { AppState } from './types'
 import type { BalanceEntry, Expense, BudgetTransaction, CategoryMapping, Category } from './types'
@@ -43,11 +51,10 @@ describe('state helpers', () => {
       expect(state.selectedCategoryKey).toBeNull()
     })
 
-    it('budget fields default to zero income, no expenses, and no transactions', () => {
+    it('budget fields default to empty year-scoped maps and no transactions', () => {
       const state = initialState()
-      expect(state.budgetIncomeMonthly).toBe(0)
-      expect(state.budgetIncomeYearly).toBe(0)
-      expect(state.budgetExpenses).toEqual([])
+      expect(state.budgetIncomeByYear).toEqual({})
+      expect(state.budgetExpensesByYear).toEqual({})
       expect(state.budgetTransactions).toEqual([])
     })
   })
@@ -1033,77 +1040,294 @@ describe('state helpers', () => {
     })
   })
 
-  describe('setBudgetIncomeMonthly', () => {
-    it('sets the value without touching other fields', () => {
-      const state = { ...initialState(), budgetIncomeYearly: 500 }
-      const updated = setBudgetIncomeMonthly(state, 4000)
-      expect(updated.budgetIncomeMonthly).toBe(4000)
-      expect(updated.budgetIncomeYearly).toBe(500)
+  describe('nearestBudgetExpensesYear', () => {
+    it('returns exact match', () => {
+      const byYear = { '2024': [], '2025': [] }
+      expect(nearestBudgetExpensesYear(byYear, '2025')).toBe('2025')
     })
 
-    it('clamps negative input to 0', () => {
-      const updated = setBudgetIncomeMonthly(initialState(), -100)
-      expect(updated.budgetIncomeMonthly).toBe(0)
+    it('returns nearest by distance', () => {
+      const byYear = { '2020': [], '2026': [] }
+      expect(nearestBudgetExpensesYear(byYear, '2025')).toBe('2026')
+    })
+
+    it('breaks ties toward the earlier year', () => {
+      const byYear = { '2023': [], '2025': [] }
+      expect(nearestBudgetExpensesYear(byYear, '2024')).toBe('2023')
+    })
+
+    it('returns null for an empty map', () => {
+      expect(nearestBudgetExpensesYear({}, '2025')).toBeNull()
     })
   })
 
-  describe('setBudgetIncomeYearly', () => {
-    it('sets the value without touching other fields', () => {
-      const state = { ...initialState(), budgetIncomeMonthly: 300 }
-      const updated = setBudgetIncomeYearly(state, 48000)
-      expect(updated.budgetIncomeYearly).toBe(48000)
-      expect(updated.budgetIncomeMonthly).toBe(300)
+  describe('resolveBudgetExpensesForYear', () => {
+    const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+    const e2: Expense = { id: 'exp-2', name: 'Gym', categoryId: 'cat-Health', amount: 50, frequency: 'monthly' }
+
+    it('returns the own array when present', () => {
+      const byYear = { '2024': [e1], '2025': [e2] }
+      expect(resolveBudgetExpensesForYear(byYear, '2025')).toEqual([e2])
     })
 
-    it('clamps negative input to 0', () => {
-      const updated = setBudgetIncomeYearly(initialState(), -50)
-      expect(updated.budgetIncomeYearly).toBe(0)
+    it('returns nearest year data when absent', () => {
+      const byYear = { '2024': [e1] }
+      expect(resolveBudgetExpensesForYear(byYear, '2025')).toEqual([e1])
+    })
+
+    it('returns [] when fully empty', () => {
+      expect(resolveBudgetExpensesForYear({}, '2025')).toEqual([])
+    })
+  })
+
+  describe('resolveBudgetExpensesForAnalyticsYear', () => {
+    const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+    const e2: Expense = { id: 'exp-2', name: 'Gym', categoryId: 'cat-Health', amount: 50, frequency: 'monthly' }
+    const now = new Date('2026-06-01T00:00:00Z')
+
+    it('returns own year when present', () => {
+      const byYear = { '2024': [e1], '2026': [e2] }
+      expect(resolveBudgetExpensesForAnalyticsYear(byYear, '2024', now)).toEqual([e1])
+    })
+
+    it('falls back to the CURRENT year specifically, not nearest', () => {
+      // nearest to 2020 is 2024 (distance 4) vs 2026 (distance 6), but the fallback
+      // must land on 2026 (the current year), proving it does not use "nearest".
+      const byYear = { '2024': [e1], '2026': [e2] }
+      expect(resolveBudgetExpensesForAnalyticsYear(byYear, '2020', now)).toEqual([e2])
+    })
+
+    it('returns [] when both the requested and current year are absent', () => {
+      const byYear = { '2024': [e1] }
+      expect(resolveBudgetExpensesForAnalyticsYear(byYear, '2020', now)).toEqual([])
+    })
+  })
+
+  describe('seedBudgetExpensesForYear', () => {
+    it('leaves an already-seeded year untouched', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2025': [e1] } }
+      const updated = seedBudgetExpensesForYear(state, '2025')
+      expect(updated).toBe(state)
+    })
+
+    it('copies the nearest year expenses as a fresh array/objects', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2024': [e1] } }
+      const updated = seedBudgetExpensesForYear(state, '2025')
+      expect(updated.budgetExpensesByYear['2025']).toEqual([e1])
+      expect(updated.budgetExpensesByYear['2025']).not.toBe(state.budgetExpensesByYear['2024'])
+
+      // mutating the copy must not mutate the source
+      updated.budgetExpensesByYear['2025'][0].amount = 9999
+      expect(state.budgetExpensesByYear['2024'][0].amount).toBe(2000)
+    })
+
+    it('seeds [] when there is no data anywhere', () => {
+      const updated = seedBudgetExpensesForYear(initialState(), '2025')
+      expect(updated.budgetExpensesByYear['2025']).toEqual([])
+    })
+  })
+
+  describe('rolloverBudgetExpensesIfNeeded', () => {
+    const now = new Date('2026-06-01T00:00:00Z')
+
+    it('is a no-op when the current year already has a snapshot', () => {
+      const state = { ...initialState(), budgetExpensesByYear: { '2026': [] } }
+      const updated = rolloverBudgetExpensesIfNeeded(state, now)
+      expect(updated).toBe(state)
+    })
+
+    it('seeds the current year from a prior year when missing', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2024': [e1] } }
+      const updated = rolloverBudgetExpensesIfNeeded(state, now)
+      expect(updated.budgetExpensesByYear['2026']).toEqual([e1])
+    })
+
+    it('stays {} when budgetExpensesByYear is entirely empty', () => {
+      const updated = rolloverBudgetExpensesIfNeeded(initialState(), now)
+      expect(updated.budgetExpensesByYear).toEqual({})
     })
   })
 
   describe('addBudgetExpense', () => {
-    it('appends a new expense with a generated id, preserving existing entries', () => {
+    it('appends a new expense with a generated id, preserving existing entries in that year', () => {
       const existing: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
-      const state = { ...initialState(), budgetExpenses: [existing] }
-      const updated = addBudgetExpense(state, { name: 'Netflix', categoryId: 'cat-Subscriptions', amount: 15, frequency: 'monthly' })
-      expect(updated.budgetExpenses).toHaveLength(2)
-      expect(updated.budgetExpenses[0]).toEqual(existing)
-      expect(updated.budgetExpenses[1]).toMatchObject({ name: 'Netflix', categoryId: 'cat-Subscriptions', amount: 15, frequency: 'monthly' })
-      expect(typeof updated.budgetExpenses[1].id).toBe('string')
-      expect(updated.budgetExpenses[1].id.length).toBeGreaterThan(0)
+      const state = { ...initialState(), budgetExpensesByYear: { '2025': [existing] } }
+      const updated = addBudgetExpense(state, '2025', { name: 'Netflix', categoryId: 'cat-Subscriptions', amount: 15, frequency: 'monthly' })
+      expect(updated.budgetExpensesByYear['2025']).toHaveLength(2)
+      expect(updated.budgetExpensesByYear['2025'][0]).toEqual(existing)
+      expect(updated.budgetExpensesByYear['2025'][1]).toMatchObject({ name: 'Netflix', categoryId: 'cat-Subscriptions', amount: 15, frequency: 'monthly' })
+      expect(typeof updated.budgetExpensesByYear['2025'][1].id).toBe('string')
+      expect(updated.budgetExpensesByYear['2025'][1].id.length).toBeGreaterThan(0)
+    })
+
+    it('seeds a not-yet-seeded year from the nearest year, then appends', () => {
+      const existing: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2024': [existing] } }
+      const updated = addBudgetExpense(state, '2025', { name: 'Netflix', categoryId: 'cat-Subscriptions', amount: 15, frequency: 'monthly' })
+      expect(updated.budgetExpensesByYear['2025']).toHaveLength(2)
+      expect(updated.budgetExpensesByYear['2025'][0]).toEqual(existing)
+      expect(updated.budgetExpensesByYear['2025'][1]).toMatchObject({ name: 'Netflix' })
+      expect(updated.budgetExpensesByYear['2024']).toEqual([existing])
     })
   })
 
   describe('updateBudgetExpense', () => {
-    it('patches the matching expense by id', () => {
+    it('patches the matching expense by id within the given year', () => {
       const existing: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
-      const state = { ...initialState(), budgetExpenses: [existing] }
-      const updated = updateBudgetExpense(state, 'exp-1', { amount: 2100 })
-      expect(updated.budgetExpenses[0]).toEqual({ ...existing, amount: 2100 })
+      const other: Expense = { id: 'exp-2', name: 'Other year', categoryId: 'cat-Housing', amount: 1, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2025': [existing], '2024': [other] } }
+      const updated = updateBudgetExpense(state, '2025', 'exp-1', { amount: 2100 })
+      expect(updated.budgetExpensesByYear['2025'][0]).toEqual({ ...existing, amount: 2100 })
+      expect(updated.budgetExpensesByYear['2024']).toEqual([other])
     })
 
     it('is a no-op when the id is not found', () => {
       const existing: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
-      const state = { ...initialState(), budgetExpenses: [existing] }
-      const updated = updateBudgetExpense(state, 'missing', { amount: 9999 })
-      expect(updated.budgetExpenses).toEqual([existing])
+      const state = { ...initialState(), budgetExpensesByYear: { '2025': [existing] } }
+      const updated = updateBudgetExpense(state, '2025', 'missing', { amount: 9999 })
+      expect(updated.budgetExpensesByYear['2025']).toEqual([existing])
     })
   })
 
   describe('deleteBudgetExpense', () => {
-    it('removes the matching expense by id', () => {
+    it('removes the matching expense by id within the given year', () => {
       const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
       const e2: Expense = { id: 'exp-2', name: 'Netflix', categoryId: 'cat-Subscriptions', amount: 15, frequency: 'monthly' }
-      const state = { ...initialState(), budgetExpenses: [e1, e2] }
-      const updated = deleteBudgetExpense(state, 'exp-1')
-      expect(updated.budgetExpenses).toEqual([e2])
+      const other: Expense = { id: 'exp-3', name: 'Other year', categoryId: 'cat-Housing', amount: 1, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2025': [e1, e2], '2024': [other] } }
+      const updated = deleteBudgetExpense(state, '2025', 'exp-1')
+      expect(updated.budgetExpensesByYear['2025']).toEqual([e2])
+      expect(updated.budgetExpensesByYear['2024']).toEqual([other])
     })
 
     it('is a no-op when the id is not found', () => {
       const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
-      const state = { ...initialState(), budgetExpenses: [e1] }
-      const updated = deleteBudgetExpense(state, 'missing')
-      expect(updated.budgetExpenses).toEqual([e1])
+      const state = { ...initialState(), budgetExpensesByYear: { '2025': [e1] } }
+      const updated = deleteBudgetExpense(state, '2025', 'missing')
+      expect(updated.budgetExpensesByYear['2025']).toEqual([e1])
+    })
+  })
+
+  describe('nearestBudgetIncomeYear', () => {
+    it('returns exact match', () => {
+      const byYear = { '2024': { monthly: 1, yearly: 0 }, '2025': { monthly: 2, yearly: 0 } }
+      expect(nearestBudgetIncomeYear(byYear, '2025')).toBe('2025')
+    })
+
+    it('returns nearest by distance', () => {
+      const byYear = { '2020': { monthly: 1, yearly: 0 }, '2026': { monthly: 2, yearly: 0 } }
+      expect(nearestBudgetIncomeYear(byYear, '2025')).toBe('2026')
+    })
+
+    it('breaks ties toward the earlier year', () => {
+      const byYear = { '2023': { monthly: 1, yearly: 0 }, '2025': { monthly: 2, yearly: 0 } }
+      expect(nearestBudgetIncomeYear(byYear, '2024')).toBe('2023')
+    })
+
+    it('returns null for an empty map', () => {
+      expect(nearestBudgetIncomeYear({}, '2025')).toBeNull()
+    })
+  })
+
+  describe('resolveBudgetIncomeForYear', () => {
+    it('returns own snapshot when present', () => {
+      const byYear = { '2024': { monthly: 100, yearly: 0 }, '2025': { monthly: 200, yearly: 0 } }
+      expect(resolveBudgetIncomeForYear(byYear, '2025')).toEqual({ monthly: 200, yearly: 0 })
+    })
+
+    it('returns nearest year data when absent', () => {
+      const byYear = { '2024': { monthly: 100, yearly: 0 } }
+      expect(resolveBudgetIncomeForYear(byYear, '2025')).toEqual({ monthly: 100, yearly: 0 })
+    })
+
+    it('returns {monthly:0,yearly:0} when fully empty', () => {
+      expect(resolveBudgetIncomeForYear({}, '2025')).toEqual({ monthly: 0, yearly: 0 })
+    })
+  })
+
+  describe('resolveBudgetIncomeForAnalyticsYear', () => {
+    const now = new Date('2026-06-01T00:00:00Z')
+
+    it('returns own year when present', () => {
+      const byYear = { '2024': { monthly: 1, yearly: 0 }, '2026': { monthly: 2, yearly: 0 } }
+      expect(resolveBudgetIncomeForAnalyticsYear(byYear, '2024', now)).toEqual({ monthly: 1, yearly: 0 })
+    })
+
+    it('falls back to the CURRENT year specifically, not nearest', () => {
+      const byYear = { '2024': { monthly: 1, yearly: 0 }, '2026': { monthly: 2, yearly: 0 } }
+      expect(resolveBudgetIncomeForAnalyticsYear(byYear, '2020', now)).toEqual({ monthly: 2, yearly: 0 })
+    })
+
+    it('returns {monthly:0,yearly:0} when both requested and current year are absent', () => {
+      const byYear = { '2024': { monthly: 1, yearly: 0 } }
+      expect(resolveBudgetIncomeForAnalyticsYear(byYear, '2020', now)).toEqual({ monthly: 0, yearly: 0 })
+    })
+  })
+
+  describe('seedBudgetIncomeForYear', () => {
+    it('leaves an already-seeded year untouched', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2025': { monthly: 100, yearly: 0 } } }
+      const updated = seedBudgetIncomeForYear(state, '2025')
+      expect(updated).toBe(state)
+    })
+
+    it('copies the nearest year income as a fresh object', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2024': { monthly: 100, yearly: 0 } } }
+      const updated = seedBudgetIncomeForYear(state, '2025')
+      expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 100, yearly: 0 })
+      expect(updated.budgetIncomeByYear['2025']).not.toBe(state.budgetIncomeByYear['2024'])
+
+      updated.budgetIncomeByYear['2025'].monthly = 9999
+      expect(state.budgetIncomeByYear['2024'].monthly).toBe(100)
+    })
+
+    it('seeds {monthly:0,yearly:0} when there is no data anywhere', () => {
+      const updated = seedBudgetIncomeForYear(initialState(), '2025')
+      expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 0, yearly: 0 })
+    })
+  })
+
+  describe('rolloverBudgetIncomeIfNeeded', () => {
+    const now = new Date('2026-06-01T00:00:00Z')
+
+    it('is a no-op when the current year already has a snapshot', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2026': { monthly: 0, yearly: 0 } } }
+      const updated = rolloverBudgetIncomeIfNeeded(state, now)
+      expect(updated).toBe(state)
+    })
+
+    it('seeds the current year from a prior year when missing', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2024': { monthly: 100, yearly: 0 } } }
+      const updated = rolloverBudgetIncomeIfNeeded(state, now)
+      expect(updated.budgetIncomeByYear['2026']).toEqual({ monthly: 100, yearly: 0 })
+    })
+
+    it('stays {} when budgetIncomeByYear is entirely empty', () => {
+      const updated = rolloverBudgetIncomeIfNeeded(initialState(), now)
+      expect(updated.budgetIncomeByYear).toEqual({})
+    })
+  })
+
+  describe('setBudgetIncome', () => {
+    it('sets fields without touching other years', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2024': { monthly: 300, yearly: 0 } } }
+      const updated = setBudgetIncome(state, '2025', { monthly: 4000 })
+      expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 4000, yearly: 0 })
+      expect(updated.budgetIncomeByYear['2024']).toEqual({ monthly: 300, yearly: 0 })
+    })
+
+    it('seeds a not-yet-seeded year from the nearest year, then merges the patch', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2024': { monthly: 300, yearly: 500 } } }
+      const updated = setBudgetIncome(state, '2025', { yearly: 900 })
+      expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 300, yearly: 900 })
+    })
+
+    it('clamps negative input to 0', () => {
+      const updated = setBudgetIncome(initialState(), '2025', { monthly: -100, yearly: -50 })
+      expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 0, yearly: 0 })
     })
   })
 
@@ -1249,31 +1473,9 @@ describe('state helpers', () => {
     })
   })
 
-  describe('setBudgetIncomeForPeriod', () => {
-    it('sets monthly income and clears yearly', () => {
-      const state = { ...initialState(), budgetIncomeYearly: 500 }
-      const updated = setBudgetIncomeForPeriod(state, 'monthly', 100)
-      expect(updated.budgetIncomeMonthly).toBe(100)
-      expect(updated.budgetIncomeYearly).toBe(0)
-    })
-
-    it('sets yearly income and clears monthly', () => {
-      const state = { ...initialState(), budgetIncomeMonthly: 100 }
-      const updated = setBudgetIncomeForPeriod(state, 'yearly', 50)
-      expect(updated.budgetIncomeYearly).toBe(50)
-      expect(updated.budgetIncomeMonthly).toBe(0)
-    })
-
-    it('clamps a negative amount to 0', () => {
-      const state = initialState()
-      const updated = setBudgetIncomeForPeriod(state, 'monthly', -20)
-      expect(updated.budgetIncomeMonthly).toBe(0)
-    })
-  })
-
   describe('replaceImportedState', () => {
     // Cast (rather than annotate) as ExportableState: this fixture includes
-    // budgetIncomeMonthly/budgetIncomeYearly/budgetExpenses
+    // budgetIncomeByYear/budgetExpensesByYear
     // which are not yet part of the ExportableState type (owned by a
     // parallel task on importExport.ts) — the cast avoids an excess-property
     // error until that type is widened.
@@ -1361,11 +1563,10 @@ describe('state helpers', () => {
         apiKey: 'imported-mf-key',
         lastRun: { at: '2025-01-01T00:00:00Z', updatedCount: 1, notFound: [], marketTickerCount: 0 },
       },
-      budgetIncomeMonthly: 6000,
-      budgetIncomeYearly: 72000,
-      budgetExpenses: [
-        { id: 'exp-imported', name: 'Rent', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' },
-      ],
+      budgetIncomeByYear: { '2025': { monthly: 6000, yearly: 72000 } },
+      budgetExpensesByYear: {
+        '2025': [{ id: 'exp-imported', name: 'Rent', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' }],
+      },
     } as ExportableState
 
     it('replaces the 8 data collections and apiKey/lastRun, preserving cached prices and UI state', () => {
@@ -1411,9 +1612,8 @@ describe('state helpers', () => {
       expect(updated.csvMappings).toEqual(sampleData.csvMappings)
       expect(updated.customInstitutions).toEqual(sampleData.customInstitutions)
       expect(updated.balanceEntries).toEqual(sampleData.balanceEntries)
-      expect(updated.budgetIncomeMonthly).toBe(sampleData.budgetIncomeMonthly)
-      expect(updated.budgetIncomeYearly).toBe(sampleData.budgetIncomeYearly)
-      expect(updated.budgetExpenses).toEqual(sampleData.budgetExpenses)
+      expect(updated.budgetIncomeByYear).toEqual(sampleData.budgetIncomeByYear)
+      expect(updated.budgetExpensesByYear).toEqual(sampleData.budgetExpensesByYear)
 
       expect(updated.priceSync.apiKey).toBe(sampleData.priceSync.apiKey)
       expect(updated.priceSync.lastRun).toEqual(sampleData.priceSync.lastRun)
