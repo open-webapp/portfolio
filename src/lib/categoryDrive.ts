@@ -2,15 +2,21 @@ import type { getDriveAuthFor } from './drive'
 import { legacyDriveSync } from './drive'
 import type { GlobalCategoryState } from './categoryStore'
 
-const PROJECT_ID = 'category-mappings'
 const FILENAME = 'category-mappings.json'
 
 /**
  * Drive I/O for the global (cross-portfolio) `category-mappings.json` file.
- * Lives at the shared `OpenWebApp/Portfolio` root (via `legacyDriveSync`,
- * scoped to its own project id `'category-mappings'`) rather than any
- * per-portfolio subfolder — categories/mappings are shared across every
- * portfolio, not portfolio-scoped.
+ * Lives at the shared `OpenWebApp/Portfolio` root (via `legacyDriveSync`)
+ * rather than any per-portfolio subfolder — categories/mappings are shared
+ * across every portfolio, not portfolio-scoped.
+ *
+ * Every function here takes a `projectId` alongside `driveAuth`: it MUST be
+ * the same project id `driveAuth` (from `getDriveAuthFor`) was authenticated
+ * under (i.e. `driveAuthProjectIdFor(activePortfolio)`) — drive-sync stores
+ * and looks up tokens keyed by `(appId, projectId)`, so scoping the file I/O
+ * to any other id would find no valid token and fail. This does NOT scope
+ * the *file* to that portfolio, only reuses its already-established Drive
+ * connection; the file itself is still the one shared `category-mappings.json`.
  */
 
 /**
@@ -35,11 +41,12 @@ function isGlobalCategoryStateShape(value: unknown): value is GlobalCategoryStat
  * like `GlobalCategoryState` — is swallowed to `null` rather than thrown.
  */
 export async function pullGlobalCategoriesFromDrive(
-  driveAuth: ReturnType<typeof getDriveAuthFor>
+  driveAuth: ReturnType<typeof getDriveAuthFor>,
+  projectId: string
 ): Promise<GlobalCategoryState | null> {
   await driveAuth.ensureFresh()
 
-  const project = legacyDriveSync.project(PROJECT_ID)
+  const project = legacyDriveSync.project(projectId)
   const folderId = await project.ensureFolderPath()
   const files = await project.files.list({ folderId, nameEquals: FILENAME })
   if (files.length === 0) return null
@@ -86,11 +93,12 @@ export async function pullGlobalCategoriesFromDrive(
  */
 export async function pushGlobalCategoriesToDrive(
   driveAuth: ReturnType<typeof getDriveAuthFor>,
+  projectId: string,
   state: GlobalCategoryState
 ): Promise<void> {
   await driveAuth.ensureFresh()
 
-  const project = legacyDriveSync.project(PROJECT_ID)
+  const project = legacyDriveSync.project(projectId)
   const folderId = await project.ensureFolderPath()
   const files = await project.files.list({ folderId, nameEquals: FILENAME })
   const existingFileId = files.length > 0 ? files[0].id : undefined
@@ -114,11 +122,12 @@ export async function pushGlobalCategoriesToDrive(
  * the two functions above.
  */
 export async function getGlobalCategoriesModifiedTime(
-  driveAuth: ReturnType<typeof getDriveAuthFor>
+  driveAuth: ReturnType<typeof getDriveAuthFor>,
+  projectId: string
 ): Promise<string | null> {
   await driveAuth.ensureFresh()
 
-  const project = legacyDriveSync.project(PROJECT_ID)
+  const project = legacyDriveSync.project(projectId)
   const folderId = await project.ensureFolderPath()
   const files = await project.files.list({ folderId, nameEquals: FILENAME })
   if (files.length === 0) return null

@@ -59,7 +59,7 @@ describe('useGlobalCategories', () => {
     }
     mockLoadGlobalCategoryState.mockResolvedValue(fixture)
 
-    const { result } = renderHook(() => useGlobalCategories(null, false))
+    const { result } = renderHook(() => useGlobalCategories(null, false, null))
 
     expect(result.current.hydrated).toBe(false)
     expect(result.current.categories).toEqual([])
@@ -73,7 +73,7 @@ describe('useGlobalCategories', () => {
   })
 
   it('debounce-saves after a dispatch post-hydration', async () => {
-    const { result } = renderHook(() => useGlobalCategories(null, false))
+    const { result } = renderHook(() => useGlobalCategories(null, false, null))
 
     await act(async () => {
       await vi.runOnlyPendingTimersAsync()
@@ -101,7 +101,7 @@ describe('useGlobalCategories', () => {
   })
 
   it('pushes to drive immediately when connected, without waiting for the debounce', async () => {
-    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true))
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
 
     await act(async () => {
       await vi.runOnlyPendingTimersAsync()
@@ -122,7 +122,7 @@ describe('useGlobalCategories', () => {
   })
 
   it('never pushes to drive when not connected', async () => {
-    const { result } = renderHook(() => useGlobalCategories(null, false))
+    const { result } = renderHook(() => useGlobalCategories(null, false, null))
 
     await act(async () => {
       await vi.runOnlyPendingTimersAsync()
@@ -154,7 +154,7 @@ describe('useGlobalCategories', () => {
     mockPullGlobalCategoriesFromDrive.mockResolvedValue(remoteFixture)
 
     const { result, rerender } = renderHook(
-      ({ driveConnected }: { driveConnected: boolean }) => useGlobalCategories(fakeDriveAuth, driveConnected),
+      ({ driveConnected }: { driveConnected: boolean }) => useGlobalCategories(fakeDriveAuth, driveConnected, 'proj-1'),
       { initialProps: { driveConnected: false } }
     )
 
@@ -189,7 +189,7 @@ describe('useGlobalCategories', () => {
   it('polls every 60s and pulls only when the remote modifiedTime is newer', async () => {
     mockGetLastKnownRemoteModifiedTime.mockResolvedValue('2026-01-01T00:00:00.000Z')
 
-    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true))
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
 
     await act(async () => {
       await vi.runOnlyPendingTimersAsync()
@@ -254,7 +254,7 @@ describe('useGlobalCategories', () => {
     }
     mockLoadGlobalCategoryState.mockResolvedValue(fixture)
 
-    const { result } = renderHook(() => useGlobalCategories(null, false))
+    const { result } = renderHook(() => useGlobalCategories(null, false, null))
 
     await act(async () => {
       await vi.runOnlyPendingTimersAsync()

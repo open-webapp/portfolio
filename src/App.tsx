@@ -14,7 +14,7 @@ import { SyncConflictDialog } from './components/SyncConflictDialog'
 import { PortfolioPicker } from './components/PortfolioPicker'
 import {
   getDriveAuthFor,
-  getCategoryDriveAuth,
+  driveAuthProjectIdFor,
   getBackupFileId,
   syncBackup,
   overwriteLocalWithRemote,
@@ -85,14 +85,23 @@ function App() {
   const { connected } = useDriveConnection(getDriveAuthFor(activePortfolio ?? NO_ACTIVE_PORTFOLIO))
 
   // Global (cross-portfolio) categories/mappings store: hydrates/saves/syncs
-  // independently of the per-portfolio state above, using its OWN Drive
-  // connection (`getCategoryDriveAuth`) rather than the active portfolio's —
-  // categories are shared across every portfolio, and drive-sync tokens are
-  // keyed by project id, so reusing the portfolio's driveAuth here would
-  // authenticate the wrong project id and every category sync call would
-  // silently fail.
-  const { connected: categoriesConnected } = useDriveConnection(getCategoryDriveAuth())
-  const globalCategories = useGlobalCategories(getCategoryDriveAuth(), categoriesConnected)
+  // independently of the per-portfolio state above. Reuses the active
+  // portfolio's already-established Drive connection (`driveAuth`/`connected`
+  // above) rather than a connection of its own — nothing in the UI ever
+  // prompts the user to separately "Connect" a dedicated category-store
+  // project, so a from-scratch connection would only ever be attempted via an
+  // unprompted background `connect()` call, which browsers block (no user
+  // gesture). `driveAuthProjectIdFor(portfolio)` tells categoryDrive.ts which
+  // project id that connection was authenticated under, so its Drive I/O
+  // (against the shared `category-mappings.json`, not a per-portfolio file)
+  // scopes to the SAME id — drive-sync's token store is keyed by
+  // `(appId, projectId)`, so any mismatch here means no valid token is ever
+  // found and every category sync call silently fails.
+  const globalCategories = useGlobalCategories(
+    activePortfolio ? getDriveAuthFor(activePortfolio) : null,
+    connected,
+    activePortfolio ? driveAuthProjectIdFor(activePortfolio) : null
+  )
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
     remoteModifiedTime?: string

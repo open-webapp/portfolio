@@ -37,8 +37,10 @@ vi.mock('@open-webapp/drive-connect', async () => {
   }
 })
 
+const mockProjectFn = vi.fn(() => mockFakeProject)
+
 vi.mock('@open-webapp/drive-sync', () => ({
-  createDriveSync: () => ({ project: () => mockFakeProject }),
+  createDriveSync: () => ({ project: (projectId: string) => mockProjectFn(projectId) }),
   NeedsReauthError: class NeedsReauthError extends Error {},
   PickerCancelledError: class PickerCancelledError extends Error {},
   RemoteChangedError: class RemoteChangedError extends Error {},
@@ -59,6 +61,12 @@ const testPortfolio: Portfolio = {
   createdAt: 1,
 }
 
+// The project id categoryDrive.ts's file I/O must be scoped to — same id
+// `driveAuth` (from getDriveAuthFor(testPortfolio)) is authenticated under,
+// per driveAuthProjectIdFor(testPortfolio) (== testPortfolio.id, since it's
+// not a "migrated" portfolio).
+const testProjectId = testPortfolio.id
+
 describe('categoryDrive', () => {
   let driveAuth: ReturnType<typeof getDriveAuthFor>
 
@@ -77,12 +85,20 @@ describe('categoryDrive', () => {
       needsReauth: false,
       expiresAt: Date.now() + 60 * 60 * 1000,
     } as never)
+
+    mockProjectFn.mockClear()
+  })
+
+  it('scopes legacyDriveSync.project(...) to the given projectId — regression for the "categories never sync" bug where file I/O ran under a project id different from the one `driveAuth` was authenticated under, so drive-sync (tokens keyed by (appId, projectId)) never found a valid token', async () => {
+    mockFilesList.mockResolvedValue([])
+    await pullGlobalCategoriesFromDrive(driveAuth, testProjectId)
+    expect(mockProjectFn).toHaveBeenCalledWith(testProjectId)
   })
 
   describe('pullGlobalCategoriesFromDrive', () => {
     it('returns null when no file exists yet', async () => {
       mockFilesList.mockResolvedValue([])
-      const result = await pullGlobalCategoriesFromDrive(driveAuth)
+      const result = await pullGlobalCategoriesFromDrive(driveAuth, testProjectId)
       expect(result).toBeNull()
       expect(mockFilesRead).not.toHaveBeenCalled()
     })
@@ -95,7 +111,7 @@ describe('categoryDrive', () => {
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesRead.mockResolvedValue(JSON.stringify(state))
 
-      const result = await pullGlobalCategoriesFromDrive(driveAuth)
+      const result = await pullGlobalCategoriesFromDrive(driveAuth, testProjectId)
       expect(result).toEqual(state)
       expect(mockFilesRead).toHaveBeenCalledWith('file-1')
     })
@@ -104,7 +120,7 @@ describe('categoryDrive', () => {
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesRead.mockResolvedValue('{not valid json')
 
-      const result = await pullGlobalCategoriesFromDrive(driveAuth)
+      const result = await pullGlobalCategoriesFromDrive(driveAuth, testProjectId)
       expect(result).toBeNull()
     })
 
@@ -112,13 +128,13 @@ describe('categoryDrive', () => {
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesRead.mockResolvedValue(JSON.stringify({ foo: 'bar' }))
 
-      const result = await pullGlobalCategoriesFromDrive(driveAuth)
+      const result = await pullGlobalCategoriesFromDrive(driveAuth, testProjectId)
       expect(result).toBeNull()
     })
 
     it('propagates a rejected ensureFresh() uncaught', async () => {
       vi.mocked(driveAuth.ensureFresh).mockRejectedValue(new Error('connection boom'))
-      await expect(pullGlobalCategoriesFromDrive(driveAuth)).rejects.toThrow('connection boom')
+      await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId)).rejects.toThrow('connection boom')
       expect(mockFilesList).not.toHaveBeenCalled()
     })
   })
@@ -133,7 +149,7 @@ describe('categoryDrive', () => {
       mockFilesList.mockResolvedValue([])
       mockFilesWrite.mockResolvedValue({ id: 'new-file' })
 
-      await pushGlobalCategoriesToDrive(driveAuth, state)
+      await pushGlobalCategoriesToDrive(driveAuth, testProjectId, state)
 
       expect(mockFilesWrite).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -150,7 +166,7 @@ describe('categoryDrive', () => {
       mockFilesList.mockResolvedValue([{ id: 'existing-file', name: 'category-mappings.json' }])
       mockFilesWrite.mockResolvedValue({ id: 'existing-file' })
 
-      await pushGlobalCategoriesToDrive(driveAuth, state)
+      await pushGlobalCategoriesToDrive(driveAuth, testProjectId, state)
 
       expect(mockFilesWrite).toHaveBeenCalledWith(
         expect.objectContaining({ fileId: 'existing-file' })
@@ -159,7 +175,7 @@ describe('categoryDrive', () => {
 
     it('propagates a rejected ensureFresh() uncaught', async () => {
       vi.mocked(driveAuth.ensureFresh).mockRejectedValue(new Error('connection boom'))
-      await expect(pushGlobalCategoriesToDrive(driveAuth, state)).rejects.toThrow('connection boom')
+      await expect(pushGlobalCategoriesToDrive(driveAuth, testProjectId, state)).rejects.toThrow('connection boom')
       expect(mockFilesList).not.toHaveBeenCalled()
     })
   })
@@ -167,7 +183,7 @@ describe('categoryDrive', () => {
   describe('getGlobalCategoriesModifiedTime', () => {
     it('returns null when the file does not exist', async () => {
       mockFilesList.mockResolvedValue([])
-      const result = await getGlobalCategoriesModifiedTime(driveAuth)
+      const result = await getGlobalCategoriesModifiedTime(driveAuth, testProjectId)
       expect(result).toBeNull()
       expect(mockFilesStatus).not.toHaveBeenCalled()
     })
@@ -176,14 +192,14 @@ describe('categoryDrive', () => {
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesStatus.mockResolvedValue({ exists: true, remoteModifiedTime: '2026-09-14T12:00:00Z' })
 
-      const result = await getGlobalCategoriesModifiedTime(driveAuth)
+      const result = await getGlobalCategoriesModifiedTime(driveAuth, testProjectId)
       expect(result).toBe('2026-09-14T12:00:00Z')
       expect(mockFilesStatus).toHaveBeenCalledWith('file-1')
     })
 
     it('propagates a rejected ensureFresh() uncaught', async () => {
       vi.mocked(driveAuth.ensureFresh).mockRejectedValue(new Error('connection boom'))
-      await expect(getGlobalCategoriesModifiedTime(driveAuth)).rejects.toThrow('connection boom')
+      await expect(getGlobalCategoriesModifiedTime(driveAuth, testProjectId)).rejects.toThrow('connection boom')
       expect(mockFilesList).not.toHaveBeenCalled()
     })
   })

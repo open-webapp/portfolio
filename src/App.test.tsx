@@ -103,10 +103,9 @@ vi.mock('./lib/drive', () => {
     // returning the same mocked handle for every portfolio keeps the
     // existing driveAuth.* assertions in this file valid.
     getDriveAuthFor: vi.fn(() => driveAuth),
-    // Categories use their own dedicated (non-portfolio-scoped) driveAuth —
-    // see getCategoryDriveAuth in lib/drive.ts. Reusing the same mocked
-    // handle here keeps existing driveAuth.* assertions valid.
-    getCategoryDriveAuth: vi.fn(() => driveAuth),
+    // Categories reuse the active portfolio's own driveAuth/project id —
+    // see driveAuthProjectIdFor in lib/drive.ts.
+    driveAuthProjectIdFor: vi.fn((portfolio: { id: string }) => portfolio.id),
     getBackupFileId: vi.fn().mockResolvedValue(null),
     syncBackup: vi.fn(),
     overwriteLocalWithRemote: vi.fn(),

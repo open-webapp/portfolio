@@ -94,28 +94,19 @@ export function getPickerDriveAuth() {
   return pickerDriveAuth
 }
 
-let categoryDriveAuth: ReturnType<typeof createDriveAuth> | undefined
-
 /**
- * Returns the (cached, lazily-created) Drive auth handle for the global,
- * cross-portfolio `category-mappings.json` file (see `categoryDrive.ts`).
- * Fixed project id `'category-mappings'`, matching the id `categoryDrive.ts`
- * uses for `legacyDriveSync.project(...)` file I/O — the two MUST use the
- * same project id, since drive-sync stores/looks up tokens keyed by
- * `(appId, projectId)`. Categories are shared across every portfolio, so
- * this is deliberately its own connection rather than a per-portfolio one
- * from `getDriveAuthFor` (whose project id is the portfolio's own, a
- * different key that would never hold a valid token for this file's I/O).
+ * Resolves the Drive-sync project id that a portfolio's `driveAuth` (from
+ * `getDriveAuthFor`) was authenticated under. `categoryDrive.ts` needs this
+ * to scope its `legacyDriveSync.project(...)` file I/O to the SAME id —
+ * drive-sync stores/looks up tokens keyed by `(appId, projectId)`, so I/O
+ * against any other id (e.g. a fixed, never-`connect()`-ed id of its own)
+ * would find no valid token and fail. The `category-mappings.json` file
+ * itself still lives at the shared `OpenWebApp/Portfolio` root (not a
+ * per-portfolio subfolder) — reusing this id only reuses the portfolio's
+ * already-established connection, it doesn't scope the file to it.
  */
-export function getCategoryDriveAuth() {
-  if (!categoryDriveAuth) {
-    categoryDriveAuth = createDriveAuth({
-      drive: legacyDriveSync,
-      projectId: 'category-mappings',
-      tokenBufferMs: 5 * 60 * 1000,
-    })
-  }
-  return categoryDriveAuth
+export function driveAuthProjectIdFor(portfolio: Portfolio): string {
+  return driveProjectIdFor(portfolio)
 }
 
 /**

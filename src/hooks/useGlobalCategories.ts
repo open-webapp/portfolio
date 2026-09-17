@@ -26,7 +26,8 @@ const POLL_INTERVAL_MS = 60_000
 
 export function useGlobalCategories(
   driveAuth: ReturnType<typeof getDriveAuthFor> | null,
-  driveConnected: boolean
+  driveConnected: boolean,
+  driveProjectId: string | null
 ) {
   const [state, dispatch] = useReducer(categoryStoreReducer, initialGlobalCategoryState())
   const [hydrated, setHydrated] = useState(false)
@@ -69,21 +70,21 @@ export function useGlobalCategories(
   // Immediate fire-and-forget push to Drive when connected.
   useEffect(() => {
     if (!hydrated) return
-    if (!driveConnected || !driveAuth) return
-    pushGlobalCategoriesToDrive(driveAuth, {
+    if (!driveConnected || !driveAuth || !driveProjectId) return
+    pushGlobalCategoriesToDrive(driveAuth, driveProjectId, {
       categories: state.categories,
       categoryMappings: state.categoryMappings,
     }).catch(console.error)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.categories, state.categoryMappings, hydrated, driveConnected, driveAuth])
+  }, [state.categories, state.categoryMappings, hydrated, driveConnected, driveAuth, driveProjectId])
 
   // Initial pull-once, the first time driveConnected flips true post-hydrate.
   useEffect(() => {
-    if (!hydrated || !driveConnected || !driveAuth) return
+    if (!hydrated || !driveConnected || !driveAuth || !driveProjectId) return
     if (didInitialPullRef.current) return
     didInitialPullRef.current = true
     ;(async () => {
-      const remote = await pullGlobalCategoriesFromDrive(driveAuth)
+      const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId)
       if (remote === null) return
       const current = latestStateRef.current
       const merged = mergeCategoryState(
@@ -100,13 +101,13 @@ export function useGlobalCategories(
   useEffect(() => {
     if (!hydrated) return
     const id = setInterval(() => {
-      if (!driveConnected || !driveAuth) return
+      if (!driveConnected || !driveAuth || !driveProjectId) return
       ;(async () => {
-        const modifiedTime = await getGlobalCategoriesModifiedTime(driveAuth)
+        const modifiedTime = await getGlobalCategoriesModifiedTime(driveAuth, driveProjectId)
         if (modifiedTime === null) return
         const bookmark = await getLastKnownRemoteModifiedTime()
         if (bookmark && modifiedTime <= bookmark) return
-        const remote = await pullGlobalCategoriesFromDrive(driveAuth)
+        const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId)
         if (remote === null) return
         const current = latestStateRef.current
         const merged = mergeCategoryState(

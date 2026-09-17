@@ -113,7 +113,6 @@ vi.mock('@open-webapp/drive-sync', () => ({
 }))
 
 import { RemoteChangedError, NeedsReauthError } from '@open-webapp/drive-sync'
-import { createDriveAuth } from '@open-webapp/drive-connect'
 import {
   DriveDecryptError,
   DriveMalformedBackupError,
@@ -121,7 +120,7 @@ import {
   decryptDriveFolderBackup,
   getDriveAuthFor,
   getPickerDriveAuth,
-  getCategoryDriveAuth,
+  driveAuthProjectIdFor,
   getBackupFileId,
   getBackupFileStatus,
   getConnectionSnapshot,
@@ -433,24 +432,19 @@ describe('conflict-reconcile helpers', () => {
     })
   })
 
-  describe('getCategoryDriveAuth', () => {
-    it('authenticates under project id "category-mappings" — the SAME id categoryDrive.ts uses for its legacyDriveSync.project(...) file I/O', () => {
-      getCategoryDriveAuth()
-
-      const categoryCall = vi
-        .mocked(createDriveAuth)
-        .mock.calls.find((call) => (call[0] as { projectId?: string }).projectId === 'category-mappings')
-
-      expect(categoryCall).toBeDefined()
+  describe('driveAuthProjectIdFor', () => {
+    it('resolves the SAME project id getDriveAuthFor(portfolio) authenticates under — regression for the "categories never sync" bug: categoryDrive.ts\'s legacyDriveSync.project(...) file I/O must be scoped to whichever project id the given driveAuth was actually authenticated under (drive-sync stores tokens keyed by (appId, projectId)), not a fixed id of its own that nothing ever connect()s', () => {
+      expect(driveAuthProjectIdFor(testPortfolio)).toBe(testPortfolio.id)
     })
 
-    it('is a distinct, stable singleton from any per-portfolio driveAuth — regression for the "categories never sync" bug where categoryDrive.ts was handed a portfolio-scoped driveAuth (authenticated under the PORTFOLIO\'s project id) while its own file I/O ran under the unrelated "category-mappings" project id, so drive-sync (which stores tokens keyed by (appId, projectId)) never found a valid token for it', () => {
-      const a1 = getCategoryDriveAuth()
-      const a2 = getCategoryDriveAuth()
-      expect(a1).toBe(a2)
-
-      const portfolioAuth = getDriveAuthFor(testPortfolio)
-      expect(a1).not.toBe(portfolioAuth)
+    it('resolves the fixed "app" id for a migrated portfolio, matching getDriveAuthFor', () => {
+      const migratedPortfolio: Portfolio = {
+        id: 'port-legacy-cat',
+        name: 'My Portfolio',
+        dbName: 'portfolio_app_state_v1',
+        createdAt: 30,
+      }
+      expect(driveAuthProjectIdFor(migratedPortfolio)).toBe('app')
     })
   })
 
