@@ -602,9 +602,10 @@ export function SettingsPage({
                 {expenses.map((expense) => {
                   const mappings = mappingsForExpense(categoryMappings, expense.id)
                   const newSubstringDraft = newSubstringDraftByExpense[expense.id] ?? ''
+                  const expenseLabel = `${expense.name} (${category.name})`
                   return (
                   <div key={expense.id} style={{ marginBottom: 'var(--space-2)' }}>
-                    <div style={{ fontWeight: 600 }}>{expense.name}</div>
+                    <div style={{ fontWeight: 600 }}>{expenseLabel}</div>
                     {mappings.map((mapping) => {
                   const isEditingMapping = editingMappingId === mapping.id
                   return (
@@ -681,7 +682,7 @@ export function SettingsPage({
                   <input
                     className="input"
                     placeholder="+ add substring"
-                    aria-label={`Add substring to ${expense.name}`}
+                    aria-label={`Add substring to ${expenseLabel}`}
                     value={newSubstringDraft}
                     onChange={(e) =>
                       setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: e.target.value }))
@@ -699,7 +700,7 @@ export function SettingsPage({
                   <button
                     type="button"
                     style={textBtnAccent}
-                    aria-label={`Add substring button ${expense.name}`}
+                    aria-label={`Add substring button ${expenseLabel}`}
                     disabled={!newSubstringDraft.trim()}
                     onClick={() => {
                       const substring = newSubstringDraft.trim()

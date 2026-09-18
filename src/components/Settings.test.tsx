@@ -929,6 +929,16 @@ describe('SettingsPage', () => {
       expect(unusedBlock.querySelector('input[placeholder="+ add substring"]')).toBeNull()
     })
 
+    it('renders each expense-mapping group header as "<expense name> (<category name>)"', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
+
+      expect(screen.getByText('Fresh Groceries (Groceries)')).toBeTruthy()
+      expect(screen.getByText('Pantry Groceries (Groceries)')).toBeTruthy()
+      expect(screen.getByText('Monthly Rent (Rent)')).toBeTruthy()
+      expect(screen.queryByText('Fresh Groceries', { exact: true })).toBeFalsy()
+    })
+
     it('renaming a category (pencil -> edit -> Done) dispatches RENAME_CATEGORY via categoryDispatch with correct id/name', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
@@ -1004,9 +1014,9 @@ describe('SettingsPage', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
-      const addInput = screen.getByLabelText('Add substring to Fresh Groceries') as HTMLInputElement
+      const addInput = screen.getByLabelText('Add substring to Fresh Groceries (Groceries)') as HTMLInputElement
       fireEvent.change(addInput, { target: { value: 'COSTCO' } })
-      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries'))
+      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries (Groceries)'))
 
       expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'ADD_CATEGORY_MAPPING',
@@ -1019,14 +1029,14 @@ describe('SettingsPage', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
-      const freshInput = screen.getByLabelText('Add substring to Fresh Groceries') as HTMLInputElement
-      const pantryInput = screen.getByLabelText('Add substring to Pantry Groceries') as HTMLInputElement
+      const freshInput = screen.getByLabelText('Add substring to Fresh Groceries (Groceries)') as HTMLInputElement
+      const pantryInput = screen.getByLabelText('Add substring to Pantry Groceries (Groceries)') as HTMLInputElement
       expect(freshInput).toBeTruthy()
       expect(pantryInput).toBeTruthy()
       expect(freshInput).not.toBe(pantryInput)
 
       fireEvent.change(freshInput, { target: { value: 'COSTCO' } })
-      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries'))
+      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries (Groceries)'))
       expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'ADD_CATEGORY_MAPPING',
         spendExpenseId: 'exp-groc-fresh',
@@ -1062,7 +1072,7 @@ describe('SettingsPage', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
-      const addInput = screen.getByLabelText('Add substring to Monthly Rent') as HTMLInputElement
+      const addInput = screen.getByLabelText('Add substring to Monthly Rent (Rent)') as HTMLInputElement
       expect(addInput).toBeTruthy()
 
       fireEvent.change(addInput, { target: { value: 'LANDLORD LLC' } })
@@ -1257,9 +1267,9 @@ describe('SettingsPage', () => {
 
       render(<AutoReapplyHarness initialAppState={appState} initialCategoryState={categoryState} />)
 
-      const addInput = screen.getByLabelText('Add substring to Fresh Groceries') as HTMLInputElement
+      const addInput = screen.getByLabelText('Add substring to Fresh Groceries (Groceries)') as HTMLInputElement
       fireEvent.change(addInput, { target: { value: 'TRADER JOES' } })
-      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries'))
+      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries (Groceries)'))
 
       // No click on "Re-apply mappings to existing records" anywhere above -
       // the reapply must have happened automatically for this to pass.
