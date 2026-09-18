@@ -156,6 +156,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importAccountName, setImportAccountName] = useState('')
   const [importStatus, setImportStatus] = useState('Never imported')
   const [importError, setImportError] = useState<string | null>(null)
+  const [importFileKind, setImportFileKind] = useState<'csv' | 'ofx' | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
   // Monthly/Yearly-only computations below take a strict 'monthly' | 'yearly'
@@ -361,9 +362,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   }
 
   // csvText holds raw text for parsing — CSV or OFX/QFX depending on importTab.
+  // importFileKind (derived from the uploaded file's extension) drives which upload parser runs.
   const handleImportFileSelect = (file: File | null) => {
     setImportError(null)
     if (!file) return
+    const lower = file.name.toLowerCase()
+    setImportFileKind(lower.endsWith('.csv') ? 'csv' : 'ofx')
     const reader = new FileReader()
     reader.onload = () => {
       setCsvText(String(reader.result ?? ''))
@@ -380,6 +384,20 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       setShowImportDialog(false)
       setCsvText('')
       setImportAccountName('')
+    } else if (importFileKind === 'csv') {
+      const parsed = parseBudgetTransactionsCsv(csvText)
+      if (parsed.length === 0) {
+        setImportError('No transactions found in file — check it has date/description/amount columns')
+        return
+      }
+      const withAccount = parsed.map((r) => ({ ...r, accountName: importAccountName.trim() }))
+      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount, categories, categoryMappings })
+      setImportStatus(`${withAccount.length} row(s) detected`)
+      setShowImportDialog(false)
+      setCsvText('')
+      setImportAccountName('')
+      setImportError(null)
+      setImportFileKind(null)
     } else {
       const parsed = parseOfxTransactions(csvText)
       if (parsed.length === 0) {
@@ -393,6 +411,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       setCsvText('')
       setImportAccountName('')
       setImportError(null)
+      setImportFileKind(null)
     }
   }
 
@@ -401,6 +420,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setCsvText('')
     setImportAccountName('')
     setImportError(null)
+    setImportFileKind(null)
   }
 
   return (
@@ -1423,8 +1443,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                     <input
                       ref={importFileInputRef}
                       type="file"
-                      accept=".ofx,.qfx"
-                      aria-label="OFX/QFX file"
+                      accept=".csv,.ofx,.qfx"
+                      aria-label="CSV, OFX, or QFX file"
                       onChange={(e) => handleImportFileSelect(e.target.files?.[0] || null)}
                       style={{ display: 'none' }}
                     />

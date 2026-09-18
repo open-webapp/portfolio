@@ -1362,7 +1362,7 @@ VERSION:102
         fireEvent.click(screen.getByText('Upload file'))
 
         const file = new File([VALID_OFX], 'transactions.ofx', { type: 'application/x-ofx' })
-        const input = screen.getByLabelText('OFX/QFX file') as HTMLInputElement
+        const input = screen.getByLabelText('CSV, OFX, or QFX file') as HTMLInputElement
         fireEvent.change(input, { target: { files: [file] } })
 
         await vi.waitFor(() => {
@@ -1428,7 +1428,7 @@ VERSION:102
           fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
 
           const file = new File([VALID_OFX], 'transactions.ofx', { type: 'application/x-ofx' })
-          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [file] } })
+          fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), { target: { files: [file] } })
 
           // Wait for the async FileReader to finish populating csvText before
           // importing — confirmed via the Copy-Paste tab's textarea value.
@@ -1459,7 +1459,7 @@ VERSION:102
           fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
 
           const file = new File([EMPTY_OFX], 'empty.ofx', { type: 'application/x-ofx' })
-          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [file] } })
+          fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), { target: { files: [file] } })
 
           await vi.waitFor(() => {
             fireEvent.click(screen.getByText('Copy-Paste'))
@@ -1486,7 +1486,7 @@ VERSION:102
           fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
 
           const emptyFile = new File([EMPTY_OFX], 'empty.ofx', { type: 'application/x-ofx' })
-          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [emptyFile] } })
+          fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), { target: { files: [emptyFile] } })
 
           await vi.waitFor(() => {
             fireEvent.click(screen.getByText('Copy-Paste'))
@@ -1500,13 +1500,104 @@ VERSION:102
           ).toBeTruthy()
 
           const validFile = new File([VALID_OFX], 'transactions.ofx', { type: 'application/x-ofx' })
-          fireEvent.change(screen.getByLabelText('OFX/QFX file'), { target: { files: [validFile] } })
+          fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), { target: { files: [validFile] } })
 
           await vi.waitFor(() => {
             expect(
               screen.queryByText("No transactions found in file — check it's a valid OFX/QFX export")
             ).toBeFalsy()
           })
+        })
+      })
+
+      describe('CSV upload', () => {
+        it('happy path: uploading a valid .csv file dispatches IMPORT_BUDGET_TRANSACTIONS, shows the row count, closes the dialog, and the row appears in Spend records', async () => {
+          let state: AppState = defaultState()
+          const dispatch = (action: any) => {
+            state = appReducer(state, action)
+          }
+          const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+          fireEvent.click(screen.getByText('Import transactions…'))
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+
+          const file = new File(['date,description,amount\n2026-01-05,Coffee,-4.50'], 'transactions.csv', { type: 'text/csv' })
+          fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), { target: { files: [file] } })
+
+          await vi.waitFor(() => {
+            fireEvent.click(screen.getByText('Copy-Paste'))
+            expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe(
+              'date,description,amount\n2026-01-05,Coffee,-4.50'
+            )
+          })
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.click(screen.getByText('Import'))
+
+          rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+          expect(screen.queryByText('Import transactions')).toBeFalsy()
+          expect(screen.getByText('1 row(s) detected')).toBeTruthy()
+          expect(state.budgetTransactions.length).toBe(1)
+          expect(screen.getByText('Coffee')).toBeTruthy()
+        })
+
+        it('error path: a .csv file with no parseable rows shows the CSV-specific inline error, disables Import, and dispatches nothing on click', async () => {
+          const dispatch = vi.fn()
+          render(<BudgetPage state={defaultState()} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+          fireEvent.click(screen.getByText('Import transactions…'))
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+
+          const file = new File(['garbage,no,valid,columns'], 'garbage.csv', { type: 'text/csv' })
+          fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), { target: { files: [file] } })
+
+          await vi.waitFor(() => {
+            fireEvent.click(screen.getByText('Copy-Paste'))
+            expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe('garbage,no,valid,columns')
+          })
+          fireEvent.click(screen.getByText('Upload file'))
+
+          const importBtn = screen.getByText('Import') as HTMLButtonElement
+          fireEvent.click(importBtn)
+
+          expect(
+            await screen.findByText('No transactions found in file — check it has date/description/amount columns')
+          ).toBeTruthy()
+          expect(importBtn.disabled).toBe(true)
+          expect(dispatch).not.toHaveBeenCalled()
+          expect(screen.getByText('Import transactions')).toBeTruthy()
+        })
+
+        it('an uppercase .CSV extension still routes to the CSV parser', async () => {
+          let state: AppState = defaultState()
+          const dispatch = (action: any) => {
+            state = appReducer(state, action)
+          }
+          const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+          fireEvent.click(screen.getByText('Import transactions…'))
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+
+          const file = new File(['date,description,amount\n2026-01-05,Coffee,-4.50'], 'transactions.CSV', { type: 'text/csv' })
+          fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), { target: { files: [file] } })
+
+          await vi.waitFor(() => {
+            fireEvent.click(screen.getByText('Copy-Paste'))
+            expect((screen.getByLabelText('Paste CSV text') as HTMLTextAreaElement).value).toBe(
+              'date,description,amount\n2026-01-05,Coffee,-4.50'
+            )
+          })
+          fireEvent.click(screen.getByText('Upload file'))
+          fireEvent.click(screen.getByText('Import'))
+
+          rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+          expect(screen.getByText('1 row(s) detected')).toBeTruthy()
+          expect(state.budgetTransactions.length).toBe(1)
+          expect(screen.getByText('Coffee')).toBeTruthy()
         })
       })
     })
