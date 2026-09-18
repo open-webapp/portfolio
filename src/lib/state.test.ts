@@ -25,6 +25,8 @@ import {
   resolveBudgetExpensesForYear,
   resolveBudgetExpensesForAnalyticsYear,
   seedBudgetExpensesForYear,
+  ensureBudgetExpensesSnapshotForYear,
+  ensureBudgetIncomeSnapshotForYear,
   rolloverBudgetExpensesIfNeeded,
   addBudgetExpense,
   updateBudgetExpense,
@@ -1130,6 +1132,52 @@ describe('state helpers', () => {
     })
   })
 
+  describe('ensureBudgetExpensesSnapshotForYear', () => {
+    it('copies the nearest year expenses into a new later year', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2024': [e1] } }
+      const updated = ensureBudgetExpensesSnapshotForYear(state, '2026')
+      expect(updated.budgetExpensesByYear['2026']).toEqual([{ ...e1 }])
+    })
+
+    it('ties break toward the earlier year', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const e2: Expense = { id: 'exp-2', name: 'Gym', categoryId: 'cat-Health', amount: 50, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2024': [e1], '2026': [e2] } }
+      const updated = ensureBudgetExpensesSnapshotForYear(state, '2025')
+      expect(updated.budgetExpensesByYear['2025']).toEqual([e1])
+    })
+
+    it('seeds [] as the first-ever year when there is no data anywhere', () => {
+      const updated = ensureBudgetExpensesSnapshotForYear(initialState(), '2026')
+      expect(updated.budgetExpensesByYear['2026']).toEqual([])
+      expect('2026' in updated.budgetExpensesByYear).toBe(true)
+    })
+
+    it('is a no-op if the year already has a snapshot', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2026': [e1] } }
+      const updated = ensureBudgetExpensesSnapshotForYear(state, '2026')
+      expect(updated).toBe(state)
+    })
+
+    it('gives the target year its own array reference, unaffected by later changes to the source year', () => {
+      const e1: Expense = { id: 'exp-1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }
+      const state = { ...initialState(), budgetExpensesByYear: { '2024': [e1] } }
+      const updated = ensureBudgetExpensesSnapshotForYear(state, '2026')
+      expect(updated.budgetExpensesByYear['2026']).not.toBe(updated.budgetExpensesByYear['2024'])
+
+      const afterAdd = addBudgetExpense(updated, '2024', {
+        name: 'Netflix',
+        categoryId: 'cat-Subscriptions',
+        amount: 15,
+        frequency: 'monthly',
+      })
+      expect(afterAdd.budgetExpensesByYear['2024']).toHaveLength(2)
+      expect(afterAdd.budgetExpensesByYear['2026']).toEqual([e1])
+    })
+  })
+
   describe('rolloverBudgetExpensesIfNeeded', () => {
     const now = new Date('2026-06-01T00:00:00Z')
 
@@ -1288,6 +1336,45 @@ describe('state helpers', () => {
     it('seeds {monthly:0,yearly:0} when there is no data anywhere', () => {
       const updated = seedBudgetIncomeForYear(initialState(), '2025')
       expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 0, yearly: 0 })
+    })
+  })
+
+  describe('ensureBudgetIncomeSnapshotForYear', () => {
+    it('copies the nearest year income into a new later year', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2024': { monthly: 100, yearly: 1200 } } }
+      const updated = ensureBudgetIncomeSnapshotForYear(state, '2026')
+      expect(updated.budgetIncomeByYear['2026']).toEqual({ monthly: 100, yearly: 1200 })
+    })
+
+    it('ties break toward the earlier year', () => {
+      const state = {
+        ...initialState(),
+        budgetIncomeByYear: { '2024': { monthly: 100, yearly: 0 }, '2026': { monthly: 500, yearly: 0 } },
+      }
+      const updated = ensureBudgetIncomeSnapshotForYear(state, '2025')
+      expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 100, yearly: 0 })
+    })
+
+    it('seeds {monthly:0,yearly:0} as the first-ever year when there is no data anywhere', () => {
+      const updated = ensureBudgetIncomeSnapshotForYear(initialState(), '2026')
+      expect(updated.budgetIncomeByYear['2026']).toEqual({ monthly: 0, yearly: 0 })
+      expect('2026' in updated.budgetIncomeByYear).toBe(true)
+    })
+
+    it('is a no-op if the year already has a snapshot', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2026': { monthly: 100, yearly: 0 } } }
+      const updated = ensureBudgetIncomeSnapshotForYear(state, '2026')
+      expect(updated).toBe(state)
+    })
+
+    it('gives the target year its own object reference, unaffected by later changes to the source year', () => {
+      const state = { ...initialState(), budgetIncomeByYear: { '2024': { monthly: 100, yearly: 0 } } }
+      const updated = ensureBudgetIncomeSnapshotForYear(state, '2026')
+      expect(updated.budgetIncomeByYear['2026']).not.toBe(updated.budgetIncomeByYear['2024'])
+
+      const afterSet = setBudgetIncome(updated, '2024', { monthly: 9999 })
+      expect(afterSet.budgetIncomeByYear['2024']).toEqual({ monthly: 9999, yearly: 0 })
+      expect(afterSet.budgetIncomeByYear['2026']).toEqual({ monthly: 100, yearly: 0 })
     })
   })
 

@@ -616,10 +616,12 @@ export function resolveBudgetExpensesForAnalyticsYear(
 }
 
 /**
- * Ensure `budgetExpensesByYear[year]` exists: no-op if already present, else
- * deep-copies the nearest year's expenses (or seeds []) into `year`.
+ * Ensure `budgetExpensesByYear[year]` exists as a REAL persisted snapshot:
+ * no-op if already present, else deep-copies the nearest year's expenses
+ * (or seeds []) into `year`. Pure; identical logic to seedBudgetExpensesForYear
+ * today — factored out so rollover-on-load and dropdown-switch share it.
  */
-export function seedBudgetExpensesForYear(state: AppState, year: string): AppState {
+export function ensureBudgetExpensesSnapshotForYear(state: AppState, year: string): AppState {
   if (state.budgetExpensesByYear[year]) return state
   const nearest = nearestBudgetExpensesYear(state.budgetExpensesByYear, year)
   const seeded: Expense[] = nearest ? state.budgetExpensesByYear[nearest].map((e) => ({ ...e })) : []
@@ -627,6 +629,14 @@ export function seedBudgetExpensesForYear(state: AppState, year: string): AppSta
     ...state,
     budgetExpensesByYear: { ...state.budgetExpensesByYear, [year]: seeded },
   }
+}
+
+/**
+ * Ensure `budgetExpensesByYear[year]` exists: no-op if already present, else
+ * deep-copies the nearest year's expenses (or seeds []) into `year`.
+ */
+export function seedBudgetExpensesForYear(state: AppState, year: string): AppState {
+  return ensureBudgetExpensesSnapshotForYear(state, year)
 }
 
 /**
@@ -638,7 +648,7 @@ export function rolloverBudgetExpensesIfNeeded(state: AppState, now: Date = new 
   const year = currentBudgetYear(now)
   if (state.budgetExpensesByYear[year]) return state
   if (Object.keys(state.budgetExpensesByYear).length === 0) return state
-  return seedBudgetExpensesForYear(state, year)
+  return ensureBudgetExpensesSnapshotForYear(state, year)
 }
 
 /** Add a new expense to a budget year's expense list, seeding the year first. Generates its id. */
@@ -718,10 +728,13 @@ export function resolveBudgetIncomeForAnalyticsYear(
 }
 
 /**
- * Ensure `budgetIncomeByYear[year]` exists: no-op if already present, else
- * copies the nearest year's {monthly,yearly} (or seeds {monthly:0,yearly:0}) into `year`.
+ * Ensure `budgetIncomeByYear[year]` exists as a REAL persisted snapshot:
+ * no-op if already present, else copies the nearest year's {monthly,yearly}
+ * (or seeds {monthly:0,yearly:0}) into `year`. Pure; identical logic to
+ * seedBudgetIncomeForYear today — factored out so rollover-on-load and
+ * dropdown-switch share it.
  */
-export function seedBudgetIncomeForYear(state: AppState, year: string): AppState {
+export function ensureBudgetIncomeSnapshotForYear(state: AppState, year: string): AppState {
   if (state.budgetIncomeByYear[year]) return state
   const nearest = nearestBudgetIncomeYear(state.budgetIncomeByYear, year)
   const seeded = nearest ? { ...state.budgetIncomeByYear[nearest] } : { monthly: 0, yearly: 0 }
@@ -729,6 +742,14 @@ export function seedBudgetIncomeForYear(state: AppState, year: string): AppState
     ...state,
     budgetIncomeByYear: { ...state.budgetIncomeByYear, [year]: seeded },
   }
+}
+
+/**
+ * Ensure `budgetIncomeByYear[year]` exists: no-op if already present, else
+ * copies the nearest year's {monthly,yearly} (or seeds {monthly:0,yearly:0}) into `year`.
+ */
+export function seedBudgetIncomeForYear(state: AppState, year: string): AppState {
+  return ensureBudgetIncomeSnapshotForYear(state, year)
 }
 
 /**
@@ -740,7 +761,7 @@ export function rolloverBudgetIncomeIfNeeded(state: AppState, now: Date = new Da
   const year = currentBudgetYear(now)
   if (state.budgetIncomeByYear[year]) return state
   if (Object.keys(state.budgetIncomeByYear).length === 0) return state
-  return seedBudgetIncomeForYear(state, year)
+  return ensureBudgetIncomeSnapshotForYear(state, year)
 }
 
 /** Set income fields for a budget year, seeding the year first, then merging `patch`. Clamped to >= 0. */

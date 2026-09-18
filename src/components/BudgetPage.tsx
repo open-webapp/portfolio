@@ -562,6 +562,9 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               value={selectedYear}
               onChange={(e) => {
                 setSelectedYear(e.target.value)
+                if (!state.budgetExpensesByYear[e.target.value]) {
+                  dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: e.target.value })
+                }
                 setRecPage(0)
               }}
             >
