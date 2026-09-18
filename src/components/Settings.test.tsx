@@ -886,11 +886,13 @@ describe('SettingsPage', () => {
         { id: 'cat-unused', name: 'Unused Category', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
       const categoryMappings = [
-        { id: 'map-1', substring: 'WHOLE FOODS', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
-        { id: 'map-2', substring: 'TRADER JOES', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'map-1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-groc-fresh', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'map-2', substring: 'TRADER JOES', spendExpenseId: 'exp-groc-fresh', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
       state.budgetExpenseDefinitions = [
-        { id: 'exp-1', name: 'Rent', categoryId: 'cat-rent', frequency: 'monthly' },
+        { id: 'exp-groc-fresh', name: 'Fresh Groceries', categoryId: 'cat-groceries', frequency: 'monthly' },
+        { id: 'exp-groc-pantry', name: 'Pantry Groceries', categoryId: 'cat-groceries', frequency: 'monthly' },
+        { id: 'exp-rent', name: 'Monthly Rent', categoryId: 'cat-rent', frequency: 'monthly' },
       ]
       return { state, categories, categoryMappings }
     }
@@ -912,13 +914,19 @@ describe('SettingsPage', () => {
       expect(screen.queryByText('Polygon.io API Key')).toBeFalsy()
     })
 
-    it('shows only referencedCategories(...) output - a zero-ref category is absent', () => {
+    it('renders every category header; a category with zero expense definitions shows no substring list or "+ add substring" affordance', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
       expect(screen.getByText('Groceries')).toBeTruthy()
       expect(screen.getByText('Rent')).toBeTruthy()
-      expect(screen.queryByText('Unused Category')).toBeFalsy()
+      expect(screen.getByText('Unused Category')).toBeTruthy()
+
+      // Only the 3 expense definitions (2 under Groceries, 1 under Rent) get an add input.
+      expect(screen.getAllByPlaceholderText('+ add substring').length).toBe(3)
+      const unusedHeader = screen.getByText('Unused Category')
+      const unusedBlock = unusedHeader.closest('div')?.parentElement as HTMLElement
+      expect(unusedBlock.querySelector('input[placeholder="+ add substring"]')).toBeNull()
     })
 
     it('renaming a category (pencil -> edit -> Done) dispatches RENAME_CATEGORY via categoryDispatch with correct id/name', () => {
@@ -992,26 +1000,69 @@ describe('SettingsPage', () => {
       )
     })
 
-    it('adding a new substring under a category dispatches ADD_CATEGORY_MAPPING via categoryDispatch with that category id and typed substring', () => {
+    it('adding a new substring under an expense definition dispatches ADD_CATEGORY_MAPPING via categoryDispatch with that expense id and typed substring', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
-      const addInput = screen.getByLabelText('Add substring to Groceries') as HTMLInputElement
+      const addInput = screen.getByLabelText('Add substring to Fresh Groceries') as HTMLInputElement
       fireEvent.change(addInput, { target: { value: 'COSTCO' } })
-      fireEvent.click(screen.getByLabelText('Add substring button Groceries'))
+      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries'))
 
       expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'ADD_CATEGORY_MAPPING',
-        categoryId: 'cat-groceries',
+        spendExpenseId: 'exp-groc-fresh',
         substring: 'COSTCO',
       })
     })
 
-    it('a category with zero mappings renders with an empty substring list and a working "+ add substring" input', () => {
+    it('a category with 2 expense definitions shows 2 separate "+ add substring" affordances, each scoped to its own expense', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
-      const addInput = screen.getByLabelText('Add substring to Rent') as HTMLInputElement
+      const freshInput = screen.getByLabelText('Add substring to Fresh Groceries') as HTMLInputElement
+      const pantryInput = screen.getByLabelText('Add substring to Pantry Groceries') as HTMLInputElement
+      expect(freshInput).toBeTruthy()
+      expect(pantryInput).toBeTruthy()
+      expect(freshInput).not.toBe(pantryInput)
+
+      fireEvent.change(freshInput, { target: { value: 'COSTCO' } })
+      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries'))
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
+        type: 'ADD_CATEGORY_MAPPING',
+        spendExpenseId: 'exp-groc-fresh',
+        substring: 'COSTCO',
+      })
+
+      fireEvent.change(pantryInput, { target: { value: 'BULK MART' } })
+      fireEvent.keyDown(pantryInput, { key: 'Enter' })
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
+        type: 'ADD_CATEGORY_MAPPING',
+        spendExpenseId: 'exp-groc-pantry',
+        substring: 'BULK MART',
+      })
+    })
+
+    it('a category with 0 expense definitions shows no "+ add substring" affordance anywhere under it', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
+
+      // Unused Category renders its header (rename affordance intact) but no substring UI.
+      expect(screen.getByText('Unused Category')).toBeTruthy()
+      const unusedHeader = screen.getByText('Unused Category')
+      const unusedBlock = unusedHeader.closest('div')?.parentElement as HTMLElement
+      expect(unusedBlock.querySelector('input[placeholder="+ add substring"]')).toBeNull()
+      expect(
+        unusedBlock.querySelectorAll('button[aria-label^="Add substring button"]')
+      ).toHaveLength(0)
+      // Sanity: the 3 expense-scoped add inputs elsewhere still render.
+      expect(screen.getAllByPlaceholderText('+ add substring').length).toBe(3)
+    })
+
+    it('an expense definition with zero mappings renders with an empty substring list and a working "+ add substring" input', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
+
+      const addInput = screen.getByLabelText('Add substring to Monthly Rent') as HTMLInputElement
       expect(addInput).toBeTruthy()
 
       fireEvent.change(addInput, { target: { value: 'LANDLORD LLC' } })
@@ -1019,7 +1070,7 @@ describe('SettingsPage', () => {
 
       expect(mockCategoryDispatch).toHaveBeenCalledWith({
         type: 'ADD_CATEGORY_MAPPING',
-        categoryId: 'cat-rent',
+        spendExpenseId: 'exp-rent',
         substring: 'LANDLORD LLC',
       })
     })
@@ -1110,7 +1161,7 @@ describe('SettingsPage', () => {
     })
   })
 
-  describe('Auto-reapply category mappings on change (T8 - regression, expected to FAIL until T9/T10 wires the auto-trigger)', () => {
+  describe('Auto-reapply category mappings on change (T9: spendExpenseId-scoped, expense-level editor)', () => {
     // Full-store harness: wires `dispatch` through the REAL appReducer (so
     // REAPPLY_CATEGORY_MAPPINGS actually mutates budgetTransactions) and
     // `categoryDispatch` through the REAL categoryStoreReducer (so
@@ -1165,6 +1216,9 @@ describe('SettingsPage', () => {
 
     function fixtureAppState() {
       const state = initialState()
+      state.budgetExpenseDefinitions = [
+        { id: 'exp-groceries', name: 'Fresh Groceries', categoryId: 'cat-groceries', frequency: 'monthly' },
+      ]
       state.budgetTransactions = [
         {
           id: 'tx-1',
@@ -1178,14 +1232,13 @@ describe('SettingsPage', () => {
       return state
     }
 
-    // referencedCategories() only renders a category row once something
-    // references it (a mapping, an expense, or a transaction's categoryId) -
-    // so "Groceries" needs a seed mapping to be visible in the Categories
-    // tab. The seed mapping's substring ("SAFEWAY") is deliberately
-    // non-matching so it doesn't itself trigger the reapply we're testing;
-    // the *new* mapping added via the "+ add substring" control below
-    // ("TRADER JOES", matching the seeded transaction's description) is
-    // what should auto-trigger the reapply.
+    // "Groceries" needs a seed mapping + expense definition to be visible in
+    // the Categories tab. The seed mapping's substring ("SAFEWAY") is
+    // deliberately non-matching so it doesn't itself trigger the reapply
+    // we're testing; the *new* mapping added via the expense definition's
+    // "+ add substring" control below ("TRADER JOES", matching the seeded
+    // transaction's description) is what should auto-trigger the reapply,
+    // linking the transaction to the expense (categoryId + spendExpenseId).
     function fixtureCategoryState(): GlobalCategoryState {
       return {
         categories: [
@@ -1193,20 +1246,20 @@ describe('SettingsPage', () => {
           { id: 'cat-other', name: 'Other', updatedAt: '2026-01-01T00:00:00.000Z' },
         ],
         categoryMappings: [
-          { id: 'map-seed', substring: 'SAFEWAY', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'map-seed', substring: 'SAFEWAY', spendExpenseId: 'exp-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
         ],
       }
     }
 
-    it('adding a new CategoryMapping via the mapping editor auto-reapplies to a matching transaction, clearing spendExpenseId and updating categoryId, WITHOUT clicking the reapply button', () => {
+    it('adding a new CategoryMapping via the expense-level mapping editor auto-reapplies to a matching transaction, linking spendExpenseId and updating categoryId, WITHOUT clicking the reapply button', () => {
       const appState = fixtureAppState()
       const categoryState = fixtureCategoryState()
 
       render(<AutoReapplyHarness initialAppState={appState} initialCategoryState={categoryState} />)
 
-      const addInput = screen.getByLabelText('Add substring to Groceries') as HTMLInputElement
+      const addInput = screen.getByLabelText('Add substring to Fresh Groceries') as HTMLInputElement
       fireEvent.change(addInput, { target: { value: 'TRADER JOES' } })
-      fireEvent.click(screen.getByLabelText('Add substring button Groceries'))
+      fireEvent.click(screen.getByLabelText('Add substring button Fresh Groceries'))
 
       // No click on "Re-apply mappings to existing records" anywhere above -
       // the reapply must have happened automatically for this to pass.
@@ -1214,7 +1267,7 @@ describe('SettingsPage', () => {
       const transactions = JSON.parse(debug.textContent || '[]')
       const tx = transactions.find((t: any) => t.id === 'tx-1')
       expect(tx.categoryId).toBe('cat-groceries')
-      expect(tx.spendExpenseId).toBeUndefined()
+      expect(tx.spendExpenseId).toBe('exp-groceries')
     })
 
     it('CSV mapping import triggers the same auto-reapply for all matching transactions', async () => {
@@ -1234,7 +1287,7 @@ describe('SettingsPage', () => {
       const imported = {
         categories: [],
         categoryMappings: [
-          { id: 'map-imported', substring: 'TRADER JOES', categoryId: 'cat-groceries', updatedAt: '2026-02-01T00:00:00.000Z' },
+          { id: 'map-imported', substring: 'TRADER JOES', spendExpenseId: 'exp-groceries', updatedAt: '2026-02-01T00:00:00.000Z' },
         ],
       }
       const input = screen.getByLabelText('Import Category Mapping file') as HTMLInputElement
@@ -1247,7 +1300,7 @@ describe('SettingsPage', () => {
         const tx1 = transactions.find((t: any) => t.id === 'tx-1')
         const tx2 = transactions.find((t: any) => t.id === 'tx-2')
         expect(tx1.categoryId).toBe('cat-groceries')
-        expect(tx1.spendExpenseId).toBeUndefined()
+        expect(tx1.spendExpenseId).toBe('exp-groceries')
         expect(tx2.categoryId).toBe('cat-groceries')
       })
     })
@@ -1257,7 +1310,7 @@ describe('SettingsPage', () => {
     function fixture() {
       const categories = [{ id: 'cat-groceries', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }]
       const categoryMappings = [
-        { id: 'map-1', substring: 'WHOLE FOODS', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'map-1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
       return { categories, categoryMappings }
     }
@@ -1278,7 +1331,7 @@ describe('SettingsPage', () => {
       const { categories, categoryMappings } = fixture()
       const imported = {
         categories: [{ id: 'cat-rent', name: 'Rent', updatedAt: '2026-02-01T00:00:00.000Z' }],
-        categoryMappings: [{ id: 'map-2', substring: 'LANDLORD', categoryId: 'cat-rent', updatedAt: '2026-02-01T00:00:00.000Z' }],
+        categoryMappings: [{ id: 'map-2', substring: 'LANDLORD', spendExpenseId: 'exp-rent', updatedAt: '2026-02-01T00:00:00.000Z' }],
       }
       renderSettings({ categories, categoryMappings, categoriesHydrated: true, settingsSection: 'backup' })
 

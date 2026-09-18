@@ -115,7 +115,7 @@ export interface Category {
 export interface CategoryMapping {
   id: string
   substring: string
-  categoryId: string
+  spendExpenseId: string
   updatedAt: string  // ISO
   deletedAt?: string  // ISO
 }

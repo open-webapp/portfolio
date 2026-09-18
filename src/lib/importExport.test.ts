@@ -416,13 +416,60 @@ describe('decryptImportEnvelope', () => {
 })
 
 describe('parseCategoryMappingImportFile', () => {
-  it('parses valid category-mapping JSON', () => {
+  it('parses valid spendExpenseId-keyed category-mapping JSON', () => {
     const data = {
       categories: [{ id: 'cat1', name: 'Food' }],
-      categoryMappings: [{ id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' }],
+      categoryMappings: [{ id: 'cm1', substring: 'grocer', spendExpenseId: 'exp1', updatedAt: '2024-01-01T00:00:00.000Z' }],
     }
     const result = parseCategoryMappingImportFile(JSON.stringify(data))
     expect(result).toEqual(data)
+  })
+
+  it('strips a stale categoryId residue when both keys are present (spendExpenseId is authoritative)', () => {
+    const data = {
+      categories: [],
+      categoryMappings: [
+        { id: 'cm1', substring: 'grocer', categoryId: 'cat1', spendExpenseId: 'exp1', updatedAt: '2024-01-01T00:00:00.000Z' },
+      ],
+    }
+    const result = parseCategoryMappingImportFile(JSON.stringify(data))
+    expect(result.categoryMappings).toEqual([
+      { id: 'cm1', substring: 'grocer', spendExpenseId: 'exp1', updatedAt: '2024-01-01T00:00:00.000Z' },
+    ])
+    expect('categoryId' in result.categoryMappings[0]).toBe(false)
+  })
+
+  it('migrates a legacy categoryId-only row via resolveSpendExpenseForCategory when definitions are in scope', () => {
+    const data = {
+      categories: [],
+      categoryMappings: [{ id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' }],
+    }
+    const result = parseCategoryMappingImportFile(JSON.stringify(data), [
+      { id: 'exp1', name: 'Groceries', categoryId: 'cat1', frequency: 'monthly' },
+    ])
+    expect(result.categoryMappings).toEqual([
+      { id: 'cm1', substring: 'grocer', spendExpenseId: 'exp1', updatedAt: '2024-01-01T00:00:00.000Z' },
+    ])
+  })
+
+  it('drops a legacy categoryId-only row with no matching definition', () => {
+    const data = {
+      categories: [],
+      categoryMappings: [{ id: 'cm1', substring: 'grocer', categoryId: 'cat-gone', updatedAt: '2024-01-01T00:00:00.000Z' }],
+    }
+    const result = parseCategoryMappingImportFile(JSON.stringify(data), [
+      { id: 'exp1', name: 'Groceries', categoryId: 'cat1', frequency: 'monthly' },
+    ])
+    expect(result.categoryMappings).toEqual([])
+  })
+
+  it('drops legacy categoryId-only rows when no definitions are in scope', () => {
+    const data = {
+      categories: [],
+      categoryMappings: [{ id: 'cm1', substring: 'grocer', categoryId: 'cat1', updatedAt: '2024-01-01T00:00:00.000Z' }],
+    }
+    const result = parseCategoryMappingImportFile(JSON.stringify(data))
+    expect(result.categoryMappings).toEqual([])
   })
 
   it('parses an empty-but-valid categories/categoryMappings payload fine', () => {

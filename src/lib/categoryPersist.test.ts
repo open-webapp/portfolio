@@ -11,6 +11,7 @@ import {
 } from './categoryPersist'
 import { initialGlobalCategoryState } from './categoryStore'
 import type { GlobalCategoryState } from './categoryStore'
+import type { CategoryMapping, ExpenseDefinition } from './types'
 
 const DB_NAME = 'ledger_global_categories_v1'
 const STATE_STORE = 'state'
@@ -55,7 +56,7 @@ beforeEach(async () => {
 
 describe('categoryPersist', () => {
   it('loadGlobalCategoryState on a fresh db returns initialGlobalCategoryState()', async () => {
-    const state = await loadGlobalCategoryState()
+    const state = await loadGlobalCategoryState([])
     expect(state).toEqual(initialGlobalCategoryState())
   })
 
@@ -63,11 +64,11 @@ describe('categoryPersist', () => {
     const state: GlobalCategoryState = {
       categories: [{ id: 'cat-1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
       categoryMappings: [
-        { id: 'catmap-1', substring: 'trader joe', categoryId: 'cat-1', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'catmap-1', substring: 'trader joe', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
       ],
     }
     await saveGlobalCategoryState(state)
-    const loaded = await loadGlobalCategoryState()
+    const loaded = await loadGlobalCategoryState([])
     expect(loaded).toEqual(state)
   })
 
@@ -88,9 +89,97 @@ describe('categoryPersist', () => {
   it('is independent of any setActivePortfolioDb call', async () => {
     // This test never touches persist.ts / setActivePortfolioDb at all,
     // and categoryPersist must still work cleanly on its own db.
-    const state = await loadGlobalCategoryState()
+    const state = await loadGlobalCategoryState([])
     expect(state).toEqual(initialGlobalCategoryState())
     await saveGlobalCategoryState({ categories: [], categoryMappings: [] })
-    expect(await loadGlobalCategoryState()).toEqual({ categories: [], categoryMappings: [] })
+    expect(await loadGlobalCategoryState([])).toEqual({ categories: [], categoryMappings: [] })
+  })
+
+  describe('categoryId → spendExpenseId one-time migration', () => {
+    const TS = '2026-01-01T00:00:00.000Z'
+    // Legacy (pre-spendkey) rows predate CategoryMapping.spendExpenseId, so
+    // they need a local cast — categoryId must NOT be re-added to the type.
+    const legacyMapping = (id: string, substring: string, categoryId: string) =>
+      ({ id, substring, categoryId, updatedAt: TS }) as unknown as CategoryMapping
+    const defs: ExpenseDefinition[] = [
+      { id: 'exp-1', name: 'Groceries', categoryId: 'cat-1', frequency: 'monthly' },
+    ]
+
+    it('migrates an old-shape mapping with a resolvable categoryId to spendExpenseId and persists it', async () => {
+      await saveGlobalCategoryState({
+        categories: [{ id: 'cat-1', name: 'Groceries', updatedAt: TS }],
+        categoryMappings: [legacyMapping('catmap-1', 'trader joe', 'cat-1')],
+      })
+      const loaded = await loadGlobalCategoryState(defs)
+      expect(loaded.categoryMappings).toHaveLength(1)
+      expect(loaded.categoryMappings[0]).toMatchObject({
+        id: 'catmap-1',
+        substring: 'trader joe',
+        spendExpenseId: 'exp-1',
+      })
+      expect('categoryId' in loaded.categoryMappings[0]).toBe(false)
+      // Persisted back: a follow-up load with EMPTY defs still sees the
+      // migrated row (without the save-back it would have been dropped).
+      expect(await loadGlobalCategoryState([])).toEqual(loaded)
+    })
+
+    it('drops an old-shape mapping whose categoryId matches no ExpenseDefinition', async () => {
+      await saveGlobalCategoryState({
+        categories: [],
+        categoryMappings: [legacyMapping('catmap-gone', 'old store', 'cat-nope')],
+      })
+      const loaded = await loadGlobalCategoryState(defs)
+      expect(loaded.categoryMappings).toEqual([])
+      // The drop was persisted: even defs that WOULD have matched find
+      // nothing left to migrate on a follow-up load.
+      const matchingLater: ExpenseDefinition[] = [
+        ...defs,
+        { id: 'exp-9', name: 'Old Store', categoryId: 'cat-nope', frequency: 'monthly' },
+      ]
+      expect(await loadGlobalCategoryState(matchingLater)).toEqual(loaded)
+    })
+
+    it('leaves an already-migrated mapping untouched without re-saving', async () => {
+      const state: GlobalCategoryState = {
+        categories: [],
+        categoryMappings: [
+          { id: 'catmap-1', substring: 'trader joe', spendExpenseId: 'exp-1', updatedAt: TS },
+        ],
+      }
+      await saveGlobalCategoryState(state)
+      const loaded = await loadGlobalCategoryState(defs)
+      expect(loaded).toEqual(state)
+      // Stable across loads and independent of defs — no re-run, no re-save.
+      expect(await loadGlobalCategoryState([])).toEqual(state)
+      expect(await loadGlobalCategoryState(defs)).toEqual(state)
+    })
+
+    it('handles a mixed batch: some migrate, some drop, some already-migrated', async () => {
+      await saveGlobalCategoryState({
+        categories: [],
+        categoryMappings: [
+          legacyMapping('catmap-migrate', 'trader joe', 'cat-1'),
+          legacyMapping('catmap-drop', 'old store', 'cat-nope'),
+          { id: 'catmap-kept', substring: 'shell', spendExpenseId: 'exp-9', updatedAt: TS },
+        ],
+      })
+      const loaded = await loadGlobalCategoryState([
+        ...defs,
+        { id: 'exp-9', name: 'Gas', categoryId: 'cat-9', frequency: 'monthly' },
+      ])
+      expect(loaded.categoryMappings).toHaveLength(2)
+      expect(loaded.categoryMappings[0]).toMatchObject({
+        id: 'catmap-migrate',
+        spendExpenseId: 'exp-1',
+      })
+      expect('categoryId' in loaded.categoryMappings[0]).toBe(false)
+      expect(loaded.categoryMappings[1]).toEqual({
+        id: 'catmap-kept',
+        substring: 'shell',
+        spendExpenseId: 'exp-9',
+        updatedAt: TS,
+      })
+      expect(loaded.categoryMappings.some((m) => 'categoryId' in m)).toBe(false)
+    })
   })
 })

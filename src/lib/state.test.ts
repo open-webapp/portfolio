@@ -1820,46 +1820,59 @@ describe('state helpers', () => {
       expect(updated.budgetTransactions[0]).toMatchObject({ ...row, categoryId: 'cat-other' })
     })
 
-    it('resolves categoryId from a matching category mapping instead of defaulting to Other', () => {
+    it('resolves spendExpenseId from a matching category mapping and derives categoryId from the expense', () => {
       const state = initialState()
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' },
+      ]
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm1', substring: 'rent', spendExpenseId: 'exp-housing', updatedAt: '2026-01-01T00:00:00Z' },
       ]
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Monthly Rent Payment', amount: 2000 },
-      ], categories, mappings, [])
+      ], categories, mappings, budgetExpenseDefinitions)
+      expect(updated.budgetTransactions[0].spendExpenseId).toBe('exp-housing')
       expect(updated.budgetTransactions[0].categoryId).toBe('cat-housing')
     })
 
     it('falls back to the "Other" category id when no mapping matches', () => {
       const state = initialState()
-      const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
-      ]
-      const updated = importBudgetTransactions(state, [
-        { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
-      ], categories, mappings, [])
-      expect(updated.budgetTransactions[0].categoryId).toBe('cat-other')
-    })
-
-    it('when two mappings match the same description, the mapping with the latest updatedAt wins', () => {
-      const state = initialState()
-      const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2026-01-01T00:00:00Z' },
-        { id: 'm2', substring: 'coffee shop', categoryId: 'cat-housing', updatedAt: '2026-02-01T00:00:00Z' },
-      ]
-      const updated = importBudgetTransactions(state, [
-        { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
-      ], categories, mappings, [])
-      expect(updated.budgetTransactions[0].categoryId).toBe('cat-housing')
-    })
-
-    it('sets spendExpenseId to a definition matching the resolved categoryId', () => {
       const budgetExpenseDefinitions: ExpenseDefinition[] = [
         { id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' },
       ]
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm1', substring: 'rent', spendExpenseId: 'exp-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
+      const updated = importBudgetTransactions(state, [
+        { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
+      ], categories, mappings, budgetExpenseDefinitions)
+      expect(updated.budgetTransactions[0].categoryId).toBe('cat-other')
+      expect(updated.budgetTransactions[0].spendExpenseId).toBeUndefined()
+    })
+
+    it('when two mappings match the same description, the mapping with the latest updatedAt wins', () => {
+      const state = initialState()
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-food', name: 'Groceries', categoryId: 'cat-food', frequency: 'monthly' },
+        { id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' },
+      ]
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'coffee', spendExpenseId: 'exp-food', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm2', substring: 'coffee shop', spendExpenseId: 'exp-housing', updatedAt: '2026-02-01T00:00:00Z' },
+      ]
+      const updated = importBudgetTransactions(state, [
+        { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
+      ], categories, mappings, budgetExpenseDefinitions)
+      expect(updated.budgetTransactions[0].spendExpenseId).toBe('exp-housing')
+      expect(updated.budgetTransactions[0].categoryId).toBe('cat-housing')
+    })
+
+    it('sets spendExpenseId directly from the mapping and derives categoryId from the expense', () => {
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' },
+      ]
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', spendExpenseId: 'exp-housing', updatedAt: '2026-01-01T00:00:00Z' },
       ]
       const { toAdd } = resolveBudgetImportRows(
         [],
@@ -1869,15 +1882,16 @@ describe('state helpers', () => {
         budgetExpenseDefinitions
       )
       expect(toAdd[0].spendExpenseId).toBe('exp-housing')
+      expect(toAdd[0].categoryId).toBe('cat-housing')
     })
 
-    it('when multiple definitions share the resolved categoryId, the first by array order wins', () => {
+    it('when multiple definitions share a categoryId, the mapping-pinned definition wins (not first by array order)', () => {
       const budgetExpenseDefinitions: ExpenseDefinition[] = [
         { id: 'exp-first', name: 'Rent A', categoryId: 'cat-housing', frequency: 'monthly' },
         { id: 'exp-second', name: 'Rent B', categoryId: 'cat-housing', frequency: 'monthly' },
       ]
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm1', substring: 'rent', spendExpenseId: 'exp-second', updatedAt: '2026-01-01T00:00:00Z' },
       ]
       const { toAdd } = resolveBudgetImportRows(
         [],
@@ -1886,15 +1900,16 @@ describe('state helpers', () => {
         mappings,
         budgetExpenseDefinitions
       )
-      expect(toAdd[0].spendExpenseId).toBe('exp-first')
+      expect(toAdd[0].spendExpenseId).toBe('exp-second')
+      expect(toAdd[0].categoryId).toBe('cat-housing')
     })
 
-    it('leaves spendExpenseId unset when no definition matches the resolved category', () => {
+    it('leaves spendExpenseId unset and falls back to Other when the mapped expense definition no longer exists', () => {
       const budgetExpenseDefinitions: ExpenseDefinition[] = [
         { id: 'exp-food', name: 'Groceries', categoryId: 'cat-food', frequency: 'monthly' },
       ]
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm1', substring: 'rent', spendExpenseId: 'exp-deleted', updatedAt: '2026-01-01T00:00:00Z' },
       ]
       const { toAdd } = resolveBudgetImportRows(
         [],
@@ -1904,12 +1919,12 @@ describe('state helpers', () => {
         budgetExpenseDefinitions
       )
       expect(toAdd[0].spendExpenseId).toBeUndefined()
-      expect(toAdd[0].categoryId).toBe('cat-housing')
+      expect(toAdd[0].categoryId).toBe('cat-other')
     })
 
     it('leaves spendExpenseId unset when there are zero definitions', () => {
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm1', substring: 'rent', spendExpenseId: 'exp-housing', updatedAt: '2026-01-01T00:00:00Z' },
       ]
       const { toAdd } = resolveBudgetImportRows(
         [],
@@ -1919,16 +1934,20 @@ describe('state helpers', () => {
         []
       )
       expect(toAdd[0].spendExpenseId).toBeUndefined()
+      expect(toAdd[0].categoryId).toBe('cat-other')
     })
 
-    it('BREAKING CHANGE: two rows with same date/description/amount/account but different categoryId now dedup', () => {
+    it('dedup key excludes category and spendExpenseId: two rows with same date/description/amount/account but different resolved expense now dedup', () => {
       const state = initialState()
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' },
+      ]
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'rent payment', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm1', substring: 'rent payment', spendExpenseId: 'exp-housing', updatedAt: '2026-01-01T00:00:00Z' },
       ]
       const rowA = { date: '2026-01-01', description: 'Rent Payment', amount: 2000 }
       const rowB = { date: '2026-01-01', description: 'Rent Payment', amount: 2000 }
-      // rowA resolves to cat-other (no mapping in first call), rowB resolves to cat-housing via mapping
+      // rowA resolves to cat-other (no mapping in first call), rowB resolves to cat-housing + exp-housing via mapping
       const { toAdd: firstToAdd } = resolveBudgetImportRows(state.budgetTransactions, [rowA], categories, [], [])
       const stateAfterFirst = { ...state, budgetTransactions: [...state.budgetTransactions, ...firstToAdd] }
       const { toAdd, duplicateCount } = resolveBudgetImportRows(
@@ -1936,7 +1955,7 @@ describe('state helpers', () => {
         [rowB],
         categories,
         mappings,
-        []
+        budgetExpenseDefinitions
       )
       expect(toAdd).toHaveLength(0)
       expect(duplicateCount).toBe(1)

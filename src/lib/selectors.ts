@@ -699,27 +699,10 @@ export function categoryBreakdown(
 }
 
 /**
- * Categories referenced by at least one budgeted expense, actual budget transaction,
- * or category mapping.
+ * Category mappings for a given expense, sorted alphabetically by substring.
  */
-export function referencedCategories(
-  categories: Category[],
-  categoryMappings: CategoryMapping[],
-  budgetExpenseDefinitions: ExpenseDefinition[],
-  budgetTransactions: BudgetTransaction[]
-): Category[] {
-  const used = new Set<string>()
-  budgetExpenseDefinitions.forEach((e) => used.add(e.categoryId))
-  budgetTransactions.forEach((t) => used.add(t.categoryId))
-  categoryMappings.forEach((m) => used.add(m.categoryId))
-  return categories.filter((c) => used.has(c.id))
-}
-
-/**
- * Category mappings for a given category, sorted alphabetically by substring.
- */
-export function mappingsForCategory(mappings: CategoryMapping[], categoryId: string): CategoryMapping[] {
-  return mappings.filter((m) => m.categoryId === categoryId).sort((a, b) => a.substring.localeCompare(b.substring))
+export function mappingsForExpense(mappings: CategoryMapping[], spendExpenseId: string): CategoryMapping[] {
+  return mappings.filter((m) => m.spendExpenseId === spendExpenseId).sort((a, b) => a.substring.localeCompare(b.substring))
 }
 
 /**

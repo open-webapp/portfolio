@@ -824,10 +824,13 @@ describe('appReducer', () => {
   describe('REAPPLY_CATEGORY_MAPPINGS', () => {
     it('dispatches to reapplyCategoryMappingsToState state action, rewriting matching budgetTransactions', () => {
       const categoryMappings: CategoryMapping[] = [
-        { id: 'catmap1', substring: 'STARBUCKS', categoryId: 'cat-coffee', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'catmap1', substring: 'STARBUCKS', spendExpenseId: 'exp-coffee', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
       const state: AppState = {
         ...initialState(),
+        budgetExpenseDefinitions: [
+          { id: 'exp-coffee', name: 'Coffee', categoryId: 'cat-coffee', frequency: 'monthly' },
+        ],
         budgetTransactions: [
           { id: 'tx1', date: '2026-01-15', description: 'STARBUCKS #123', categoryId: 'cat-uncategorized', amount: 5.5 },
           { id: 'tx2', date: '2026-01-16', description: 'GAS STATION', categoryId: 'cat-uncategorized', amount: 40 },

@@ -106,7 +106,7 @@ describe('categoryDrive', () => {
     it('returns the parsed GlobalCategoryState for valid JSON content', async () => {
       const state: GlobalCategoryState = {
         categories: [{ id: 'cat-1', name: 'Food', updatedAt: '2026-01-01T00:00:00Z' }],
-        categoryMappings: [{ id: 'map-1', substring: 'starbucks', categoryId: 'cat-1', updatedAt: '2026-01-01T00:00:00Z' }],
+        categoryMappings: [{ id: 'map-1', substring: 'starbucks', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00Z' }],
       }
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesRead.mockResolvedValue(JSON.stringify(state))

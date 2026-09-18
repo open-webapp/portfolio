@@ -25,8 +25,7 @@ import {
   actualByCategory,
   availableBudgetMonths,
   availableBudgetYears,
-  referencedCategories,
-  mappingsForCategory,
+  mappingsForExpense,
   monthsPresentInYear,
   yearTotalSpend,
   yearCategoryTotalSpend,
@@ -2015,51 +2014,23 @@ describe('budget selectors', () => {
     })
   })
 
-  describe('referencedCategories', () => {
-    const catHousing: Category = { id: 'cat-housing', name: 'Housing' }
-    const catFood: Category = { id: 'cat-food', name: 'Food' }
-    const catUnused: Category = { id: 'cat-unused', name: 'Unused' }
-    const catMappingOnly: Category = { id: 'cat-mapping-only', name: 'Mapping Only' }
-
-    it('includes a category referenced only via a CategoryMapping (zero expense/transaction refs)', () => {
-      const categories = [catHousing, catMappingOnly]
-      const budgetExpenseDefinitions: ExpenseDefinition[] = [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, frequency: 'monthly' }]
-      const budgetTransactions: BudgetTransaction[] = []
-      const categoryMappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'STARBUCKS', categoryId: catMappingOnly.id, updatedAt: '2026-01-01T00:00:00Z' }
-      ]
-      const result = referencedCategories(categories, categoryMappings, budgetExpenseDefinitions, budgetTransactions)
-      expect(result.map((c) => c.id)).toEqual(expect.arrayContaining([catHousing.id, catMappingOnly.id]))
-    })
-
-    it('excludes a category with zero references anywhere (expenses, transactions, or mappings)', () => {
-      const categories = [catHousing, catFood, catUnused]
-      const budgetExpenseDefinitions: ExpenseDefinition[] = [{ id: 'e1', name: 'Rent', categoryId: catHousing.id, frequency: 'monthly' }]
-      const budgetTransactions: BudgetTransaction[] = [{ id: 't1', date: '2026-09-01', description: 'a', categoryId: catFood.id, amount: 10 }]
-      const categoryMappings: CategoryMapping[] = []
-      const result = referencedCategories(categories, categoryMappings, budgetExpenseDefinitions, budgetTransactions)
-      expect(result.map((c) => c.id)).toEqual(expect.arrayContaining([catHousing.id, catFood.id]))
-      expect(result.find((c) => c.id === catUnused.id)).toBeUndefined()
-    })
-  })
-
-  describe('mappingsForCategory', () => {
-    it('filters by categoryId and sorts by substring', () => {
+  describe('mappingsForExpense', () => {
+    it('filters by spendExpenseId and sorts by substring', () => {
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'Whole Foods', categoryId: 'cat-food', updatedAt: '2026-01-01T00:00:00Z' },
-        { id: 'm2', substring: 'Amazon', categoryId: 'cat-food', updatedAt: '2026-01-02T00:00:00Z' },
-        { id: 'm3', substring: 'Netflix', categoryId: 'cat-entertainment', updatedAt: '2026-01-03T00:00:00Z' },
-        { id: 'm4', substring: 'Costco', categoryId: 'cat-food', updatedAt: '2026-01-04T00:00:00Z' }
+        { id: 'm1', substring: 'Whole Foods', spendExpenseId: 'exp-food', updatedAt: '2026-01-01T00:00:00Z' },
+        { id: 'm2', substring: 'Amazon', spendExpenseId: 'exp-food', updatedAt: '2026-01-02T00:00:00Z' },
+        { id: 'm3', substring: 'Netflix', spendExpenseId: 'exp-entertainment', updatedAt: '2026-01-03T00:00:00Z' },
+        { id: 'm4', substring: 'Costco', spendExpenseId: 'exp-food', updatedAt: '2026-01-04T00:00:00Z' }
       ]
-      const result = mappingsForCategory(mappings, 'cat-food')
+      const result = mappingsForExpense(mappings, 'exp-food')
       expect(result.map((m) => m.id)).toEqual(['m2', 'm4', 'm1'])
     })
 
     it('returns empty array when no mappings match', () => {
       const mappings: CategoryMapping[] = [
-        { id: 'm1', substring: 'Whole Foods', categoryId: 'cat-food', updatedAt: '2026-01-01T00:00:00Z' }
+        { id: 'm1', substring: 'Whole Foods', spendExpenseId: 'exp-food', updatedAt: '2026-01-01T00:00:00Z' }
       ]
-      expect(mappingsForCategory(mappings, 'cat-other')).toEqual([])
+      expect(mappingsForExpense(mappings, 'exp-other')).toEqual([])
     })
   })
 
