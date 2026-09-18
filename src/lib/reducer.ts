@@ -46,6 +46,7 @@ export type AppAction =
   | { type: 'ROLLOVER_BUDGET_INCOME_IF_NEEDED' }
   | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
   | { type: 'UPDATE_BUDGET_TRANSACTION'; id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }
+  | { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK'; ids: string[]; categoryId: string }
   | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
   | {
       type: 'IMPORT_BUDGET_TRANSACTIONS'
@@ -199,6 +200,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'UPDATE_BUDGET_TRANSACTION':
       return StateActions.updateBudgetTransaction(state, action.id, action.patch)
+
+    case 'UPDATE_BUDGET_TRANSACTIONS_BULK':
+      return StateActions.updateBudgetTransactionsBulk(state, action.ids, action.categoryId)
 
     case 'DELETE_BUDGET_TRANSACTION':
       return StateActions.deleteBudgetTransaction(state, action.id)

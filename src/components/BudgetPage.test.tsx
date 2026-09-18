@@ -1649,7 +1649,7 @@ VERSION:102
       expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPSERT_CATEGORY_MAPPING' }))
     })
 
-    it('the Spend records total row leading cell has colSpan={4}', () => {
+    it('the Spend records total row leading cell has colSpan={5}, aligned with the leftmost selection column', () => {
       const state: AppState = defaultState({
         budgetTransactions: [
           makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60 }),
@@ -1660,7 +1660,7 @@ VERSION:102
 
       const totalRow = container.querySelector('[data-testid="records-total-row"]')!
       const leadCell = totalRow.querySelector('td')!
-      expect(leadCell.getAttribute('colspan')).toBe('4')
+      expect(leadCell.getAttribute('colspan')).toBe('5')
     })
   })
 
@@ -1725,14 +1725,14 @@ VERSION:102
 
       it('defaults to Date descending, and reverses on repeat click', () => {
         renderInYear2025()
-        expect(bodyRows().map((tr) => tr.querySelector('td')!.textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[1].textContent)).toEqual([
           '2025-03-20',
           '2025-03-12',
           '2025-03-05',
         ])
 
         fireEvent.click(screen.getByLabelText('Sort by date'))
-        expect(bodyRows().map((tr) => tr.querySelector('td')!.textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[1].textContent)).toEqual([
           '2025-03-05',
           '2025-03-12',
           '2025-03-20',
@@ -1743,14 +1743,14 @@ VERSION:102
       it('sorts by Description ascending, then reverses on repeat click', () => {
         renderInYear2025()
         fireEvent.click(screen.getByLabelText('Sort by description'))
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[1].textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[2].textContent)).toEqual([
           'Groceries',
           'Rent payment',
           'Zoo tickets',
         ])
 
         fireEvent.click(screen.getByLabelText('Sort by description'))
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[1].textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[2].textContent)).toEqual([
           'Zoo tickets',
           'Rent payment',
           'Groceries',
@@ -1763,20 +1763,20 @@ VERSION:102
         // Resolved names: Food, Housing, Zoo -> ascending alphabetically.
         // (raw ids cat-food/cat-housing/cat-zoo would sort the same here by
         // coincidence, so this also checks against the id ordering below.)
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[2].textContent)).toEqual(['Food', 'Housing', 'Zoo'])
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[3].textContent)).toEqual(['Food', 'Housing', 'Zoo'])
       })
 
       it('sorts by Account ascending, then reverses on repeat click', () => {
         renderInYear2025()
         fireEvent.click(screen.getByLabelText('Sort by account'))
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[3].textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[4].textContent)).toEqual([
           'Checking',
           'Checking',
           'Savings',
         ])
 
         fireEvent.click(screen.getByLabelText('Sort by account'))
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[3].textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[4].textContent)).toEqual([
           'Savings',
           'Checking',
           'Checking',
@@ -1787,7 +1787,7 @@ VERSION:102
         renderInYear2025()
         const amountHeader = screen.getAllByLabelText(/Sort by amount/)[0]
         fireEvent.click(amountHeader)
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[4].textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[5].textContent)).toEqual([
           '$40.00',
           '$60.00',
           '$1,000.00',
@@ -1795,11 +1795,253 @@ VERSION:102
         expect(amountHeader.querySelector('svg')).toBeTruthy()
 
         fireEvent.click(amountHeader)
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[4].textContent)).toEqual([
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[5].textContent)).toEqual([
           '$1,000.00',
           '$60.00',
           '$40.00',
         ])
+      })
+    })
+
+    describe('row selection', () => {
+      function selectionCell(id: string) {
+        return screen.getByTestId(`row-select-${id}`)
+      }
+
+      it('clicking a row selection cell selects only that row and becomes the anchor', () => {
+        renderInYear2025()
+        fireEvent.click(selectionCell('t1'))
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t2').getAttribute('aria-selected')).toBe('false')
+        expect(selectionCell('t3').getAttribute('aria-selected')).toBe('false')
+      })
+
+      it('shift-click after a plain click selects the contiguous visual range', () => {
+        renderInYear2025()
+        // Default sort is Date descending: t2 (03-20), t3 (03-12), t1 (03-05).
+        fireEvent.click(selectionCell('t2'))
+        fireEvent.click(selectionCell('t1'), { shiftKey: true })
+        expect(selectionCell('t2').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t3').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('true')
+      })
+
+      it('ctrl/cmd-click toggles membership without selecting rows in between, and keeps the anchor', () => {
+        renderInYear2025()
+        fireEvent.click(selectionCell('t2'))
+        fireEvent.click(selectionCell('t1'), { ctrlKey: true })
+        expect(selectionCell('t2').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t3').getAttribute('aria-selected')).toBe('false')
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('true')
+
+        // Anchor is still t2: a subsequent shift-click from t1 back to t2 covers just those two.
+        fireEvent.click(selectionCell('t3'), { shiftKey: true })
+        expect(selectionCell('t2').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t3').getAttribute('aria-selected')).toBe('true')
+      })
+
+      it('shift+ArrowDown from a focused selection cell extends the selection to the next row', () => {
+        renderInYear2025()
+        fireEvent.click(selectionCell('t2'))
+        fireEvent.keyDown(selectionCell('t2'), { key: 'ArrowDown', shiftKey: true })
+        expect(selectionCell('t2').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t3').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('false')
+      })
+
+      it('shift-click with no prior anchor behaves like a plain click', () => {
+        renderInYear2025()
+        fireEvent.click(selectionCell('t1'), { shiftKey: true })
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('true')
+        expect(selectionCell('t2').getAttribute('aria-selected')).toBe('false')
+        expect(selectionCell('t3').getAttribute('aria-selected')).toBe('false')
+      })
+
+      it('clears selection when recPage, recSortBy/recSortDir, recordSearch, period, or selectedYear change', () => {
+        renderInYear2025()
+        fireEvent.click(selectionCell('t1'))
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('true')
+
+        fireEvent.click(screen.getByLabelText('Sort by description'))
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('false')
+
+        fireEvent.click(selectionCell('t1'))
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'rent' } })
+        expect(screen.queryByTestId('row-select-t1')).toBeFalsy() // filtered out
+        fireEvent.change(screen.getByLabelText('Search records'), { target: { value: '' } })
+        expect(selectionCell('t1').getAttribute('aria-selected')).toBe('false')
+
+        fireEvent.click(selectionCell('t1'))
+        fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
+        expect(screen.queryByTestId('row-select-t1')?.getAttribute('aria-selected')).not.toBe('true')
+      })
+    })
+
+    describe('bulk category edit action bar', () => {
+      function selectionCell(id: string) {
+        return screen.getByTestId(`row-select-${id}`)
+      }
+
+      function renderBulkInYear2025(overrides: {
+        dispatch?: (action: any) => void
+        categoryDispatch?: (action: any) => void
+      } = {}) {
+        const state = scopedRecordsState()
+        const utils = render(
+          <BudgetPage
+            state={state}
+            dispatch={overrides.dispatch ?? vi.fn()}
+            categories={CATEGORIES}
+            categoryMappings={[]}
+            categoryDispatch={overrides.categoryDispatch ?? vi.fn()}
+          />
+        )
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+        return utils
+      }
+
+      it('shows no action bar when no rows are selected', () => {
+        renderBulkInYear2025()
+        expect(screen.queryByTestId('bulk-action-bar')).toBeFalsy()
+      })
+
+      it('selecting 2 rows shows "2 selected", a category select, and a disabled Apply button', () => {
+        renderBulkInYear2025()
+        fireEvent.click(selectionCell('t2'))
+        fireEvent.click(selectionCell('t1'), { ctrlKey: true })
+
+        const bar = screen.getByTestId('bulk-action-bar')
+        expect(within(bar).getByText('2 selected')).toBeTruthy()
+        const select = within(bar).getByLabelText('Bulk edit category') as HTMLSelectElement
+        expect(select).toBeTruthy()
+        const applyBtn = within(bar).getByText('Apply') as HTMLButtonElement
+        expect(applyBtn.disabled).toBe(true)
+      })
+
+      it('Apply button stays disabled with rows selected but no category chosen', () => {
+        renderBulkInYear2025()
+        fireEvent.click(selectionCell('t1'))
+        const bar = screen.getByTestId('bulk-action-bar')
+        const applyBtn = within(bar).getByText('Apply') as HTMLButtonElement
+        expect(applyBtn.disabled).toBe(true)
+      })
+
+      it('choosing a category enables Apply; clicking it dispatches UPDATE_BUDGET_TRANSACTIONS_BULK with the correct ids/categoryId, and the rendered rows update', () => {
+        const dispatch = vi.fn()
+        const state = scopedRecordsState()
+        // Simulate the dispatch actually applying the bulk update so we can assert the rendered table.
+        const applyingDispatch = (action: any) => {
+          dispatch(action)
+          if (action.type === 'UPDATE_BUDGET_TRANSACTIONS_BULK') {
+            state.budgetTransactions = state.budgetTransactions.map((t) =>
+              action.ids.includes(t.id) ? { ...t, categoryId: action.categoryId } : t
+            )
+          }
+        }
+        const { rerender } = render(
+          <BudgetPage state={state} dispatch={applyingDispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />
+        )
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        fireEvent.click(selectionCell('t2'))
+        fireEvent.click(selectionCell('t1'), { ctrlKey: true })
+
+        const bar = screen.getByTestId('bulk-action-bar')
+        const select = within(bar).getByLabelText('Bulk edit category') as HTMLSelectElement
+        fireEvent.change(select, { target: { value: 'cat-zoo' } })
+
+        const applyBtn = within(bar).getByText('Apply') as HTMLButtonElement
+        expect(applyBtn.disabled).toBe(false)
+        fireEvent.click(applyBtn)
+
+        expect(dispatch).toHaveBeenCalledWith({
+          type: 'UPDATE_BUDGET_TRANSACTIONS_BULK',
+          ids: expect.arrayContaining(['t1', 't2']),
+          categoryId: 'cat-zoo',
+        })
+
+        rerender(
+          <BudgetPage state={state} dispatch={applyingDispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />
+        )
+        const row1 = screen.getByText('Groceries').closest('tr')!
+        const row2 = screen.getByText('Rent payment').closest('tr')!
+        expect(within(row1).getAllByText('Zoo').length).toBeGreaterThan(0)
+        expect(within(row2).getAllByText('Zoo').length).toBeGreaterThan(0)
+      })
+
+      it('after Apply, the action bar disappears (selection cleared) and bulkCategoryId resets', () => {
+        const dispatch = vi.fn()
+        renderBulkInYear2025({ dispatch })
+        fireEvent.click(selectionCell('t1'))
+        const bar = screen.getByTestId('bulk-action-bar')
+        const select = within(bar).getByLabelText('Bulk edit category') as HTMLSelectElement
+        fireEvent.change(select, { target: { value: 'cat-zoo' } })
+        fireEvent.click(within(bar).getByText('Apply'))
+
+        expect(screen.queryByTestId('bulk-action-bar')).toBeFalsy()
+      })
+
+      it('choosing "+ Add new category…" in the bulk select opens the in-app dialog, dispatches ADD_CATEGORY, and the new category becomes selected/appliable', () => {
+        const dispatch = vi.fn()
+        const categoryDispatch = vi.fn()
+        renderBulkInYear2025({ dispatch, categoryDispatch })
+        fireEvent.click(selectionCell('t1'))
+
+        const bar = screen.getByTestId('bulk-action-bar')
+        const select = within(bar).getByLabelText('Bulk edit category') as HTMLSelectElement
+        fireEvent.change(select, { target: { value: '__add_new' } })
+
+        const newCategoryNameInput = screen.getByLabelText('New category name')
+        fireEvent.change(newCategoryNameInput, { target: { value: 'Travel' } })
+        fireEvent.click(within(newCategoryNameInput.closest('.dialog') as HTMLElement).getByText('Add'))
+
+        const addCategoryCall = categoryDispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
+        expect(addCategoryCall).toBeTruthy()
+        expect(addCategoryCall![0].name).toBe('Travel')
+        const newId = addCategoryCall![0].id
+
+        const applyBtn = within(screen.getByTestId('bulk-action-bar')).getByText('Apply') as HTMLButtonElement
+        expect(applyBtn.disabled).toBe(false)
+        fireEvent.click(applyBtn)
+
+        expect(dispatch).toHaveBeenCalledWith({
+          type: 'UPDATE_BUDGET_TRANSACTIONS_BULK',
+          ids: ['t1'],
+          categoryId: newId,
+        })
+      })
+
+      it('bulk Apply never calls categoryDispatch, while the per-cell single-row Category edit DOES call categoryDispatch with UPSERT_CATEGORY_MAPPING', () => {
+        const bulkDispatch = vi.fn()
+        const bulkCategoryDispatch = vi.fn()
+        const { unmount } = renderBulkInYear2025({ dispatch: bulkDispatch, categoryDispatch: bulkCategoryDispatch })
+        fireEvent.click(selectionCell('t2'))
+        fireEvent.click(selectionCell('t1'), { ctrlKey: true })
+        const bar = screen.getByTestId('bulk-action-bar')
+        fireEvent.change(within(bar).getByLabelText('Bulk edit category'), { target: { value: 'cat-zoo' } })
+        fireEvent.click(within(bar).getByText('Apply'))
+
+        expect(bulkCategoryDispatch).not.toHaveBeenCalled()
+        expect(bulkDispatch).toHaveBeenCalledTimes(1)
+        expect(bulkDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'UPDATE_BUDGET_TRANSACTIONS_BULK' })
+        )
+        unmount()
+
+        // Contrast: the existing per-cell single-row Category edit DOES call categoryDispatch.
+        const cellDispatch = vi.fn()
+        const cellCategoryDispatch = vi.fn()
+        renderBulkInYear2025({ dispatch: cellDispatch, categoryDispatch: cellCategoryDispatch })
+        const row = screen.getByText('Groceries').closest('tr')!
+        fireEvent.click(within(row).getByText('Food'))
+        const categorySelect = screen.getByLabelText('Edit record category') as HTMLSelectElement
+        fireEvent.change(categorySelect, { target: { value: 'cat-housing' } })
+
+        expect(cellCategoryDispatch).toHaveBeenCalledWith({
+          type: 'UPSERT_CATEGORY_MAPPING',
+          description: 'Groceries',
+          categoryId: 'cat-housing',
+        })
       })
     })
 

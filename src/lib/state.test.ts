@@ -37,6 +37,7 @@ import {
   setBudgetIncome,
   addBudgetTransaction,
   updateBudgetTransaction,
+  updateBudgetTransactionsBulk,
   deleteBudgetTransaction,
   importBudgetTransactions,
 } from './state'
@@ -1357,6 +1358,40 @@ describe('state helpers', () => {
       const state = { ...initialState(), budgetTransactions: [existing] }
       const updated = updateBudgetTransaction(state, 'missing', { amount: 9999 })
       expect(updated.budgetTransactions).toEqual([existing])
+    })
+  })
+
+  describe('updateBudgetTransactionsBulk', () => {
+    const t1: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Rent', categoryId: 'cat-Housing', amount: 2000 }
+    const t2: BudgetTransaction = { id: 'tx-2', date: '2026-01-02', description: 'Groceries', categoryId: 'cat-Food', amount: 50 }
+    const t3: BudgetTransaction = { id: 'tx-3', date: '2026-01-03', description: 'Gas', categoryId: 'cat-Auto', amount: 40 }
+
+    it('patches categoryId on the matching ids, leaving others untouched', () => {
+      const state = { ...initialState(), budgetTransactions: [t1, t2, t3] }
+      const updated = updateBudgetTransactionsBulk(state, ['tx-1', 'tx-3'], 'cat-Misc')
+      expect(updated.budgetTransactions[0]).toEqual({ ...t1, categoryId: 'cat-Misc' })
+      expect(updated.budgetTransactions[1]).toEqual(t2)
+      expect(updated.budgetTransactions[2]).toEqual({ ...t3, categoryId: 'cat-Misc' })
+    })
+
+    it('is a no-op when ids is empty', () => {
+      const state = { ...initialState(), budgetTransactions: [t1, t2, t3] }
+      const updated = updateBudgetTransactionsBulk(state, [], 'cat-Misc')
+      expect(updated.budgetTransactions).toEqual([t1, t2, t3])
+    })
+
+    it('silently ignores ids not found in budgetTransactions', () => {
+      const state = { ...initialState(), budgetTransactions: [t1, t2] }
+      const updated = updateBudgetTransactionsBulk(state, ['tx-1', 'missing'], 'cat-Misc')
+      expect(updated.budgetTransactions[0]).toEqual({ ...t1, categoryId: 'cat-Misc' })
+      expect(updated.budgetTransactions[1]).toEqual(t2)
+    })
+
+    it('does not touch other AppState fields', () => {
+      const state = { ...initialState(), budgetTransactions: [t1, t2, t3] }
+      const updated = updateBudgetTransactionsBulk(state, ['tx-1'], 'cat-Misc')
+      expect(updated.accounts).toBe(state.accounts)
+      expect(updated.transactions).toBe(state.transactions)
     })
   })
 

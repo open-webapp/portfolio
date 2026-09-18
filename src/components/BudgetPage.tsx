@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetExpensesForYear, resolveBudgetIncomeForYear, currentBudgetYear } from '../lib/state'
 import { resolveCategoryIdForDescription, type CategoryAction } from '../lib/categoryStore'
@@ -113,6 +113,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
   const [recPage, setRecPage] = useState(0)
   const [showExcludedRecords, setShowExcludedRecords] = useState(false)
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null)
+  const selectionCellRefs = useRef<Record<string, HTMLTableCellElement | null>>({})
+  const [bulkCategoryId, setBulkCategoryId] = useState('')
   const [formName, setFormName] = useState('')
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
   const [formCategoryId, setFormCategoryId] = useState(categories[0]?.id ?? '')
@@ -275,6 +279,59 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const pagedRecords = recPaginationActive
     ? searchedRecords.slice(recPage * 100, recPage * 100 + 100)
     : searchedRecords
+
+  // Clears row selection whenever the visible set/order of Spend records can
+  // change out from under it (paging, sorting, searching, or switching
+  // period/year) so stale selections never point at rows no longer shown.
+  useEffect(() => {
+    setSelectedRowIds(new Set())
+    setSelectionAnchorId(null)
+    setBulkCategoryId('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recPage, recSortBy, recSortDir, recordSearch, period, selectedYear])
+
+  const selectionRangeIds = (anchorId: string, targetIdx: number): Set<string> => {
+    const anchorIdx = pagedRecords.findIndex((r) => r.id === anchorId)
+    if (anchorIdx === -1) return new Set([pagedRecords[targetIdx]?.id].filter(Boolean) as string[])
+    const [lo, hi] = anchorIdx <= targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx]
+    return new Set(pagedRecords.slice(lo, hi + 1).map((r) => r.id))
+  }
+
+  const handleSelectionCellClick = (e: MouseEvent<HTMLTableCellElement>, rowId: string, idx: number) => {
+    if (e.shiftKey && selectionAnchorId) {
+      setSelectedRowIds(selectionRangeIds(selectionAnchorId, idx))
+    } else if (e.ctrlKey || e.metaKey) {
+      setSelectedRowIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(rowId)) next.delete(rowId)
+        else next.add(rowId)
+        return next
+      })
+    } else {
+      setSelectedRowIds(new Set([rowId]))
+      setSelectionAnchorId(rowId)
+    }
+    e.currentTarget.focus()
+  }
+
+  const handleSelectionCellKeyDown = (e: KeyboardEvent<HTMLTableCellElement>) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || !e.shiftKey) return
+    if (!selectionAnchorId) return
+    e.preventDefault()
+    const anchorIdx = pagedRecords.findIndex((r) => r.id === selectionAnchorId)
+    if (anchorIdx === -1) return
+    let currentEndIdx = anchorIdx
+    for (const id of selectedRowIds) {
+      const idx = pagedRecords.findIndex((r) => r.id === id)
+      if (idx === -1) continue
+      if (Math.abs(idx - anchorIdx) > Math.abs(currentEndIdx - anchorIdx)) currentEndIdx = idx
+    }
+    const delta = e.key === 'ArrowDown' ? 1 : -1
+    const newEndIdx = Math.max(0, Math.min(pagedRecords.length - 1, currentEndIdx + delta))
+    setSelectedRowIds(selectionRangeIds(selectionAnchorId, newEndIdx))
+    const targetId = pagedRecords[newEndIdx]?.id
+    if (targetId) selectionCellRefs.current[targetId]?.focus()
+  }
 
   const isEditingCell = (rowId: string, field: 'date' | 'description' | 'category' | 'account' | 'amount') =>
     editingCell?.rowId === rowId && editingCell.field === field
@@ -576,6 +633,58 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           </div>
         </div>
 
+        {selectedRowIds.size > 0 && (
+          <div
+            data-testid="bulk-action-bar"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-3)',
+              marginBottom: 'var(--space-3)',
+            }}
+          >
+            <span style={{ fontSize: '12px' }}>{`${selectedRowIds.size} selected`}</span>
+            <select
+              className="input"
+              aria-label="Bulk edit category"
+              value={bulkCategoryId}
+              onChange={(e) =>
+                handleCategorySelectChange(e.target.value, setNewCategoryPrompt, (categoryId) =>
+                  setBulkCategoryId(categoryId)
+                )
+              }
+              style={{ width: '200px' }}
+            >
+              <option value="" disabled>
+                Select category
+              </option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+              <option value="__add_new">+ Add new category…</option>
+            </select>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!bulkCategoryId}
+              onClick={() => {
+                dispatch({
+                  type: 'UPDATE_BUDGET_TRANSACTIONS_BULK',
+                  ids: Array.from(selectedRowIds),
+                  categoryId: bulkCategoryId,
+                })
+                setSelectedRowIds(new Set())
+                setSelectionAnchorId(null)
+                setBulkCategoryId('')
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        )}
+
         {searchedRecords.length === 0 ? (
           <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
             No records for this period.
@@ -584,6 +693,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           <table className="table">
             <thead>
               <tr>
+                <th style={{ width: '28px' }}></th>
                 <th
                   aria-label="Sort by date"
                   style={{ cursor: 'pointer', userSelect: 'none' }}
@@ -638,9 +748,24 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               </tr>
             </thead>
             <tbody>
-              {pagedRecords.map((row) => {
+              {pagedRecords.map((row, idx) => {
+                const isSelected = selectedRowIds.has(row.id)
                 return (
                   <tr key={row.id}>
+                    <td
+                      ref={(el) => {
+                        selectionCellRefs.current[row.id] = el
+                      }}
+                      data-testid={`row-select-${row.id}`}
+                      tabIndex={0}
+                      aria-selected={isSelected}
+                      style={{
+                        cursor: 'pointer',
+                        background: isSelected ? 'var(--color-accent-2-100)' : undefined,
+                      }}
+                      onClick={(e) => handleSelectionCellClick(e, row.id, idx)}
+                      onKeyDown={handleSelectionCellKeyDown}
+                    ></td>
                     <td onClick={() => startCellEdit(row.id, 'date', row.date)}>
                       {isEditingCell(row.id, 'date') ? (
                         <input
@@ -761,7 +886,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 )
               })}
               <tr data-testid="records-total-row">
-                <td colSpan={4} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                <td colSpan={5} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
                   Total
                 </td>
                 <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>

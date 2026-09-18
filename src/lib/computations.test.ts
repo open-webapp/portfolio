@@ -355,6 +355,67 @@ describe('computations', () => {
         { date: '2026-01-03', description: 'Rent', amount: -1500 },
       ])
     })
+
+    it('normalizes an ISO date (passthrough)', () => {
+      const csv = '2026-09-17,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([{ date: '2026-09-17', description: 'Coffee', amount: -4.5 }])
+    })
+
+    it('normalizes MM/DD/YYYY', () => {
+      const csv = '09/17/2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([{ date: '2026-09-17', description: 'Coffee', amount: -4.5 }])
+    })
+
+    it('normalizes single-digit M/D/YYYY', () => {
+      const csv = '9/7/2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([{ date: '2026-09-07', description: 'Coffee', amount: -4.5 }])
+    })
+
+    it('normalizes MM-DD-YYYY', () => {
+      const csv = '09-17-2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([{ date: '2026-09-17', description: 'Coffee', amount: -4.5 }])
+    })
+
+    it('normalizes abbreviated month name "Sep 17 2026" (no comma, since the crude comma-split parser cannot carry an embedded comma inside a field)', () => {
+      const csv = 'Sep 17 2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([{ date: '2026-09-17', description: 'Coffee', amount: -4.5 }])
+    })
+
+    it('normalizes full month name "September 17 2026" (no comma, same parser constraint)', () => {
+      const csv = 'September 17 2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([{ date: '2026-09-17', description: 'Coffee', amount: -4.5 }])
+    })
+
+    it('treats ambiguous MM/DD/YYYY as month-first even when both parts <=12 (no swap)', () => {
+      const csv = '03/04/2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      // March 4, NOT April 3 -- no DD/MM auto-detection/swap
+      expect(result).toEqual([{ date: '2026-03-04', description: 'Coffee', amount: -4.5 }])
+    })
+
+    it('drops a row whose slash-date month part is >12', () => {
+      const csv = '13/40/2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([])
+    })
+
+    it('drops a row with an unrecognized month name', () => {
+      const csv = 'Septembr 17, 2026,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([])
+    })
+
+    it('drops a row with an unparseable date string', () => {
+      const csv = 'not-a-date,Coffee,-4.50'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([])
+    })
   })
 
   describe('parseOfxTransactions', () => {

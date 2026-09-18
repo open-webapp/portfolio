@@ -24,6 +24,7 @@ import {
   currentBudgetYear,
   addBudgetTransaction,
   updateBudgetTransaction,
+  updateBudgetTransactionsBulk,
   deleteBudgetTransaction,
   importBudgetTransactions,
   reapplyCategoryMappingsToState,
@@ -680,6 +681,25 @@ describe('appReducer', () => {
 
       expect(resultFromReducer.budgetTransactions).toEqual(resultDirect.budgetTransactions)
       expect(resultFromReducer.budgetTransactions[0].amount).toBe(90)
+    })
+  })
+
+  describe('UPDATE_BUDGET_TRANSACTIONS_BULK', () => {
+    it('dispatches to updateBudgetTransactionsBulk state action for matching ids', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetTransactions: [
+          { id: 'tx1', date: '2026-01-15', description: 'Groceries', categoryId: 'cat-Food', amount: 85.5 },
+          { id: 'tx2', date: '2026-01-16', description: 'Gas', categoryId: 'cat-Auto', amount: 40 },
+        ],
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK', ids: ['tx1', 'tx2'], categoryId: 'cat-Misc' })
+      const resultDirect = updateBudgetTransactionsBulk(state, ['tx1', 'tx2'], 'cat-Misc')
+
+      expect(resultFromReducer.budgetTransactions).toEqual(resultDirect.budgetTransactions)
+      expect(resultFromReducer.budgetTransactions[0].categoryId).toBe('cat-Misc')
+      expect(resultFromReducer.budgetTransactions[1].categoryId).toBe('cat-Misc')
     })
   })
 

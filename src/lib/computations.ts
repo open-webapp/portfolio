@@ -132,6 +132,60 @@ export function getAllExistingAssetClasses(positions: Position[]): string[] {
   return Array.from(classes).sort()
 }
 
+const MONTH_NAME_MAP: Record<string, number> = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+}
+
+/**
+ * Normalize a raw date string from a budget CSV into ISO `YYYY-MM-DD` form.
+ * Supports ISO passthrough, MM/DD/YYYY or MM-DD-YYYY (unconditionally, no
+ * DD/MM fallback), and "Month D, YYYY" (full or 3-letter abbreviation).
+ * Returns null for anything unparseable or out-of-range.
+ */
+function normalizeBudgetDate(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [, , monthStr, dayStr] = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? []
+    const month = parseInt(monthStr, 10)
+    const day = parseInt(dayStr, 10)
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null
+    return trimmed
+  }
+
+  const slashMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
+  if (slashMatch) {
+    const month = parseInt(slashMatch[1], 10)
+    const day = parseInt(slashMatch[2], 10)
+    const year = slashMatch[3]
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
+  const monthNameMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/)
+  if (monthNameMatch) {
+    const month = MONTH_NAME_MAP[monthNameMatch[1].toLowerCase()]
+    if (!month) return null
+    const day = parseInt(monthNameMatch[2], 10)
+    const year = monthNameMatch[3]
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
+  return null
+}
+
 /**
  * Parse a raw CSV string of budget actual-spend transactions.
  * Crude, deliberately non-RFC4180 parser (no quoting/escaping support) per spec.
@@ -149,8 +203,9 @@ export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; 
     if (parts.length < 3) return
     const [date, description, amountStr] = parts
     const amount = parseFloat(amountStr)
-    if (!date || isNaN(amount)) return
-    parsed.push({ date, description, amount })
+    const normalizedDate = normalizeBudgetDate(date)
+    if (!normalizedDate || isNaN(amount)) return
+    parsed.push({ date: normalizedDate, description, amount })
   })
   return parsed
 }

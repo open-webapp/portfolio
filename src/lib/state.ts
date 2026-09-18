@@ -772,6 +772,11 @@ export function updateBudgetTransaction(state: AppState, id: string, patch: Part
   return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) }
 }
 
+/** Patch categoryId on multiple budget transactions by ID in one pass. IDs not found are ignored. */
+export function updateBudgetTransactionsBulk(state: AppState, ids: string[], categoryId: string): AppState {
+  return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (ids.includes(t.id) ? { ...t, categoryId } : t)) }
+}
+
 /** Delete a budget transaction by ID. No-op if the ID isn't found. */
 export function deleteBudgetTransaction(state: AppState, id: string): AppState {
   return { ...state, budgetTransactions: state.budgetTransactions.filter((t) => t.id !== id) }
