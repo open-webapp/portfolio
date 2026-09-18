@@ -235,6 +235,52 @@ describe('useGlobalCategories', () => {
     expect(mockPullGlobalCategoriesFromDrive).not.toHaveBeenCalled()
   })
 
+  it('(bug-reveal) never pushes to Drive before the initial pull has resolved, so it cannot clobber a remote-only mapping', async () => {
+    const localFixture: GlobalCategoryState = {
+      categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      categoryMappings: [],
+    }
+    mockLoadGlobalCategoryState.mockResolvedValue(localFixture)
+
+    // The pull is slow (e.g. a real network round-trip) and resolves with a
+    // mapping that only exists on Drive, added by another browser.
+    let resolvePull: (v: GlobalCategoryState) => void
+    mockPullGlobalCategoriesFromDrive.mockImplementation(
+      () => new Promise((resolve) => { resolvePull = resolve })
+    )
+
+    renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
+
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // Pull is in flight but hasn't resolved yet — the push effect must NOT
+    // have fired, or it would overwrite Drive with local-only data and
+    // permanently lose the remote mapping the pull is about to bring in.
+    expect(mockPushGlobalCategoriesToDrive).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolvePull!({
+        categories: localFixture.categories,
+        categoryMappings: [{ id: 'm1', substring: 'WHOLE FOODS', categoryId: 'c1', updatedAt: '2026-03-01T00:00:00.000Z' }],
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockPushGlobalCategoriesToDrive).toHaveBeenCalledWith(
+      fakeDriveAuth,
+      'proj-1',
+      expect.objectContaining({
+        categoryMappings: expect.arrayContaining([expect.objectContaining({ substring: 'WHOLE FOODS' })]),
+      })
+    )
+  })
+
   it('syncNow pulls+merges remote mappings on demand, for use after a manual Drive sync', async () => {
     const localFixture: GlobalCategoryState = {
       categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],

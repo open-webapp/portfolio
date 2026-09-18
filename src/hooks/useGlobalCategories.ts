@@ -34,6 +34,7 @@ export function useGlobalCategories(
 
   const skipNextSaveRef = useRef(true)
   const didInitialPullRef = useRef(false)
+  const [initialPullDone, setInitialPullDone] = useState(false)
   const latestStateRef = useRef(state)
   latestStateRef.current = state
 
@@ -67,16 +68,21 @@ export function useGlobalCategories(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.categories, state.categoryMappings, hydrated])
 
-  // Immediate fire-and-forget push to Drive when connected.
+  // Immediate fire-and-forget push to Drive when connected. Gated on
+  // initialPullDone: pushGlobalCategoriesToDrive does a blind full-file
+  // overwrite (no merge — see categoryDrive.ts), so pushing before the
+  // initial pull has read+merged the remote file would race the pull and
+  // can permanently clobber a mapping another browser added to Drive
+  // before this session ever sees it.
   useEffect(() => {
-    if (!hydrated) return
+    if (!hydrated || !initialPullDone) return
     if (!driveConnected || !driveAuth || !driveProjectId) return
     pushGlobalCategoriesToDrive(driveAuth, driveProjectId, {
       categories: state.categories,
       categoryMappings: state.categoryMappings,
     }).catch(console.error)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.categories, state.categoryMappings, hydrated, driveConnected, driveAuth, driveProjectId])
+  }, [state.categories, state.categoryMappings, hydrated, initialPullDone, driveConnected, driveAuth, driveProjectId])
 
   // Pull remote categories/mappings, merge with local, and persist. Shared by
   // the initial post-connect pull, the 60s poll, and any caller that wants an
@@ -95,11 +101,12 @@ export function useGlobalCategories(
   }
 
   // Initial pull-once, the first time driveConnected flips true post-hydrate.
+  // Only once this resolves does the push effect above get allowed to run.
   useEffect(() => {
     if (!hydrated || !driveConnected || !driveAuth || !driveProjectId) return
     if (didInitialPullRef.current) return
     didInitialPullRef.current = true
-    pullAndMerge()
+    pullAndMerge().finally(() => setInitialPullDone(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driveConnected, hydrated])
 
