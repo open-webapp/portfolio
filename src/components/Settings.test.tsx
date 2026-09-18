@@ -67,6 +67,7 @@ vi.mock('../lib/drive', () => {
     },
     getConnectionSnapshot: vi.fn(() => null),
     syncBackup: vi.fn(),
+    getPortfolioDriveFolderUrl: vi.fn(),
     DriveDecryptError,
   }
 })
@@ -184,6 +185,7 @@ describe('SettingsPage', () => {
       categoryMappings: [],
       categoryDispatch: mockCategoryDispatch,
       categoriesHydrated: true,
+      driveConnected: false,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -203,6 +205,76 @@ describe('SettingsPage', () => {
       fireEvent.click(screen.getByTestId('widget-disconnect'))
 
       expect(mockOnDriveDisconnected).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('View in Google Drive folder link', () => {
+    it('driveConnected=false: link absent, getPortfolioDriveFolderUrl not called', () => {
+      renderSettings({ settingsSection: 'backup', driveConnected: false })
+
+      expect(screen.queryByText('View in Google Drive')).toBeFalsy()
+      expect(driveModule.getPortfolioDriveFolderUrl).not.toHaveBeenCalled()
+    })
+
+    it('driveConnected=true: renders the link with correct href/attributes on resolve', async () => {
+      const url = 'https://drive.google.com/drive/folders/xyz'
+      ;(driveModule.getPortfolioDriveFolderUrl as ReturnType<typeof vi.fn>).mockResolvedValue(url)
+
+      renderSettings({ settingsSection: 'backup', driveConnected: true })
+
+      const link = await waitFor(() => screen.getByText('View in Google Drive'))
+      expect(link.getAttribute('href')).toBe(url)
+      expect(link.getAttribute('target')).toBe('_blank')
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    })
+
+    it('driveConnected=true, fetch rejects: no crash, link stays absent, console.error called', async () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const error = new Error('boom')
+      ;(driveModule.getPortfolioDriveFolderUrl as ReturnType<typeof vi.fn>).mockRejectedValue(error)
+
+      renderSettings({ settingsSection: 'backup', driveConnected: true })
+
+      await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalledWith(error))
+      expect(screen.queryByText('View in Google Drive')).toBeFalsy()
+      expect(global.alert).not.toHaveBeenCalled()
+
+      consoleErrorSpy.mockRestore()
+    })
+
+    it('switching settingsSection away from "backup" resets folderUrl to null and removes the link', async () => {
+      const url = 'https://drive.google.com/drive/folders/xyz'
+      ;(driveModule.getPortfolioDriveFolderUrl as ReturnType<typeof vi.fn>).mockResolvedValue(url)
+
+      const { rerender } = renderSettings({ settingsSection: 'backup', driveConnected: true })
+
+      await waitFor(() => expect(screen.getByText('View in Google Drive')).toBeTruthy())
+
+      const defaultProps: SettingsPageProps = {
+        state: initialState(),
+        activePortfolio: testPortfolio,
+        dispatch: mockDispatch,
+        sessionKey,
+        sessionSalt,
+        onKeyChange: mockOnKeyChange,
+        onPasswordEntryTimeReset: mockOnPasswordEntryTimeReset,
+        onDriveConnected: mockOnDriveConnected,
+        onDriveDisconnected: mockOnDriveDisconnected,
+        settingsSection: 'encryption',
+        setSettingsSection: mockSetSettingsSection,
+        runPriceSyncTrigger: mockRunPriceSyncTrigger,
+        runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
+        tickerOverviewErrors: {},
+        mutualFundSyncErrors: {},
+        categories: [],
+        categoryMappings: [],
+        categoryDispatch: mockCategoryDispatch,
+        categoriesHydrated: true,
+        driveConnected: true,
+      }
+      rerender(<SettingsPage {...defaultProps} />)
+
+      await waitFor(() => expect(screen.queryByText('View in Google Drive')).toBeFalsy())
     })
   })
 

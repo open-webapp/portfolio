@@ -159,9 +159,10 @@ Connect/disconnect UI is the `@open-webapp/drive-connect` package widget (`<Goog
 - Widget renders all four connect states itself (disconnected / connecting / connected / needs-reauth), shows the connected Google account, and surfaces errors inline via `role="alert"`.
 - No `window.alert` dialogs for connect/disconnect (no "Connected"/"Disconnected"/"Connect failed"/"Disconnect failed" popups, no "Google auth timed out"). Portfolio's own sync/restore alerts stay ("Synced to Drive", "Sync failed: …", "Restored from Drive", "Restore failed: …").
 - Connecting no longer greys out the "Restore from Drive" button; connect/disconnect no longer flip the app's `syncing` flag (which now means only "a sync/restore content op is running").
-- On app load the app still does **not** auto-look-up the backup file ID — it's fetched in the widget's `onConnected` callback (a failed lookup just leaves the "View backup in Google Drive" link hidden), and cleared on disconnect.
+- On app load the app still does **not** auto-look-up the backup file ID — it's fetched in the widget's `onConnected` callback, and cleared on disconnect.
 - Token warm-up runs only after local unlock; a valid cached token is reused without prompting, and a single in-flight guard means at most one Google auth window even under rapid sync/restore/connect.
 - The connected/needs-reauth badge is eventually consistent, not instant: after a Drive auth error the app does not force an immediate status refresh — the widget catches up on its own next trigger (remount, tab-visibility warm-up, cross-tab broadcast, or the next connect()/disconnect()), per `@open-webapp/drive-sync`'s internal triggers.
+- **"View in Google Drive" link**: shown in Settings > Backup tab's Google Drive Sync card, right after the connect widget, only when Drive is connected AND the Backup section is active. Opens the portfolio's Drive backup folder in a new tab. If the folder URL can't be fetched, the link is silently absent — no error shown to the user. Leaving the Backup section clears the link (re-fetched on return).
 
 ### Restore from Google Drive
 

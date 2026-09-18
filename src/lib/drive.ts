@@ -522,6 +522,18 @@ export async function getBackupFileId(portfolio: Portfolio): Promise<string | nu
 }
 
 /**
+ * Returns the Google Drive web URL for the given portfolio's backup folder
+ * (OpenWebApp/Portfolio/<portfolio.name>), so the UI can link the user
+ * straight to it. Does not catch errors — a failing `ensureFolderPath`
+ * propagates to the caller.
+ */
+export async function getPortfolioDriveFolderUrl(portfolio: Portfolio): Promise<string> {
+  const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
+  const folderId = await withTimeout(project.ensureFolderPath(), DRIVE_IO_TIMEOUT_MS, 'ensureFolderPath')
+  return `https://drive.google.com/drive/folders/${folderId}`
+}
+
+/**
  * Status probe for a Drive backup file, addressed by id. Thin wrapper over
  * drive-sync's `files.status` (via `withTimeout`) that returns only the
  * subset the conflict path needs: whether the file still exists, its remote
