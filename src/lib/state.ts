@@ -18,7 +18,7 @@ import type {
 } from './types'
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
-import { resolveCategoryIdForDescription, reapplyMappingsToTransactions } from './categoryStore'
+import { resolveCategoryIdForDescription, reapplyMappingsToTransactions, resolveSpendExpenseForCategory } from './categoryStore'
 
 export interface AppState {
   // Data collections
@@ -925,7 +925,7 @@ export function resolveBudgetImportRows(
     const categoryId = resolveCategoryIdForDescription(categoryMappings, r.description) ?? otherId
     const year = r.date.slice(0, 4)
     const expensesForYear = budgetExpensesByYear?.[year] ?? []
-    const match = expensesForYear.find((e) => e.categoryId === categoryId)
+    const match = resolveSpendExpenseForCategory(expensesForYear, categoryId)
     return {
       ...r,
       categoryId,

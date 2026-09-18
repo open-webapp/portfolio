@@ -117,13 +117,36 @@ export function visibleMappings(s: GlobalCategoryState): CategoryMapping[] {
 }
 
 /**
+ * First array-order Expense in `expensesForYear` whose categoryId matches
+ * `categoryId`, or undefined if none match. Shared by resolveBudgetImportRows
+ * (state.ts) and reapplyMappingsToTransactions (this file) for auto-linking a
+ * transaction's spendExpenseId to a same-category Expense for the row's year.
+ */
+export function resolveSpendExpenseForCategory(expensesForYear: Expense[], categoryId: string): Expense | undefined {
+  return expensesForYear.find((e) => e.categoryId === categoryId)
+}
+
+/**
  * Re-run category mapping resolution against a list of budget transactions, rewriting
  * categoryId for any transaction whose description matches a mapping. Transactions with
  * no match are left untouched. When a transaction is linked to a Budget Expense
  * (spendExpenseId), its effective category (per effectiveCategoryId) is the linked
- * expense's category, not tx.categoryId — if the resolved mapping disagrees with that
- * effective category, the link is cleared (spendExpenseId set to undefined) so the
- * mapping's category actually takes effect; if it agrees, the link is left untouched.
+ * expense's category, not tx.categoryId.
+ *
+ * Auto-linking of spendExpenseId happens in two cases, via resolveSpendExpenseForCategory
+ * against budgetExpensesByYear[t.date's year]:
+ * - Category-change: the resolved mapping disagrees with the transaction's current
+ *   effective category. categoryId is updated to the resolved category and spendExpenseId
+ *   is set to a matching same-year Expense for that category if one exists, else undefined.
+ * - Opportunistic: the resolved mapping agrees with the effective category, but
+ *   spendExpenseId is currently unset (undefined) — a matching same-year Expense, if one
+ *   exists, is linked.
+ *
+ * Accepted tradeoff: this can silently re-link a transaction that a user previously
+ * manually set to "Uncategorized" via the per-cell picker (which clears spendExpenseId to
+ * undefined), whenever a matching Expense now exists for that row's year+category. This is
+ * intentional, not a bug — see the test asserting this behavior.
+ *
  * Pure; mappings are filtered for tombstones internally, so callers may pass either the
  * raw or pre-filtered mapping list.
  */
@@ -136,8 +159,11 @@ export function reapplyMappingsToTransactions(
     const resolved = resolveCategoryIdForDescription(mappings, t.description)
     if (resolved === null) return t
     const effective = effectiveCategoryId(t, budgetExpensesByYear)
-    if (resolved !== effective) {
-      return { ...t, categoryId: resolved, spendExpenseId: undefined }
+    if (resolved !== effective || t.spendExpenseId === undefined) {
+      const year = t.date.slice(0, 4)
+      const expensesForYear = budgetExpensesByYear[year] ?? []
+      const match = resolveSpendExpenseForCategory(expensesForYear, resolved)
+      return { ...t, categoryId: resolved, spendExpenseId: match?.id }
     }
     return { ...t, categoryId: resolved }
   })

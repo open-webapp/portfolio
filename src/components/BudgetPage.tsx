@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetExpensesForYear, resolveBudgetIncomeForYear, currentBudgetYear, resolveBudgetImportRows } from '../lib/state'
-import { resolveCategoryIdForDescription, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
+import { resolveCategoryIdForDescription, resolveSpendExpenseForCategory, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
 import { uid } from '../lib/seed'
 import { BudgetAnalytics } from './BudgetAnalytics'
@@ -1049,7 +1049,11 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 setRecCategoryTouchedManually(false)
                 if (!recCategoryTouchedManually) {
                   const match = resolveCategoryIdForDescription(categoryMappings, e.target.value)
-                  if (match) setRecCategoryId(match)
+                  if (match) {
+                    setRecCategoryId(match)
+                    const foundExpense = resolveSpendExpenseForCategory(activeYearExpenses, match)
+                    if (foundExpense) setRecExpenseId(foundExpense.id)
+                  }
                 }
               }}
             />

@@ -1530,7 +1530,7 @@ describe('BudgetPage', () => {
       })
     })
 
-    it('(T8 - regression, expected to FAIL until T9/T10 wires the auto-trigger) selecting a new Spend Category on one row via the per-cell picker auto-reapplies to an OTHER transaction sharing that same description, via the real store (appReducer + categoryStoreReducer), without clicking "Re-apply mappings to existing records"', () => {
+    it('(T8 - regression) selecting a new Spend Category on one row via the per-cell picker auto-reapplies to an OTHER transaction sharing that same description, via the real store (appReducer + categoryStoreReducer), without clicking "Re-apply mappings to existing records"', () => {
       const initialAppState: AppState = recordsState({
         budgetExpensesByYear: {
           '2025': [makeExpense({ id: 'e2', name: 'Mortgage', categoryId: 'cat-housing' })],
@@ -1557,10 +1557,14 @@ describe('BudgetPage', () => {
       fireEvent.change(picker, { target: { value: 'e2' } })
 
       // The OTHER "Groceries" transaction (t-dup, untouched by this edit)
-      // should have had its stale spendExpenseId cleared and categoryId
-      // synced to 'cat-housing' via the same new mapping - proving the
-      // UPSERT_CATEGORY_MAPPING auto-reapplied beyond just the edited row.
-      expect(within(otherRow).getByText('Uncategorized (Housing)')).toBeTruthy()
+      // should have had its categoryId synced to 'cat-housing' via the same
+      // new mapping, proving the UPSERT_CATEGORY_MAPPING auto-reapplied
+      // beyond just the edited row. Its stale spendExpenseId ('exp-stale')
+      // no longer matches the new category, so reapply auto-links it to the
+      // matching same-year same-category Expense ('e2', Mortgage) instead
+      // of just clearing it.
+      expect(within(otherRow).getByText('Mortgage (Housing)')).toBeTruthy()
+      expect(within(otherRow).queryByText('Uncategorized (Housing)')).toBeFalsy()
       expect(within(otherRow).queryByText('Uncategorized (Food)')).toBeFalsy()
     })
 
@@ -1906,6 +1910,84 @@ describe('BudgetPage', () => {
         const addTxCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_BUDGET_TRANSACTION')
         expect(addTxCall![0].tx.categoryId).toBe('cat-travel')
         expect(addTxCall![0].tx.spendExpenseId).toBe('e-trip')
+      })
+
+      it('typing a description matching an existing mapping AND a matching Expense for the active year auto-selects both category and spend expense (dispatched on submit)', () => {
+        const mappings: CategoryMapping[] = [
+          { id: 'map1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2025-01-01T00:00:00.000Z' },
+        ]
+        const dispatch = vi.fn()
+        const state = defaultState({
+          budgetExpensesByYear: {
+            [String(new Date().getFullYear())]: [makeExpense({ id: 'e-food', name: 'Groceries', categoryId: 'cat-food' })],
+          },
+        })
+        render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={mappings} categoryDispatch={vi.fn()} />)
+
+        const descInput = screen.getByLabelText('Record description') as HTMLInputElement
+        fireEvent.change(descInput, { target: { value: 'Coffee Shop' } })
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '5' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        const addTxCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_BUDGET_TRANSACTION')
+        expect(addTxCall![0].tx.categoryId).toBe('cat-food')
+        expect(addTxCall![0].tx.spendExpenseId).toBe('e-food')
+      })
+
+      it('once recCategoryTouchedManually is true (via a manual Spend Category pick), further description edits do not override the category or the expense selection', () => {
+        const mappings: CategoryMapping[] = [
+          { id: 'map1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2025-01-01T00:00:00.000Z' },
+        ]
+        const dispatch = vi.fn()
+        const state = defaultState({
+          budgetExpensesByYear: {
+            [String(new Date().getFullYear())]: [
+              makeExpense({ id: 'e-food', name: 'Groceries', categoryId: 'cat-food' }),
+              makeExpense({ id: 'e-trip', name: 'Trip', categoryId: 'cat-travel' }),
+            ],
+          },
+        })
+        render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={mappings} categoryDispatch={vi.fn()} />)
+
+        const picker = screen.getByLabelText('Record spend category') as HTMLSelectElement
+        fireEvent.change(picker, { target: { value: 'e-trip' } })
+
+        const descInput = screen.getByLabelText('Record description') as HTMLInputElement
+        fireEvent.change(descInput, { target: { value: 'Coffee Shop' } })
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '5' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        const addTxCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_BUDGET_TRANSACTION')
+        expect(addTxCall![0].tx.categoryId).toBe('cat-travel')
+        expect(addTxCall![0].tx.spendExpenseId).toBe('e-trip')
+      })
+
+      it('typing a description matching a mapping but with NO matching Expense for the active year sets the category but leaves the expense selection unchanged', () => {
+        const mappings: CategoryMapping[] = [
+          { id: 'map1', substring: 'coffee', categoryId: 'cat-food', updatedAt: '2025-01-01T00:00:00.000Z' },
+        ]
+        const dispatch = vi.fn()
+        const state = defaultState({
+          budgetExpensesByYear: {
+            [String(new Date().getFullYear())]: [makeExpense({ id: 'e-trip', name: 'Trip', categoryId: 'cat-travel' })],
+          },
+        })
+        render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={mappings} categoryDispatch={vi.fn()} />)
+
+        const descInput = screen.getByLabelText('Record description') as HTMLInputElement
+        fireEvent.change(descInput, { target: { value: 'Coffee Shop' } })
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '5' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        const addTxCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_BUDGET_TRANSACTION')
+        expect(addTxCall![0].tx.categoryId).toBe('cat-food')
+        expect(addTxCall![0].tx.spendExpenseId).toBeUndefined()
       })
 
       it('(T8 - regression, expected to FAIL until T9/T10 wires the auto-trigger) submitting Add Record with a description matching an EXISTING transaction auto-reapplies to that OTHER transaction too, via the real store (appReducer + categoryStoreReducer), without clicking "Re-apply mappings to existing records"', () => {

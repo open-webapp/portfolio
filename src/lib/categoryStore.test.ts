@@ -13,6 +13,7 @@ import {
   visibleCategories,
   visibleMappings,
   reapplyMappingsToTransactions,
+  resolveSpendExpenseForCategory,
   categoryStoreReducer,
   type GlobalCategoryState,
 } from './categoryStore'
@@ -320,6 +321,100 @@ describe('categoryStore', () => {
       expect(result?.categoryId).toBe('cat-groceries')
       expect(result?.spendExpenseId).toBeUndefined()
     })
+
+    it('links spendExpenseId to a matching Expense when the resolved category changes', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', categoryId: 'cat-B', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      const expenses: Expense[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' },
+        { id: 'exp-2', name: 'Some cat-B expense', categoryId: 'cat-B', amount: 20, frequency: 'monthly' },
+      ]
+      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const tx: BudgetTransaction = {
+        id: 'tx-1',
+        date: '2026-01-01',
+        description: 'Costco Gas',
+        categoryId: 'cat-A',
+        spendExpenseId: 'exp-1',
+        amount: 40,
+      }
+
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+
+      const result = updated.find((t) => t.id === 'tx-1')
+      expect(result?.categoryId).toBe('cat-B')
+      expect(result?.spendExpenseId).toBe('exp-2')
+    })
+
+    it('opportunistically links spendExpenseId when categoryId is unchanged but was previously unset', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', categoryId: 'cat-A', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      const expenses: Expense[] = [{ id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' }]
+      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const tx: BudgetTransaction = {
+        id: 'tx-1',
+        date: '2026-01-01',
+        description: 'Costco Gas',
+        categoryId: 'cat-A',
+        amount: 40,
+      }
+
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+
+      const result = updated.find((t) => t.id === 'tx-1')
+      expect(result?.categoryId).toBe('cat-A')
+      expect(result?.spendExpenseId).toBe('exp-1')
+    })
+
+    it('leaves spendExpenseId undefined when no matching Expense exists for the year+category', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', categoryId: 'cat-B', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      const expenses: Expense[] = [{ id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' }]
+      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const tx: BudgetTransaction = {
+        id: 'tx-1',
+        date: '2026-01-01',
+        description: 'Costco Gas',
+        categoryId: 'cat-A',
+        spendExpenseId: 'exp-1',
+        amount: 40,
+      }
+
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+
+      const result = updated.find((t) => t.id === 'tx-1')
+      expect(result?.categoryId).toBe('cat-B')
+      expect(result?.spendExpenseId).toBeUndefined()
+    })
+
+    it('accepted tradeoff: silently re-links a transaction a user previously set to Uncategorized via the per-cell picker', () => {
+      // The per-cell picker's "Uncategorized" choice sets spendExpenseId to undefined
+      // without recording that choice anywhere else. If a matching Expense later exists
+      // for this row's year+category, reapplyMappingsToTransactions will re-link it. This
+      // is a deliberate, accepted tradeoff (see reapplyMappingsToTransactions doc comment),
+      // not a bug — this test asserts the re-link happens, it is not accidentally passing.
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', categoryId: 'cat-A', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      const expenses: Expense[] = [{ id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' }]
+      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const tx: BudgetTransaction = {
+        id: 'tx-1',
+        date: '2026-01-01',
+        description: 'Costco Gas',
+        categoryId: 'cat-A',
+        spendExpenseId: undefined,
+        amount: 40,
+      }
+
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+
+      const result = updated.find((t) => t.id === 'tx-1')
+      expect(result?.spendExpenseId).toBe('exp-1')
+    })
   })
 
   describe('categoryStoreReducer', () => {
@@ -402,6 +497,32 @@ describe('categoryStore', () => {
         ])
       )
       expect(updated.categoryMappings).toHaveLength(2)
+    })
+  })
+
+  describe('resolveSpendExpenseForCategory', () => {
+    it('returns the first array-order Expense matching categoryId', () => {
+      const expenseA: Expense = { id: 'exp-A', name: 'A', categoryId: 'cat-1', amount: 10, frequency: 'monthly' }
+      const expenseB: Expense = { id: 'exp-B', name: 'B', categoryId: 'cat-2', amount: 20, frequency: 'monthly' }
+      const expenseC: Expense = { id: 'exp-C', name: 'C', categoryId: 'cat-1', amount: 30, frequency: 'monthly' }
+
+      const result = resolveSpendExpenseForCategory([expenseA, expenseB, expenseC], 'cat-1')
+
+      expect(result).toBe(expenseA)
+    })
+
+    it('returns undefined when no Expense matches categoryId', () => {
+      const expenseA: Expense = { id: 'exp-A', name: 'A', categoryId: 'cat-1', amount: 10, frequency: 'monthly' }
+
+      const result = resolveSpendExpenseForCategory([expenseA], 'cat-9')
+
+      expect(result).toBeUndefined()
+    })
+
+    it('returns undefined for an empty expensesForYear array', () => {
+      const result = resolveSpendExpenseForCategory([], 'cat-1')
+
+      expect(result).toBeUndefined()
     })
   })
 })
