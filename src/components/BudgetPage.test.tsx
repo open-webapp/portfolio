@@ -1664,6 +1664,63 @@ describe('BudgetPage', () => {
         vi.useRealTimers()
       })
 
+      it('adding a record for a year with no existing snapshot dispatches ENSURE_BUDGET_YEAR_SNAPSHOT (not just switching the filter)', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2025-03-15T00:00:00'))
+        const state: AppState = defaultState({
+          budgetExpensesByYear: { '2025': [makeExpense({ id: 'e1', name: 'Rent', amount: 900 })] },
+          budgetIncomeByYear: { '2025': { monthly: 5000, yearly: 60000 } },
+          budgetTransactions: [makeTransaction({ date: '2025-03-10', description: 'Old rent', categoryId: 'cat-housing', amount: 900 })],
+        })
+        const dispatch = vi.fn()
+        render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+        // 2027 has no budgetExpensesByYear/budgetIncomeByYear entry yet; adding a record for it
+        // switches selectedYear directly (bypassing the Year <select>'s onChange), so this path
+        // must independently guard-and-dispatch just like the dropdown does.
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2027-07-15' } })
+        fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'New rent' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '950' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        expect(dispatch).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2027' })
+        vi.useRealTimers()
+      })
+
+      it('a snapshot created via adding a record for a new year is independent of later edits to the source year (end-to-end with real reducer)', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2025-03-15T00:00:00'))
+        let state: AppState = defaultState({
+          budgetExpensesByYear: { '2025': [makeExpense({ id: 'e1', name: 'Rent', amount: 900 })] },
+          budgetIncomeByYear: { '2025': { monthly: 5000, yearly: 60000 } },
+        })
+        const dispatch = (action: any) => {
+          state = appReducer(state, action)
+        }
+        const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2027-07-15' } })
+        fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'New rent' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '950' } })
+        fireEvent.click(screen.getByText('Add Record'))
+        rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+        expect(state.budgetExpensesByYear['2027']).toEqual(state.budgetExpensesByYear['2025'])
+        const snapshotBefore2027 = state.budgetExpensesByYear['2027']
+
+        // Now edit the source year (2025) and confirm 2027's already-ensured snapshot doesn't move.
+        state = appReducer(state, {
+          type: 'UPDATE_BUDGET_EXPENSE',
+          year: '2025',
+          id: 'e1',
+          patch: { amount: 5000 },
+        })
+
+        expect(state.budgetExpensesByYear['2027']).toEqual(snapshotBefore2027)
+        expect(state.budgetExpensesByYear['2025'][0].amount).toBe(5000)
+        vi.useRealTimers()
+      })
+
       it('a record added for the current year appears in the Spend records table (end-to-end with real reducer)', () => {
         let state: AppState = defaultState()
         const dispatch = (action: any) => {

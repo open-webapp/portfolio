@@ -485,7 +485,11 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       },
     })
     categoryDispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, categoryId: recCategoryId })
-    setSelectedYear(recDate.slice(0, 4))
+    const recordYear = recDate.slice(0, 4)
+    setSelectedYear(recordYear)
+    if (!state.budgetExpensesByYear[recordYear]) {
+      dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: recordYear })
+    }
     setRecError('')
     setRecDate('')
     setRecDescription('')
