@@ -41,9 +41,10 @@ import {
   monthlySeasonality,
   budgetAccuracyByYear,
   categoryTrendsYoY,
-  topMovers
+  topMovers,
+  effectiveCategoryId
 } from './selectors'
-import { AppState, initialState, clearAccountSelection } from './state'
+import { AppState, initialState, clearAccountSelection, updateBudgetExpense } from './state'
 import {
   Account,
   Position,
@@ -1657,14 +1658,14 @@ describe('categoryBreakdown', () => {
   const allCats = [catHousing, catEntertainment, catHealth, catFood, catA, catB, catC]
 
   it('returns empty array for no expenses', () => {
-    expect(categoryBreakdown([], [], 'monthly', allCats)).toEqual([])
+    expect(categoryBreakdown([], [], 'monthly', allCats, {})).toEqual([])
   })
 
   it('returns one entry with budgetPct 100 for a single category with no actuals, name resolved from categories', () => {
     const expenses: Expense[] = [
       { id: 'e1', name: 'Rent', categoryId: catHousing.id, amount: 2000, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats, {})
     expect(result).toEqual([
       {
         name: 'Housing',
@@ -1683,7 +1684,7 @@ describe('categoryBreakdown', () => {
     const expenses: Expense[] = [
       { id: 'e1', name: 'Mystery', categoryId: 'cat-unknown', amount: 500, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats, {})
     expect(result[0].name).toBe('cat-unknown')
   })
 
@@ -1693,7 +1694,7 @@ describe('categoryBreakdown', () => {
       { id: 'e2', name: 'Netflix', categoryId: catEntertainment.id, amount: 15, frequency: 'monthly' },
       { id: 'e3', name: 'Gym', categoryId: catHealth.id, amount: 50, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats, {})
     expect(result.map((r) => r.name)).toEqual(['Housing', 'Health', 'Entertainment'])
   })
 
@@ -1705,7 +1706,7 @@ describe('categoryBreakdown', () => {
       { id: 'e2', name: 'B1', categoryId: catB.id, amount: 100, frequency: 'monthly' },
       { id: 'e3', name: 'C1', categoryId: catC.id, amount: 200, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly', allCats)
+    const result = categoryBreakdown(expenses, [], 'monthly', allCats, {})
     const cEntry = result.find((r) => r.name === 'C')
     const aEntry = result.find((r) => r.name === 'A')
     expect(cEntry?.budgetPct).toBe(100)
@@ -1718,11 +1719,11 @@ describe('categoryBreakdown', () => {
       { id: 'e2', name: 'Property Tax', categoryId: catHousing.id, amount: 12000, frequency: 'yearly' }
     ]
     // monthly period: rent=2000, property tax=1000 -> total 3000
-    const monthlyResult = categoryBreakdown(expenses, [], 'monthly', allCats)
+    const monthlyResult = categoryBreakdown(expenses, [], 'monthly', allCats, {})
     expect(monthlyResult[0]).toMatchObject({ name: 'Housing', amount: 3000, budgetPct: 100 })
 
     // yearly period: rent=24000, property tax=12000 -> total 36000
-    const yearlyResult = categoryBreakdown(expenses, [], 'yearly', allCats)
+    const yearlyResult = categoryBreakdown(expenses, [], 'yearly', allCats, {})
     expect(yearlyResult[0]).toMatchObject({ name: 'Housing', amount: 36000, budgetPct: 100 })
   })
 
@@ -1738,7 +1739,7 @@ describe('categoryBreakdown', () => {
       { id: 't1', date: '2026-09-05', description: 'Rent', categoryId: catHousing.id, amount: 2500 },
       { id: 't2', date: '2026-09-10', description: 'Groceries', categoryId: catFood.id, amount: 300 }
     ]
-    const result = categoryBreakdown(expenses, transactions, 'monthly', allCats)
+    const result = categoryBreakdown(expenses, transactions, 'monthly', allCats, {})
     const housing = result.find((r) => r.name === 'Housing')
     const food = result.find((r) => r.name === 'Food')
 
@@ -1775,7 +1776,7 @@ describe('categoryBreakdown', () => {
       { id: 't1', date: '2026-09-05', description: 'Rent', categoryId: catHousing.id, amount: 2000 },
       { id: 't2', date: '2026-09-06', description: 'Transfer', categoryId: excludedCat.id, amount: 1000 }
     ]
-    const result = categoryBreakdown(expenses, transactions, 'monthly', cats)
+    const result = categoryBreakdown(expenses, transactions, 'monthly', cats, {})
     expect(result.find((r) => r.name === 'Transfers')).toBeUndefined()
     expect(result).toEqual([
       {
@@ -1801,8 +1802,8 @@ describe('categoryBreakdown', () => {
     const transactions: BudgetTransaction[] = [
       { id: 't1', date: '2026-09-05', description: 'A1', categoryId: catA.id, amount: 90 }
     ]
-    expect(() => categoryBreakdown(expenses, transactions, 'monthly', [excludedA, excludedB])).not.toThrow()
-    expect(categoryBreakdown(expenses, transactions, 'monthly', [excludedA, excludedB])).toEqual([])
+    expect(() => categoryBreakdown(expenses, transactions, 'monthly', [excludedA, excludedB], {})).not.toThrow()
+    expect(categoryBreakdown(expenses, transactions, 'monthly', [excludedA, excludedB], {})).toEqual([])
   })
 
   it('excludes a category with only budgeted expenses and no actual transactions entirely', () => {
@@ -1810,7 +1811,7 @@ describe('categoryBreakdown', () => {
     const expenses: Expense[] = [
       { id: 'e1', name: 'Savings deposit', categoryId: excludedCat.id, amount: 500, frequency: 'monthly' }
     ]
-    const result = categoryBreakdown(expenses, [], 'monthly', [excludedCat])
+    const result = categoryBreakdown(expenses, [], 'monthly', [excludedCat], {})
     expect(result).toEqual([])
   })
 })
@@ -1852,11 +1853,172 @@ describe('budget selectors', () => {
         { id: 't2', date: '2026-09-02', description: 'b', categoryId: 'cat-food', amount: 20 },
         { id: 't3', date: '2026-09-03', description: 'c', categoryId: 'cat-housing', amount: 100 }
       ]
-      expect(actualByCategory(transactions)).toEqual({ 'cat-food': 30, 'cat-housing': 100 })
+      expect(actualByCategory(transactions, {})).toEqual({ 'cat-food': 30, 'cat-housing': 100 })
     })
 
     it('returns empty object for empty input', () => {
-      expect(actualByCategory([])).toEqual({})
+      expect(actualByCategory([], {})).toEqual({})
+    })
+
+    it('aggregates under the effective (linked-expense) category, not the stored categoryId, when spendExpenseId resolves', () => {
+      const transactions: BudgetTransaction[] = [
+        {
+          id: 't1',
+          date: '2026-09-01',
+          description: 'linked',
+          categoryId: 'cat-food',
+          spendExpenseId: 'exp-1',
+          amount: 40
+        },
+        { id: 't2', date: '2026-09-02', description: 'unlinked', categoryId: 'cat-food', amount: 10 }
+      ]
+      const budgetExpensesByYear = {
+        '2026': [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' as const }]
+      }
+      const result = actualByCategory(transactions, budgetExpensesByYear)
+      expect(result).toEqual({ 'cat-housing': 40, 'cat-food': 10 })
+    })
+
+    it('falls back to stored categoryId when spendExpenseId is dangling (expense not found in that year)', () => {
+      const transactions: BudgetTransaction[] = [
+        {
+          id: 't1',
+          date: '2026-09-01',
+          description: 'dangling link',
+          categoryId: 'cat-food',
+          spendExpenseId: 'exp-missing',
+          amount: 40
+        }
+      ]
+      const budgetExpensesByYear = {
+        '2026': [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' as const }]
+      }
+      const result = actualByCategory(transactions, budgetExpensesByYear)
+      expect(result).toEqual({ 'cat-food': 40 })
+    })
+
+    it('re-resolves live when the linked expense is later re-categorized, with zero changes to the transaction record (no re-selection needed)', () => {
+      const transactions: BudgetTransaction[] = [
+        {
+          id: 't1',
+          date: '2026-09-01',
+          description: 'linked',
+          categoryId: 'cat-food',
+          spendExpenseId: 'exp-1',
+          amount: 40
+        }
+      ]
+      const stateBefore: AppState = {
+        ...initialState,
+        budgetExpensesByYear: {
+          '2026': [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' }]
+        }
+      }
+      const before = actualByCategory(transactions, stateBefore.budgetExpensesByYear)
+      expect(before).toEqual({ 'cat-housing': 40 })
+
+      // Correct the linked expense's category via the real reducer helper — the
+      // transaction record itself is never touched.
+      const stateAfter = updateBudgetExpense(stateBefore, '2026', 'exp-1', { categoryId: 'cat-utilities' })
+
+      const after = actualByCategory(transactions, stateAfter.budgetExpensesByYear)
+      expect(after).toEqual({ 'cat-utilities': 40 })
+      expect(after['cat-housing']).toBeUndefined()
+    })
+
+    it('re-resolves live when the linked expense is later renamed only (no category change), with zero changes to the transaction record', () => {
+      const transactions: BudgetTransaction[] = [
+        {
+          id: 't1',
+          date: '2026-09-01',
+          description: 'linked',
+          categoryId: 'cat-food',
+          spendExpenseId: 'exp-1',
+          amount: 40
+        }
+      ]
+      const stateBefore: AppState = {
+        ...initialState,
+        budgetExpensesByYear: {
+          '2026': [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' }]
+        }
+      }
+      const before = actualByCategory(transactions, stateBefore.budgetExpensesByYear)
+      expect(before).toEqual({ 'cat-housing': 40 })
+
+      const stateAfter = updateBudgetExpense(stateBefore, '2026', 'exp-1', { name: 'Rent (updated)' })
+
+      // Category resolution is unaffected by a name-only change.
+      const after = actualByCategory(transactions, stateAfter.budgetExpensesByYear)
+      expect(after).toEqual({ 'cat-housing': 40 })
+
+      // The picker's option label reflects the new name live, without touching the
+      // transaction record — SpendCategoryPicker builds "<name> (<category>)" directly
+      // from the current Expense, so this is equivalent to a fresh render check.
+      const renamedExpense = stateAfter.budgetExpensesByYear['2026'].find((e) => e.id === 'exp-1')!
+      expect(renamedExpense.name).toBe('Rent (updated)')
+      const categoriesById = new Map([['cat-housing', 'Housing']])
+      const label = `${renamedExpense.name} (${categoriesById.get(renamedExpense.categoryId) ?? renamedExpense.categoryId})`
+      expect(label).toBe('Rent (updated) (Housing)')
+    })
+  })
+
+  describe('effective-category routing in spend aggregation', () => {
+    const catFood: Category = { id: 'cat-food', name: 'Food' }
+    const catHousing: Category = { id: 'cat-housing', name: 'Housing' }
+    const catExcluded: Category = { id: 'cat-excluded', name: 'Excluded', excludeFromSpend: true }
+    const categories = [catFood, catHousing, catExcluded]
+
+    it('yearCategoryTotalSpend for the resolved category includes the re-routed transaction, and the stored-but-not-effective category does not', () => {
+      const transactions: BudgetTransaction[] = [
+        {
+          id: 't1',
+          date: '2026-03-01',
+          description: 'rent booked under Food, linked to Housing expense',
+          categoryId: 'cat-food',
+          spendExpenseId: 'exp-1',
+          amount: 500
+        }
+      ]
+      const budgetExpensesByYear = {
+        '2026': [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' as const }]
+      }
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-housing', budgetExpensesByYear)).toBe(500)
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-food', budgetExpensesByYear)).toBe(0)
+    })
+
+    it('excluded-category filtering uses the resolved category: effective category excluded drops the transaction even though the stored categoryId is not excluded', () => {
+      const transactions: BudgetTransaction[] = [
+        {
+          id: 't1',
+          date: '2026-03-01',
+          description: 'stored under Food, links to an excluded-category expense',
+          categoryId: 'cat-food',
+          spendExpenseId: 'exp-1',
+          amount: 500
+        }
+      ]
+      const budgetExpensesByYear = {
+        '2026': [{ id: 'exp-1', name: 'Excluded expense', categoryId: 'cat-excluded', amount: 1000, frequency: 'monthly' as const }]
+      }
+      expect(yearTotalSpend(transactions, categories, '2026', budgetExpensesByYear)).toBe(0)
+    })
+
+    it('excluded-category filtering uses the resolved category: stored categoryId excluded but effective category not excluded keeps the transaction', () => {
+      const transactions: BudgetTransaction[] = [
+        {
+          id: 't1',
+          date: '2026-03-01',
+          description: 'stored under Excluded, links to a non-excluded expense',
+          categoryId: 'cat-excluded',
+          spendExpenseId: 'exp-1',
+          amount: 500
+        }
+      ]
+      const budgetExpensesByYear = {
+        '2026': [{ id: 'exp-1', name: 'Housing expense', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' as const }]
+      }
+      expect(yearTotalSpend(transactions, categories, '2026', budgetExpensesByYear)).toBe(500)
     })
   })
 
@@ -1954,7 +2116,7 @@ describe('budget selectors', () => {
         { id: 't2', date: '2026-03-05', description: 'b', categoryId: 'cat-food', amount: 20 },
         { id: 't3', date: '2026-09-05', description: 'c', categoryId: 'cat-food', amount: 30 }
       ]
-      expect(monthsPresentInYear(transactions, categories, '2026')).toEqual([1, 3, 9])
+      expect(monthsPresentInYear(transactions, categories, '2026', {})).toEqual([1, 3, 9])
     })
 
     it('does not count a month whose only transaction is in an excluded category', () => {
@@ -1962,11 +2124,11 @@ describe('budget selectors', () => {
         { id: 't1', date: '2026-01-05', description: 'a', categoryId: 'cat-food', amount: 10 },
         { id: 't2', date: '2026-05-05', description: 'b', categoryId: 'cat-excluded', amount: 999 }
       ]
-      expect(monthsPresentInYear(transactions, categories, '2026')).toEqual([1])
+      expect(monthsPresentInYear(transactions, categories, '2026', {})).toEqual([1])
     })
 
     it('returns empty array for a year with zero transactions', () => {
-      expect(monthsPresentInYear([], categories, '2026')).toEqual([])
+      expect(monthsPresentInYear([], categories, '2026', {})).toEqual([])
     })
   })
 
@@ -1985,33 +2147,33 @@ describe('budget selectors', () => {
     ]
 
     it('yearTotalSpend excludes excluded-category amounts', () => {
-      expect(yearTotalSpend(transactions, categories, '2026')).toBe(135)
+      expect(yearTotalSpend(transactions, categories, '2026', {})).toBe(135)
     })
 
     it('yearTotalSpend returns 0 for a year with zero transactions', () => {
-      expect(yearTotalSpend(transactions, categories, '2030')).toBe(0)
+      expect(yearTotalSpend(transactions, categories, '2030', {})).toBe(0)
     })
 
     it('yearCategoryTotalSpend sums only the given category', () => {
-      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-food')).toBe(35)
-      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-rent')).toBe(100)
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-food', {})).toBe(35)
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-rent', {})).toBe(100)
     })
 
     it('yearCategoryTotalSpend returns 0 for an excluded category', () => {
-      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-excluded')).toBe(0)
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-excluded', {})).toBe(0)
     })
 
     it('yearCategoryTotalSpend returns 0 for a category not present in transactions', () => {
-      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-unknown')).toBe(0)
+      expect(yearCategoryTotalSpend(transactions, categories, '2026', 'cat-unknown', {})).toBe(0)
     })
 
     it('monthTotalSpend sums only the given year+month, excluding excluded categories', () => {
-      expect(monthTotalSpend(transactions, categories, '2026', 1)).toBe(110)
-      expect(monthTotalSpend(transactions, categories, '2026', 2)).toBe(25)
+      expect(monthTotalSpend(transactions, categories, '2026', 1, {})).toBe(110)
+      expect(monthTotalSpend(transactions, categories, '2026', 2, {})).toBe(25)
     })
 
     it('monthTotalSpend returns 0 for a month with zero transactions', () => {
-      expect(monthTotalSpend(transactions, categories, '2026', 12)).toBe(0)
+      expect(monthTotalSpend(transactions, categories, '2026', 12, {})).toBe(0)
     })
   })
 
@@ -2069,13 +2231,13 @@ describe('budget selectors', () => {
         // 2026: yearTotalSpend = 300 (food) + 2000 (rent) = 2300 (excluded ignored); months=2 -> avg=1150
         // 2025: yearTotalSpend = 100 (food) + 900 (rent) = 1000 (excluded ignored); months=1 -> avg=1000
         // pctChange = (1150/1000 - 1) * 100 = 15
-        const result = spendTrendConcern(years, transactions, categories)
+        const result = spendTrendConcern(years, transactions, categories, {})
         expect(result).not.toBeNull()
         expect(result!.pctChange).toBeCloseTo(15, 10)
       })
 
       it('returns null when fewer than 2 years are available', () => {
-        expect(spendTrendConcern(['2026'], transactions, categories)).toBeNull()
+        expect(spendTrendConcern(['2026'], transactions, categories, {})).toBeNull()
       })
 
       it('returns null when the prior year average is 0 (would divide by zero)', () => {
@@ -2083,7 +2245,7 @@ describe('budget selectors', () => {
           { id: 'x1', date: '2025-01-05', description: 'transfer', categoryId: 'cat-excluded', amount: 500 },
           { id: 'x2', date: '2026-01-05', description: 'food', categoryId: 'cat-food', amount: 100 }
         ]
-        expect(spendTrendConcern(years, onlyExcludedPrevYear, categories)).toBeNull()
+        expect(spendTrendConcern(years, onlyExcludedPrevYear, categories, {})).toBeNull()
       })
     })
 
@@ -2107,7 +2269,7 @@ describe('budget selectors', () => {
       ]
 
       it('finds the highest population-z-score month using population (N) stddev, not sample (N-1)', () => {
-        const result = spikeMonthConcern(['2020'], spikeTransactions, spikeCategories)
+        const result = spikeMonthConcern(['2020'], spikeTransactions, spikeCategories, {})
         expect(result).not.toBeNull()
         expect(result).toMatchObject({ year: '2020', month: 3, total: 40 })
         expect(result!.zScore).toBeCloseTo(Math.sqrt(2), 10) // 20/sqrt(200) = sqrt(2) ≈ 1.41421356
@@ -2115,7 +2277,7 @@ describe('budget selectors', () => {
       })
 
       it('returns null when there is no data at all', () => {
-        expect(spikeMonthConcern([], [], [])).toBeNull()
+        expect(spikeMonthConcern([], [], [], {})).toBeNull()
       })
 
       it('returns null when stddev is 0 (all months equal)', () => {
@@ -2123,7 +2285,7 @@ describe('budget selectors', () => {
           { id: 'f1', date: '2021-01-05', description: 'food', categoryId: 'cat-food', amount: 10 },
           { id: 'f2', date: '2021-02-05', description: 'food', categoryId: 'cat-food', amount: 10 }
         ]
-        expect(spikeMonthConcern(['2021'], flat, spikeCategories)).toBeNull()
+        expect(spikeMonthConcern(['2021'], flat, spikeCategories, {})).toBeNull()
       })
     })
 
@@ -2137,7 +2299,7 @@ describe('budget selectors', () => {
         // 2025 (first/earliest): income = 2000*1 month = 2000; spend = 1000; rate = (2000-1000)/2000*100 = 50
         // 2026 (last/latest): income = 2500*2 months = 5000; spend = 2300; rate = (5000-2300)/5000*100 = 54
         // drop = firstRate - lastRate = 50 - 54 = -4
-        const result = savingsRateShrinkingConcern(years, transactions, categories, budgetIncomeByYear)
+        const result = savingsRateShrinkingConcern(years, transactions, categories, budgetIncomeByYear, {})
         expect(result).not.toBeNull()
         expect(result!.firstYear).toBe('2025')
         expect(result!.lastYear).toBe('2026')
@@ -2147,12 +2309,12 @@ describe('budget selectors', () => {
       })
 
       it('returns null when fewer than 2 years are available', () => {
-        expect(savingsRateShrinkingConcern(['2026'], transactions, categories, budgetIncomeByYear)).toBeNull()
+        expect(savingsRateShrinkingConcern(['2026'], transactions, categories, budgetIncomeByYear, {})).toBeNull()
       })
 
       it('returns null when an endpoint year has 0 monthly income', () => {
         const zeroIncome = { '2025': { monthly: 0, yearly: 0 }, '2026': { monthly: 2500, yearly: 30000 } }
-        expect(savingsRateShrinkingConcern(years, transactions, categories, zeroIncome)).toBeNull()
+        expect(savingsRateShrinkingConcern(years, transactions, categories, zeroIncome, {})).toBeNull()
       })
     })
 
@@ -2160,7 +2322,7 @@ describe('budget selectors', () => {
       it('identifies the top spending category and whether it exceeds 40% share', () => {
         // 2026 total = 300 (food) + 2000 (rent) = 2300 (excluded ignored)
         // top = rent (2000); topSharePct = 2000/2300*100 ≈ 86.9565217...
-        const result = concentrationRiskConcern(years, transactions, categories)
+        const result = concentrationRiskConcern(years, transactions, categories, {})
         expect(result).not.toBeNull()
         expect(result!.categoryName).toBe('Rent')
         expect(result!.topSharePct).toBeCloseTo((2000 / 2300) * 100, 10)
@@ -2168,16 +2330,16 @@ describe('budget selectors', () => {
       })
 
       it('never picks an excludeFromSpend category as the top, even with far larger raw spend', () => {
-        const result = concentrationRiskConcern(years, transactions, categories)
+        const result = concentrationRiskConcern(years, transactions, categories, {})
         expect(result!.categoryName).not.toBe('Transfers')
       })
 
       it('returns null when there are no years', () => {
-        expect(concentrationRiskConcern([], transactions, categories)).toBeNull()
+        expect(concentrationRiskConcern([], transactions, categories, {})).toBeNull()
       })
 
       it('returns null when total spend is 0', () => {
-        expect(concentrationRiskConcern(['2099'], transactions, categories)).toBeNull()
+        expect(concentrationRiskConcern(['2099'], transactions, categories, {})).toBeNull()
       })
     })
 
@@ -2190,7 +2352,7 @@ describe('budget selectors', () => {
       it('matches hand-computed savings rate per year, in input year order', () => {
         // 2026: income = 2500 * 2 months = 5000; spend = 300 + 2000 = 2300; pct = (5000-2300)/5000*100 = 54
         // 2025: income = 1000 * 1 month = 1000; spend = 100 + 900 = 1000; pct = (1000-1000)/1000*100 = 0
-        const result = savingsRateByYear(years, transactions, categories, budgetIncomeByYear)
+        const result = savingsRateByYear(years, transactions, categories, budgetIncomeByYear, {})
         expect(result).toEqual([
           { year: '2026', pct: 54, isPositive: true },
           { year: '2025', pct: 0, isPositive: true }
@@ -2199,12 +2361,12 @@ describe('budget selectors', () => {
 
       it('returns pct: 0 (not NaN/Infinity) for a year with 0 income', () => {
         const zeroIncome: Record<string, { monthly: number; yearly: number }> = { '2026': { monthly: 0, yearly: 0 } }
-        const result = savingsRateByYear(['2026'], transactions, categories, zeroIncome)
+        const result = savingsRateByYear(['2026'], transactions, categories, zeroIncome, {})
         expect(result).toEqual([{ year: '2026', pct: 0, isPositive: true }])
       })
 
       it('preserves the order given in `years`, regardless of chronology', () => {
-        const result = savingsRateByYear(['2025', '2026'], transactions, categories, budgetIncomeByYear)
+        const result = savingsRateByYear(['2025', '2026'], transactions, categories, budgetIncomeByYear, {})
         expect(result.map((r) => r.year)).toEqual(['2025', '2026'])
       })
     })
@@ -2231,7 +2393,7 @@ describe('budget selectors', () => {
       const stableYears = ['2026', '2025'] // descending, latest first
 
       it('orders segments by the LATEST year ranking, stable across all years (not each year’s own rank)', () => {
-        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories)
+        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories, {})
         // latest-year (2026) ranking by amount: A(500) > B(100) > C(50)
         const order = (year: string) => result.rows.find((r) => r.year === year)!.segments.map((s) => s.categoryId)
         expect(order('2026')).toEqual(['cat-a', 'cat-b', 'cat-c'])
@@ -2241,7 +2403,7 @@ describe('budget selectors', () => {
       })
 
       it('excludes excludeFromSpend categories entirely from ranking, legend, and segments', () => {
-        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories)
+        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories, {})
         expect(result.legend.some((l) => l.categoryId === 'cat-excl')).toBe(false)
         result.rows.forEach((row) => {
           expect(row.segments.some((s) => s.categoryId === 'cat-excl')).toBe(false)
@@ -2249,13 +2411,13 @@ describe('budget selectors', () => {
       })
 
       it('segments per year sum to ~100% except years with 0 total spend (all zero)', () => {
-        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories)
+        const result = categoryShareOverTime(stableYears, stableTransactions, stableCategories, {})
         result.rows.forEach((row) => {
           const sum = row.segments.reduce((s, seg) => s + seg.pct, 0)
           expect(sum).toBeCloseTo(100, 5)
         })
 
-        const zeroSpendResult = categoryShareOverTime(['2099'], stableTransactions, stableCategories)
+        const zeroSpendResult = categoryShareOverTime(['2099'], stableTransactions, stableCategories, {})
         const zeroRow = zeroSpendResult.rows.find((r) => r.year === '2099')!
         zeroRow.segments.forEach((seg) => expect(seg.pct).toBe(0))
       })
@@ -2273,7 +2435,7 @@ describe('budget selectors', () => {
           categoryId: c.id,
           amount: 100 - i
         }))
-        const result = categoryShareOverTime(['2026'], manyTransactions, manyCategories)
+        const result = categoryShareOverTime(['2026'], manyTransactions, manyCategories, {})
         expect(result.legend.length).toBe(6)
         expect(result.rows[0].segments.length).toBe(8)
       })
@@ -2291,7 +2453,7 @@ describe('budget selectors', () => {
         { id: 't1', date: '2025-12-05', description: 'a', categoryId: 'cat-food', amount: 100 },
         { id: 't2', date: '2026-01-05', description: 'b', categoryId: 'cat-food', amount: 50 }
       ]
-      const result = monthlySeasonality(['2025', '2026'], transactions, categories)
+      const result = monthlySeasonality(['2025', '2026'], transactions, categories, {})
       const dec = result.find((m) => m.month === 12)!
       // Should be 100 (average over just 2025), NOT 50 (100+0)/2.
       expect(dec.avgSpend).toBe(100)
@@ -2303,7 +2465,7 @@ describe('budget selectors', () => {
         { id: 't2', date: '2026-06-05', description: 'b', categoryId: 'cat-food', amount: 500 },
         { id: 't3', date: '2026-09-05', description: 'c', categoryId: 'cat-food', amount: 10 }
       ]
-      const result = monthlySeasonality(['2026'], transactions, categories)
+      const result = monthlySeasonality(['2026'], transactions, categories, {})
       expect(result.length).toBe(12)
       expect(result.find((m) => m.month === 6)!.isPeak).toBe(true)
       expect(result.filter((m) => m.isPeak).length).toBe(1)
@@ -2315,7 +2477,7 @@ describe('budget selectors', () => {
       const transactions: BudgetTransaction[] = [
         { id: 't1', date: '2026-03-05', description: 'a', categoryId: 'cat-food', amount: 25 }
       ]
-      const result = monthlySeasonality(['2026'], transactions, categories)
+      const result = monthlySeasonality(['2026'], transactions, categories, {})
       expect(result.find((m) => m.month === 3)!.isPeak).toBe(true)
       result
         .filter((m) => m.month !== 3)
@@ -2331,7 +2493,7 @@ describe('budget selectors', () => {
         // December's ONLY transaction is in the excluded category -> Dec is absent, not a 0-spend present month.
         { id: 't2', date: '2026-12-05', description: 'b', categoryId: 'cat-excluded', amount: 9999 }
       ]
-      const result = monthlySeasonality(['2026'], transactions, categories)
+      const result = monthlySeasonality(['2026'], transactions, categories, {})
       const dec = result.find((m) => m.month === 12)!
       expect(dec.avgSpend).toBe(0)
       // Jan is the only present month with spend, so it's the peak, not diluted/skewed by the excluded Dec amount.
@@ -2355,7 +2517,7 @@ describe('budget selectors', () => {
       // not treat budget as 0/undefined.
       const result = budgetAccuracyByYear(['2020'], transactions, categories, budgetExpensesByYear)
       expect(result.length).toBe(1)
-      const monthCount = monthsPresentInYear(transactions, categories, '2020').length
+      const monthCount = monthsPresentInYear(transactions, categories, '2020', {}).length
       expect(monthCount).toBe(1)
       expect(result[0].budgetTotal).toBe(100 * monthCount)
       expect(result[0].budgetTotal).not.toBe(0)
@@ -2518,7 +2680,7 @@ describe('budget selectors', () => {
 
     describe('topMovers', () => {
       it('returns null when fewer than 2 years', () => {
-        expect(topMovers(['2026'], transactions, categories)).toBeNull()
+        expect(topMovers(['2026'], transactions, categories, {})).toBeNull()
       })
 
       it('picks top 3 increases and bottom 3 (reversed) decreases from a 7-category fixture', () => {
@@ -2526,7 +2688,7 @@ describe('budget selectors', () => {
         // food: 180-100=80, new: 50-0=50, transport: 60-20=40  -> increases
         // rent: 0, utilities: 0                                -> excluded (not >0 / <0)
         // entertainment: 50-150=-100, shopping: 10-90=-80      -> decreases
-        const result = topMovers(years, transactions, categories)
+        const result = topMovers(years, transactions, categories, {})
         expect(result).not.toBeNull()
         expect(result!.increases.map((m) => m.categoryId)).toEqual(['cat-food', 'cat-new', 'cat-transport'])
         expect(result!.increases.map((m) => m.diff)).toEqual([80, 50, 40])
@@ -2535,7 +2697,7 @@ describe('budget selectors', () => {
       })
 
       it('excludes a category with an exact $0 diff from both increases and decreases', () => {
-        const result = topMovers(years, transactions, categories)!
+        const result = topMovers(years, transactions, categories, {})!
         expect(result.increases.some((m) => m.categoryId === 'cat-rent')).toBe(false)
         expect(result.decreases.some((m) => m.categoryId === 'cat-rent')).toBe(false)
         expect(result.increases.some((m) => m.categoryId === 'cat-utilities')).toBe(false)
@@ -2543,10 +2705,59 @@ describe('budget selectors', () => {
       })
 
       it('never includes an excludeFromSpend category as a mover, even with large spend both years', () => {
-        const result = topMovers(years, transactions, categories)!
+        const result = topMovers(years, transactions, categories, {})!
         expect(result.increases.some((m) => m.categoryId === 'cat-excluded')).toBe(false)
         expect(result.decreases.some((m) => m.categoryId === 'cat-excluded')).toBe(false)
       })
     })
+  })
+})
+
+describe('effectiveCategoryId', () => {
+  function makeTx(overrides?: Partial<BudgetTransaction>): BudgetTransaction {
+    return {
+      id: 'tx-1',
+      date: '2024-03-15',
+      description: 'Test',
+      categoryId: 'cat-fallback',
+      amount: -50,
+      ...overrides
+    }
+  }
+
+  function makeExpense(overrides?: Partial<Expense>): Expense {
+    return {
+      id: 'exp-1',
+      name: 'Test expense',
+      categoryId: 'cat-from-expense',
+      amount: 100,
+      frequency: 'monthly',
+      ...overrides
+    }
+  }
+
+  it('resolves the linked expense categoryId when spendExpenseId matches in the tx year', () => {
+    const tx = makeTx({ spendExpenseId: 'exp-1', categoryId: 'cat-fallback' })
+    const byYear = { '2024': [makeExpense({ id: 'exp-1', categoryId: 'cat-from-expense' })] }
+    expect(effectiveCategoryId(tx, byYear)).toBe('cat-from-expense')
+  })
+
+  it('falls back to tx.categoryId when the linked expense is not present in that year (deleted or different year)', () => {
+    const tx = makeTx({ spendExpenseId: 'exp-missing', categoryId: 'cat-fallback' })
+    const byYear = { '2024': [makeExpense({ id: 'exp-1', categoryId: 'cat-from-expense' })] }
+    expect(effectiveCategoryId(tx, byYear)).toBe('cat-fallback')
+  })
+
+  it('returns tx.categoryId directly when spendExpenseId is unset', () => {
+    const tx = makeTx({ categoryId: 'cat-fallback' })
+    const byYear = { '2024': [makeExpense({ id: 'exp-1', categoryId: 'cat-from-expense' })] }
+    expect(effectiveCategoryId(tx, byYear)).toBe('cat-fallback')
+  })
+
+  it('falls back to tx.categoryId without throwing when budgetExpensesByYear has no entry for the tx year', () => {
+    const tx = makeTx({ spendExpenseId: 'exp-1', categoryId: 'cat-fallback', date: '2023-01-01' })
+    const byYear = { '2024': [makeExpense({ id: 'exp-1', categoryId: 'cat-from-expense' })] }
+    expect(() => effectiveCategoryId(tx, byYear)).not.toThrow()
+    expect(effectiveCategoryId(tx, byYear)).toBe('cat-fallback')
   })
 })

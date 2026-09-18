@@ -47,7 +47,7 @@ export type AppAction =
   | { type: 'ENSURE_BUDGET_YEAR_SNAPSHOT'; year: string }
   | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
   | { type: 'UPDATE_BUDGET_TRANSACTION'; id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }
-  | { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK'; ids: string[]; categoryId: string }
+  | { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK'; ids: string[]; categoryId: string; spendExpenseId?: string }
   | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
   | {
       type: 'IMPORT_BUDGET_TRANSACTIONS'
@@ -209,13 +209,22 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return StateActions.updateBudgetTransaction(state, action.id, action.patch)
 
     case 'UPDATE_BUDGET_TRANSACTIONS_BULK':
-      return StateActions.updateBudgetTransactionsBulk(state, action.ids, action.categoryId)
+      return StateActions.updateBudgetTransactionsBulk(state, action.ids, {
+        categoryId: action.categoryId,
+        spendExpenseId: action.spendExpenseId,
+      })
 
     case 'DELETE_BUDGET_TRANSACTION':
       return StateActions.deleteBudgetTransaction(state, action.id)
 
     case 'IMPORT_BUDGET_TRANSACTIONS':
-      return StateActions.importBudgetTransactions(state, action.rows, action.categories, action.categoryMappings)
+      return StateActions.importBudgetTransactions(
+        state,
+        action.rows,
+        action.categories,
+        action.categoryMappings,
+        state.budgetExpensesByYear
+      )
 
     case 'REAPPLY_CATEGORY_MAPPINGS':
       return StateActions.reapplyCategoryMappingsToState(state, action.categoryMappings)

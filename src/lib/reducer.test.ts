@@ -694,8 +694,16 @@ describe('appReducer', () => {
         ],
       }
 
-      const resultFromReducer = appReducer(state, { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK', ids: ['tx1', 'tx2'], categoryId: 'cat-Misc' })
-      const resultDirect = updateBudgetTransactionsBulk(state, ['tx1', 'tx2'], 'cat-Misc')
+      const resultFromReducer = appReducer(state, {
+        type: 'UPDATE_BUDGET_TRANSACTIONS_BULK',
+        ids: ['tx1', 'tx2'],
+        categoryId: 'cat-Misc',
+        spendExpenseId: 'exp-misc',
+      })
+      const resultDirect = updateBudgetTransactionsBulk(state, ['tx1', 'tx2'], {
+        categoryId: 'cat-Misc',
+        spendExpenseId: 'exp-misc',
+      })
 
       expect(resultFromReducer.budgetTransactions).toEqual(resultDirect.budgetTransactions)
       expect(resultFromReducer.budgetTransactions[0].categoryId).toBe('cat-Misc')
@@ -734,7 +742,7 @@ describe('appReducer', () => {
         categories,
         categoryMappings,
       })
-      const resultDirect = importBudgetTransactions(state, rows, categories, categoryMappings)
+      const resultDirect = importBudgetTransactions(state, rows, categories, categoryMappings, state.budgetExpensesByYear)
 
       expect(resultFromReducer.budgetTransactions).toHaveLength(2)
       expect(resultFromReducer.budgetTransactions).toHaveLength(resultDirect.budgetTransactions.length)

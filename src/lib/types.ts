@@ -100,6 +100,7 @@ export interface BudgetTransaction {
   date: string        // YYYY-MM-DD
   description: string
   categoryId: string
+  spendExpenseId?: string
   accountName?: string
   amount: number
 }

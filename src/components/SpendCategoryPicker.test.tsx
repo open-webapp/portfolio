@@ -1,0 +1,91 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { SpendCategoryPicker } from './SpendCategoryPicker'
+import type { Expense } from '../lib/types'
+
+const expenses: Expense[] = [
+  { id: 'e1', name: 'Zebra Rent', categoryId: 'c1', amount: 1000, frequency: 'monthly' },
+  { id: 'e2', name: 'Alpha Gym', categoryId: 'c2', amount: 50, frequency: 'monthly' },
+  { id: 'e3', name: 'Mid Internet', categoryId: 'c1', amount: 80, frequency: 'monthly' },
+]
+
+const categoriesById = new Map<string, string>([
+  ['c1', 'Housing'],
+  ['c2', 'Health'],
+])
+
+describe('SpendCategoryPicker', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('renders options sorted alphabetically by expense name with correct label', () => {
+    render(
+      <SpendCategoryPicker
+        expenses={expenses}
+        categoriesById={categoriesById}
+        value="e1"
+        onChange={() => {}}
+        ariaLabel="Spend category"
+      />
+    )
+
+    const select = screen.getByLabelText('Spend category')
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toEqual(['Alpha Gym (Health)', 'Mid Internet (Housing)', 'Zebra Rent (Housing)'])
+  })
+
+  it('calls onChange with expense id and categoryId when an option is selected', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn()
+
+    render(
+      <SpendCategoryPicker
+        expenses={expenses}
+        categoriesById={categoriesById}
+        value="e1"
+        onChange={handleChange}
+        ariaLabel="Spend category"
+      />
+    )
+
+    const select = screen.getByLabelText('Spend category')
+    await user.selectOptions(select, 'e2')
+
+    expect(handleChange).toHaveBeenCalledWith('e2', 'c2')
+  })
+
+  it('renders disabled placeholder select when expenses array is empty', () => {
+    render(
+      <SpendCategoryPicker
+        expenses={[]}
+        categoriesById={categoriesById}
+        value=""
+        onChange={() => {}}
+        ariaLabel="Spend category"
+      />
+    )
+
+    const select = screen.getByLabelText('Spend category') as HTMLSelectElement
+    expect(select.disabled).toBe(true)
+    const options = Array.from(select.querySelectorAll('option'))
+    expect(options).toHaveLength(1)
+    expect(options[0].textContent).toBe('No expenses defined for this year')
+  })
+
+  it('renders without crashing when value matches no current option', () => {
+    render(
+      <SpendCategoryPicker
+        expenses={expenses}
+        categoriesById={categoriesById}
+        value="dangling-id"
+        onChange={() => {}}
+        ariaLabel="Spend category"
+      />
+    )
+
+    const select = screen.getByLabelText('Spend category')
+    expect(select).toBeTruthy()
+  })
+})

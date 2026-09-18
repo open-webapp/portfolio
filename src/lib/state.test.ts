@@ -42,6 +42,7 @@ import {
   updateBudgetTransactionsBulk,
   deleteBudgetTransaction,
   importBudgetTransactions,
+  resolveBudgetImportRows,
 } from './state'
 import type { AppState } from './types'
 import type { BalanceEntry, Expense, BudgetTransaction, CategoryMapping, Category } from './types'
@@ -1453,30 +1454,33 @@ describe('state helpers', () => {
     const t2: BudgetTransaction = { id: 'tx-2', date: '2026-01-02', description: 'Groceries', categoryId: 'cat-Food', amount: 50 }
     const t3: BudgetTransaction = { id: 'tx-3', date: '2026-01-03', description: 'Gas', categoryId: 'cat-Auto', amount: 40 }
 
-    it('patches categoryId on the matching ids, leaving others untouched', () => {
+    it('patches categoryId and spendExpenseId on the matching ids, leaving others untouched', () => {
       const state = { ...initialState(), budgetTransactions: [t1, t2, t3] }
-      const updated = updateBudgetTransactionsBulk(state, ['tx-1', 'tx-3'], 'cat-Misc')
-      expect(updated.budgetTransactions[0]).toEqual({ ...t1, categoryId: 'cat-Misc' })
+      const updated = updateBudgetTransactionsBulk(state, ['tx-1', 'tx-3'], {
+        categoryId: 'cat-Misc',
+        spendExpenseId: 'exp-1',
+      })
+      expect(updated.budgetTransactions[0]).toEqual({ ...t1, categoryId: 'cat-Misc', spendExpenseId: 'exp-1' })
       expect(updated.budgetTransactions[1]).toEqual(t2)
-      expect(updated.budgetTransactions[2]).toEqual({ ...t3, categoryId: 'cat-Misc' })
+      expect(updated.budgetTransactions[2]).toEqual({ ...t3, categoryId: 'cat-Misc', spendExpenseId: 'exp-1' })
     })
 
     it('is a no-op when ids is empty', () => {
       const state = { ...initialState(), budgetTransactions: [t1, t2, t3] }
-      const updated = updateBudgetTransactionsBulk(state, [], 'cat-Misc')
+      const updated = updateBudgetTransactionsBulk(state, [], { categoryId: 'cat-Misc' })
       expect(updated.budgetTransactions).toEqual([t1, t2, t3])
     })
 
     it('silently ignores ids not found in budgetTransactions', () => {
       const state = { ...initialState(), budgetTransactions: [t1, t2] }
-      const updated = updateBudgetTransactionsBulk(state, ['tx-1', 'missing'], 'cat-Misc')
+      const updated = updateBudgetTransactionsBulk(state, ['tx-1', 'missing'], { categoryId: 'cat-Misc' })
       expect(updated.budgetTransactions[0]).toEqual({ ...t1, categoryId: 'cat-Misc' })
       expect(updated.budgetTransactions[1]).toEqual(t2)
     })
 
     it('does not touch other AppState fields', () => {
       const state = { ...initialState(), budgetTransactions: [t1, t2, t3] }
-      const updated = updateBudgetTransactionsBulk(state, ['tx-1'], 'cat-Misc')
+      const updated = updateBudgetTransactionsBulk(state, ['tx-1'], { categoryId: 'cat-Misc' })
       expect(updated.accounts).toBe(state.accounts)
       expect(updated.transactions).toBe(state.transactions)
     })
@@ -1511,7 +1515,7 @@ describe('state helpers', () => {
       const state = { ...initialState(), budgetTransactions: [existing] }
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Rent', amount: 2000 },
-      ], categories, [])
+      ], categories, [], {})
       expect(updated.budgetTransactions).toEqual([existing])
     })
 
@@ -1520,7 +1524,7 @@ describe('state helpers', () => {
       const state = { ...initialState(), budgetTransactions: [existing] }
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Rent', amount: 2001 },
-      ], categories, [])
+      ], categories, [], {})
       expect(updated.budgetTransactions).toHaveLength(2)
       expect(updated.budgetTransactions[1]).toMatchObject({ date: '2026-01-01', description: 'Rent', categoryId: 'cat-other', amount: 2001 })
     })
@@ -1528,7 +1532,7 @@ describe('state helpers', () => {
     it('dedups two identical rows within the same import batch, adding only one', () => {
       const state = initialState()
       const row = { date: '2026-01-01', description: 'Coffee', amount: 5 }
-      const updated = importBudgetTransactions(state, [row, row], categories, [])
+      const updated = importBudgetTransactions(state, [row, row], categories, [], {})
       expect(updated.budgetTransactions).toHaveLength(1)
       expect(updated.budgetTransactions[0]).toMatchObject({ ...row, categoryId: 'cat-other' })
     })
@@ -1538,7 +1542,7 @@ describe('state helpers', () => {
       const state = { ...initialState(), budgetTransactions: [existing] }
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Rent', amount: 2000 },
-      ], categories, [])
+      ], categories, [], {})
       expect(updated.budgetTransactions).toEqual([existing])
     })
 
@@ -1546,7 +1550,7 @@ describe('state helpers', () => {
       const state = initialState()
       const rowA = { date: '2026-01-01', description: 'Rent', amount: 2000, accountName: 'Checking' }
       const rowB = { date: '2026-01-01', description: 'Rent', amount: 2000, accountName: 'Savings' }
-      const updated = importBudgetTransactions(state, [rowA, rowB], categories, [])
+      const updated = importBudgetTransactions(state, [rowA, rowB], categories, [], {})
       expect(updated.budgetTransactions).toHaveLength(2)
       expect(updated.budgetTransactions[0]).toMatchObject({ ...rowA, categoryId: 'cat-other' })
       expect(updated.budgetTransactions[1]).toMatchObject({ ...rowB, categoryId: 'cat-other' })
@@ -1555,7 +1559,7 @@ describe('state helpers', () => {
     it('drops the second row when date/description/categoryId/amount/accountName all match', () => {
       const state = initialState()
       const row = { date: '2026-01-01', description: 'Rent', amount: 2000, accountName: 'Checking' }
-      const updated = importBudgetTransactions(state, [row, { ...row }], categories, [])
+      const updated = importBudgetTransactions(state, [row, { ...row }], categories, [], {})
       expect(updated.budgetTransactions).toHaveLength(1)
       expect(updated.budgetTransactions[0]).toMatchObject({ ...row, categoryId: 'cat-other' })
     })
@@ -1567,7 +1571,7 @@ describe('state helpers', () => {
       ]
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-01', description: 'Monthly Rent Payment', amount: 2000 },
-      ], categories, mappings)
+      ], categories, mappings, {})
       expect(updated.budgetTransactions[0].categoryId).toBe('cat-housing')
     })
 
@@ -1578,7 +1582,7 @@ describe('state helpers', () => {
       ]
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
-      ], categories, mappings)
+      ], categories, mappings, {})
       expect(updated.budgetTransactions[0].categoryId).toBe('cat-other')
     })
 
@@ -1590,8 +1594,114 @@ describe('state helpers', () => {
       ]
       const updated = importBudgetTransactions(state, [
         { date: '2026-01-02', description: 'Coffee Shop', amount: -5 },
-      ], categories, mappings)
+      ], categories, mappings, {})
       expect(updated.budgetTransactions[0].categoryId).toBe('cat-housing')
+    })
+
+    it('sets spendExpenseId to a same-year expense matching the resolved categoryId', () => {
+      const budgetExpensesByYear: Record<string, Expense[]> = {
+        '2026': [{ id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' }],
+      }
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
+      const { toAdd } = resolveBudgetImportRows(
+        [],
+        [{ date: '2026-01-01', description: 'Rent', amount: 2000 }],
+        categories,
+        mappings,
+        budgetExpensesByYear
+      )
+      expect(toAdd[0].spendExpenseId).toBe('exp-housing')
+    })
+
+    it('when multiple same-year expenses share the resolved categoryId, the first by array order wins', () => {
+      const budgetExpensesByYear: Record<string, Expense[]> = {
+        '2026': [
+          { id: 'exp-first', name: 'Rent A', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' },
+          { id: 'exp-second', name: 'Rent B', categoryId: 'cat-housing', amount: 2000, frequency: 'monthly' },
+        ],
+      }
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
+      const { toAdd } = resolveBudgetImportRows(
+        [],
+        [{ date: '2026-01-01', description: 'Rent', amount: 2000 }],
+        categories,
+        mappings,
+        budgetExpensesByYear
+      )
+      expect(toAdd[0].spendExpenseId).toBe('exp-first')
+    })
+
+    it('leaves spendExpenseId unset when no same-year expense matches the resolved category', () => {
+      const budgetExpensesByYear: Record<string, Expense[]> = {
+        '2026': [{ id: 'exp-food', name: 'Groceries', categoryId: 'cat-food', amount: 500, frequency: 'monthly' }],
+      }
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
+      const { toAdd } = resolveBudgetImportRows(
+        [],
+        [{ date: '2026-01-01', description: 'Rent', amount: 2000 }],
+        categories,
+        mappings,
+        budgetExpensesByYear
+      )
+      expect(toAdd[0].spendExpenseId).toBeUndefined()
+      expect(toAdd[0].categoryId).toBe('cat-housing')
+    })
+
+    it('leaves spendExpenseId unset when the row\'s year has zero expenses', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
+      const { toAdd } = resolveBudgetImportRows(
+        [],
+        [{ date: '2026-01-01', description: 'Rent', amount: 2000 }],
+        categories,
+        mappings,
+        {}
+      )
+      expect(toAdd[0].spendExpenseId).toBeUndefined()
+    })
+
+    it('treats a missing budgetExpensesByYear[year] entry as an empty array without throwing', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
+      expect(() =>
+        resolveBudgetImportRows(
+          [],
+          [{ date: '2026-01-01', description: 'Rent', amount: 2000 }],
+          categories,
+          mappings,
+          undefined as unknown as Record<string, Expense[]>
+        )
+      ).not.toThrow()
+    })
+
+    it('BREAKING CHANGE: two rows with same date/description/amount/account but different categoryId now dedup', () => {
+      const state = initialState()
+      const mappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent payment', categoryId: 'cat-housing', updatedAt: '2026-01-01T00:00:00Z' },
+      ]
+      const rowA = { date: '2026-01-01', description: 'Rent Payment', amount: 2000 }
+      const rowB = { date: '2026-01-01', description: 'Rent Payment', amount: 2000 }
+      // rowA resolves to cat-other (no mapping in first call), rowB resolves to cat-housing via mapping
+      const { toAdd: firstToAdd } = resolveBudgetImportRows(state.budgetTransactions, [rowA], categories, [], {})
+      const stateAfterFirst = { ...state, budgetTransactions: [...state.budgetTransactions, ...firstToAdd] }
+      const { toAdd, duplicateCount } = resolveBudgetImportRows(
+        stateAfterFirst.budgetTransactions,
+        [rowB],
+        categories,
+        mappings,
+        {}
+      )
+      expect(toAdd).toHaveLength(0)
+      expect(duplicateCount).toBe(1)
+      expect(stateAfterFirst.budgetTransactions[0].categoryId).toBe('cat-other')
     })
   })
 
