@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetIncomeForYear, resolveBudgetImportRows } from '../lib/state'
-import { resolveCategoryIdForDescription, resolveSpendExpenseForCategory, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
+import { resolveSpendExpenseIdForDescription, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
 import { BudgetAnalytics } from './BudgetAnalytics'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
@@ -340,9 +340,9 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         spendExpenseId: recExpenseId || undefined,
       },
     })
-    categoryDispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, categoryId: recCategoryId })
+    categoryDispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, spendExpenseId: recExpenseId })
     {
-      const nextMappings = upsertCategoryMapping({ categories, categoryMappings }, description, recCategoryId).categoryMappings
+      const nextMappings = upsertCategoryMapping({ categories, categoryMappings }, description, recExpenseId).categoryMappings
       dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
     }
     const recordYear = recDate.slice(0, 4)
@@ -749,13 +749,13 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                             categoryDispatch({
                               type: 'UPSERT_CATEGORY_MAPPING',
                               description: row.description,
-                              categoryId,
+                              spendExpenseId: expenseId,
                             })
                             {
                               const nextMappings = upsertCategoryMapping(
                                 { categories, categoryMappings },
                                 row.description,
-                                categoryId
+                                expenseId
                               ).categoryMappings
                               dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
                             }
@@ -902,11 +902,13 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 setRecDescription(e.target.value)
                 setRecCategoryTouchedManually(false)
                 if (!recCategoryTouchedManually) {
-                  const match = resolveCategoryIdForDescription(categoryMappings, e.target.value)
+                  const match = resolveSpendExpenseIdForDescription(categoryMappings, e.target.value)
                   if (match) {
-                    setRecCategoryId(match)
-                    const foundExpense = resolveSpendExpenseForCategory(state.budgetExpenseDefinitions, match)
-                    if (foundExpense) setRecExpenseId(foundExpense.id)
+                    const foundExpense = state.budgetExpenseDefinitions.find((d) => d.id === match)
+                    if (foundExpense) {
+                      setRecExpenseId(match)
+                      setRecCategoryId(foundExpense.categoryId)
+                    }
                   }
                 }
               }}

@@ -1,7 +1,6 @@
 import type { Category, CategoryMapping, BudgetTransaction, ExpenseDefinition } from './types'
 import { uid } from './seed'
 import { mergeCategoryState } from './categoryMerge'
-import { effectiveCategoryId } from './selectors'
 
 export interface GlobalCategoryState {
   categories: Category[]
@@ -41,12 +40,12 @@ export function deleteCategory(s: GlobalCategoryState, id: string): GlobalCatego
 /**
  * Upsert a category mapping by description substring, case-insensitive.
  * If a non-tombstoned mapping with the same substring (case-insensitively) already
- * exists, its categoryId/updatedAt are updated in place; otherwise a new mapping is
+ * exists, its spendExpenseId/updatedAt are updated in place; otherwise a new mapping is
  * created. Blank/whitespace-only descriptions are a no-op. Tombstoned mappings are
  * ignored for dedup purposes (a fresh mapping is created even if a deleted one shares
  * the same substring).
  */
-export function upsertCategoryMapping(s: GlobalCategoryState, description: string, categoryId: string): GlobalCategoryState {
+export function upsertCategoryMapping(s: GlobalCategoryState, description: string, spendExpenseId: string): GlobalCategoryState {
   const trimmed = description.trim()
   if (!trimmed) return s
   const now = new Date().toISOString()
@@ -55,11 +54,11 @@ export function upsertCategoryMapping(s: GlobalCategoryState, description: strin
     return {
       ...s,
       categoryMappings: s.categoryMappings.map((m) =>
-        m.id === existing.id ? { ...m, categoryId, updatedAt: now } : m
+        m.id === existing.id ? { ...m, spendExpenseId, updatedAt: now } : m
       ),
     }
   }
-  const mapping: CategoryMapping = { id: uid('catmap'), substring: trimmed, categoryId, updatedAt: now }
+  const mapping: CategoryMapping = { id: uid('catmap'), substring: trimmed, spendExpenseId, updatedAt: now }
   return { ...s, categoryMappings: [...s.categoryMappings, mapping] }
 }
 
@@ -67,7 +66,7 @@ export function upsertCategoryMapping(s: GlobalCategoryState, description: strin
 export function updateCategoryMapping(
   s: GlobalCategoryState,
   id: string,
-  patch: Partial<Pick<CategoryMapping, 'substring' | 'categoryId'>>
+  patch: Partial<Pick<CategoryMapping, 'substring' | 'spendExpenseId'>>
 ): GlobalCategoryState {
   const now = new Date().toISOString()
   return {
@@ -77,10 +76,10 @@ export function updateCategoryMapping(
 }
 
 /** Add a new category mapping. Blank/whitespace-only substrings are a no-op. */
-export function addCategoryMapping(s: GlobalCategoryState, categoryId: string, substring: string): GlobalCategoryState {
+export function addCategoryMapping(s: GlobalCategoryState, spendExpenseId: string, substring: string): GlobalCategoryState {
   const trimmed = substring.trim()
   if (!trimmed) return s
-  const mapping: CategoryMapping = { id: uid('catmap'), substring: trimmed, categoryId, updatedAt: new Date().toISOString() }
+  const mapping: CategoryMapping = { id: uid('catmap'), substring: trimmed, spendExpenseId, updatedAt: new Date().toISOString() }
   return { ...s, categoryMappings: [...s.categoryMappings, mapping] }
 }
 
@@ -95,15 +94,15 @@ export function deleteCategoryMapping(s: GlobalCategoryState, id: string): Globa
 }
 
 /**
- * Resolve the categoryId for a transaction description by finding all non-tombstoned
+ * Resolve the spendExpenseId for a transaction description by finding all non-tombstoned
  * mappings whose substring (case-insensitive) appears in the description, and returning
- * the categoryId of the one with the latest updatedAt. Returns null if no mapping matches.
+ * the spendExpenseId of the one with the latest updatedAt. Returns null if no mapping matches.
  */
-export function resolveCategoryIdForDescription(mappings: CategoryMapping[], description: string): string | null {
+export function resolveSpendExpenseIdForDescription(mappings: CategoryMapping[], description: string): string | null {
   const lower = description.toLowerCase()
   const matches = mappings.filter((m) => !m.deletedAt && m.substring && lower.includes(m.substring.toLowerCase()))
   if (matches.length === 0) return null
-  return matches.reduce((latest, m) => (m.updatedAt > latest.updatedAt ? m : latest)).categoryId
+  return matches.reduce((latest, m) => (m.updatedAt > latest.updatedAt ? m : latest)).spendExpenseId
 }
 
 /** Non-tombstoned categories, in original order. */
@@ -130,25 +129,19 @@ export function resolveSpendExpenseForCategory(
 }
 
 /**
- * Re-run category mapping resolution against a list of budget transactions, rewriting
- * categoryId for any transaction whose description matches a mapping. Transactions with
- * no match are left untouched. When a transaction is linked to a Budget Expense
- * (spendExpenseId), its effective category (per effectiveCategoryId) is the linked
- * expense's category, not tx.categoryId.
+ * Re-run category mapping resolution against a list of budget transactions, applying
+ * matches by direct lookup: for each transaction, resolveSpendExpenseIdForDescription
+ * finds the latest-updated non-tombstoned mapping whose substring appears in the
+ * description. On a match, the mapping's spendExpenseId is looked up in
+ * `budgetExpenseDefinitions`; if a definition is found, the transaction's categoryId
+ * is set to the definition's categoryId and spendExpenseId to the matched
+ * spendExpenseId — no guessing, no category-based inference.
  *
- * Auto-linking of spendExpenseId happens in two cases, via resolveSpendExpenseForCategory
- * against budgetExpenseDefinitions (year-independent):
- * - Category-change: the resolved mapping disagrees with the transaction's current
- *   effective category. categoryId is updated to the resolved category and spendExpenseId
- *   is set to a matching ExpenseDefinition for that category if one exists, else undefined.
- * - Opportunistic: the resolved mapping agrees with the effective category, but
- *   spendExpenseId is currently unset (undefined) — a matching ExpenseDefinition, if one
- *   exists, is linked.
- *
- * Accepted tradeoff: this can silently re-link a transaction that a user previously
- * manually set to "Uncategorized" via the per-cell picker (which clears spendExpenseId to
- * undefined), whenever a matching ExpenseDefinition now exists for that row's category. This
- * is intentional, not a bug — see the test asserting this behavior.
+ * A match that resolves to a spendExpenseId whose definition no longer exists
+ * (dangling), and a description with no match at all, both leave the transaction
+ * untouched: reapply never clears or overwrites without a confirmed definition
+ * lookup. (The import-time fallback-to-Other only applies at resolve time for fresh
+ * transactions, never here.)
  *
  * Pure; mappings are filtered for tombstones internally, so callers may pass either the
  * raw or pre-filtered mapping list.
@@ -159,14 +152,11 @@ export function reapplyMappingsToTransactions(
   budgetExpenseDefinitions: ExpenseDefinition[] = []
 ): BudgetTransaction[] {
   return transactions.map((t) => {
-    const resolved = resolveCategoryIdForDescription(mappings, t.description)
-    if (resolved === null) return t
-    const effective = effectiveCategoryId(t, budgetExpenseDefinitions)
-    if (resolved !== effective || t.spendExpenseId === undefined) {
-      const match = resolveSpendExpenseForCategory(budgetExpenseDefinitions, resolved)
-      return { ...t, categoryId: resolved, spendExpenseId: match?.id }
-    }
-    return { ...t, categoryId: resolved }
+    const resolvedSpendExpenseId = resolveSpendExpenseIdForDescription(mappings, t.description)
+    if (resolvedSpendExpenseId === null) return t
+    const definition = budgetExpenseDefinitions.find((d) => d.id === resolvedSpendExpenseId)
+    if (!definition) return t
+    return { ...t, categoryId: definition.categoryId, spendExpenseId: resolvedSpendExpenseId }
   })
 }
 
@@ -175,12 +165,19 @@ export type CategoryAction =
   | { type: 'RENAME_CATEGORY'; id: string; name: string }
   | { type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND'; id: string; exclude: boolean }
   | { type: 'DELETE_CATEGORY'; id: string }
-  | { type: 'UPSERT_CATEGORY_MAPPING'; description: string; categoryId: string }
-  | { type: 'UPDATE_CATEGORY_MAPPING'; id: string; patch: Partial<Pick<CategoryMapping, 'substring' | 'categoryId'>> }
-  | { type: 'ADD_CATEGORY_MAPPING'; categoryId: string; substring: string }
+  | { type: 'UPSERT_CATEGORY_MAPPING'; description: string; spendExpenseId: string }
+  | { type: 'UPDATE_CATEGORY_MAPPING'; id: string; patch: Partial<Pick<CategoryMapping, 'substring' | 'spendExpenseId'>> }
+  | { type: 'ADD_CATEGORY_MAPPING'; spendExpenseId: string; substring: string }
   | { type: 'DELETE_CATEGORY_MAPPING'; id: string }
+  | { type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE'; spendExpenseId: string }
   | { type: '__REPLACE'; state: GlobalCategoryState }
   | { type: '__MERGE_IMPORTED'; imported: GlobalCategoryState }
+
+/** Hard-delete all category mappings for a spend expense (filter, no tombstone). No-op if none match. */
+export function deleteCategoryMappingsForExpense(s: GlobalCategoryState, spendExpenseId: string): GlobalCategoryState {
+  if (!s.categoryMappings.some((m) => m.spendExpenseId === spendExpenseId)) return s
+  return { ...s, categoryMappings: s.categoryMappings.filter((m) => m.spendExpenseId !== spendExpenseId) }
+}
 
 export function categoryStoreReducer(s: GlobalCategoryState, a: CategoryAction): GlobalCategoryState {
   switch (a.type) {
@@ -197,13 +194,15 @@ export function categoryStoreReducer(s: GlobalCategoryState, a: CategoryAction):
     case 'DELETE_CATEGORY':
       return deleteCategory(s, a.id)
     case 'UPSERT_CATEGORY_MAPPING':
-      return upsertCategoryMapping(s, a.description, a.categoryId)
+      return upsertCategoryMapping(s, a.description, a.spendExpenseId)
     case 'UPDATE_CATEGORY_MAPPING':
       return updateCategoryMapping(s, a.id, a.patch)
     case 'ADD_CATEGORY_MAPPING':
-      return addCategoryMapping(s, a.categoryId, a.substring)
+      return addCategoryMapping(s, a.spendExpenseId, a.substring)
     case 'DELETE_CATEGORY_MAPPING':
       return deleteCategoryMapping(s, a.id)
+    case 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE':
+      return deleteCategoryMappingsForExpense(s, a.spendExpenseId)
     default:
       return s
   }

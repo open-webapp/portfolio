@@ -100,7 +100,13 @@ function App() {
   const globalCategories = useGlobalCategories(
     activePortfolio ? getDriveAuthFor(activePortfolio) : null,
     connected,
-    activePortfolio ? driveAuthProjectIdFor(activePortfolio) : null
+    activePortfolio ? driveAuthProjectIdFor(activePortfolio) : null,
+    // Undefined until the portfolio state hydrates post-unlock: the hook
+    // defers its one-shot hydrate (and the categoryId→spendExpenseId
+    // migration inside loadGlobalCategoryState) until the active portfolio's
+    // real definitions are available, so legacy mappings can't be dropped by
+    // a premature empty-defs migration run.
+    isHydrated ? state.budgetExpenseDefinitions : undefined
   )
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string

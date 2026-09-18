@@ -265,7 +265,7 @@ describe('useGlobalCategories', () => {
     await act(async () => {
       resolvePull!({
         categories: localFixture.categories,
-        categoryMappings: [{ id: 'm1', substring: 'WHOLE FOODS', categoryId: 'c1', updatedAt: '2026-03-01T00:00:00.000Z' }],
+        categoryMappings: [{ id: 'm1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-1', updatedAt: '2026-03-01T00:00:00.000Z' }],
       })
       await Promise.resolve()
       await Promise.resolve()
@@ -303,7 +303,7 @@ describe('useGlobalCategories', () => {
     mockPullGlobalCategoriesFromDrive.mockResolvedValue({
       categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
       categoryMappings: [
-        { id: 'm1', substring: 'WHOLE FOODS', categoryId: 'c1', updatedAt: '2026-03-01T00:00:00.000Z' },
+        { id: 'm1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-1', updatedAt: '2026-03-01T00:00:00.000Z' },
       ],
     })
 
@@ -322,11 +322,11 @@ describe('useGlobalCategories', () => {
         { id: 'c2', name: 'Deleted Cat', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: '2026-01-02T00:00:00.000Z' },
       ],
       categoryMappings: [
-        { id: 'm1', substring: 'WHOLE FOODS', categoryId: 'c1', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'm1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
         {
           id: 'm2',
           substring: 'OLD STORE',
-          categoryId: 'c2',
+          spendExpenseId: 'exp-2',
           updatedAt: '2026-01-01T00:00:00.000Z',
           deletedAt: '2026-01-02T00:00:00.000Z',
         },

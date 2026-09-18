@@ -408,6 +408,67 @@ describe('BudgetPage', () => {
       expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_EXPENSE_DEFINITION', id: 'e1' })
     })
 
+    it('Deleting an ExpenseDefinition with linked CategoryMappings dispatches both deletes', () => {
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const state = defaultState({
+        budgetExpenseDefinitions: [makeDefinition({ id: 'e1', name: 'Rent' })],
+        budgetExpenseAmountsByYear: { '2025': { e1: 1000 } },
+        budgetTransactions: [],
+      })
+      const categoryMappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'rent', spendExpenseId: 'e1', updatedAt: CATEGORY_UPDATED_AT },
+        { id: 'm2', substring: 'landlord', spendExpenseId: 'e1', updatedAt: CATEGORY_UPDATED_AT },
+      ]
+      const { container } = render(
+        <BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={categoryMappings} categoryDispatch={categoryDispatch} />
+      )
+      switchTab(container, 'Expenses')
+      fireEvent.click(screen.getByLabelText('Delete expense'))
+      expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_EXPENSE_DEFINITION', id: 'e1' })
+      expect(categoryDispatch).toHaveBeenCalledWith({ type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE', spendExpenseId: 'e1' })
+    })
+
+    it('Deleting an ExpenseDefinition with zero linked mappings still dispatches the cleanup harmlessly', () => {
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const state = defaultState({
+        budgetExpenseDefinitions: [makeDefinition({ id: 'e1', name: 'Rent' })],
+        budgetExpenseAmountsByYear: { '2025': { e1: 1000 } },
+        budgetTransactions: [],
+      })
+      const { container } = render(
+        <BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />
+      )
+      switchTab(container, 'Expenses')
+      fireEvent.click(screen.getByLabelText('Delete expense'))
+      expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_EXPENSE_DEFINITION', id: 'e1' })
+      expect(categoryDispatch).toHaveBeenCalledWith({ type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE', spendExpenseId: 'e1' })
+    })
+
+    it('Deletion blocked by expenseDefinitionInUse never dispatches either action', () => {
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      vi.spyOn(window, 'alert').mockImplementation(() => {})
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const state = defaultState({
+        budgetExpenseDefinitions: [makeDefinition({ id: 'e1', name: 'Rent' })],
+        budgetExpenseAmountsByYear: { '2025': { e1: 1000 } },
+        budgetTransactions: [makeTransaction({ id: 't1', date: '2020-01-01', spendExpenseId: 'e1' })],
+      })
+      const { container } = render(
+        <BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />
+      )
+      switchTab(container, 'Expenses')
+      fireEvent.click(screen.getByLabelText('Delete expense'))
+      expect(confirmSpy).not.toHaveBeenCalled()
+      expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'DELETE_EXPENSE_DEFINITION' }))
+      expect(categoryDispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE' }))
+      expect(categoryDispatch).not.toHaveBeenCalled()
+    })
+
     it('default sort is Category ascending', () => {
       const state = defaultState({
         budgetExpenseDefinitions: [
@@ -424,6 +485,108 @@ describe('BudgetPage', () => {
       const names = Array.from(bodyRows).map((tr) => tr.querySelector('td')!.textContent)
       // Entertainment < Housing alphabetically
       expect(names).toEqual(['Netflix', 'Rent'])
+    })
+  })
+
+  describe('Spend category-mapping rekey (T8)', () => {
+    it('Add Record dispatches UPSERT_CATEGORY_MAPPING keyed by spendExpenseId (no categoryId)', () => {
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      const state = defaultState({
+        budgetExpenseDefinitions: [makeDefinition({ id: 'e1', name: 'Rent', categoryId: 'cat-housing' })],
+        budgetTransactions: [],
+      })
+      renderBudgetPage({ state, dispatch, categoryDispatch })
+      fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-03-10' } })
+      fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'Whole Foods' } })
+      fireEvent.change(screen.getByLabelText('Record spend category'), { target: { value: 'e1' } })
+      fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '42' } })
+      fireEvent.click(screen.getByText('Add Record'))
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'ADD_BUDGET_TRANSACTION',
+        tx: expect.objectContaining({ description: 'Whole Foods', spendExpenseId: 'e1' }),
+      })
+      expect(categoryDispatch).toHaveBeenCalledWith({
+        type: 'UPSERT_CATEGORY_MAPPING',
+        description: 'Whole Foods',
+        spendExpenseId: 'e1',
+      })
+      for (const call of categoryDispatch.mock.calls) {
+        if (call[0]?.type === 'UPSERT_CATEGORY_MAPPING') {
+          expect(call[0]).not.toHaveProperty('categoryId')
+        }
+      }
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'REAPPLY_CATEGORY_MAPPINGS',
+        categoryMappings: expect.any(Array),
+      })
+    })
+
+    it('per-cell spend-category edit dispatches UPSERT_CATEGORY_MAPPING keyed by spendExpenseId plus REAPPLY', () => {
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      const state = defaultState({
+        budgetExpenseDefinitions: [
+          makeDefinition({ id: 'e1', name: 'Rent', categoryId: 'cat-housing' }),
+          makeDefinition({ id: 'e2', name: 'Groceries', categoryId: 'cat-food' }),
+        ],
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: '2025-03-10', description: 'Store', categoryId: 'cat-housing', spendExpenseId: 'e1' }),
+        ],
+      })
+      renderBudgetPage({ state, dispatch, categoryDispatch })
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+      const row = screen.getByText('Store').closest('tr')!
+      fireEvent.click(within(row).getByText('Rent (Housing)'))
+      fireEvent.change(screen.getByLabelText('Edit record spend category'), { target: { value: 'e2' } })
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_TRANSACTION',
+        id: 't1',
+        patch: { spendExpenseId: 'e2', categoryId: 'cat-food' },
+      })
+      expect(categoryDispatch).toHaveBeenCalledWith({
+        type: 'UPSERT_CATEGORY_MAPPING',
+        description: 'Store',
+        spendExpenseId: 'e2',
+      })
+      for (const call of categoryDispatch.mock.calls) {
+        if (call[0]?.type === 'UPSERT_CATEGORY_MAPPING') {
+          expect(call[0]).not.toHaveProperty('categoryId')
+        }
+      }
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'REAPPLY_CATEGORY_MAPPINGS',
+        categoryMappings: expect.any(Array),
+      })
+    })
+
+    it('Add Record prefill resolves a matching description to the linked expense (spendExpenseId path)', () => {
+      const state = defaultState({
+        budgetExpenseDefinitions: [makeDefinition({ id: 'e1', name: 'Groceries', categoryId: 'cat-food' })],
+        budgetTransactions: [],
+      })
+      const categoryMappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'whole foods', spendExpenseId: 'e1', updatedAt: CATEGORY_UPDATED_AT },
+      ]
+      renderBudgetPage({ state, categoryMappings })
+      fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'Whole Foods Market' } })
+      expect((screen.getByLabelText('Record spend category') as HTMLSelectElement).value).toBe('e1')
+    })
+
+    it('typing a description whose mapped expense was deleted falls back gracefully (no crash, stays uncategorized)', () => {
+      const state = defaultState({
+        budgetExpenseDefinitions: [makeDefinition({ id: 'e1', name: 'Rent', categoryId: 'cat-housing' })],
+        budgetTransactions: [],
+      })
+      const categoryMappings: CategoryMapping[] = [
+        { id: 'm1', substring: 'landlord', spendExpenseId: 'e-deleted', updatedAt: CATEGORY_UPDATED_AT },
+      ]
+      expect(() => {
+        renderBudgetPage({ state, categoryMappings })
+        fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'Pay landlord' } })
+      }).not.toThrow()
+      // Dangling spendExpenseId: prefill leaves the picker untouched (no crash, no bogus category).
+      expect((screen.getByLabelText('Record spend category') as HTMLSelectElement).value).toBe('')
     })
   })
 })

@@ -20,7 +20,7 @@ beforeEach(() => {
 describe('computeSeedFromPortfolio', () => {
   it('returns categories/categoryMappings verbatim when present', () => {
     const categories = [{ id: 'c1', name: 'Groceries', updatedAt: '2024-01-01T00:00:00.000Z' }]
-    const categoryMappings = [{ id: 'm1', substring: 'whole foods', categoryId: 'c1', updatedAt: '2024-01-01T00:00:00.000Z' }]
+    const categoryMappings = [{ id: 'm1', substring: 'whole foods', spendExpenseId: 'exp-1', updatedAt: '2024-01-01T00:00:00.000Z' }]
     const result = computeSeedFromPortfolio({ categories, categoryMappings })
     expect(result).toEqual({ categories, categoryMappings })
   })
@@ -44,7 +44,7 @@ describe('seedGlobalCategoriesIfNeeded', () => {
   it('seeds the global store byte-for-byte from the portfolio blob, then marks seeded', async () => {
     vi.mocked(isGlobalStoreSeeded).mockResolvedValue(false)
     const categories = [{ id: 'c1', name: 'Groceries', updatedAt: '2024-01-01T00:00:00.000Z' }]
-    const categoryMappings = [{ id: 'm1', substring: 'whole foods', categoryId: 'c1', updatedAt: '2024-01-01T00:00:00.000Z' }]
+    const categoryMappings = [{ id: 'm1', substring: 'whole foods', spendExpenseId: 'exp-1', updatedAt: '2024-01-01T00:00:00.000Z' }]
 
     await seedGlobalCategoriesIfNeeded(portfolio, { categories, categoryMappings })
 

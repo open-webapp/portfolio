@@ -19,6 +19,7 @@ import {
 import { mergeCategoryState } from '../lib/categoryMerge'
 import { seedGlobalCategoriesIfNeeded as seedGlobalCategoriesIfNeededImpl } from '../lib/categoryMigration'
 import type { getDriveAuthFor } from '../lib/drive'
+import type { ExpenseDefinition } from '../lib/types'
 import type { Portfolio } from '../lib/types'
 
 const SAVE_DEBOUNCE_MS = 500
@@ -27,7 +28,8 @@ const POLL_INTERVAL_MS = 60_000
 export function useGlobalCategories(
   driveAuth: ReturnType<typeof getDriveAuthFor> | null,
   driveConnected: boolean,
-  driveProjectId: string | null
+  driveProjectId: string | null,
+  budgetExpenseDefinitions: ExpenseDefinition[] | undefined = []
 ) {
   const [state, dispatch] = useReducer(categoryStoreReducer, initialGlobalCategoryState())
   const [hydrated, setHydrated] = useState(false)
@@ -38,11 +40,21 @@ export function useGlobalCategories(
   const latestStateRef = useRef(state)
   latestStateRef.current = state
 
-  // One-shot hydrate on mount.
+  // One-shot hydrate on mount. Deferred while budgetExpenseDefinitions is
+  // undefined (App passes undefined until its own portfolio state hydrates
+  // post-unlock): loadGlobalCategoryState runs the categoryId→spendExpenseId
+  // migration, which needs the active portfolio's real definitions — running
+  // it with a pre-hydration [] would resolve nothing and drop every legacy
+  // mapping. The didHydrateRef guard keeps this one-shot across defs ref
+  // changes (e.g. portfolio switches on the shared cross-portfolio store).
+  const didHydrateRef = useRef(false)
   useEffect(() => {
+    if (didHydrateRef.current) return
+    if (budgetExpenseDefinitions === undefined) return
+    didHydrateRef.current = true
     let cancelled = false
     ;(async () => {
-      const loaded = await loadGlobalCategoryState()
+      const loaded = await loadGlobalCategoryState(budgetExpenseDefinitions)
       if (cancelled) return
       dispatch({ type: '__REPLACE', state: loaded })
       setHydrated(true)
@@ -51,7 +63,7 @@ export function useGlobalCategories(
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [budgetExpenseDefinitions])
 
   // Debounced local save, skipping the first post-hydrate run (would just re-save
   // the state we just loaded).
@@ -138,7 +150,11 @@ export function useGlobalCategories(
 
   const seedGlobalCategoriesIfNeeded = async (portfolio: Portfolio, rawBlob: Record<string, unknown>) => {
     await seedGlobalCategoriesIfNeededImpl(portfolio, rawBlob)
-    const seeded = await loadGlobalCategoryState()
+    // Portfolio is registry metadata (no budget data), so the reload reuses
+    // the hook's threaded definitions. Runs post-unlock (App gates on
+    // sessionKey + isHydrated), hence definitions are defined here; the
+    // ?? [] fallback only satisfies the signature in unreachable cases.
+    const seeded = await loadGlobalCategoryState(budgetExpenseDefinitions ?? [])
     dispatch({ type: '__REPLACE', state: seeded })
   }
 

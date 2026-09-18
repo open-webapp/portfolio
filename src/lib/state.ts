@@ -18,7 +18,7 @@ import type {
 } from './types'
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
-import { resolveCategoryIdForDescription, reapplyMappingsToTransactions, resolveSpendExpenseForCategory } from './categoryStore'
+import { resolveSpendExpenseIdForDescription, reapplyMappingsToTransactions } from './categoryStore'
 
 export interface AppState {
   // Data collections
@@ -935,7 +935,9 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
  * within the same import batch (accumulating Set).
  */
 /**
- * Resolves categoryId for each row and dedupes against `existing` + within the
+ * Resolves spendExpenseId for each row via category mappings, deriving categoryId
+ * from the matched expense definition (falling back to the 'Other' category
+ * with spendExpenseId unset), and dedupes against `existing` + within the
  * batch itself, without touching AppState. Shared by `importBudgetTransactions`
  * and by import-UI callers that need added/duplicate counts before dispatch.
  */
@@ -948,12 +950,20 @@ export function resolveBudgetImportRows(
 ): { toAdd: BudgetTransaction[]; duplicateCount: number } {
   const otherId = categories.find((c) => c.name === 'Other')?.id ?? categories[0]?.id ?? ''
   const withCategory = rows.map((r) => {
-    const categoryId = resolveCategoryIdForDescription(categoryMappings, r.description) ?? otherId
-    const match = resolveSpendExpenseForCategory(budgetExpenseDefinitions, categoryId)
+    const spendExpenseId = resolveSpendExpenseIdForDescription(categoryMappings, r.description)
+    const definition = spendExpenseId
+      ? budgetExpenseDefinitions.find((d) => d.id === spendExpenseId)
+      : undefined
+    if (spendExpenseId && definition) {
+      return {
+        ...r,
+        categoryId: definition.categoryId,
+        spendExpenseId,
+      }
+    }
     return {
       ...r,
-      categoryId,
-      ...(match ? { spendExpenseId: match.id } : {}),
+      categoryId: otherId,
     }
   })
   const seen = new Set(existing.map((t) => `${t.date}|${t.description}|${t.amount}|${t.accountName ?? ''}`))
@@ -988,15 +998,10 @@ export function importBudgetTransactions(
   return { ...state, budgetTransactions: [...state.budgetTransactions, ...toAdd] }
 }
 
-/** Rewrite budgetTransactions' categoryId per the given category mappings. */
+/** Rewrite budgetTransactions' categoryId/spendExpenseId per the given category mappings. */
 export function reapplyCategoryMappingsToState(state: AppState, categoryMappings: CategoryMapping[]): AppState {
   return {
     ...state,
-    // NOTE: reapplyMappingsToTransactions (categoryStore.ts) still expects the OLD
-    // budgetExpensesByYear shape as its 3rd param — that function is out of scope for
-    // this task (separate downstream task updates categoryStore.ts). Passing
-    // budgetExpenseDefinitions here is a placeholder that will type-error until that
-    // task lands; left as-is per task instructions not to touch categoryStore.ts.
     budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpenseDefinitions),
   }
 }

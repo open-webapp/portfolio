@@ -17,7 +17,7 @@ import {
   parseCategoryMappingImportFile,
   CategoryMappingImportError,
 } from '../lib/importExport'
-import { referencedCategories, mappingsForCategory } from '../lib/selectors'
+import { mappingsForExpense } from '../lib/selectors'
 import { LOSS_COLOR } from '../lib/computations'
 
 const iconBtn: CSSProperties = {
@@ -150,7 +150,7 @@ export function SettingsPage({
   // Categories local state
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
   const [categoryNameDraft, setCategoryNameDraft] = useState('')
-  const [newSubstringDraftByCategory, setNewSubstringDraftByCategory] = useState<Record<string, string>>({})
+  const [newSubstringDraftByExpense, setNewSubstringDraftByExpense] = useState<Record<string, string>>({})
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
   const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
 
@@ -165,7 +165,7 @@ export function SettingsPage({
       const reader = new FileReader()
       reader.onload = () => {
         try {
-          const imported = parseCategoryMappingImportFile(String(reader.result ?? ''))
+          const imported = parseCategoryMappingImportFile(String(reader.result ?? ''), state.budgetExpenseDefinitions)
           categoryDispatch({ type: '__MERGE_IMPORTED', imported })
           const nextMappings = mergeCategoryState({ categories, categoryMappings }, imported).categoryMappings
           dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
@@ -179,7 +179,7 @@ export function SettingsPage({
       }
       reader.readAsText(file)
     },
-    [categoryDispatch, dispatch, categories, categoryMappings]
+    [categoryDispatch, dispatch, categories, categoryMappings, state.budgetExpenseDefinitions]
   )
 
   const handleFetchPricesNow = useCallback(async () => {
@@ -539,10 +539,9 @@ export function SettingsPage({
       {settingsSection === 'categories' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Categories</div>
-        {referencedCategories(categories, categoryMappings, state.budgetExpenseDefinitions, state.budgetTransactions).map((category) => {
+        {categories.map((category) => {
           const isEditingCategory = editingCategoryId === category.id
-          const mappings = mappingsForCategory(categoryMappings, category.id)
-          const newSubstringDraft = newSubstringDraftByCategory[category.id] ?? ''
+          const expenses = state.budgetExpenseDefinitions.filter((e) => e.categoryId === category.id)
           return (
             <div key={category.id} style={{ marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-3)', borderBottom: '1px solid var(--border-color, #ddd)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -600,7 +599,13 @@ export function SettingsPage({
                 </label>
               </div>
               <div style={{ marginLeft: 'var(--space-5)', marginTop: 'var(--space-2)' }}>
-                {mappings.map((mapping) => {
+                {expenses.map((expense) => {
+                  const mappings = mappingsForExpense(categoryMappings, expense.id)
+                  const newSubstringDraft = newSubstringDraftByExpense[expense.id] ?? ''
+                  return (
+                  <div key={expense.id} style={{ marginBottom: 'var(--space-2)' }}>
+                    <div style={{ fontWeight: 600 }}>{expense.name}</div>
+                    {mappings.map((mapping) => {
                   const isEditingMapping = editingMappingId === mapping.id
                   return (
                     <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
@@ -676,37 +681,40 @@ export function SettingsPage({
                   <input
                     className="input"
                     placeholder="+ add substring"
-                    aria-label={`Add substring to ${category.name}`}
+                    aria-label={`Add substring to ${expense.name}`}
                     value={newSubstringDraft}
                     onChange={(e) =>
-                      setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: e.target.value }))
+                      setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: e.target.value }))
                     }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newSubstringDraft.trim()) {
                         const substring = newSubstringDraft.trim()
-                        categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring })
-                        const nextMappings = addCategoryMapping({ categories, categoryMappings }, category.id, substring).categoryMappings
+                        categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring })
+                        const nextMappings = addCategoryMapping({ categories, categoryMappings }, expense.id, substring).categoryMappings
                         dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
-                        setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
+                        setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
                       }
                     }}
                   />
                   <button
                     type="button"
                     style={textBtnAccent}
-                    aria-label={`Add substring button ${category.name}`}
+                    aria-label={`Add substring button ${expense.name}`}
                     disabled={!newSubstringDraft.trim()}
                     onClick={() => {
                       const substring = newSubstringDraft.trim()
-                      categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring })
-                      const nextMappings = addCategoryMapping({ categories, categoryMappings }, category.id, substring).categoryMappings
+                      categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring })
+                      const nextMappings = addCategoryMapping({ categories, categoryMappings }, expense.id, substring).categoryMappings
                       dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
-                      setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
+                      setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
                     }}
                   >
                     Add
                   </button>
                 </div>
+                  </div>
+                  )
+                })}
               </div>
             </div>
           )

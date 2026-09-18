@@ -76,7 +76,7 @@ describe('mergeCategoryState', () => {
         { id: 'c3', name: 'A-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
       ],
       categoryMappings: [
-        { id: 'm1', substring: 'walmart', categoryId: 'c1', updatedAt: '2024-01-01T00:00:00.000Z' },
+        { id: 'm1', substring: 'walmart', spendExpenseId: 'exp-1', updatedAt: '2024-01-01T00:00:00.000Z' },
       ],
     })
     const b = state({
@@ -85,8 +85,8 @@ describe('mergeCategoryState', () => {
         { id: 'c4', name: 'B-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
       ],
       categoryMappings: [
-        { id: 'm1', substring: 'walmart-b', categoryId: 'c1', updatedAt: '2024-01-09T00:00:00.000Z' },
-        { id: 'm2', substring: 'costco', categoryId: 'c4', updatedAt: '2024-01-01T00:00:00.000Z' },
+        { id: 'm1', substring: 'walmart-b', spendExpenseId: 'exp-1', updatedAt: '2024-01-09T00:00:00.000Z' },
+        { id: 'm2', substring: 'costco', spendExpenseId: 'exp-4', updatedAt: '2024-01-01T00:00:00.000Z' },
       ],
     })
     const merged = mergeCategoryState(a, b)
@@ -102,8 +102,8 @@ describe('mergeCategoryState', () => {
 
     expect(merged.categoryMappings).toEqual(
       expect.arrayContaining([
-        { id: 'm1', substring: 'walmart-b', categoryId: 'c1', updatedAt: '2024-01-09T00:00:00.000Z' },
-        { id: 'm2', substring: 'costco', categoryId: 'c4', updatedAt: '2024-01-01T00:00:00.000Z' },
+        { id: 'm1', substring: 'walmart-b', spendExpenseId: 'exp-1', updatedAt: '2024-01-09T00:00:00.000Z' },
+        { id: 'm2', substring: 'costco', spendExpenseId: 'exp-4', updatedAt: '2024-01-01T00:00:00.000Z' },
       ])
     )
     expect(merged.categoryMappings).toHaveLength(2)
