@@ -416,6 +416,14 @@ describe('computations', () => {
       const result = parseBudgetTransactionsCsv(csv)
       expect(result).toEqual([])
     })
+
+    it('parses tab-separated rows (pasted from a spreadsheet), header and all', () => {
+      const csv = 'Date\tDescription\tDebit\n2026-08-17\tSOUTHWES 5262192116227800-435-9792 TX\t215.2'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-08-17', description: 'SOUTHWES 5262192116227800-435-9792 TX', amount: 215.2 },
+      ])
+    })
   })
 
   describe('parseOfxTransactions', () => {

@@ -189,17 +189,20 @@ function normalizeBudgetDate(raw: string): string | null {
 /**
  * Parse a raw CSV string of budget actual-spend transactions.
  * Crude, deliberately non-RFC4180 parser (no quoting/escaping support) per spec.
- * Header-detection heuristic: drop the first line only if its last comma-separated
+ * Delimiter is auto-detected per line: tab if the line contains one (pasting a
+ * table from a spreadsheet/browser always copies as TSV), comma otherwise.
+ * Header-detection heuristic: drop the first line only if its last split
  * field does NOT parse as a float (this is a known quirk, not a bug — a data row
  * whose amount field happens to be non-numeric will also be dropped).
  */
 export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; description: string; amount: number }> {
+  const splitRow = (line: string): string[] => line.split(line.includes('\t') ? '\t' : ',').map((p) => p.trim())
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
   let rows = lines
-  if (rows.length && isNaN(parseFloat(rows[0].split(',').pop() ?? ''))) rows = rows.slice(1)
+  if (rows.length && isNaN(parseFloat(splitRow(rows[0]).pop() ?? ''))) rows = rows.slice(1)
   const parsed: Array<{ date: string; description: string; amount: number }> = []
   rows.forEach((line) => {
-    const parts = line.split(',').map((p) => p.trim())
+    const parts = splitRow(line)
     if (parts.length < 3) return
     const [date, description, amountStr] = parts
     const amount = parseFloat(amountStr)
