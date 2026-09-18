@@ -1,4 +1,4 @@
-import type { Category, CategoryMapping, BudgetTransaction, Expense } from './types'
+import type { Category, CategoryMapping, BudgetTransaction, ExpenseDefinition } from './types'
 import { uid } from './seed'
 import { mergeCategoryState } from './categoryMerge'
 import { effectiveCategoryId } from './selectors'
@@ -117,13 +117,16 @@ export function visibleMappings(s: GlobalCategoryState): CategoryMapping[] {
 }
 
 /**
- * First array-order Expense in `expensesForYear` whose categoryId matches
- * `categoryId`, or undefined if none match. Shared by resolveBudgetImportRows
+ * First array-order ExpenseDefinition in `budgetExpenseDefinitions` whose categoryId
+ * matches `categoryId`, or undefined if none match. Shared by resolveBudgetImportRows
  * (state.ts) and reapplyMappingsToTransactions (this file) for auto-linking a
- * transaction's spendExpenseId to a same-category Expense for the row's year.
+ * transaction's spendExpenseId to a same-category expense definition.
  */
-export function resolveSpendExpenseForCategory(expensesForYear: Expense[], categoryId: string): Expense | undefined {
-  return expensesForYear.find((e) => e.categoryId === categoryId)
+export function resolveSpendExpenseForCategory(
+  budgetExpenseDefinitions: ExpenseDefinition[],
+  categoryId: string
+): ExpenseDefinition | undefined {
+  return budgetExpenseDefinitions.find((e) => e.categoryId === categoryId)
 }
 
 /**
@@ -134,18 +137,18 @@ export function resolveSpendExpenseForCategory(expensesForYear: Expense[], categ
  * expense's category, not tx.categoryId.
  *
  * Auto-linking of spendExpenseId happens in two cases, via resolveSpendExpenseForCategory
- * against budgetExpensesByYear[t.date's year]:
+ * against budgetExpenseDefinitions (year-independent):
  * - Category-change: the resolved mapping disagrees with the transaction's current
  *   effective category. categoryId is updated to the resolved category and spendExpenseId
- *   is set to a matching same-year Expense for that category if one exists, else undefined.
+ *   is set to a matching ExpenseDefinition for that category if one exists, else undefined.
  * - Opportunistic: the resolved mapping agrees with the effective category, but
- *   spendExpenseId is currently unset (undefined) — a matching same-year Expense, if one
+ *   spendExpenseId is currently unset (undefined) — a matching ExpenseDefinition, if one
  *   exists, is linked.
  *
  * Accepted tradeoff: this can silently re-link a transaction that a user previously
  * manually set to "Uncategorized" via the per-cell picker (which clears spendExpenseId to
- * undefined), whenever a matching Expense now exists for that row's year+category. This is
- * intentional, not a bug — see the test asserting this behavior.
+ * undefined), whenever a matching ExpenseDefinition now exists for that row's category. This
+ * is intentional, not a bug — see the test asserting this behavior.
  *
  * Pure; mappings are filtered for tombstones internally, so callers may pass either the
  * raw or pre-filtered mapping list.
@@ -153,16 +156,14 @@ export function resolveSpendExpenseForCategory(expensesForYear: Expense[], categ
 export function reapplyMappingsToTransactions(
   transactions: BudgetTransaction[],
   mappings: CategoryMapping[],
-  budgetExpensesByYear: Record<string, Expense[]> = {}
+  budgetExpenseDefinitions: ExpenseDefinition[] = []
 ): BudgetTransaction[] {
   return transactions.map((t) => {
     const resolved = resolveCategoryIdForDescription(mappings, t.description)
     if (resolved === null) return t
-    const effective = effectiveCategoryId(t, budgetExpensesByYear)
+    const effective = effectiveCategoryId(t, budgetExpenseDefinitions)
     if (resolved !== effective || t.spendExpenseId === undefined) {
-      const year = t.date.slice(0, 4)
-      const expensesForYear = budgetExpensesByYear[year] ?? []
-      const match = resolveSpendExpenseForCategory(expensesForYear, resolved)
+      const match = resolveSpendExpenseForCategory(budgetExpenseDefinitions, resolved)
       return { ...t, categoryId: resolved, spendExpenseId: match?.id }
     }
     return { ...t, categoryId: resolved }

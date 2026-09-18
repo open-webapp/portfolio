@@ -74,25 +74,112 @@ export function migrateBudgetExpensesByYearIfNeeded(raw: Record<string, unknown>
 /**
  * Migration tolerance: raw pre-coalesce blob with flat `budgetIncomeMonthly`/
  * `budgetIncomeYearly` scalars (pre-multi-year budgets) gets folded into
- * `budgetIncomeByYear` under the current budget year. No-ops if
- * `budgetIncomeByYear` is already present (even `{}`).
+ * `budgetIncomeByYear` under the current budget year, collapsed to a single
+ * yearly number (prefer non-zero `yearly`, else `monthly * 12`, else 0). No-op
+ * if `budgetIncomeByYear` is already present (even `{}`).
  */
 export function migrateBudgetIncomeByYearIfNeeded(raw: Record<string, unknown>): Record<string, unknown> {
   if ('budgetIncomeByYear' in raw) return raw
   if ('budgetIncomeMonthly' in raw || 'budgetIncomeYearly' in raw) {
+    const monthly = (raw.budgetIncomeMonthly as number | undefined) ?? 0
+    const yearly = (raw.budgetIncomeYearly as number | undefined) ?? 0
     return {
       ...raw,
       budgetIncomeByYear: {
-        [currentBudgetYear()]: {
-          monthly: (raw.budgetIncomeMonthly as number | undefined) ?? 0,
-          yearly: (raw.budgetIncomeYearly as number | undefined) ?? 0,
-        },
+        [currentBudgetYear()]: yearly !== 0 ? yearly : monthly * 12,
       },
       budgetIncomeMonthly: undefined,
       budgetIncomeYearly: undefined,
     }
   }
   return { ...raw, budgetIncomeByYear: {} }
+}
+
+/**
+ * Migration tolerance: raw pre-coalesce blob whose `budgetIncomeByYear`
+ * values are still the older per-year `{monthly, yearly}` shape gets each
+ * year collapsed to a single yearly number (prefer non-zero `yearly`, else
+ * `monthly * 12`, else 0). No-op if `budgetIncomeByYear` is absent (handled
+ * above) or its values are already plain numbers.
+ */
+export function collapseBudgetIncomeByYearShapeIfNeeded(raw: Record<string, unknown>): Record<string, unknown> {
+  const byYear = raw.budgetIncomeByYear
+  if (typeof byYear !== 'object' || byYear === null) return raw
+  const entries = Object.entries(byYear as Record<string, unknown>)
+  const needsCollapse = entries.some(([, v]) => typeof v === 'object' && v !== null)
+  if (!needsCollapse) return raw
+
+  const collapsed: Record<string, number> = {}
+  for (const [year, value] of entries) {
+    if (typeof value === 'number') {
+      collapsed[year] = value
+      continue
+    }
+    const v = value as { monthly?: number; yearly?: number } | null | undefined
+    const monthly = v?.monthly ?? 0
+    const yearly = v?.yearly ?? 0
+    collapsed[year] = yearly !== 0 ? yearly : monthly * 12
+  }
+  return { ...raw, budgetIncomeByYear: collapsed }
+}
+
+/**
+ * Migration tolerance: raw pre-coalesce blob with the old year-scoped
+ * `budgetExpensesByYear: Record<year, Expense[]>` (each `Expense` carrying
+ * name/categoryId/frequency/amount duplicated into every year it appears in)
+ * gets split into a year-independent `budgetExpenseDefinitions:
+ * ExpenseDefinition[]` (one entry per distinct expense id, with
+ * name/categoryId/frequency taken from that id's most-recent year) plus
+ * `budgetExpenseAmountsByYear: Record<year, Record<expenseId, number>>`
+ * (every `(year, id)` pair that existed keeps its amount). The superseded
+ * `budgetExpensesByYear` key is stripped afterward. No-op if
+ * `budgetExpenseDefinitions` is already present (even `[]`).
+ */
+export function migrateBudgetExpenseDefinitionsIfNeeded(raw: Record<string, unknown>): Record<string, unknown> {
+  if ('budgetExpenseDefinitions' in raw) return raw
+
+  const byYear = raw.budgetExpensesByYear as Record<string, unknown> | undefined
+  if (byYear && typeof byYear === 'object') {
+    // Scan years descending so the first time an id is seen is its
+    // most-recent year — that year's name/categoryId/frequency wins.
+    const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
+    const seenIds = new Set<string>()
+    const definitions: { id: string; name: string; categoryId: string; frequency: 'monthly' | 'yearly' }[] = []
+    const amountsByYear: Record<string, Record<string, number>> = {}
+
+    for (const year of years) {
+      const expenses = byYear[year]
+      if (!Array.isArray(expenses)) continue
+      for (const expense of expenses as {
+        id: string
+        name: string
+        categoryId: string
+        frequency: 'monthly' | 'yearly'
+        amount: number
+      }[]) {
+        if (!seenIds.has(expense.id)) {
+          seenIds.add(expense.id)
+          definitions.push({
+            id: expense.id,
+            name: expense.name,
+            categoryId: expense.categoryId,
+            frequency: expense.frequency,
+          })
+        }
+        if (!amountsByYear[year]) amountsByYear[year] = {}
+        amountsByYear[year][expense.id] = expense.amount
+      }
+    }
+
+    return {
+      ...raw,
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: amountsByYear,
+      budgetExpensesByYear: undefined,
+    }
+  }
+
+  return { ...raw, budgetExpenseDefinitions: [], budgetExpenseAmountsByYear: {} }
 }
 
 /**
@@ -169,7 +256,8 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     regAccountId: loaded.regAccountId ?? defaults.regAccountId,
     regExpanded: loaded.regExpanded ?? defaults.regExpanded,
     regActivityFilter: loaded.regActivityFilter ?? defaults.regActivityFilter,
-    budgetExpensesByYear: loaded.budgetExpensesByYear ?? defaults.budgetExpensesByYear,
+    budgetExpenseDefinitions: loaded.budgetExpenseDefinitions ?? defaults.budgetExpenseDefinitions,
+    budgetExpenseAmountsByYear: loaded.budgetExpenseAmountsByYear ?? defaults.budgetExpenseAmountsByYear,
     budgetIncomeByYear: loaded.budgetIncomeByYear ?? defaults.budgetIncomeByYear,
     budgetTransactions: loaded.budgetTransactions ?? defaults.budgetTransactions,
   }
@@ -241,9 +329,15 @@ export async function loadRawPersistedBlob(
   }
 
   const decrypted = (await decryptState(raw as EncryptedEnvelope, key)) as Partial<AppState> & Record<string, unknown>
-  const withExpensesMigrated = migrateBudgetExpensesByYearIfNeeded(decrypted)
-  const withIncomeMigrated = migrateBudgetIncomeByYearIfNeeded(withExpensesMigrated)
-  return withIncomeMigrated as Partial<AppState> & Record<string, unknown>
+  // Order matters: the flat->by-year migrators run first since they produce
+  // the {monthly,yearly}-shaped budgetIncomeByYear / Expense[]-shaped
+  // budgetExpensesByYear that the definitions/collapse migrations below then
+  // consume.
+  const withExpensesByYearMigrated = migrateBudgetExpensesByYearIfNeeded(decrypted)
+  const withIncomeByYearMigrated = migrateBudgetIncomeByYearIfNeeded(withExpensesByYearMigrated)
+  const withIncomeShapeCollapsed = collapseBudgetIncomeByYearShapeIfNeeded(withIncomeByYearMigrated)
+  const withExpenseDefinitionsMigrated = migrateBudgetExpenseDefinitionsIfNeeded(withIncomeShapeCollapsed)
+  return withExpenseDefinitionsMigrated as Partial<AppState> & Record<string, unknown>
 }
 
 /**

@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
-import type { BalanceEntry, BudgetTransaction, Category, CategoryMapping, Expense } from './types'
+import type { BalanceEntry, BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
 
 export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
@@ -38,11 +38,13 @@ export type AppAction =
   | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
   | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
-  | { type: 'SET_BUDGET_INCOME'; year: string; patch: Partial<{ monthly: number; yearly: number }> }
-  | { type: 'ADD_BUDGET_EXPENSE'; year: string; expense: Omit<Expense, 'id'> }
-  | { type: 'UPDATE_BUDGET_EXPENSE'; year: string; id: string; patch: Partial<Omit<Expense, 'id'>> }
-  | { type: 'DELETE_BUDGET_EXPENSE'; year: string; id: string }
-  | { type: 'ROLLOVER_BUDGET_EXPENSES_IF_NEEDED' }
+  | { type: 'SET_BUDGET_INCOME'; year: string; amount: number }
+  | { type: 'ADD_EXPENSE_DEFINITION'; definition: Omit<ExpenseDefinition, 'id'>; amount: number }
+  | { type: 'UPDATE_EXPENSE_DEFINITION'; id: string; patch: Partial<Omit<ExpenseDefinition, 'id'>> }
+  | { type: 'DELETE_EXPENSE_DEFINITION'; id: string }
+  | { type: 'SET_EXPENSE_AMOUNT'; year: string; expenseId: string; amount: number }
+  | { type: 'CLEAR_EXPENSE_AMOUNT'; year: string; expenseId: string }
+  | { type: 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED' }
   | { type: 'ROLLOVER_BUDGET_INCOME_IF_NEEDED' }
   | { type: 'ENSURE_BUDGET_YEAR_SNAPSHOT'; year: string }
   | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
@@ -179,26 +181,32 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     // Budget page
     case 'SET_BUDGET_INCOME':
-      return StateActions.setBudgetIncome(state, action.year, action.patch)
+      return StateActions.setBudgetIncome(state, action.year, action.amount)
 
-    case 'ADD_BUDGET_EXPENSE':
-      return StateActions.addBudgetExpense(state, action.year, action.expense)
+    case 'ADD_EXPENSE_DEFINITION':
+      return StateActions.addExpenseDefinition(state, action.definition, action.amount)
 
-    case 'UPDATE_BUDGET_EXPENSE':
-      return StateActions.updateBudgetExpense(state, action.year, action.id, action.patch)
+    case 'UPDATE_EXPENSE_DEFINITION':
+      return StateActions.updateExpenseDefinition(state, action.id, action.patch)
 
-    case 'DELETE_BUDGET_EXPENSE':
-      return StateActions.deleteBudgetExpense(state, action.year, action.id)
+    case 'DELETE_EXPENSE_DEFINITION':
+      return StateActions.deleteExpenseDefinition(state, action.id)
 
-    case 'ROLLOVER_BUDGET_EXPENSES_IF_NEEDED':
-      return StateActions.rolloverBudgetExpensesIfNeeded(state)
+    case 'SET_EXPENSE_AMOUNT':
+      return StateActions.setExpenseAmount(state, action.year, action.expenseId, action.amount)
+
+    case 'CLEAR_EXPENSE_AMOUNT':
+      return StateActions.clearExpenseAmount(state, action.year, action.expenseId)
+
+    case 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED':
+      return StateActions.rolloverBudgetExpenseAmountsIfNeeded(state)
 
     case 'ROLLOVER_BUDGET_INCOME_IF_NEEDED':
       return StateActions.rolloverBudgetIncomeIfNeeded(state)
 
     case 'ENSURE_BUDGET_YEAR_SNAPSHOT':
       return StateActions.ensureBudgetIncomeSnapshotForYear(
-        StateActions.ensureBudgetExpensesSnapshotForYear(state, action.year),
+        StateActions.ensureExpenseAmountsSnapshotForYear(state, action.year),
         action.year,
       )
 
@@ -223,7 +231,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         action.rows,
         action.categories,
         action.categoryMappings,
-        state.budgetExpensesByYear
+        state.budgetExpenseDefinitions
       )
 
     case 'REAPPLY_CATEGORY_MAPPINGS':

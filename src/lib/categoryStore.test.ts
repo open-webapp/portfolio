@@ -17,7 +17,7 @@ import {
   categoryStoreReducer,
   type GlobalCategoryState,
 } from './categoryStore'
-import type { Category, CategoryMapping, BudgetTransaction, Expense } from './types'
+import type { Category, CategoryMapping, BudgetTransaction, ExpenseDefinition } from './types'
 
 describe('categoryStore', () => {
   describe('addCategory', () => {
@@ -251,23 +251,23 @@ describe('categoryStore', () => {
       expect(twice).toEqual(once)
     })
 
-    // Regression: effectiveCategoryId() (selectors.ts) prefers a linked Expense's
+    // Regression: effectiveCategoryId() (selectors.ts) prefers a linked ExpenseDefinition's
     // categoryId over tx.categoryId whenever tx.spendExpenseId resolves. Reapplying
     // mappings must therefore also clear spendExpenseId when the resolved mapping
-    // disagrees with the Expense's category, or the reapply silently no-ops from the
-    // user's point of view (the UI still shows the old, expense-derived category).
-    // These tests exercise the new 3-arg signature
-    // reapplyMappingsToTransactions(transactions, mappings, budgetExpensesByYear),
-    // which does not exist yet — they are expected to fail against the current 2-arg
-    // implementation.
+    // disagrees with the ExpenseDefinition's category, or the reapply silently no-ops
+    // from the user's point of view (the UI still shows the old, expense-derived category).
+    // These tests exercise the 3-arg signature
+    // reapplyMappingsToTransactions(transactions, mappings, budgetExpenseDefinitions),
+    // which resolves against the flat, year-independent definitions array (no more
+    // per-transaction year-scoping — matching is now global across all years, an
+    // intentional behavior change per the broader plan).
     it('BUG: clears spendExpenseId and sets categoryId to the resolved mapping when it differs from the linked expense category', () => {
       const mappings: CategoryMapping[] = [
         { id: 'map-1', substring: 'Costco', categoryId: 'cat-B', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const expenses: Expense[] = [
-        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' },
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', frequency: 'yearly' },
       ]
-      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
       const tx: BudgetTransaction = {
         id: 'tx-1',
         date: '2026-01-01',
@@ -277,7 +277,7 @@ describe('categoryStore', () => {
         amount: 40,
       }
 
-      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpenseDefinitions)
 
       const result = updated.find((t) => t.id === 'tx-1')
       expect(result?.categoryId).toBe('cat-B')
@@ -288,10 +288,9 @@ describe('categoryStore', () => {
       const mappings: CategoryMapping[] = [
         { id: 'map-1', substring: 'Costco', categoryId: 'cat-A', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const expenses: Expense[] = [
-        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' },
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', frequency: 'yearly' },
       ]
-      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
       const tx: BudgetTransaction = {
         id: 'tx-1',
         date: '2026-01-01',
@@ -301,7 +300,7 @@ describe('categoryStore', () => {
         amount: 40,
       }
 
-      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpenseDefinitions)
 
       const result = updated.find((t) => t.id === 'tx-1')
       expect(result?.categoryId).toBe('cat-A')
@@ -312,25 +311,24 @@ describe('categoryStore', () => {
       const mappings: CategoryMapping[] = [
         { id: 'map-1', substring: 'Costco', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const budgetExpensesByYear: Record<string, Expense[]> = {}
+      const budgetExpenseDefinitions: ExpenseDefinition[] = []
       const tx: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Costco Gas', categoryId: 'cat-old', amount: 40 }
 
-      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpenseDefinitions)
 
       const result = updated.find((t) => t.id === 'tx-1')
       expect(result?.categoryId).toBe('cat-groceries')
       expect(result?.spendExpenseId).toBeUndefined()
     })
 
-    it('links spendExpenseId to a matching Expense when the resolved category changes', () => {
+    it('links spendExpenseId to a matching ExpenseDefinition when the resolved category changes', () => {
       const mappings: CategoryMapping[] = [
         { id: 'map-1', substring: 'Costco', categoryId: 'cat-B', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const expenses: Expense[] = [
-        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' },
-        { id: 'exp-2', name: 'Some cat-B expense', categoryId: 'cat-B', amount: 20, frequency: 'monthly' },
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', frequency: 'yearly' },
+        { id: 'exp-2', name: 'Some cat-B expense', categoryId: 'cat-B', frequency: 'monthly' },
       ]
-      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
       const tx: BudgetTransaction = {
         id: 'tx-1',
         date: '2026-01-01',
@@ -340,7 +338,7 @@ describe('categoryStore', () => {
         amount: 40,
       }
 
-      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpenseDefinitions)
 
       const result = updated.find((t) => t.id === 'tx-1')
       expect(result?.categoryId).toBe('cat-B')
@@ -351,8 +349,9 @@ describe('categoryStore', () => {
       const mappings: CategoryMapping[] = [
         { id: 'map-1', substring: 'Costco', categoryId: 'cat-A', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const expenses: Expense[] = [{ id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' }]
-      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', frequency: 'yearly' },
+      ]
       const tx: BudgetTransaction = {
         id: 'tx-1',
         date: '2026-01-01',
@@ -361,19 +360,20 @@ describe('categoryStore', () => {
         amount: 40,
       }
 
-      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpenseDefinitions)
 
       const result = updated.find((t) => t.id === 'tx-1')
       expect(result?.categoryId).toBe('cat-A')
       expect(result?.spendExpenseId).toBe('exp-1')
     })
 
-    it('leaves spendExpenseId undefined when no matching Expense exists for the year+category', () => {
+    it('leaves spendExpenseId undefined when no matching ExpenseDefinition exists for the category', () => {
       const mappings: CategoryMapping[] = [
         { id: 'map-1', substring: 'Costco', categoryId: 'cat-B', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const expenses: Expense[] = [{ id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' }]
-      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', frequency: 'yearly' },
+      ]
       const tx: BudgetTransaction = {
         id: 'tx-1',
         date: '2026-01-01',
@@ -383,7 +383,7 @@ describe('categoryStore', () => {
         amount: 40,
       }
 
-      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpenseDefinitions)
 
       const result = updated.find((t) => t.id === 'tx-1')
       expect(result?.categoryId).toBe('cat-B')
@@ -392,15 +392,17 @@ describe('categoryStore', () => {
 
     it('accepted tradeoff: silently re-links a transaction a user previously set to Uncategorized via the per-cell picker', () => {
       // The per-cell picker's "Uncategorized" choice sets spendExpenseId to undefined
-      // without recording that choice anywhere else. If a matching Expense later exists
-      // for this row's year+category, reapplyMappingsToTransactions will re-link it. This
-      // is a deliberate, accepted tradeoff (see reapplyMappingsToTransactions doc comment),
-      // not a bug — this test asserts the re-link happens, it is not accidentally passing.
+      // without recording that choice anywhere else. If a matching ExpenseDefinition
+      // exists for this row's category (now matched globally, not year-scoped),
+      // reapplyMappingsToTransactions will re-link it. This is a deliberate, accepted
+      // tradeoff (see reapplyMappingsToTransactions doc comment), not a bug — this test
+      // asserts the re-link happens, it is not accidentally passing.
       const mappings: CategoryMapping[] = [
         { id: 'map-1', substring: 'Costco', categoryId: 'cat-A', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const expenses: Expense[] = [{ id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' }]
-      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const budgetExpenseDefinitions: ExpenseDefinition[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', frequency: 'yearly' },
+      ]
       const tx: BudgetTransaction = {
         id: 'tx-1',
         date: '2026-01-01',
@@ -410,7 +412,7 @@ describe('categoryStore', () => {
         amount: 40,
       }
 
-      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpenseDefinitions)
 
       const result = updated.find((t) => t.id === 'tx-1')
       expect(result?.spendExpenseId).toBe('exp-1')
@@ -501,25 +503,25 @@ describe('categoryStore', () => {
   })
 
   describe('resolveSpendExpenseForCategory', () => {
-    it('returns the first array-order Expense matching categoryId', () => {
-      const expenseA: Expense = { id: 'exp-A', name: 'A', categoryId: 'cat-1', amount: 10, frequency: 'monthly' }
-      const expenseB: Expense = { id: 'exp-B', name: 'B', categoryId: 'cat-2', amount: 20, frequency: 'monthly' }
-      const expenseC: Expense = { id: 'exp-C', name: 'C', categoryId: 'cat-1', amount: 30, frequency: 'monthly' }
+    it('returns the first array-order ExpenseDefinition matching categoryId', () => {
+      const expenseA: ExpenseDefinition = { id: 'exp-A', name: 'A', categoryId: 'cat-1', frequency: 'monthly' }
+      const expenseB: ExpenseDefinition = { id: 'exp-B', name: 'B', categoryId: 'cat-2', frequency: 'monthly' }
+      const expenseC: ExpenseDefinition = { id: 'exp-C', name: 'C', categoryId: 'cat-1', frequency: 'monthly' }
 
       const result = resolveSpendExpenseForCategory([expenseA, expenseB, expenseC], 'cat-1')
 
       expect(result).toBe(expenseA)
     })
 
-    it('returns undefined when no Expense matches categoryId', () => {
-      const expenseA: Expense = { id: 'exp-A', name: 'A', categoryId: 'cat-1', amount: 10, frequency: 'monthly' }
+    it('returns undefined when no ExpenseDefinition matches categoryId', () => {
+      const expenseA: ExpenseDefinition = { id: 'exp-A', name: 'A', categoryId: 'cat-1', frequency: 'monthly' }
 
       const result = resolveSpendExpenseForCategory([expenseA], 'cat-9')
 
       expect(result).toBeUndefined()
     })
 
-    it('returns undefined for an empty expensesForYear array', () => {
+    it('returns undefined for an empty budgetExpenseDefinitions array', () => {
       const result = resolveSpendExpenseForCategory([], 'cat-1')
 
       expect(result).toBeUndefined()

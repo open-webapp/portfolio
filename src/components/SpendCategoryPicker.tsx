@@ -1,7 +1,7 @@
-import type { Expense } from '../lib/types'
+import type { ExpenseDefinition } from '../lib/types'
 
 export interface SpendCategoryPickerProps {
-  expenses: Expense[]
+  definitions: ExpenseDefinition[]
   categoriesById: Map<string, string>
   value: string
   onChange: (expenseId: string, categoryId: string) => void
@@ -15,22 +15,22 @@ export interface SpendCategoryPickerProps {
  * labelled "<expense name> (<category name>)".
  */
 export function SpendCategoryPicker({
-  expenses,
+  definitions,
   categoriesById,
   value,
   onChange,
   ariaLabel,
   fallbackCategoryId = '',
 }: SpendCategoryPickerProps) {
-  if (expenses.length === 0) {
+  if (definitions.length === 0) {
     return (
       <select className="input" aria-label={ariaLabel} value="" disabled>
-        <option value="">No expenses defined for this year</option>
+        <option value="">No expenses defined</option>
       </select>
     )
   }
 
-  const sortedExpenses = [...expenses].sort((a, b) => a.name.localeCompare(b.name))
+  const sortedDefinitions = [...definitions].sort((a, b) => a.name.localeCompare(b.name))
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value
@@ -38,17 +38,17 @@ export function SpendCategoryPicker({
       onChange('', fallbackCategoryId)
       return
     }
-    const expense = expenses.find((exp) => exp.id === selectedId)
-    if (!expense) return
-    onChange(expense.id, expense.categoryId)
+    const definition = definitions.find((def) => def.id === selectedId)
+    if (!definition) return
+    onChange(definition.id, definition.categoryId)
   }
 
   return (
     <select className="input" aria-label={ariaLabel} value={value} onChange={handleChange}>
       <option value="">— Uncategorized —</option>
-      {sortedExpenses.map((exp) => (
-        <option key={exp.id} value={exp.id}>
-          {exp.name} ({categoriesById.get(exp.categoryId) ?? exp.categoryId})
+      {sortedDefinitions.map((def) => (
+        <option key={def.id} value={def.id}>
+          {def.name} ({categoriesById.get(def.categoryId) ?? def.categoryId})
         </option>
       ))}
     </select>

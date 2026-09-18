@@ -889,11 +889,9 @@ describe('SettingsPage', () => {
         { id: 'map-1', substring: 'WHOLE FOODS', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
         { id: 'map-2', substring: 'TRADER JOES', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      state.budgetExpensesByYear = {
-        '2000': [
-          { id: 'exp-1', name: 'Rent', categoryId: 'cat-rent', amount: 2000, frequency: 'monthly' } as any,
-        ],
-      }
+      state.budgetExpenseDefinitions = [
+        { id: 'exp-1', name: 'Rent', categoryId: 'cat-rent', frequency: 'monthly' },
+      ]
       return { state, categories, categoryMappings }
     }
 

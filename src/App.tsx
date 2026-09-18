@@ -684,7 +684,7 @@ function App() {
     if (sessionKey === null || !isHydrated || !activePortfolio) return
     if (budgetRolloverPortfolioIdRef.current === activePortfolio.id) return
     budgetRolloverPortfolioIdRef.current = activePortfolio.id
-    dispatch({ type: 'ROLLOVER_BUDGET_EXPENSES_IF_NEEDED' })
+    dispatch({ type: 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED' })
     dispatch({ type: 'ROLLOVER_BUDGET_INCOME_IF_NEEDED' })
   }, [sessionKey, isHydrated, activePortfolio?.id])
 
