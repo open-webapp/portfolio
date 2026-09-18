@@ -562,7 +562,7 @@ describe('appReducer', () => {
       const resultDirect = deleteBudgetExpense(state, '2026', 'exp1')
 
       expect(resultFromReducer.budgetExpensesByYear['2026']).toEqual(resultDirect.budgetExpensesByYear['2026'])
-      expect(resultFromReducer.budgetExpensesByYear['2026']).toHaveLength(0)
+      expect(resultFromReducer.budgetExpensesByYear['2026']).toBeUndefined()
       expect(resultFromReducer.budgetExpensesByYear['2025']).toEqual(state.budgetExpensesByYear['2025'])
     })
   })

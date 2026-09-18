@@ -1214,7 +1214,7 @@ describe('BudgetPage', () => {
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       fireEvent.click(screen.getByLabelText('Delete expense'))
       rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
-      expect(state.budgetExpensesByYear['2021']!.some((e) => e.id === gymId)).toBe(false)
+      expect(state.budgetExpensesByYear['2021']?.some((e) => e.id === gymId) ?? false).toBe(false)
 
       // Income edit
       fireEvent.click(screen.getByLabelText('Edit income'))
