@@ -124,6 +124,7 @@ import {
   getBackupFileId,
   getBackupFileStatus,
   getConnectionSnapshot,
+  getPortfolioDriveFolderUrl,
   listPortfolioFoldersOnDrive,
   migrateLegacyDriveFolderIfNeeded,
   overwriteLocalWithRemote,
@@ -378,6 +379,34 @@ describe('conflict-reconcile helpers', () => {
       mockGetConnectionSync.mockReturnValue(null)
 
       expect(getConnectionSnapshot(testPortfolio)).toBeNull()
+    })
+  })
+
+  describe('getPortfolioDriveFolderUrl', () => {
+    it('resolves to the Drive web URL built from ensureFolderPath\'s resolved folder id', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-abc')
+
+      const url = await getPortfolioDriveFolderUrl(testPortfolio)
+
+      expect(url).toBe('https://drive.google.com/drive/folders/folder-abc')
+    })
+
+    it('scopes the folder lookup to the given portfolio (per-portfolio, not global)', async () => {
+      mockEnsureFolderPath.mockResolvedValue('folder-xyz')
+
+      await getPortfolioDriveFolderUrl(migratedPortfolio)
+
+      const portfolioFolderCalls = mockCreateDriveSyncCalls.filter(
+        (c) => Array.isArray(c.folderPath) && c.folderPath.length === 3
+      )
+      const lastCall = portfolioFolderCalls[portfolioFolderCalls.length - 1]
+      expect(lastCall.folderPath).toEqual(['OpenWebApp', 'Portfolio', migratedPortfolio.name])
+    })
+
+    it('propagates an ensureFolderPath rejection without swallowing it', async () => {
+      mockEnsureFolderPath.mockRejectedValue(new Error('folder lookup boom'))
+
+      await expect(getPortfolioDriveFolderUrl(testPortfolio)).rejects.toThrow('folder lookup boom')
     })
   })
 

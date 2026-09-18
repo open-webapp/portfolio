@@ -1,11 +1,11 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
 import type { Portfolio, Category, CategoryMapping } from '../lib/types'
 import type { CategoryAction } from '../lib/categoryStore'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
 import type { DriveAuthHandle } from '@open-webapp/drive-connect'
-import { syncBackup, getConnectionSnapshot } from '../lib/drive'
+import { syncBackup, getConnectionSnapshot, getPortfolioDriveFolderUrl } from '../lib/drive'
 import { deriveKey, generateSalt } from '../lib/crypto'
 import { loadPersistedApp, savePersistedApp } from '../lib/persist'
 import {
@@ -65,6 +65,7 @@ export interface SettingsPageProps {
   categoryMappings: CategoryMapping[]
   categoryDispatch: (action: CategoryAction) => void
   categoriesHydrated: boolean
+  driveConnected: boolean
 }
 
 /**
@@ -91,6 +92,7 @@ export function SettingsPage({
   categoryMappings,
   categoryDispatch,
   categoriesHydrated,
+  driveConnected,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -100,6 +102,26 @@ export function SettingsPage({
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
   const [driveSyncWarning, setDriveSyncWarning] = useState<string | null>(null)
+  const [folderUrl, setFolderUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    if (settingsSection === 'backup' && driveConnected) {
+      getPortfolioDriveFolderUrl(activePortfolio)
+        .then((url) => {
+          if (!cancelled) setFolderUrl(url)
+        })
+        .catch((err) => {
+          console.error(err)
+          if (!cancelled) setFolderUrl(null)
+        })
+    } else {
+      setFolderUrl(null)
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [settingsSection, driveConnected, activePortfolio])
 
   // Price Sync local state
   const [apiKeyInput, setApiKeyInput] = useState(state.priceSync.apiKey)
@@ -281,6 +303,16 @@ export function SettingsPage({
           onConnected={onDriveConnected}
           onDisconnected={onDriveDisconnected}
         />
+        {folderUrl && (
+          <a
+            href={folderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ ...textBtnAccent, textDecoration: 'none', display: 'inline-block', marginTop: 'var(--space-4)' }}
+          >
+            View in Google Drive
+          </a>
+        )}
       </section>
       )}
 

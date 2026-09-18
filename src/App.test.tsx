@@ -107,6 +107,7 @@ vi.mock('./lib/drive', () => {
     // see driveAuthProjectIdFor in lib/drive.ts.
     driveAuthProjectIdFor: vi.fn((portfolio: { id: string }) => portfolio.id),
     getBackupFileId: vi.fn().mockResolvedValue(null),
+    getPortfolioDriveFolderUrl: vi.fn().mockResolvedValue('https://drive.google.com/drive/folders/mock-folder-id'),
     syncBackup: vi.fn(),
     overwriteLocalWithRemote: vi.fn(),
     overwriteRemoteWithLocal: vi.fn(),
@@ -881,6 +882,48 @@ describe('global categories wiring', () => {
     expect(props.categoryMappings).toBe(mockGlobalCategoriesFixture.current.categoryMappings)
     expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
     expect(props.categoriesHydrated).toBe(true)
+  })
+
+  it('passes driveConnected to SettingsPage reflecting useDriveConnection', async () => {
+    vi.mocked(useDriveConnection).mockReturnValue({
+      connected: true,
+      email: 'user@example.com',
+      connecting: false,
+      error: null,
+      needsReauth: false,
+      refresh: vi.fn(),
+    })
+
+    await renderUnlockedApp()
+
+    fireEvent.click(screen.getByTitle('Settings'))
+    await waitFor(() => {
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+    })
+
+    const props = settingsPagePropsCapture.current as Record<string, unknown>
+    expect(props.driveConnected).toBe(true)
+  })
+
+  it('passes driveConnected=false to SettingsPage when not connected', async () => {
+    vi.mocked(useDriveConnection).mockReturnValue({
+      connected: false,
+      email: null,
+      connecting: false,
+      error: null,
+      needsReauth: false,
+      refresh: vi.fn(),
+    })
+
+    await renderUnlockedApp()
+
+    fireEvent.click(screen.getByTitle('Settings'))
+    await waitFor(() => {
+      expect(screen.getByText('Google Drive Sync')).toBeTruthy()
+    })
+
+    const props = settingsPagePropsCapture.current as Record<string, unknown>
+    expect(props.driveConnected).toBe(false)
   })
 
   it('calls seedGlobalCategoriesIfNeeded exactly once per portfolio activation with (activePortfolio, rawBlob)', async () => {

@@ -818,6 +818,7 @@ function App() {
               }}
               onDriveConnected={onDriveConnected}
               onDriveDisconnected={onDriveDisconnected}
+              driveConnected={connected}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
               runPriceSyncTrigger={runPriceSyncTrigger}
