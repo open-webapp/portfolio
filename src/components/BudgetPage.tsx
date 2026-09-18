@@ -25,25 +25,25 @@ export interface BudgetPageProps {
 }
 
 /**
- * Shared onChange handler for every category <select> in this component.
- * Selecting the "+ Add new category…" sentinel prompts for a new category
- * name and, if one is entered, hands it to `apply`; any other selection is
- * passed straight through to `apply`. `apply` decides what to do with the
- * resulting category value (e.g. set local field state, dispatch, etc.) —
- * this helper never dispatches itself.
+ * Selecting the "+ Add new category…" sentinel from any category <select> in
+ * this component opens the new-category dialog instead of `apply`ing
+ * directly; any other selection is passed straight through to `apply`.
+ * `apply` decides what to do with the resulting category value (e.g. set
+ * local field state, dispatch, etc.).
+ *
+ * window.prompt() doesn't render in a standalone-display installed PWA
+ * window (silently no-ops), so new-category entry can't rely on it — hence
+ * the in-app dialog.
  */
+type NewCategoryPrompt = { apply: (categoryId: string) => void }
+
 function handleCategorySelectChange(
   value: string,
-  categoryDispatch: (action: CategoryAction) => void,
+  openNewCategoryDialog: (prompt: NewCategoryPrompt) => void,
   apply: (categoryId: string) => void
 ) {
   if (value === '__add_new') {
-    const result = window.prompt('New category name')
-    if (result && result.trim()) {
-      const id = uid('category')
-      categoryDispatch({ type: 'ADD_CATEGORY', id, name: result.trim() })
-      apply(id)
-    }
+    openNewCategoryDialog({ apply })
     return
   }
   apply(value)
@@ -120,6 +120,18 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [formFrequency, setFormFrequency] = useState<'monthly' | 'yearly'>('monthly')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editCategoryIdDraft, setEditCategoryIdDraft] = useState<string | null>(null)
+  const [newCategoryPrompt, setNewCategoryPrompt] = useState<NewCategoryPrompt | null>(null)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const submitNewCategory = () => {
+    if (!newCategoryPrompt) return
+    const name = newCategoryName.trim()
+    if (!name) return
+    const id = uid('category')
+    categoryDispatch({ type: 'ADD_CATEGORY', id, name })
+    newCategoryPrompt.apply(id)
+    setNewCategoryPrompt(null)
+    setNewCategoryName('')
+  }
   const [editingIncome, setEditingIncome] = useState(false)
   const [incomeEditAmount, setIncomeEditAmount] = useState('')
   const [selectedYear, setSelectedYear] = useState(
@@ -649,7 +661,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                           autoFocus
                           value={cellDraft}
                           onChange={(e) =>
-                            handleCategorySelectChange(e.target.value, categoryDispatch, (categoryId) => {
+                            handleCategorySelectChange(e.target.value, setNewCategoryPrompt, (categoryId) => {
                               dispatch({
                                 type: 'UPDATE_BUDGET_TRANSACTION',
                                 id: row.id,
@@ -817,7 +829,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               aria-label="Record category"
               value={recCategoryId}
               onChange={(e) =>
-                handleCategorySelectChange(e.target.value, categoryDispatch, (categoryId) => {
+                handleCategorySelectChange(e.target.value, setNewCategoryPrompt, (categoryId) => {
                   setRecCategoryId(categoryId)
                   setRecCategoryTouchedManually(true)
                 })
@@ -896,7 +908,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   className="input"
                   aria-label="Expense category"
                   value={formCategoryId}
-                  onChange={(e) => handleCategorySelectChange(e.target.value, categoryDispatch, setFormCategoryId)}
+                  onChange={(e) => handleCategorySelectChange(e.target.value, setNewCategoryPrompt, setFormCategoryId)}
                 >
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
@@ -961,6 +973,51 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   setFormFrequency('monthly')
                 }}
               >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {newCategoryPrompt && (
+        <div
+          className="dialog-backdrop"
+          onClick={() => {
+            setNewCategoryPrompt(null)
+            setNewCategoryName('')
+          }}
+        >
+          <div className="dialog blueprint" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-title">New category</div>
+            <div className="dialog-body">
+              <div className="field">
+                <label>Name</label>
+                <input
+                  type="text"
+                  className="input"
+                  aria-label="New category name"
+                  autoFocus
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitNewCategory()
+                  }}
+                />
+              </div>
+            </div>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setNewCategoryPrompt(null)
+                  setNewCategoryName('')
+                }}
+              >
+                Cancel
+              </button>
+              <button type="button" className="btn btn-primary" onClick={submitNewCategory}>
                 Add
               </button>
             </div>
@@ -1072,7 +1129,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                         aria-label="Edit expense category"
                         value={editCategoryIdDraft ?? row.categoryId}
                         onChange={(e) =>
-                          handleCategorySelectChange(e.target.value, categoryDispatch, (categoryId) => setEditCategoryIdDraft(categoryId))
+                          handleCategorySelectChange(e.target.value, setNewCategoryPrompt, (categoryId) => setEditCategoryIdDraft(categoryId))
                         }
                       >
                         {categories.map((cat) => (
