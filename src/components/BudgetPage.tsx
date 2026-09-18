@@ -402,7 +402,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           flexWrap: 'wrap',
         }}
       >
-        <div className="card-title">Budget</div>
         <div className="seg">
           {(['monthly', 'yearly', 'analytics'] as const).map((opt) => (
             <label
@@ -418,10 +417,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             </label>
           ))}
         </div>
-      </div>
 
-      {period === 'yearly' && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        {period === 'yearly' && (
           <div className="field" style={{ maxWidth: '220px' }}>
             <label>Year</label>
             <select
@@ -440,8 +437,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               ))}
             </select>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {period === 'analytics' ? (
         <BudgetAnalytics state={state} categories={categories} />
