@@ -276,32 +276,119 @@ describe('BudgetPage', () => {
     })
   })
 
-  describe('inline edit', () => {
-    it('clicking Edit shows editable inputs; changing a field dispatches UPDATE_BUDGET_EXPENSE; Done exits edit mode', () => {
+  describe('inline edit (per-cell)', () => {
+    it('clicking the Name cell shows an editable input; blur commits UPDATE_BUDGET_EXPENSE and exits edit mode', () => {
       const state: AppState = defaultState({
         budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000 })],
       })
       const dispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
 
-      fireEvent.click(screen.getByLabelText('Edit expense'))
+      fireEvent.click(screen.getByText('Rent'))
 
       const nameInput = screen.getByLabelText('Edit expense name') as HTMLInputElement
       expect(nameInput.value).toBe('Rent')
 
       fireEvent.change(nameInput, { target: { value: 'Rent 2' } })
+      fireEvent.blur(nameInput)
+
       expect(dispatch).toHaveBeenCalledWith({
         type: 'UPDATE_BUDGET_EXPENSE',
         year: expect.any(String),
         id: 'e1',
         patch: { name: 'Rent 2' },
       })
-
-      fireEvent.click(screen.getByText('Done'))
       expect(screen.queryByLabelText('Edit expense name')).toBeFalsy()
     })
 
-    it('selecting "+ Add new category…" dispatches ADD_CATEGORY and the new category id is used on Done; no UPSERT_CATEGORY_MAPPING', () => {
+    it('pressing Escape on the Name cell reverts without dispatching', () => {
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000 })],
+      })
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      fireEvent.click(screen.getByText('Rent'))
+      const nameInput = screen.getByLabelText('Edit expense name') as HTMLInputElement
+      fireEvent.change(nameInput, { target: { value: 'Something else' } })
+      fireEvent.keyDown(nameInput, { key: 'Escape' })
+
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(screen.getByText('Rent')).toBeTruthy()
+      expect(screen.queryByLabelText('Edit expense name')).toBeFalsy()
+    })
+
+    it('clicking the Amount cell shows an editable number input seeded from the raw amount; blur commits UPDATE_BUDGET_EXPENSE', () => {
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'yearly' })],
+      })
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      // period defaults to 'yearly', so the displayed cell text equals the raw amount here;
+      // switch to Monthly to prove the draft is seeded from the RAW amount, not the converted display value.
+      fireEvent.click(within(document.querySelector('.seg')!).getByText('Monthly'))
+      const row = screen.getByText('Rent').closest('tr')!
+      const displayedAmountCell = within(row).getAllByText('$83.33')[0] // Amount column: 1000/12, toPeriod-converted display
+      fireEvent.click(displayedAmountCell)
+
+      const amountInput = screen.getByLabelText('Edit expense amount') as HTMLInputElement
+      expect(amountInput.value).toBe('1000')
+
+      fireEvent.change(amountInput, { target: { value: '1200' } })
+      fireEvent.blur(amountInput)
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_EXPENSE',
+        year: expect.any(String),
+        id: 'e1',
+        patch: { amount: 1200 },
+      })
+      expect(screen.queryByLabelText('Edit expense amount')).toBeFalsy()
+    })
+
+    it('pressing Escape on the Amount cell reverts without dispatching', () => {
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000 })],
+      })
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      const row = screen.getByText('Rent').closest('tr')!
+      // Default frequency is 'monthly' and default period is 'yearly', so the
+      // displayed cell shows the toPeriod-converted value (1000 * 12).
+      fireEvent.click(within(row).getAllByText('$12,000.00')[0])
+      const amountInput = screen.getByLabelText('Edit expense amount') as HTMLInputElement
+      expect(amountInput.value).toBe('1000')
+      fireEvent.change(amountInput, { target: { value: '9999' } })
+      fireEvent.keyDown(amountInput, { key: 'Escape' })
+
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(within(row).getAllByText('$12,000.00').length).toBeGreaterThan(0)
+      expect(screen.queryByLabelText('Edit expense amount')).toBeFalsy()
+    })
+
+    it('the Frequency <select> commits immediately on onChange (no separate commit step)', () => {
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000, frequency: 'monthly' })],
+      })
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      fireEvent.click(screen.getByText('Monthly', { selector: 'td' }))
+      const freqSelect = screen.getByLabelText('Edit expense frequency') as HTMLSelectElement
+      fireEvent.change(freqSelect, { target: { value: 'yearly' } })
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_EXPENSE',
+        year: expect.any(String),
+        id: 'e1',
+        patch: { frequency: 'yearly' },
+      })
+      expect(screen.queryByLabelText('Edit expense frequency')).toBeFalsy()
+    })
+
+    it('the Category <select> commits immediately on onChange via handleCategorySelectChange; no UPSERT_CATEGORY_MAPPING dispatched', () => {
       const state: AppState = defaultState({
         budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000 })],
       })
@@ -309,7 +396,32 @@ describe('BudgetPage', () => {
       const categoryDispatch = vi.fn()
       render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />)
 
-      fireEvent.click(screen.getByLabelText('Edit expense'))
+      const row = screen.getByText('Rent').closest('tr')!
+      fireEvent.click(within(row).getByText('Housing'))
+
+      const categorySelect = screen.getByLabelText('Edit expense category') as HTMLSelectElement
+      fireEvent.change(categorySelect, { target: { value: 'cat-food' } })
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_EXPENSE',
+        year: expect.any(String),
+        id: 'e1',
+        patch: { categoryId: 'cat-food' },
+      })
+      expect(categoryDispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPSERT_CATEGORY_MAPPING' }))
+      expect(screen.queryByLabelText('Edit expense category')).toBeFalsy()
+    })
+
+    it('selecting "+ Add new category…" on the expense Category cell opens the in-app dialog and applies the new category; no UPSERT_CATEGORY_MAPPING', () => {
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent', categoryId: 'cat-housing', amount: 1000 })],
+      })
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />)
+
+      const row = screen.getByText('Rent').closest('tr')!
+      fireEvent.click(within(row).getByText('Housing'))
 
       const categorySelect = screen.getByLabelText('Edit expense category') as HTMLSelectElement
       fireEvent.change(categorySelect, { target: { value: '__add_new' } })
@@ -322,8 +434,6 @@ describe('BudgetPage', () => {
       expect(addCategoryCall).toBeTruthy()
       expect(addCategoryCall![0].name).toBe('Subscriptions')
       const newId = addCategoryCall![0].id
-
-      fireEvent.click(screen.getByText('Done'))
 
       expect(dispatch).toHaveBeenCalledWith({
         type: 'UPDATE_BUDGET_EXPENSE',
@@ -360,6 +470,21 @@ describe('BudgetPage', () => {
       fireEvent.click(screen.getByLabelText('Delete expense'))
 
       expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_BUDGET_EXPENSE', year: expect.any(String), id: 'e1' })
+    })
+
+    it('the Delete button is always visible, with no pencil/Done edit-mode gating', () => {
+      const state: AppState = defaultState({
+        budgetExpenses: [makeExpense({ id: 'e1', name: 'Rent' })],
+      })
+      render(<BudgetPage state={state} dispatch={vi.fn()} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      expect(screen.getByLabelText('Delete expense')).toBeTruthy()
+      expect(screen.queryByLabelText('Edit expense')).toBeFalsy()
+
+      // Still visible while a cell is under edit.
+      fireEvent.click(screen.getByText('Rent'))
+      expect(screen.getByLabelText('Edit expense name')).toBeTruthy()
+      expect(screen.getByLabelText('Delete expense')).toBeTruthy()
     })
   })
 
@@ -830,13 +955,14 @@ describe('BudgetPage', () => {
       expect(state.budgetExpensesByYear['2021']?.some((e) => e.name === 'Gym')).toBe(true)
       const gymId = state.budgetExpensesByYear['2021']!.find((e) => e.name === 'Gym')!.id
 
-      // Edit (only one row exists at this point, so query by label directly)
-      fireEvent.click(screen.getByLabelText('Edit expense'))
-      fireEvent.change(screen.getByLabelText('Edit expense amount'), { target: { value: '75' } })
+      // Edit (only one row exists at this point, so query within its row)
+      const gymRow = screen.getByText('Gym').closest('tr')!
+      fireEvent.click(within(gymRow).getAllByText('$600.00')[0]) // 50/month toPeriod-converted to Yearly display
+      const amountInput = screen.getByLabelText('Edit expense amount') as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '75' } })
+      fireEvent.blur(amountInput)
       rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
       expect(state.budgetExpensesByYear['2021']!.find((e) => e.id === gymId)?.amount).toBe(75)
-      fireEvent.click(screen.getByText('Done'))
-      rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
 
       // Delete
       vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -2345,9 +2471,11 @@ VERSION:102
       render(<BudgetPage state={state} dispatch={vi.fn()} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
       fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
-      fireEvent.click(screen.getByLabelText('Edit expense'))
       const row = screen.getByText('Groceries').closest('tr')!
       fireEvent.click(within(row).getByText('Food'))
+
+      const expensesCard = screen.getByText('Expenses', { selector: '.card-title' }).closest('.card')!
+      fireEvent.click(within(expensesCard).getByText('Housing', { selector: '.tag' }))
       fireEvent.click(screen.getByText('Add Expense'))
 
       const selects: HTMLSelectElement[] = [

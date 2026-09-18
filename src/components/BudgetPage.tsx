@@ -122,8 +122,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [formCategoryId, setFormCategoryId] = useState(categories[0]?.id ?? '')
   const [formAmount, setFormAmount] = useState('')
   const [formFrequency, setFormFrequency] = useState<'monthly' | 'yearly'>('monthly')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editCategoryIdDraft, setEditCategoryIdDraft] = useState<string | null>(null)
   const [newCategoryPrompt, setNewCategoryPrompt] = useState<NewCategoryPrompt | null>(null)
   const [newCategoryName, setNewCategoryName] = useState('')
   const submitNewCategory = () => {
@@ -146,6 +144,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     field: 'date' | 'description' | 'category' | 'account' | 'amount'
   } | null>(null)
   const [cellDraft, setCellDraft] = useState('')
+  const [editingExpenseCell, setEditingExpenseCell] = useState<{
+    rowId: string
+    field: 'name' | 'category' | 'frequency' | 'amount'
+  } | null>(null)
+  const [expenseCellDraft, setExpenseCellDraft] = useState('')
+  // Shared by both the Spend records and Expenses per-cell edit flows below.
   const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
   const [recDescription, setRecDescription] = useState('')
@@ -392,6 +396,55 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       return
     }
     commitCellEdit(rowId, field, cellDraft)
+  }
+
+  const isEditingExpenseCell = (rowId: string, field: 'name' | 'category' | 'frequency' | 'amount') =>
+    editingExpenseCell?.rowId === rowId && editingExpenseCell.field === field
+
+  const startExpenseCellEdit = (
+    rowId: string,
+    field: 'name' | 'category' | 'frequency' | 'amount',
+    currentValue: string
+  ) => {
+    if (isEditingExpenseCell(rowId, field)) return
+    setEditingExpenseCell({ rowId, field })
+    setExpenseCellDraft(currentValue)
+  }
+
+  const commitExpenseCellEdit = (
+    rowId: string,
+    field: 'name' | 'category' | 'frequency' | 'amount',
+    value: string
+  ) => {
+    let patch: Record<string, unknown> = {}
+    switch (field) {
+      case 'name':
+        patch = { name: value }
+        break
+      case 'amount':
+        patch = { amount: Number(value) }
+        break
+      case 'frequency':
+        patch = { frequency: value }
+        break
+      case 'category':
+        patch = { categoryId: value }
+        break
+    }
+    dispatch({ type: 'UPDATE_BUDGET_EXPENSE', year: activeYear, id: rowId, patch })
+    setEditingExpenseCell(null)
+    setExpenseCellDraft('')
+  }
+
+  const handleExpenseCellInputBlur = (rowId: string, field: 'name' | 'category' | 'frequency' | 'amount') => {
+    if (!editingExpenseCell) return
+    if (skipBlurCommitRef.current) {
+      skipBlurCommitRef.current = false
+      setEditingExpenseCell(null)
+      setExpenseCellDraft('')
+      return
+    }
+    commitExpenseCellEdit(rowId, field, expenseCellDraft)
   }
 
   const handleAddRecord = () => {
@@ -1242,32 +1295,45 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           </thead>
           <tbody>
             {rows.map((row) => {
-              const isEditing = editingId === row.id
               return (
                 <tr key={row.id}>
-                  <td>
-                    {isEditing ? (
+                  <td onClick={() => startExpenseCellEdit(row.id, 'name', row.name)}>
+                    {isEditingExpenseCell(row.id, 'name') ? (
                       <input
                         type="text"
                         className="input"
                         aria-label="Edit expense name"
-                        value={row.name}
-                        onChange={(e) =>
-                          dispatch({ type: 'UPDATE_BUDGET_EXPENSE', year: activeYear, id: row.id, patch: { name: e.target.value } })
-                        }
+                        autoFocus
+                        value={expenseCellDraft}
+                        onChange={(e) => setExpenseCellDraft(e.target.value)}
+                        onKeyDown={handleCellInputKeyDown}
+                        onBlur={() => handleExpenseCellInputBlur(row.id, 'name')}
                       />
                     ) : (
                       row.name
                     )}
                   </td>
-                  <td>
-                    {isEditing ? (
+                  <td onClick={() => startExpenseCellEdit(row.id, 'category', row.categoryId)}>
+                    {isEditingExpenseCell(row.id, 'category') ? (
                       <select
                         className="input"
                         aria-label="Edit expense category"
-                        value={editCategoryIdDraft ?? row.categoryId}
+                        autoFocus
+                        value={expenseCellDraft}
                         onChange={(e) =>
-                          handleCategorySelectChange(e.target.value, setNewCategoryPrompt, (categoryId) => setEditCategoryIdDraft(categoryId))
+                          handleCategorySelectChange(e.target.value, setNewCategoryPrompt, (categoryId) => {
+                            // Unlike spend-records' category cell, this does NOT upsert a
+                            // CategoryMapping — mapping upsert is only for transaction-description
+                            // auto-categorization, which doesn't apply to expense names.
+                            dispatch({
+                              type: 'UPDATE_BUDGET_EXPENSE',
+                              year: activeYear,
+                              id: row.id,
+                              patch: { categoryId },
+                            })
+                            setEditingExpenseCell(null)
+                            setExpenseCellDraft('')
+                          })
                         }
                       >
                         {categories.map((cat) => (
@@ -1281,20 +1347,14 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                       <span className="tag tag-neutral">{categoriesById.get(row.categoryId) ?? row.categoryId}</span>
                     )}
                   </td>
-                  <td>
-                    {isEditing ? (
+                  <td onClick={() => startExpenseCellEdit(row.id, 'frequency', row.frequency)}>
+                    {isEditingExpenseCell(row.id, 'frequency') ? (
                       <select
                         className="input"
                         aria-label="Edit expense frequency"
+                        autoFocus
                         value={row.frequency}
-                        onChange={(e) =>
-                          dispatch({
-                            type: 'UPDATE_BUDGET_EXPENSE',
-                            year: activeYear,
-                            id: row.id,
-                            patch: { frequency: e.target.value as 'monthly' | 'yearly' },
-                          })
-                        }
+                        onChange={(e) => commitExpenseCellEdit(row.id, 'frequency', e.target.value)}
                       >
                         <option value="monthly">Monthly</option>
                         <option value="yearly">Yearly</option>
@@ -1305,21 +1365,17 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                       'Yearly'
                     )}
                   </td>
-                  <td style={{ textAlign: 'right' }}>
-                    {isEditing ? (
+                  <td style={{ textAlign: 'right' }} onClick={() => startExpenseCellEdit(row.id, 'amount', String(row.amount))}>
+                    {isEditingExpenseCell(row.id, 'amount') ? (
                       <input
                         type="number"
                         className="input"
                         aria-label="Edit expense amount"
-                        value={row.amount}
-                        onChange={(e) =>
-                          dispatch({
-                            type: 'UPDATE_BUDGET_EXPENSE',
-                            year: activeYear,
-                            id: row.id,
-                            patch: { amount: parseFloat(e.target.value) || 0 },
-                          })
-                        }
+                        autoFocus
+                        value={expenseCellDraft}
+                        onChange={(e) => setExpenseCellDraft(e.target.value)}
+                        onKeyDown={handleCellInputKeyDown}
+                        onBlur={() => handleExpenseCellInputBlur(row.id, 'amount')}
                       />
                     ) : (
                       fmtUSD(toPeriod(row.amount, row.frequency, period))
@@ -1340,54 +1396,19 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                     {fmtUSD(toPeriod(row.amount, row.frequency, period) - (actualByCategoryForPeriod[row.categoryId] ?? 0))}
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {isEditing ? (
-                      <button
-                        type="button"
-                        style={textBtnAccent}
-                        onClick={() => {
-                          if (editCategoryIdDraft && editCategoryIdDraft !== row.categoryId) {
-                            dispatch({
-                              type: 'UPDATE_BUDGET_EXPENSE',
-                              year: activeYear,
-                              id: row.id,
-                              patch: { categoryId: editCategoryIdDraft },
-                            })
-                          }
-                          setEditCategoryIdDraft(null)
-                          setEditingId(null)
-                        }}
-                      >
-                        Done
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          style={{ ...iconBtn, color: 'var(--color-accent)', marginRight: 'var(--space-2)' }}
-                          aria-label="Edit expense"
-                          title="Edit expense"
-                          onClick={() => {
-                            setEditCategoryIdDraft(null)
-                            setEditingId(row.id)
-                          }}
-                        >
-                          <PencilIcon />
-                        </button>
-                        <button
-                          type="button"
-                          style={{ ...iconBtn, color: LOSS_COLOR }}
-                          aria-label="Delete expense"
-                          title="Delete expense"
-                          onClick={() => {
-                            if (window.confirm('Delete this expense? This cannot be undone.')) {
-                              dispatch({ type: 'DELETE_BUDGET_EXPENSE', year: activeYear, id: row.id })
-                            }
-                          }}
-                        >
-                          <TrashIcon />
-                        </button>
-                      </>
-                    )}
+                    <button
+                      type="button"
+                      style={{ ...iconBtn, color: LOSS_COLOR }}
+                      aria-label="Delete expense"
+                      title="Delete expense"
+                      onClick={() => {
+                        if (window.confirm('Delete this expense? This cannot be undone.')) {
+                          dispatch({ type: 'DELETE_BUDGET_EXPENSE', year: activeYear, id: row.id })
+                        }
+                      }}
+                    >
+                      <TrashIcon />
+                    </button>
                   </td>
                 </tr>
               )
