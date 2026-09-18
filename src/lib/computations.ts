@@ -195,8 +195,21 @@ function normalizeBudgetDate(raw: string): string | null {
  * field does NOT parse as a float (this is a known quirk, not a bug — a data row
  * whose amount field happens to be non-numeric will also be dropped).
  */
+const splitBudgetCsvRow = (line: string): string[] => line.split(line.includes('\t') ? '\t' : ',').map((p) => p.trim())
+
+/**
+ * Candidate data rows after the header-detection heuristic (see
+ * `parseBudgetTransactionsCsv`'s doc comment) — used by import-UI callers to
+ * report how many rows failed to parse (this count minus the parsed count).
+ */
+export function countBudgetCsvDataRows(text: string): number {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length && isNaN(parseFloat(splitBudgetCsvRow(lines[0]).pop() ?? ''))) return lines.length - 1
+  return lines.length
+}
+
 export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; description: string; amount: number }> {
-  const splitRow = (line: string): string[] => line.split(line.includes('\t') ? '\t' : ',').map((p) => p.trim())
+  const splitRow = splitBudgetCsvRow
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
   let rows = lines
   if (rows.length && isNaN(parseFloat(splitRow(rows[0]).pop() ?? ''))) rows = rows.slice(1)

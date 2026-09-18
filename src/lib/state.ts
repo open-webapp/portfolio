@@ -788,27 +788,46 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
  * (date|description|categoryId|amount|accountName) against existing transactions AND
  * within the same import batch (accumulating Set).
  */
-export function importBudgetTransactions(
-  state: AppState,
+/**
+ * Resolves categoryId for each row and dedupes against `existing` + within the
+ * batch itself, without touching AppState. Shared by `importBudgetTransactions`
+ * and by import-UI callers that need added/duplicate counts before dispatch.
+ */
+export function resolveBudgetImportRows(
+  existing: BudgetTransaction[],
   rows: Array<{ date: string; description: string; amount: number; accountName?: string }>,
   categories: Category[],
   categoryMappings: CategoryMapping[]
-): AppState {
+): { toAdd: BudgetTransaction[]; duplicateCount: number } {
   const otherId = categories.find((c) => c.name === 'Other')?.id ?? categories[0]?.id ?? ''
   const withCategory = rows.map((r) => ({
     ...r,
     categoryId: resolveCategoryIdForDescription(categoryMappings, r.description) ?? otherId,
   }))
   const seen = new Set(
-    state.budgetTransactions.map((t) => `${t.date}|${t.description}|${t.categoryId}|${t.amount}|${t.accountName ?? ''}`)
+    existing.map((t) => `${t.date}|${t.description}|${t.categoryId}|${t.amount}|${t.accountName ?? ''}`)
   )
   const toAdd: BudgetTransaction[] = []
+  let duplicateCount = 0
   for (const r of withCategory) {
     const key = `${r.date}|${r.description}|${r.categoryId}|${r.amount}|${r.accountName ?? ''}`
-    if (seen.has(key)) continue
+    if (seen.has(key)) {
+      duplicateCount += 1
+      continue
+    }
     seen.add(key)
     toAdd.push({ ...r, id: uid('budgettx') })
   }
+  return { toAdd, duplicateCount }
+}
+
+export function importBudgetTransactions(
+  state: AppState,
+  rows: Array<{ date: string; description: string; amount: number; accountName?: string }>,
+  categories: Category[],
+  categoryMappings: CategoryMapping[]
+): AppState {
+  const { toAdd } = resolveBudgetImportRows(state.budgetTransactions, rows, categories, categoryMappings)
   return { ...state, budgetTransactions: [...state.budgetTransactions, ...toAdd] }
 }
 

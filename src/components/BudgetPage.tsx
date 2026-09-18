@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
-import { resolveBudgetExpensesForYear, resolveBudgetIncomeForYear, currentBudgetYear } from '../lib/state'
+import { resolveBudgetExpensesForYear, resolveBudgetIncomeForYear, currentBudgetYear, resolveBudgetImportRows } from '../lib/state'
 import { resolveCategoryIdForDescription, type CategoryAction } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
 import { uid } from '../lib/seed'
 import { BudgetAnalytics } from './BudgetAnalytics'
-import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions } from '../lib/computations'
+import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
 import {
   visibleExpenses,
   categoryBreakdown,
@@ -161,6 +161,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importStatus, setImportStatus] = useState('Never imported')
   const [importError, setImportError] = useState<string | null>(null)
   const [importFileKind, setImportFileKind] = useState<'csv' | 'ofx' | null>(null)
+  const [importResult, setImportResult] = useState<{ detected: number; failed: number; imported: number; duplicates: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
   // Monthly/Yearly-only computations below take a strict 'monthly' | 'yearly'
@@ -422,6 +423,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   // importFileKind (derived from the uploaded file's extension) drives which upload parser runs.
   const handleImportFileSelect = (file: File | null) => {
     setImportError(null)
+    setImportResult(null)
     if (!file) return
     const lower = file.name.toLowerCase()
     setImportFileKind(lower.endsWith('.csv') ? 'csv' : 'ofx')
@@ -433,42 +435,33 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setImportFileName(file.name)
   }
 
+  const reportImport = (parsed: Array<{ date: string; description: string; amount: number }>, detected: number) => {
+    const withAccount = parsed.map((r) => ({ ...r, accountName: importAccountName.trim() }))
+    const { duplicateCount } = resolveBudgetImportRows(state.budgetTransactions, withAccount, categories, categoryMappings)
+    dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount, categories, categoryMappings })
+    setImportResult({ detected, failed: detected - parsed.length, imported: parsed.length - duplicateCount, duplicates: duplicateCount })
+    setImportStatus(`${parsed.length} row(s) detected`)
+  }
+
   const handleImport = () => {
     if (importTab === 'paste') {
-      const parsed = parseBudgetTransactionsCsv(csvText).map((r) => ({ ...r, accountName: importAccountName.trim() }))
-      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: parsed, categories, categoryMappings })
-      setImportStatus(`${parsed.length} row(s) detected`)
-      setShowImportDialog(false)
-      setCsvText('')
-      setImportAccountName('')
+      reportImport(parseBudgetTransactionsCsv(csvText), countBudgetCsvDataRows(csvText))
     } else if (importFileKind === 'csv') {
       const parsed = parseBudgetTransactionsCsv(csvText)
       if (parsed.length === 0) {
         setImportError('No transactions found in file — check it has date/description/amount columns')
         return
       }
-      const withAccount = parsed.map((r) => ({ ...r, accountName: importAccountName.trim() }))
-      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount, categories, categoryMappings })
-      setImportStatus(`${withAccount.length} row(s) detected`)
-      setShowImportDialog(false)
-      setCsvText('')
-      setImportAccountName('')
       setImportError(null)
-      setImportFileKind(null)
+      reportImport(parsed, countBudgetCsvDataRows(csvText))
     } else {
       const parsed = parseOfxTransactions(csvText)
       if (parsed.length === 0) {
         setImportError("No transactions found in file — check it's a valid OFX/QFX export")
         return
       }
-      const withAccount = parsed.map((r) => ({ ...r, accountName: importAccountName.trim() }))
-      dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount, categories, categoryMappings })
-      setImportStatus(`${withAccount.length} row(s) detected`)
-      setShowImportDialog(false)
-      setCsvText('')
-      setImportAccountName('')
       setImportError(null)
-      setImportFileKind(null)
+      reportImport(parsed, parsed.length)
     }
   }
 
@@ -478,6 +471,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setImportAccountName('')
     setImportError(null)
     setImportFileKind(null)
+    setImportResult(null)
   }
 
   return (
@@ -1541,7 +1535,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                     aria-label="Paste CSV text"
                     rows={8}
                     value={csvText}
-                    onChange={(e) => setCsvText(e.target.value)}
+                    onChange={(e) => {
+                      setCsvText(e.target.value)
+                      setImportResult(null)
+                    }}
                   />
                 </div>
               ) : (
@@ -1586,10 +1583,26 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   {importError}
                 </div>
               )}
+
+              {importResult && (
+                <div
+                  className="text-muted"
+                  style={{ marginTop: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: '2px' }}
+                >
+                  <div>{importResult.detected} row(s) detected</div>
+                  <div style={{ color: GAIN_COLOR }}>{importResult.imported} imported</div>
+                  {importResult.duplicates > 0 && <div>{importResult.duplicates} skipped (already imported)</div>}
+                  {importResult.failed > 0 && (
+                    <div style={{ color: 'var(--color-danger)' }}>
+                      {importResult.failed} row(s) failed to parse (check date/description/amount columns)
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="dialog-actions">
               <button type="button" className="btn btn-secondary" onClick={closeImportDialog}>
-                Cancel
+                {importResult ? 'Close' : 'Cancel'}
               </button>
               <button
                 type="button"

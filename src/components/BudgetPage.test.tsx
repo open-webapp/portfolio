@@ -1327,7 +1327,7 @@ VERSION:102
           categories: CATEGORIES,
           categoryMappings: [],
         })
-        expect(screen.queryByText('Import transactions')).toBeFalsy()
+        expect(screen.getByText('Import transactions')).toBeTruthy()
       })
 
       it('a duplicate-of-an-existing-transaction row is not added (end-to-end with real reducer)', () => {
@@ -1384,7 +1384,36 @@ VERSION:102
         })
         fireEvent.click(screen.getByText('Import'))
 
-        expect(screen.getByText('2 row(s) detected')).toBeTruthy()
+        expect(screen.getAllByText('2 row(s) detected').length).toBeGreaterThan(0)
+      })
+
+      it('reports imported/skipped/failed row counts in the dialog and does not auto-close it', () => {
+        let state: AppState = defaultState({
+          budgetTransactions: [
+            makeTransaction({ id: 't1', date: '2025-05-01', description: 'Coffee', categoryId: 'cat-other', amount: 4.5, accountName: 'Checking' }),
+          ],
+        })
+        const dispatch = (action: any) => {
+          state = appReducer(state, action)
+        }
+        const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+        fireEvent.click(screen.getByText('Import transactions…'))
+        fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Checking' } })
+        fireEvent.change(screen.getByLabelText('Paste CSV text'), {
+          // row 1 duplicates the existing transaction, row 2 is new, row 3 has an unparseable date
+          target: { value: '2025-05-01,Coffee,4.5\n2025-05-02,Gas,40\nnot-a-date,Parking,10' },
+        })
+        fireEvent.click(screen.getByText('Import'))
+        rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+        expect(screen.getByText('Import transactions')).toBeTruthy()
+        expect(screen.getByText((_, el) => el?.textContent === '1 imported')).toBeTruthy()
+        expect(screen.getByText((_, el) => el?.textContent === '1 skipped (already imported)')).toBeTruthy()
+        expect(
+          screen.getByText((_, el) => el?.textContent === '1 row(s) failed to parse (check date/description/amount columns)')
+        ).toBeTruthy()
+        expect(state.budgetTransactions.length).toBe(2)
       })
 
       describe('account name gate', () => {
@@ -1511,7 +1540,7 @@ VERSION:102
       })
 
       describe('CSV upload', () => {
-        it('happy path: uploading a valid .csv file dispatches IMPORT_BUDGET_TRANSACTIONS, shows the row count, closes the dialog, and the row appears in Spend records', async () => {
+        it('happy path: uploading a valid .csv file dispatches IMPORT_BUDGET_TRANSACTIONS, shows the row count, keeps the dialog open, and the row appears in Spend records', async () => {
           let state: AppState = defaultState()
           const dispatch = (action: any) => {
             state = appReducer(state, action)
@@ -1536,8 +1565,8 @@ VERSION:102
 
           rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
 
-          expect(screen.queryByText('Import transactions')).toBeFalsy()
-          expect(screen.getByText('1 row(s) detected')).toBeTruthy()
+          expect(screen.getByText('Import transactions')).toBeTruthy()
+          expect(screen.getAllByText('1 row(s) detected').length).toBeGreaterThan(0)
           expect(state.budgetTransactions.length).toBe(1)
           expect(screen.getByText('Coffee')).toBeTruthy()
         })
@@ -1595,7 +1624,7 @@ VERSION:102
 
           rerender(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
 
-          expect(screen.getByText('1 row(s) detected')).toBeTruthy()
+          expect(screen.getAllByText('1 row(s) detected').length).toBeGreaterThan(0)
           expect(state.budgetTransactions.length).toBe(1)
           expect(screen.getByText('Coffee')).toBeTruthy()
         })
