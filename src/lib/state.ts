@@ -772,9 +772,13 @@ export function updateBudgetTransaction(state: AppState, id: string, patch: Part
   return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) }
 }
 
-/** Patch categoryId on multiple budget transactions by ID in one pass. IDs not found are ignored. */
-export function updateBudgetTransactionsBulk(state: AppState, ids: string[], categoryId: string): AppState {
-  return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (ids.includes(t.id) ? { ...t, categoryId } : t)) }
+/** Patch categoryId (and optionally spendExpenseId) on multiple budget transactions by ID in one pass. IDs not found are ignored. */
+export function updateBudgetTransactionsBulk(
+  state: AppState,
+  ids: string[],
+  patch: { categoryId: string; spendExpenseId?: string }
+): AppState {
+  return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (ids.includes(t.id) ? { ...t, ...patch } : t)) }
 }
 
 /** Delete a budget transaction by ID. No-op if the ID isn't found. */
@@ -785,7 +789,7 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
 /**
  * Import budget transactions, resolving each row's categoryId from category mappings
  * (falling back to the 'Other' category), then deduping on natural key
- * (date|description|categoryId|amount|accountName) against existing transactions AND
+ * (date|description|amount|accountName) against existing transactions AND
  * within the same import batch (accumulating Set).
  */
 /**
@@ -797,20 +801,26 @@ export function resolveBudgetImportRows(
   existing: BudgetTransaction[],
   rows: Array<{ date: string; description: string; amount: number; accountName?: string }>,
   categories: Category[],
-  categoryMappings: CategoryMapping[]
+  categoryMappings: CategoryMapping[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): { toAdd: BudgetTransaction[]; duplicateCount: number } {
   const otherId = categories.find((c) => c.name === 'Other')?.id ?? categories[0]?.id ?? ''
-  const withCategory = rows.map((r) => ({
-    ...r,
-    categoryId: resolveCategoryIdForDescription(categoryMappings, r.description) ?? otherId,
-  }))
-  const seen = new Set(
-    existing.map((t) => `${t.date}|${t.description}|${t.categoryId}|${t.amount}|${t.accountName ?? ''}`)
-  )
+  const withCategory = rows.map((r) => {
+    const categoryId = resolveCategoryIdForDescription(categoryMappings, r.description) ?? otherId
+    const year = r.date.slice(0, 4)
+    const expensesForYear = budgetExpensesByYear?.[year] ?? []
+    const match = expensesForYear.find((e) => e.categoryId === categoryId)
+    return {
+      ...r,
+      categoryId,
+      ...(match ? { spendExpenseId: match.id } : {}),
+    }
+  })
+  const seen = new Set(existing.map((t) => `${t.date}|${t.description}|${t.amount}|${t.accountName ?? ''}`))
   const toAdd: BudgetTransaction[] = []
   let duplicateCount = 0
   for (const r of withCategory) {
-    const key = `${r.date}|${r.description}|${r.categoryId}|${r.amount}|${r.accountName ?? ''}`
+    const key = `${r.date}|${r.description}|${r.amount}|${r.accountName ?? ''}`
     if (seen.has(key)) {
       duplicateCount += 1
       continue
@@ -825,9 +835,16 @@ export function importBudgetTransactions(
   state: AppState,
   rows: Array<{ date: string; description: string; amount: number; accountName?: string }>,
   categories: Category[],
-  categoryMappings: CategoryMapping[]
+  categoryMappings: CategoryMapping[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): AppState {
-  const { toAdd } = resolveBudgetImportRows(state.budgetTransactions, rows, categories, categoryMappings)
+  const { toAdd } = resolveBudgetImportRows(
+    state.budgetTransactions,
+    rows,
+    categories,
+    categoryMappings,
+    budgetExpensesByYear
+  )
   return { ...state, budgetTransactions: [...state.budgetTransactions, ...toAdd] }
 }
 

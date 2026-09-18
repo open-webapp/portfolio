@@ -89,23 +89,30 @@ export function BudgetAnalytics({ state, categories }: BudgetAnalyticsProps) {
   const hasData = state.budgetTransactions.length > 0
 
   const overBudget = overBudgetConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
-  const spendTrend = spendTrendConcern(years, state.budgetTransactions, categories)
-  const spikeMonth = spikeMonthConcern(years, state.budgetTransactions, categories)
+  const spendTrend = spendTrendConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
+  const spikeMonth = spikeMonthConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
   const savingsShrinking = savingsRateShrinkingConcern(
     years,
     state.budgetTransactions,
     categories,
-    state.budgetIncomeByYear
+    state.budgetIncomeByYear,
+    state.budgetExpensesByYear
   )
-  const concentrationRisk = concentrationRiskConcern(years, state.budgetTransactions, categories)
-  const rateByYear = savingsRateByYear(years, state.budgetTransactions, categories, state.budgetIncomeByYear)
+  const concentrationRisk = concentrationRiskConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
+  const rateByYear = savingsRateByYear(
+    years,
+    state.budgetTransactions,
+    categories,
+    state.budgetIncomeByYear,
+    state.budgetExpensesByYear
+  )
   const maxAbsPct = Math.max(1, ...rateByYear.map((r) => Math.abs(r.pct)))
-  const categoryShare = categoryShareOverTime(years, state.budgetTransactions, categories)
-  const seasonality = monthlySeasonality(years, state.budgetTransactions, categories)
+  const categoryShare = categoryShareOverTime(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
+  const seasonality = monthlySeasonality(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
   const maxAvgSpend = Math.max(0, ...seasonality.map((m) => m.avgSpend))
   const accuracyByYear = budgetAccuracyByYear(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
   const trendsYoY = categoryTrendsYoY(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
-  const movers = topMovers(years, state.budgetTransactions, categories)
+  const movers = topMovers(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>

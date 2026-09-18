@@ -537,11 +537,16 @@ export function excludedCategoryIdSet(categories: Category[]): Set<string> {
  * Distinct month numbers (1-12) with at least one non-excluded transaction in the given year,
  * sorted ascending.
  */
-export function monthsPresentInYear(transactions: BudgetTransaction[], categories: Category[], year: string): number[] {
+export function monthsPresentInYear(
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  year: string,
+  budgetExpensesByYear: Record<string, Expense[]>
+): number[] {
   const excludedIds = excludedCategoryIdSet(categories)
   const set = new Set<number>()
   transactions.forEach((t) => {
-    if (excludedIds.has(t.categoryId)) return
+    if (excludedIds.has(effectiveCategoryId(t, budgetExpensesByYear))) return
     if (t.date.slice(0, 4) !== year) return
     set.add(Number(t.date.slice(5, 7)))
   })
@@ -551,10 +556,15 @@ export function monthsPresentInYear(transactions: BudgetTransaction[], categorie
 /**
  * Sum of all non-excluded transaction amounts dated in the given year.
  */
-export function yearTotalSpend(transactions: BudgetTransaction[], categories: Category[], year: string): number {
+export function yearTotalSpend(
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  year: string,
+  budgetExpensesByYear: Record<string, Expense[]>
+): number {
   const excludedIds = excludedCategoryIdSet(categories)
   return transactions
-    .filter((t) => t.date.slice(0, 4) === year && !excludedIds.has(t.categoryId))
+    .filter((t) => t.date.slice(0, 4) === year && !excludedIds.has(effectiveCategoryId(t, budgetExpensesByYear)))
     .reduce((sum, t) => sum + t.amount, 0)
 }
 
@@ -566,33 +576,47 @@ export function yearCategoryTotalSpend(
   transactions: BudgetTransaction[],
   categories: Category[],
   year: string,
-  categoryId: string
+  categoryId: string,
+  budgetExpensesByYear: Record<string, Expense[]>
 ): number {
   const excludedIds = excludedCategoryIdSet(categories)
   if (excludedIds.has(categoryId)) return 0
   return transactions
-    .filter((t) => t.date.slice(0, 4) === year && t.categoryId === categoryId && !excludedIds.has(t.categoryId))
+    .filter((t) => {
+      const effId = effectiveCategoryId(t, budgetExpensesByYear)
+      return t.date.slice(0, 4) === year && effId === categoryId && !excludedIds.has(effId)
+    })
     .reduce((sum, t) => sum + t.amount, 0)
 }
 
 /**
  * Sum of non-excluded transaction amounts dated in the given year+month (month is 1-12).
  */
-export function monthTotalSpend(transactions: BudgetTransaction[], categories: Category[], year: string, month: number): number {
+export function monthTotalSpend(
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  year: string,
+  month: number,
+  budgetExpensesByYear: Record<string, Expense[]>
+): number {
   const excludedIds = excludedCategoryIdSet(categories)
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
   return transactions
-    .filter((t) => t.date.slice(0, 7) === monthStr && !excludedIds.has(t.categoryId))
+    .filter((t) => t.date.slice(0, 7) === monthStr && !excludedIds.has(effectiveCategoryId(t, budgetExpensesByYear)))
     .reduce((sum, t) => sum + t.amount, 0)
 }
 
 /**
  * Sum actual spend per category from budget transactions.
  */
-export function actualByCategory(transactions: BudgetTransaction[]): Record<string, number> {
+export function actualByCategory(
+  transactions: BudgetTransaction[],
+  budgetExpensesByYear: Record<string, Expense[]>
+): Record<string, number> {
   const out: Record<string, number> = {}
   transactions.forEach((t) => {
-    out[t.categoryId] = (out[t.categoryId] ?? 0) + t.amount
+    const catId = effectiveCategoryId(t, budgetExpensesByYear)
+    out[catId] = (out[catId] ?? 0) + t.amount
   })
   return out
 }
@@ -634,7 +658,8 @@ export function categoryBreakdown(
   expenses: Expense[],
   transactions: BudgetTransaction[],
   period: 'monthly' | 'yearly',
-  categories: Category[]
+  categories: Category[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): Array<{
   name: string
   amount: number
@@ -651,7 +676,7 @@ export function categoryBreakdown(
     if (excludedIds.has(e.categoryId)) return
     byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + toPeriod(e.amount, e.frequency, period)
   })
-  const actuals = actualByCategory(transactions)
+  const actuals = actualByCategory(transactions, budgetExpensesByYear)
   const maxCat = Math.max(1, ...Object.values(byCategory), ...Object.values(actuals))
   return Object.entries(byCategory)
     .sort((a, b) => b[1] - a[1])
@@ -710,11 +735,11 @@ export function overBudgetConcern(
   if (years.length === 0) return { count: 0, categoryNames: [] }
   const latestYear = years[0]
   const expenses = resolveBudgetExpensesForAnalyticsYear(budgetExpensesByYear, latestYear)
-  const monthCount = monthsPresentInYear(transactions, categories, latestYear).length
+  const monthCount = monthsPresentInYear(transactions, categories, latestYear, budgetExpensesByYear).length
   const categoryNames: string[] = []
   expenses.forEach((expense) => {
     const monthlyBudget = toPeriod(expense.amount, expense.frequency, 'monthly')
-    const totalActual = yearCategoryTotalSpend(transactions, categories, latestYear, expense.categoryId)
+    const totalActual = yearCategoryTotalSpend(transactions, categories, latestYear, expense.categoryId, budgetExpensesByYear)
     const monthlyActualAvg = monthCount === 0 ? 0 : totalActual / monthCount
     if (monthlyActualAvg > monthlyBudget * 1.15) {
       const name = categories.find((c) => c.id === expense.categoryId)?.name ?? expense.categoryId
@@ -732,16 +757,17 @@ export function overBudgetConcern(
 export function spendTrendConcern(
   years: string[],
   transactions: BudgetTransaction[],
-  categories: Category[]
+  categories: Category[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): { pctChange: number } | null {
   if (years.length < 2) return null
   const last = years[0]
   const prev = years[1]
-  const lastMonths = monthsPresentInYear(transactions, categories, last).length
-  const prevMonths = monthsPresentInYear(transactions, categories, prev).length
+  const lastMonths = monthsPresentInYear(transactions, categories, last, budgetExpensesByYear).length
+  const prevMonths = monthsPresentInYear(transactions, categories, prev, budgetExpensesByYear).length
   if (lastMonths === 0 || prevMonths === 0) return null
-  const lastAvg = yearTotalSpend(transactions, categories, last) / lastMonths
-  const prevAvg = yearTotalSpend(transactions, categories, prev) / prevMonths
+  const lastAvg = yearTotalSpend(transactions, categories, last, budgetExpensesByYear) / lastMonths
+  const prevAvg = yearTotalSpend(transactions, categories, prev, budgetExpensesByYear) / prevMonths
   if (prevAvg === 0) return null
   const pctChange = (lastAvg / prevAvg - 1) * 100
   return { pctChange }
@@ -755,12 +781,13 @@ export function spendTrendConcern(
 export function spikeMonthConcern(
   years: string[],
   transactions: BudgetTransaction[],
-  categories: Category[]
+  categories: Category[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): { year: string; month: number; total: number; zScore: number } | null {
   const points: Array<{ year: string; month: number; total: number }> = []
   years.forEach((year) => {
-    monthsPresentInYear(transactions, categories, year).forEach((month) => {
-      points.push({ year, month, total: monthTotalSpend(transactions, categories, year, month) })
+    monthsPresentInYear(transactions, categories, year, budgetExpensesByYear).forEach((month) => {
+      points.push({ year, month, total: monthTotalSpend(transactions, categories, year, month, budgetExpensesByYear) })
     })
   })
   if (points.length === 0) return null
@@ -790,7 +817,8 @@ export function savingsRateShrinkingConcern(
   years: string[],
   transactions: BudgetTransaction[],
   categories: Category[],
-  budgetIncomeByYear: Record<string, { monthly: number; yearly: number }>
+  budgetIncomeByYear: Record<string, { monthly: number; yearly: number }>,
+  budgetExpensesByYear: Record<string, Expense[]>
 ): { firstYear: string; firstRate: number; lastYear: string; lastRate: number; drop: number } | null {
   if (years.length < 2) return null
   const lastYear = years[0]
@@ -799,10 +827,10 @@ export function savingsRateShrinkingConcern(
   const rateFor = (year: string): number | null => {
     const income = resolveBudgetIncomeForAnalyticsYear(budgetIncomeByYear, year)
     if (income.monthly === 0) return null
-    const monthCount = monthsPresentInYear(transactions, categories, year).length
+    const monthCount = monthsPresentInYear(transactions, categories, year, budgetExpensesByYear).length
     const totalIncome = income.monthly * monthCount
     if (totalIncome === 0) return null
-    const spend = yearTotalSpend(transactions, categories, year)
+    const spend = yearTotalSpend(transactions, categories, year, budgetExpensesByYear)
     return ((totalIncome - spend) / totalIncome) * 100
   }
 
@@ -821,16 +849,17 @@ export function savingsRateShrinkingConcern(
 export function concentrationRiskConcern(
   years: string[],
   transactions: BudgetTransaction[],
-  categories: Category[]
+  categories: Category[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): { categoryName: string; topSharePct: number; isHighRisk: boolean } | null {
   if (years.length === 0) return null
   const latestYear = years[0]
-  const total = yearTotalSpend(transactions, categories, latestYear)
+  const total = yearTotalSpend(transactions, categories, latestYear, budgetExpensesByYear)
   if (total === 0) return null
   const pool = categories.filter((c) => !c.excludeFromSpend && !c.deletedAt)
   const ranked: Array<{ name: string; amount: number }> = pool.map((c) => ({
     name: c.name,
-    amount: yearCategoryTotalSpend(transactions, categories, latestYear, c.id)
+    amount: yearCategoryTotalSpend(transactions, categories, latestYear, c.id, budgetExpensesByYear)
   }))
   const top = ranked.reduce<{ name: string; amount: number } | null>(
     (best, cur) => (!best || cur.amount > best.amount ? cur : best),
@@ -850,13 +879,14 @@ export function savingsRateByYear(
   years: string[],
   transactions: BudgetTransaction[],
   categories: Category[],
-  budgetIncomeByYear: Record<string, { monthly: number; yearly: number }>
+  budgetIncomeByYear: Record<string, { monthly: number; yearly: number }>,
+  budgetExpensesByYear: Record<string, Expense[]>
 ): Array<{ year: string; pct: number; isPositive: boolean }> {
   return years.map((year) => {
     const monthly = resolveBudgetIncomeForAnalyticsYear(budgetIncomeByYear, year).monthly
-    const monthCount = monthsPresentInYear(transactions, categories, year).length
+    const monthCount = monthsPresentInYear(transactions, categories, year, budgetExpensesByYear).length
     const income = monthly * monthCount
-    const spend = yearTotalSpend(transactions, categories, year)
+    const spend = yearTotalSpend(transactions, categories, year, budgetExpensesByYear)
     const pct = income > 0 ? ((income - spend) / income) * 100 : 0
     return { year, pct, isPositive: pct >= 0 }
   })
@@ -882,7 +912,8 @@ export const CATEGORY_SHARE_PALETTE = ['#3b6ef6', '#1fa971', '#e2574c', '#f2b134
 export function categoryShareOverTime(
   years: string[],
   transactions: BudgetTransaction[],
-  categories: Category[]
+  categories: Category[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): {
   legend: Array<{ categoryId: string; name: string; color: string }>
   rows: Array<{ year: string; segments: Array<{ categoryId: string; name: string; pct: number; color: string }> }>
@@ -890,8 +921,8 @@ export function categoryShareOverTime(
   const pool = categories.filter((c) => !c.excludeFromSpend && !c.deletedAt)
   const latestYear = years[0]
   const ranked = [...pool].sort((a, b) => {
-    const aTotal = latestYear ? yearCategoryTotalSpend(transactions, categories, latestYear, a.id) : 0
-    const bTotal = latestYear ? yearCategoryTotalSpend(transactions, categories, latestYear, b.id) : 0
+    const aTotal = latestYear ? yearCategoryTotalSpend(transactions, categories, latestYear, a.id, budgetExpensesByYear) : 0
+    const bTotal = latestYear ? yearCategoryTotalSpend(transactions, categories, latestYear, b.id, budgetExpensesByYear) : 0
     return bTotal - aTotal
   })
   const colorFor = (index: number): string =>
@@ -900,9 +931,9 @@ export function categoryShareOverTime(
   const legend = ranked.slice(0, 6).map((c, i) => ({ categoryId: c.id, name: c.name, color: colorFor(i) }))
 
   const rows = years.map((year) => {
-    const total = yearTotalSpend(transactions, categories, year)
+    const total = yearTotalSpend(transactions, categories, year, budgetExpensesByYear)
     const segments = ranked.map((c, i) => {
-      const amount = yearCategoryTotalSpend(transactions, categories, year, c.id)
+      const amount = yearCategoryTotalSpend(transactions, categories, year, c.id, budgetExpensesByYear)
       const pct = total > 0 ? (amount / total) * 100 : 0
       return { categoryId: c.id, name: c.name, pct, color: colorFor(i) }
     })
@@ -923,9 +954,10 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 export function monthlySeasonality(
   years: string[],
   transactions: BudgetTransaction[],
-  categories: Category[]
+  categories: Category[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): Array<{ month: number; label: string; avgSpend: number; isPeak: boolean }> {
-  const presentByYear = new Map(years.map((y) => [y, monthsPresentInYear(transactions, categories, y)]))
+  const presentByYear = new Map(years.map((y) => [y, monthsPresentInYear(transactions, categories, y, budgetExpensesByYear)]))
 
   const months = Array.from({ length: 12 }, (_, i) => {
     const month = i + 1
@@ -933,7 +965,7 @@ export function monthlySeasonality(
     const avgSpend =
       yearsWithMonth.length === 0
         ? 0
-        : yearsWithMonth.reduce((sum, y) => sum + monthTotalSpend(transactions, categories, y, month), 0) /
+        : yearsWithMonth.reduce((sum, y) => sum + monthTotalSpend(transactions, categories, y, month, budgetExpensesByYear), 0) /
           yearsWithMonth.length
     return { month, label: MONTH_LABELS[i], avgSpend }
   })
@@ -962,9 +994,9 @@ export function budgetAccuracyByYear(
   return years.map((year) => {
     const expenses = resolveBudgetExpensesForAnalyticsYear(budgetExpensesByYear, year)
     const monthlyBudget = expenses.reduce((sum, e) => sum + toPeriod(e.amount, e.frequency, 'monthly'), 0)
-    const monthCount = monthsPresentInYear(transactions, categories, year).length
+    const monthCount = monthsPresentInYear(transactions, categories, year, budgetExpensesByYear).length
     const budgetTotal = monthlyBudget * monthCount
-    const actualTotal = yearTotalSpend(transactions, categories, year)
+    const actualTotal = yearTotalSpend(transactions, categories, year, budgetExpensesByYear)
     const variance = budgetTotal - actualTotal
     const denom = Math.max(budgetTotal, actualTotal, 1)
     return {
@@ -1003,21 +1035,21 @@ export function categoryTrendsYoY(
   const last = years[0]
   const prev = years[1]
   const excludedIds = excludedCategoryIdSet(categories)
-  const lastMonths = monthsPresentInYear(transactions, categories, last).length
-  const prevMonths = monthsPresentInYear(transactions, categories, prev).length
+  const lastMonths = monthsPresentInYear(transactions, categories, last, budgetExpensesByYear).length
+  const prevMonths = monthsPresentInYear(transactions, categories, prev, budgetExpensesByYear).length
   const expenses = resolveBudgetExpensesForAnalyticsYear(budgetExpensesByYear, last)
 
   const eligible = categories.filter((c) => !excludedIds.has(c.id) && !c.deletedAt)
 
   const rows = eligible
     .map((cat) => {
-      const lastTotal = yearCategoryTotalSpend(transactions, categories, last, cat.id)
-      const prevTotal = yearCategoryTotalSpend(transactions, categories, prev, cat.id)
+      const lastTotal = yearCategoryTotalSpend(transactions, categories, last, cat.id, budgetExpensesByYear)
+      const prevTotal = yearCategoryTotalSpend(transactions, categories, prev, cat.id, budgetExpensesByYear)
       if (lastTotal === 0 && prevTotal === 0) return null
 
       const totalsByYear: Record<string, number> = {}
       years.forEach((y) => {
-        totalsByYear[y] = yearCategoryTotalSpend(transactions, categories, y, cat.id)
+        totalsByYear[y] = yearCategoryTotalSpend(transactions, categories, y, cat.id, budgetExpensesByYear)
       })
 
       const lastAvg = lastMonths === 0 ? 0 : lastTotal / lastMonths
@@ -1055,7 +1087,8 @@ export function categoryTrendsYoY(
 export function topMovers(
   years: string[],
   transactions: BudgetTransaction[],
-  categories: Category[]
+  categories: Category[],
+  budgetExpensesByYear: Record<string, Expense[]>
 ): {
   increases: Array<{ categoryId: string; name: string; diff: number }>
   decreases: Array<{ categoryId: string; name: string; diff: number }>
@@ -1064,14 +1097,14 @@ export function topMovers(
   const last = years[0]
   const prev = years[1]
   const excludedIds = excludedCategoryIdSet(categories)
-  const lastMonths = monthsPresentInYear(transactions, categories, last).length
-  const prevMonths = monthsPresentInYear(transactions, categories, prev).length
+  const lastMonths = monthsPresentInYear(transactions, categories, last, budgetExpensesByYear).length
+  const prevMonths = monthsPresentInYear(transactions, categories, prev, budgetExpensesByYear).length
 
   const eligible = categories.filter((c) => !excludedIds.has(c.id) && !c.deletedAt)
 
   const diffs = eligible.map((cat) => {
-    const curMonthlyAvg = lastMonths === 0 ? 0 : yearCategoryTotalSpend(transactions, categories, last, cat.id) / lastMonths
-    const prevMonthlyAvg = prevMonths === 0 ? 0 : yearCategoryTotalSpend(transactions, categories, prev, cat.id) / prevMonths
+    const curMonthlyAvg = lastMonths === 0 ? 0 : yearCategoryTotalSpend(transactions, categories, last, cat.id, budgetExpensesByYear) / lastMonths
+    const prevMonthlyAvg = prevMonths === 0 ? 0 : yearCategoryTotalSpend(transactions, categories, prev, cat.id, budgetExpensesByYear) / prevMonths
     return { categoryId: cat.id, name: cat.name, diff: curMonthlyAvg - prevMonthlyAvg }
   })
 
@@ -1084,5 +1117,19 @@ export function topMovers(
     .reverse()
 
   return { increases, decreases }
+}
+
+/**
+ * Resolve the effective category for a Budget transaction, following a linked
+ * Expense (via spendExpenseId) when present so the expense's own category wins.
+ * Falls back to the transaction's own categoryId if unlinked, or if the linked
+ * expense can't be found in that transaction's year (deleted, moved, etc).
+ */
+export function effectiveCategoryId(tx: BudgetTransaction, budgetExpensesByYear: Record<string, Expense[]>): string {
+  if (!tx.spendExpenseId) return tx.categoryId
+  const year = tx.date.slice(0, 4)
+  const expenses = budgetExpensesByYear[year] ?? []
+  const expense = expenses.find((e) => e.id === tx.spendExpenseId)
+  return expense ? expense.categoryId : tx.categoryId
 }
 
