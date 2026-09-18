@@ -955,6 +955,45 @@ describe('SettingsPage', () => {
       })
     })
 
+    it('the pencil-edit button appears before the substring text and the delete button after it', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
+
+      const editBtn = screen.getByLabelText('Edit substring WHOLE FOODS')
+      const text = screen.getByText('WHOLE FOODS')
+      const deleteBtn = screen.getByLabelText('Delete substring WHOLE FOODS')
+      const row = text.parentElement as HTMLElement
+      const children = Array.from(row.children)
+      expect(children.indexOf(editBtn)).toBeLessThan(children.indexOf(text))
+      expect(children.indexOf(text)).toBeLessThan(children.indexOf(deleteBtn))
+    })
+
+    it('deleting a mapping asks for confirmation and dispatches DELETE_CATEGORY_MAPPING via categoryDispatch when confirmed', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      ;(global.confirm as any).mockReturnValue(true)
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
+
+      fireEvent.click(screen.getByLabelText('Delete substring WHOLE FOODS'))
+
+      expect(global.confirm).toHaveBeenCalledWith('Delete this mapping? This cannot be undone.')
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
+        type: 'DELETE_CATEGORY_MAPPING',
+        id: 'map-1',
+      })
+    })
+
+    it('deleting a mapping does nothing when the confirmation is declined', () => {
+      const { state, categories, categoryMappings } = categoriesFixture()
+      ;(global.confirm as any).mockReturnValue(false)
+      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
+
+      fireEvent.click(screen.getByLabelText('Delete substring WHOLE FOODS'))
+
+      expect(mockCategoryDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'DELETE_CATEGORY_MAPPING' })
+      )
+    })
+
     it('adding a new substring under a category dispatches ADD_CATEGORY_MAPPING via categoryDispatch with that category id and typed substring', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
@@ -987,7 +1026,7 @@ describe('SettingsPage', () => {
       })
     })
 
-    it('renders no delete button/icon anywhere in this tab', () => {
+    it('renders a delete button per mapping row, and no delete button for categories themselves', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       const { container } = renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
 
@@ -998,8 +1037,11 @@ describe('SettingsPage', () => {
         const title = btn.getAttribute('title') || ''
         return /delete|trash|remove/i.test(label) || /delete|trash|remove/i.test(title)
       })
-      expect(deleteLikeButtons.length).toBe(0)
-      expect(container.querySelectorAll('svg path[d*="M3 6h18"]').length).toBe(0)
+      expect(deleteLikeButtons.length).toBe(categoryMappings.length)
+      expect(container.querySelectorAll('svg path[d*="M3 6h18"]').length).toBe(categoryMappings.length)
+
+      const categoryDeleteButtons = deleteLikeButtons.filter((btn) => /^Delete category /.test(btn.getAttribute('aria-label') || ''))
+      expect(categoryDeleteButtons.length).toBe(0)
     })
 
     it('renders an unchecked "Exclude from spend tracking" checkbox by default; clicking dispatches SET_CATEGORY_EXCLUDE_FROM_SPEND with exclude:true and the re-render reflects the checked state', () => {

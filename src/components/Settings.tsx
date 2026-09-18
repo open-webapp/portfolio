@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
 import type { Portfolio, Category, CategoryMapping } from '../lib/types'
 import type { CategoryAction } from '../lib/categoryStore'
-import { addCategoryMapping, updateCategoryMapping } from '../lib/categoryStore'
+import { addCategoryMapping, updateCategoryMapping, deleteCategoryMapping } from '../lib/categoryStore'
 import { mergeCategoryState } from '../lib/categoryMerge'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
 import type { DriveAuthHandle } from '@open-webapp/drive-connect'
@@ -18,6 +18,7 @@ import {
   CategoryMappingImportError,
 } from '../lib/importExport'
 import { referencedCategories, mappingsForCategory } from '../lib/selectors'
+import { LOSS_COLOR } from '../lib/computations'
 
 const iconBtn: CSSProperties = {
   border: 'none',
@@ -42,6 +43,18 @@ function PencilIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+      <path d="M3 6h18"></path>
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+      <path d="M10 11v6"></path>
+      <path d="M14 11v6"></path>
     </svg>
   )
 }
@@ -624,7 +637,6 @@ export function SettingsPage({
                         </>
                       ) : (
                         <>
-                          <span>{mapping.substring}</span>
                           <button
                             type="button"
                             style={{ ...iconBtn, color: 'var(--color-accent)' }}
@@ -636,6 +648,24 @@ export function SettingsPage({
                             }}
                           >
                             <PencilIcon />
+                          </button>
+                          <span>{mapping.substring}</span>
+                          <button
+                            type="button"
+                            style={{ ...iconBtn, color: LOSS_COLOR }}
+                            aria-label={`Delete substring ${mapping.substring}`}
+                            title="Delete substring"
+                            onClick={() => {
+                              if (!window.confirm('Delete this mapping? This cannot be undone.')) return
+                              categoryDispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
+                              const nextMappings = deleteCategoryMapping(
+                                { categories, categoryMappings },
+                                mapping.id
+                              ).categoryMappings
+                              dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+                            }}
+                          >
+                            <TrashIcon />
                           </button>
                         </>
                       )}
