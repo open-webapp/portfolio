@@ -275,11 +275,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     }
     return recSortDir === 'asc' ? cmp : -cmp
   })
-  const recPaginationActive = searchedRecords.length > 500
-  const recPageCount = Math.ceil(searchedRecords.length / 100)
-  const pagedRecords = recPaginationActive
-    ? searchedRecords.slice(recPage * 100, recPage * 100 + 100)
-    : searchedRecords
+  const RECORDS_PAGE_SIZE = 50
+  const recPaginationActive = searchedRecords.length > RECORDS_PAGE_SIZE
+  const recPageCount = Math.ceil(searchedRecords.length / RECORDS_PAGE_SIZE)
+  const pagedRecords = searchedRecords.slice(recPage * RECORDS_PAGE_SIZE, recPage * RECORDS_PAGE_SIZE + RECORDS_PAGE_SIZE)
 
   // Clears row selection whenever the visible set/order of Spend records can
   // change out from under it (paging, sorting, searching, or switching

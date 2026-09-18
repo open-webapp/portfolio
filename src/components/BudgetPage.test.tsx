@@ -2088,23 +2088,24 @@ VERSION:102
         return defaultState({ budgetTransactions: txs })
       }
 
-      it('is hidden when the filtered row count is <= 500', () => {
-        const state = manyTransactionsState(500)
+      it('is hidden when the filtered row count is <= 50', () => {
+        const state = manyTransactionsState(50)
         render(<BudgetPage state={state} dispatch={vi.fn()} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
         fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
         expect(screen.queryByTestId('records-pagination')).toBeFalsy()
       })
 
-      it('appears when the filtered row count exceeds 500, with Prev disabled on page 1', () => {
-        const state = manyTransactionsState(501)
+      it('appears when the filtered row count exceeds 50, with Prev disabled on page 1, and never shows more than 50 rows', () => {
+        const state = manyTransactionsState(51)
         render(<BudgetPage state={state} dispatch={vi.fn()} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
         fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
         const pagination = screen.getByTestId('records-pagination')
         expect(pagination).toBeTruthy()
-        expect(within(pagination).getByText('Page 1 of 6')).toBeTruthy()
+        expect(within(pagination).getByText('Page 1 of 2')).toBeTruthy()
         expect((within(pagination).getByText('Prev') as HTMLButtonElement).disabled).toBe(true)
         expect((within(pagination).getByText('Next') as HTMLButtonElement).disabled).toBe(false)
+        expect(screen.getAllByText(/^Item \d{4}$/).length).toBe(50)
       })
 
       it('clicking Next advances the slice and disables Next on the last page', () => {
@@ -2114,13 +2115,14 @@ VERSION:102
 
         const pagination = screen.getByTestId('records-pagination')
         fireEvent.click(within(pagination).getByText('Next'))
-        expect(within(pagination).getByText('Page 2 of 6')).toBeTruthy()
+        expect(within(pagination).getByText('Page 2 of 11')).toBeTruthy()
 
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 9; i++) {
           fireEvent.click(within(pagination).getByText('Next'))
         }
-        expect(within(pagination).getByText('Page 6 of 6')).toBeTruthy()
+        expect(within(pagination).getByText('Page 11 of 11')).toBeTruthy()
         expect((within(pagination).getByText('Next') as HTMLButtonElement).disabled).toBe(true)
+        expect(screen.getAllByText(/^Item \d{4}$/).length).toBe(1)
       })
 
       it('changing the search text resets to page 1', () => {
@@ -2130,11 +2132,11 @@ VERSION:102
 
         const pagination = screen.getByTestId('records-pagination')
         fireEvent.click(within(pagination).getByText('Next'))
-        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 6')).toBeTruthy()
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 11')).toBeTruthy()
 
-        // 'Item' matches every row, so the filtered set still exceeds 500 and pagination stays visible.
+        // 'Item' matches every row, so the filtered set still exceeds 50 and pagination stays visible.
         fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'Item' } })
-        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 6')).toBeTruthy()
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 11')).toBeTruthy()
       })
 
       it('switching the selected year resets to page 1', () => {
@@ -2144,12 +2146,12 @@ VERSION:102
 
         const pagination = screen.getByTestId('records-pagination')
         fireEvent.click(within(pagination).getByText('Next'))
-        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 6')).toBeTruthy()
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 11')).toBeTruthy()
 
         const currentYear = String(new Date().getFullYear())
         fireEvent.change(screen.getByLabelText('Select year'), { target: { value: currentYear } })
         fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
-        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 6')).toBeTruthy()
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 11')).toBeTruthy()
       })
     })
 
@@ -2237,10 +2239,10 @@ VERSION:102
 
         const pagination = screen.getByTestId('records-pagination')
         fireEvent.click(within(pagination).getByText('Next'))
-        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 6')).toBeTruthy()
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 2 of 11')).toBeTruthy()
 
         fireEvent.click(screen.getByLabelText('Show excluded'))
-        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 6')).toBeTruthy()
+        expect(within(screen.getByTestId('records-pagination')).getByText('Page 1 of 11')).toBeTruthy()
 
         // Search still filters within the now-visible (excluded-included) set.
         fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'Zoo excluded' } })
