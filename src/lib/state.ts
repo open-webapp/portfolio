@@ -616,15 +616,20 @@ export function resolveBudgetExpensesForAnalyticsYear(
 }
 
 /**
- * Ensure `budgetExpensesByYear[year]` exists as a REAL persisted snapshot:
- * no-op if already present, else deep-copies the nearest year's expenses
- * (or seeds []) into `year`. Pure; identical logic to seedBudgetExpensesForYear
- * today — factored out so rollover-on-load and dropdown-switch share it.
+ * Ensure `budgetExpensesByYear[year]` exists as a REAL persisted snapshot for
+ * viewing purposes: no-op if already present, OR if there's no nearest year
+ * to clone from yet (leaves it virtual — `resolveBudgetExpensesForYear`'s
+ * fallback still displays correctly, and a year added later can still be
+ * copied in on a future switch). Else deep-copies the nearest year's
+ * expenses. Used by the dropdown-switch / add-record-year-jump triggers —
+ * NOT by mutation helpers, which need the key to always exist (see
+ * `seedBudgetExpensesForYear`).
  */
 export function ensureBudgetExpensesSnapshotForYear(state: AppState, year: string): AppState {
   if (state.budgetExpensesByYear[year]) return state
   const nearest = nearestBudgetExpensesYear(state.budgetExpensesByYear, year)
-  const seeded: Expense[] = nearest ? state.budgetExpensesByYear[nearest].map((e) => ({ ...e })) : []
+  if (!nearest) return state
+  const seeded: Expense[] = state.budgetExpensesByYear[nearest].map((e) => ({ ...e }))
   return {
     ...state,
     budgetExpensesByYear: { ...state.budgetExpensesByYear, [year]: seeded },
@@ -633,10 +638,17 @@ export function ensureBudgetExpensesSnapshotForYear(state: AppState, year: strin
 
 /**
  * Ensure `budgetExpensesByYear[year]` exists: no-op if already present, else
- * deep-copies the nearest year's expenses (or seeds []) into `year`.
+ * deep-copies the nearest year's expenses (or seeds []) into `year`. Always
+ * guarantees the key exists — called before add/update/delete mutate it.
  */
 export function seedBudgetExpensesForYear(state: AppState, year: string): AppState {
-  return ensureBudgetExpensesSnapshotForYear(state, year)
+  if (state.budgetExpensesByYear[year]) return state
+  const nearest = nearestBudgetExpensesYear(state.budgetExpensesByYear, year)
+  const seeded: Expense[] = nearest ? state.budgetExpensesByYear[nearest].map((e) => ({ ...e })) : []
+  return {
+    ...state,
+    budgetExpensesByYear: { ...state.budgetExpensesByYear, [year]: seeded },
+  }
 }
 
 /**
@@ -728,16 +740,19 @@ export function resolveBudgetIncomeForAnalyticsYear(
 }
 
 /**
- * Ensure `budgetIncomeByYear[year]` exists as a REAL persisted snapshot:
- * no-op if already present, else copies the nearest year's {monthly,yearly}
- * (or seeds {monthly:0,yearly:0}) into `year`. Pure; identical logic to
- * seedBudgetIncomeForYear today — factored out so rollover-on-load and
- * dropdown-switch share it.
+ * Ensure `budgetIncomeByYear[year]` exists as a REAL persisted snapshot for
+ * viewing purposes: no-op if already present, OR if there's no nearest year
+ * to clone from yet (leaves it virtual — a year added later can still be
+ * copied in on a future switch). Else copies the nearest year's
+ * {monthly,yearly}. Used by the dropdown-switch / add-record-year-jump
+ * triggers — NOT by mutation helpers, which need the key to always exist
+ * (see `seedBudgetIncomeForYear`).
  */
 export function ensureBudgetIncomeSnapshotForYear(state: AppState, year: string): AppState {
   if (state.budgetIncomeByYear[year]) return state
   const nearest = nearestBudgetIncomeYear(state.budgetIncomeByYear, year)
-  const seeded = nearest ? { ...state.budgetIncomeByYear[nearest] } : { monthly: 0, yearly: 0 }
+  if (!nearest) return state
+  const seeded = { ...state.budgetIncomeByYear[nearest] }
   return {
     ...state,
     budgetIncomeByYear: { ...state.budgetIncomeByYear, [year]: seeded },
@@ -746,10 +761,17 @@ export function ensureBudgetIncomeSnapshotForYear(state: AppState, year: string)
 
 /**
  * Ensure `budgetIncomeByYear[year]` exists: no-op if already present, else
- * copies the nearest year's {monthly,yearly} (or seeds {monthly:0,yearly:0}) into `year`.
+ * copies the nearest year's {monthly,yearly} (or seeds {monthly:0,yearly:0})
+ * into `year`. Always guarantees the key exists — called before mutating it.
  */
 export function seedBudgetIncomeForYear(state: AppState, year: string): AppState {
-  return ensureBudgetIncomeSnapshotForYear(state, year)
+  if (state.budgetIncomeByYear[year]) return state
+  const nearest = nearestBudgetIncomeYear(state.budgetIncomeByYear, year)
+  const seeded = nearest ? { ...state.budgetIncomeByYear[nearest] } : { monthly: 0, yearly: 0 }
+  return {
+    ...state,
+    budgetIncomeByYear: { ...state.budgetIncomeByYear, [year]: seeded },
+  }
 }
 
 /**

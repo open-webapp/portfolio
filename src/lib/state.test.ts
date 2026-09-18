@@ -1149,10 +1149,9 @@ describe('state helpers', () => {
       expect(updated.budgetExpensesByYear['2025']).toEqual([e1])
     })
 
-    it('seeds [] as the first-ever year when there is no data anywhere', () => {
+    it('stays virtual (no-op) as the first-ever year when there is no data anywhere, so a year added later can still be copied in', () => {
       const updated = ensureBudgetExpensesSnapshotForYear(initialState(), '2026')
-      expect(updated.budgetExpensesByYear['2026']).toEqual([])
-      expect('2026' in updated.budgetExpensesByYear).toBe(true)
+      expect('2026' in updated.budgetExpensesByYear).toBe(false)
     })
 
     it('is a no-op if the year already has a snapshot', () => {
@@ -1176,6 +1175,24 @@ describe('state helpers', () => {
       })
       expect(afterAdd.budgetExpensesByYear['2024']).toHaveLength(2)
       expect(afterAdd.budgetExpensesByYear['2026']).toEqual([e1])
+    })
+
+    it('a year switched to while nothing exists anywhere yet stays virtual, then copies real data added afterward to another year', () => {
+      // Regression: previously, switching to a year before ANY year had data
+      // persisted a real empty [] snapshot for it, permanently locking it out
+      // of ever copying data added later to a different year.
+      let state = ensureBudgetExpensesSnapshotForYear(initialState(), '2026')
+      expect('2026' in state.budgetExpensesByYear).toBe(false)
+
+      state = addBudgetExpense(state, '2025', {
+        name: 'Rent',
+        categoryId: 'cat-Housing',
+        amount: 1000,
+        frequency: 'monthly',
+      })
+
+      state = ensureBudgetExpensesSnapshotForYear(state, '2026')
+      expect(state.budgetExpensesByYear['2026']).toEqual(state.budgetExpensesByYear['2025'])
     })
   })
 
@@ -1356,10 +1373,9 @@ describe('state helpers', () => {
       expect(updated.budgetIncomeByYear['2025']).toEqual({ monthly: 100, yearly: 0 })
     })
 
-    it('seeds {monthly:0,yearly:0} as the first-ever year when there is no data anywhere', () => {
+    it('stays virtual (no-op) as the first-ever year when there is no data anywhere, so a year added later can still be copied in', () => {
       const updated = ensureBudgetIncomeSnapshotForYear(initialState(), '2026')
-      expect(updated.budgetIncomeByYear['2026']).toEqual({ monthly: 0, yearly: 0 })
-      expect('2026' in updated.budgetIncomeByYear).toBe(true)
+      expect('2026' in updated.budgetIncomeByYear).toBe(false)
     })
 
     it('is a no-op if the year already has a snapshot', () => {
