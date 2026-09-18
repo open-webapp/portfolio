@@ -16,10 +16,12 @@ import {
   toggleRegCategoryExpanded,
   setRegActivityFilter,
   setBudgetIncome,
-  addBudgetExpense,
-  updateBudgetExpense,
-  deleteBudgetExpense,
-  rolloverBudgetExpensesIfNeeded,
+  addExpenseDefinition,
+  updateExpenseDefinition,
+  deleteExpenseDefinition,
+  setExpenseAmount,
+  clearExpenseAmount,
+  rolloverBudgetExpenseAmountsIfNeeded,
   rolloverBudgetIncomeIfNeeded,
   currentBudgetYear,
   addBudgetTransaction,
@@ -480,90 +482,156 @@ describe('appReducer', () => {
     })
   })
 
-  describe('ADD_BUDGET_EXPENSE', () => {
-    it('mutates only the given year, leaving another pre-existing year untouched', () => {
+  describe('ADD_EXPENSE_DEFINITION', () => {
+    it('dispatches to addExpenseDefinition state action, adding the definition and seeding the current-year amount', () => {
+      const thisYear = currentBudgetYear()
       const state: AppState = {
         ...initialState(),
-        budgetExpensesByYear: {
-          '2025': [{ id: 'exp-2025', name: 'Old Rent', categoryId: 'cat-Housing', amount: 1800, frequency: 'monthly' }],
-          '2026': [],
-        },
+        budgetExpenseDefinitions: [{ id: 'exp-old', name: 'Old Rent', categoryId: 'cat-Housing', frequency: 'monthly' }],
       }
-      const expense = { name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' as const }
+      const definition = { name: 'Rent', categoryId: 'cat-Housing', frequency: 'monthly' as const }
 
-      const resultFromReducer = appReducer(state, { type: 'ADD_BUDGET_EXPENSE', year: '2026', expense })
-      const resultDirect = addBudgetExpense(state, '2026', expense)
+      const resultFromReducer = appReducer(state, { type: 'ADD_EXPENSE_DEFINITION', definition, amount: 2000 })
+      const resultDirect = addExpenseDefinition(state, definition, 2000)
 
-      expect(resultFromReducer.budgetExpensesByYear['2026']).toHaveLength(1)
-      expect(resultFromReducer.budgetExpensesByYear['2026']).toHaveLength(
-        resultDirect.budgetExpensesByYear['2026'].length
-      )
-      expect(resultFromReducer.budgetExpensesByYear['2025']).toEqual(state.budgetExpensesByYear['2025'])
+      expect(resultFromReducer.budgetExpenseDefinitions).toHaveLength(2)
+      expect(resultFromReducer.budgetExpenseDefinitions).toHaveLength(resultDirect.budgetExpenseDefinitions.length)
+      expect(resultFromReducer.budgetExpenseDefinitions[0]).toEqual(state.budgetExpenseDefinitions[0])
 
-      const fromReducer = resultFromReducer.budgetExpensesByYear['2026'][0]
-      const direct = resultDirect.budgetExpensesByYear['2026'][0]
+      const fromReducer = resultFromReducer.budgetExpenseDefinitions[1]
+      const direct = resultDirect.budgetExpenseDefinitions[1]
 
       expect(fromReducer.name).toBe(direct.name)
       expect(fromReducer.categoryId).toBe(direct.categoryId)
-      expect(fromReducer.amount).toBe(direct.amount)
       expect(fromReducer.frequency).toBe(direct.frequency)
       expect(typeof fromReducer.id).toBe('string')
       expect(fromReducer.id.length).toBeGreaterThan(0)
+
+      expect(resultFromReducer.budgetExpenseAmountsByYear[thisYear][fromReducer.id]).toBe(2000)
     })
   })
 
-  describe('UPDATE_BUDGET_EXPENSE', () => {
-    it('mutates only the given year, leaving another pre-existing year untouched', () => {
+  describe('UPDATE_EXPENSE_DEFINITION', () => {
+    it('dispatches to updateExpenseDefinition state action, patching the definition by id (all years)', () => {
       const state: AppState = {
         ...initialState(),
-        budgetExpensesByYear: {
-          '2025': [{ id: 'exp-2025', name: 'Old Rent', categoryId: 'cat-Housing', amount: 1800, frequency: 'monthly' }],
-          '2026': [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }],
-        },
+        budgetExpenseDefinitions: [
+          { id: 'exp-other', name: 'Other', categoryId: 'cat-Misc', frequency: 'monthly' },
+          { id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', frequency: 'monthly' },
+        ],
       }
-      const patch = { amount: 2200 }
+      const patch = { name: 'Rent (updated)' }
 
-      const resultFromReducer = appReducer(state, { type: 'UPDATE_BUDGET_EXPENSE', year: '2026', id: 'exp1', patch })
-      const resultDirect = updateBudgetExpense(state, '2026', 'exp1', patch)
+      const resultFromReducer = appReducer(state, { type: 'UPDATE_EXPENSE_DEFINITION', id: 'exp1', patch })
+      const resultDirect = updateExpenseDefinition(state, 'exp1', patch)
 
-      expect(resultFromReducer.budgetExpensesByYear['2026']).toEqual(resultDirect.budgetExpensesByYear['2026'])
-      expect(resultFromReducer.budgetExpensesByYear['2026'][0].amount).toBe(2200)
-      expect(resultFromReducer.budgetExpensesByYear['2025']).toEqual(state.budgetExpensesByYear['2025'])
+      expect(resultFromReducer.budgetExpenseDefinitions).toEqual(resultDirect.budgetExpenseDefinitions)
+      expect(resultFromReducer.budgetExpenseDefinitions.find((d) => d.id === 'exp1')?.name).toBe('Rent (updated)')
+      expect(resultFromReducer.budgetExpenseDefinitions.find((d) => d.id === 'exp-other')).toEqual(
+        state.budgetExpenseDefinitions[0]
+      )
     })
 
     it('is a no-op when the id does not exist, matching the direct call', () => {
       const state: AppState = {
         ...initialState(),
-        budgetExpensesByYear: {
-          '2026': [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }],
-        },
+        budgetExpenseDefinitions: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', frequency: 'monthly' }],
       }
-      const patch = { amount: 999 }
+      const patch = { name: 'Nope' }
 
-      const resultFromReducer = appReducer(state, { type: 'UPDATE_BUDGET_EXPENSE', year: '2026', id: 'missing', patch })
-      const resultDirect = updateBudgetExpense(state, '2026', 'missing', patch)
+      const resultFromReducer = appReducer(state, { type: 'UPDATE_EXPENSE_DEFINITION', id: 'missing', patch })
+      const resultDirect = updateExpenseDefinition(state, 'missing', patch)
 
-      expect(resultFromReducer.budgetExpensesByYear['2026']).toEqual(resultDirect.budgetExpensesByYear['2026'])
-      expect(resultFromReducer.budgetExpensesByYear['2026'][0].amount).toBe(2000)
+      expect(resultFromReducer.budgetExpenseDefinitions).toEqual(resultDirect.budgetExpenseDefinitions)
+      expect(resultFromReducer.budgetExpenseDefinitions[0].name).toBe('Rent')
     })
   })
 
-  describe('DELETE_BUDGET_EXPENSE', () => {
-    it('mutates only the given year, leaving another pre-existing year untouched', () => {
+  describe('DELETE_EXPENSE_DEFINITION', () => {
+    it('dispatches to deleteExpenseDefinition state action, removing the definition and its per-year amounts', () => {
       const state: AppState = {
         ...initialState(),
-        budgetExpensesByYear: {
-          '2025': [{ id: 'exp-2025', name: 'Old Rent', categoryId: 'cat-Housing', amount: 1800, frequency: 'monthly' }],
-          '2026': [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }],
+        budgetExpenseDefinitions: [
+          { id: 'exp-other', name: 'Other', categoryId: 'cat-Misc', frequency: 'monthly' },
+          { id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', frequency: 'monthly' },
+        ],
+        budgetExpenseAmountsByYear: {
+          '2025': { 'exp1': 1800, 'exp-other': 50 },
+          '2026': { 'exp1': 2000, 'exp-other': 60 },
         },
       }
 
-      const resultFromReducer = appReducer(state, { type: 'DELETE_BUDGET_EXPENSE', year: '2026', id: 'exp1' })
-      const resultDirect = deleteBudgetExpense(state, '2026', 'exp1')
+      const resultFromReducer = appReducer(state, { type: 'DELETE_EXPENSE_DEFINITION', id: 'exp1' })
+      const resultDirect = deleteExpenseDefinition(state, 'exp1')
 
-      expect(resultFromReducer.budgetExpensesByYear['2026']).toEqual(resultDirect.budgetExpensesByYear['2026'])
-      expect(resultFromReducer.budgetExpensesByYear['2026']).toBeUndefined()
-      expect(resultFromReducer.budgetExpensesByYear['2025']).toEqual(state.budgetExpensesByYear['2025'])
+      expect(resultFromReducer.budgetExpenseDefinitions).toEqual(resultDirect.budgetExpenseDefinitions)
+      expect(resultFromReducer.budgetExpenseDefinitions.find((d) => d.id === 'exp1')).toBeUndefined()
+      expect(resultFromReducer.budgetExpenseAmountsByYear).toEqual(resultDirect.budgetExpenseAmountsByYear)
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2025']['exp1']).toBeUndefined()
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2026']['exp1']).toBeUndefined()
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2025']['exp-other']).toBe(50)
+    })
+  })
+
+  describe('SET_EXPENSE_AMOUNT', () => {
+    it('dispatches to setExpenseAmount state action, mutating only the given year', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseAmountsByYear: {
+          '2025': { 'exp1': 1800 },
+          '2026': { 'exp1': 2000 },
+        },
+      }
+
+      const resultFromReducer = appReducer(state, {
+        type: 'SET_EXPENSE_AMOUNT',
+        year: '2026',
+        expenseId: 'exp1',
+        amount: 2200,
+      })
+      const resultDirect = setExpenseAmount(state, '2026', 'exp1', 2200)
+
+      expect(resultFromReducer.budgetExpenseAmountsByYear).toEqual(resultDirect.budgetExpenseAmountsByYear)
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2026']['exp1']).toBe(2200)
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2025']).toEqual(state.budgetExpenseAmountsByYear['2025'])
+    })
+
+    it('sets a new expenseId in a year that did not previously have it', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseAmountsByYear: { '2026': {} },
+      }
+
+      const resultFromReducer = appReducer(state, {
+        type: 'SET_EXPENSE_AMOUNT',
+        year: '2026',
+        expenseId: 'exp-new',
+        amount: 500,
+      })
+      const resultDirect = setExpenseAmount(state, '2026', 'exp-new', 500)
+
+      expect(resultFromReducer.budgetExpenseAmountsByYear).toEqual(resultDirect.budgetExpenseAmountsByYear)
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2026']['exp-new']).toBe(500)
+    })
+  })
+
+  describe('CLEAR_EXPENSE_AMOUNT', () => {
+    it('dispatches to clearExpenseAmount state action, deleting the entry for that year/expenseId', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseAmountsByYear: {
+          '2025': { 'exp1': 1800 },
+          '2026': { 'exp1': 2000, 'exp2': 300 },
+        },
+      }
+
+      const resultFromReducer = appReducer(state, { type: 'CLEAR_EXPENSE_AMOUNT', year: '2026', expenseId: 'exp1' })
+      const resultDirect = clearExpenseAmount(state, '2026', 'exp1')
+
+      expect(resultFromReducer.budgetExpenseAmountsByYear).toEqual(resultDirect.budgetExpenseAmountsByYear)
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2026']['exp1']).toBeUndefined()
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2026']['exp2']).toBe(300)
+      expect(resultFromReducer.budgetExpenseAmountsByYear['2025']).toEqual(state.budgetExpenseAmountsByYear['2025'])
     })
   })
 
@@ -572,58 +640,59 @@ describe('appReducer', () => {
       const state: AppState = {
         ...initialState(),
         budgetIncomeByYear: {
-          '2025': { monthly: 4000, yearly: 48000 },
-          '2026': { monthly: 0, yearly: 0 },
+          '2025': 4000,
+          '2026': 0,
         },
       }
 
       const resultFromReducer = appReducer(state, {
         type: 'SET_BUDGET_INCOME',
         year: '2026',
-        patch: { monthly: 5000 },
+        amount: 5000,
       })
-      const resultDirect = setBudgetIncome(state, '2026', { monthly: 5000 })
+      const resultDirect = setBudgetIncome(state, '2026', 5000)
 
       expect(resultFromReducer.budgetIncomeByYear['2026']).toEqual(resultDirect.budgetIncomeByYear['2026'])
-      expect(resultFromReducer.budgetIncomeByYear['2026'].monthly).toBe(5000)
+      expect(resultFromReducer.budgetIncomeByYear['2026']).toBe(5000)
       expect(resultFromReducer.budgetIncomeByYear['2025']).toEqual(state.budgetIncomeByYear['2025'])
     })
 
     it('clamps negative amounts to 0, matching the direct call', () => {
       const state: AppState = {
         ...initialState(),
-        budgetIncomeByYear: { '2026': { monthly: 100, yearly: 1200 } },
+        budgetIncomeByYear: { '2026': 100 },
       }
 
       const resultFromReducer = appReducer(state, {
         type: 'SET_BUDGET_INCOME',
         year: '2026',
-        patch: { monthly: -50 },
+        amount: -50,
       })
-      const resultDirect = setBudgetIncome(state, '2026', { monthly: -50 })
+      const resultDirect = setBudgetIncome(state, '2026', -50)
 
-      expect(resultFromReducer.budgetIncomeByYear['2026']).toEqual(resultDirect.budgetIncomeByYear['2026'])
-      expect(resultFromReducer.budgetIncomeByYear['2026'].monthly).toBe(0)
+      expect(resultFromReducer.budgetIncomeByYear).toEqual(resultDirect.budgetIncomeByYear)
     })
   })
 
-  describe('ROLLOVER_BUDGET_EXPENSES_IF_NEEDED', () => {
+  describe('ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED', () => {
     it('seeds the current year from the prior year when missing', () => {
       const thisYear = currentBudgetYear()
       const priorYear = String(Number(thisYear) - 1)
       const state: AppState = {
         ...initialState(),
-        budgetExpensesByYear: {
-          [priorYear]: [{ id: 'exp1', name: 'Rent', categoryId: 'cat-Housing', amount: 2000, frequency: 'monthly' }],
+        budgetExpenseAmountsByYear: {
+          [priorYear]: { 'exp1': 2000 },
         },
       }
 
-      const resultFromReducer = appReducer(state, { type: 'ROLLOVER_BUDGET_EXPENSES_IF_NEEDED' })
-      const resultDirect = rolloverBudgetExpensesIfNeeded(state)
+      const resultFromReducer = appReducer(state, { type: 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED' })
+      const resultDirect = rolloverBudgetExpenseAmountsIfNeeded(state)
 
       expect(resultFromReducer).toEqual(resultDirect)
-      expect(resultFromReducer.budgetExpensesByYear[thisYear]).toBeDefined()
-      expect(resultFromReducer.budgetExpensesByYear[thisYear]).toEqual(state.budgetExpensesByYear[priorYear])
+      expect(resultFromReducer.budgetExpenseAmountsByYear[thisYear]).toBeDefined()
+      expect(resultFromReducer.budgetExpenseAmountsByYear[thisYear]).toEqual(
+        state.budgetExpenseAmountsByYear[priorYear]
+      )
     })
   })
 
@@ -742,7 +811,7 @@ describe('appReducer', () => {
         categories,
         categoryMappings,
       })
-      const resultDirect = importBudgetTransactions(state, rows, categories, categoryMappings, state.budgetExpensesByYear)
+      const resultDirect = importBudgetTransactions(state, rows, categories, categoryMappings, state.budgetExpenseDefinitions)
 
       expect(resultFromReducer.budgetTransactions).toHaveLength(2)
       expect(resultFromReducer.budgetTransactions).toHaveLength(resultDirect.budgetTransactions.length)

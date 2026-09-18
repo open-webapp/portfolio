@@ -88,31 +88,49 @@ export function BudgetAnalytics({ state, categories }: BudgetAnalyticsProps) {
   const years = availableBudgetYears(state.budgetTransactions, new Date()).slice(0, 8)
   const hasData = state.budgetTransactions.length > 0
 
-  const overBudget = overBudgetConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
-  const spendTrend = spendTrendConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
-  const spikeMonth = spikeMonthConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
+  const overBudget = overBudgetConcern(
+    years,
+    state.budgetTransactions,
+    categories,
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear
+  )
+  const spendTrend = spendTrendConcern(years, state.budgetTransactions, categories, state.budgetExpenseDefinitions)
+  const spikeMonth = spikeMonthConcern(years, state.budgetTransactions, categories, state.budgetExpenseDefinitions)
   const savingsShrinking = savingsRateShrinkingConcern(
     years,
     state.budgetTransactions,
     categories,
     state.budgetIncomeByYear,
-    state.budgetExpensesByYear
+    state.budgetExpenseDefinitions
   )
-  const concentrationRisk = concentrationRiskConcern(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
+  const concentrationRisk = concentrationRiskConcern(years, state.budgetTransactions, categories, state.budgetExpenseDefinitions)
   const rateByYear = savingsRateByYear(
     years,
     state.budgetTransactions,
     categories,
     state.budgetIncomeByYear,
-    state.budgetExpensesByYear
+    state.budgetExpenseDefinitions
   )
   const maxAbsPct = Math.max(1, ...rateByYear.map((r) => Math.abs(r.pct)))
-  const categoryShare = categoryShareOverTime(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
-  const seasonality = monthlySeasonality(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
+  const categoryShare = categoryShareOverTime(years, state.budgetTransactions, categories, state.budgetExpenseDefinitions)
+  const seasonality = monthlySeasonality(years, state.budgetTransactions, categories, state.budgetExpenseDefinitions)
   const maxAvgSpend = Math.max(0, ...seasonality.map((m) => m.avgSpend))
-  const accuracyByYear = budgetAccuracyByYear(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
-  const trendsYoY = categoryTrendsYoY(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
-  const movers = topMovers(years, state.budgetTransactions, categories, state.budgetExpensesByYear)
+  const accuracyByYear = budgetAccuracyByYear(
+    years,
+    state.budgetTransactions,
+    categories,
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear
+  )
+  const trendsYoY = categoryTrendsYoY(
+    years,
+    state.budgetTransactions,
+    categories,
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear
+  )
+  const movers = topMovers(years, state.budgetTransactions, categories, state.budgetExpenseDefinitions)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>

@@ -84,12 +84,13 @@ describe('BudgetAnalytics', () => {
     const state: AppState = {
       ...initialState(),
       budgetTransactions: transactions,
-      budgetExpensesByYear: {
-        [currentYear]: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 500, frequency: 'monthly' }],
+      budgetExpenseDefinitions: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' }],
+      budgetExpenseAmountsByYear: {
+        [currentYear]: { 'exp-1': 500 },
       },
       budgetIncomeByYear: {
-        [prevYear]: { monthly: 5000, yearly: 60000 },
-        [currentYear]: { monthly: 5000, yearly: 60000 },
+        [prevYear]: 60000,
+        [currentYear]: 60000,
       },
     }
 
@@ -125,11 +126,12 @@ describe('BudgetAnalytics', () => {
     const state: AppState = {
       ...initialState(),
       budgetTransactions: transactions,
-      budgetExpensesByYear: {
-        [currentYear]: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 200, frequency: 'monthly' }],
+      budgetExpenseDefinitions: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' }],
+      budgetExpenseAmountsByYear: {
+        [currentYear]: { 'exp-1': 200 },
       },
       budgetIncomeByYear: {
-        [currentYear]: { monthly: 5000, yearly: 60000 },
+        [currentYear]: 60000,
       },
     }
 
@@ -161,8 +163,8 @@ describe('BudgetAnalytics', () => {
       ...initialState(),
       budgetTransactions: transactions,
       budgetIncomeByYear: {
-        '2024': { monthly: 5000, yearly: 60000 },
-        '2025': { monthly: 5000, yearly: 60000 },
+        '2024': 10000,
+        '2025': 10000,
       },
     }
 
@@ -289,8 +291,9 @@ describe('BudgetAnalytics', () => {
       const state: AppState = {
         ...initialState(),
         budgetTransactions: transactions,
-        budgetExpensesByYear: {
-          [currentYear]: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 200, frequency: 'monthly' }],
+        budgetExpenseDefinitions: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' }],
+        budgetExpenseAmountsByYear: {
+          [currentYear]: { 'exp-1': 200 },
         },
       }
       const { container } = render(<BudgetAnalytics state={state} categories={CATEGORIES} />)
@@ -313,9 +316,10 @@ describe('BudgetAnalytics', () => {
       const state: AppState = {
         ...initialState(),
         budgetTransactions: transactions,
-        budgetExpensesByYear: {
-          '2024': [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 200, frequency: 'monthly' }],
-          '2025': [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 200, frequency: 'monthly' }],
+        budgetExpenseDefinitions: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' }],
+        budgetExpenseAmountsByYear: {
+          '2024': { 'exp-1': 200 },
+          '2025': { 'exp-1': 200 },
         },
       }
       const { container } = render(<BudgetAnalytics state={state} categories={CATEGORIES} />)
@@ -367,8 +371,9 @@ describe('BudgetAnalytics', () => {
       const state: AppState = {
         ...initialState(),
         budgetTransactions: transactions,
-        budgetExpensesByYear: {
-          [currentYear]: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', amount: 200, frequency: 'monthly' }],
+        budgetExpenseDefinitions: [{ id: 'exp-1', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' }],
+        budgetExpenseAmountsByYear: {
+          [currentYear]: { 'exp-1': 200 },
         },
       }
       const { container } = render(<BudgetAnalytics state={state} categories={CATEGORIES} />)
@@ -535,14 +540,15 @@ describe('BudgetAnalytics', () => {
       const state: AppState = {
         ...initialState(),
         budgetTransactions: transactions,
-        budgetExpensesByYear: {
-          [currentYear]: [
-            { id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', amount: 200, frequency: 'monthly' },
-          ],
+        budgetExpenseDefinitions: [
+          { id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' },
+        ],
+        budgetExpenseAmountsByYear: {
+          [currentYear]: { 'exp-housing': 200 },
         },
         budgetIncomeByYear: {
-          [prevYear]: { monthly: 5000, yearly: 60000 },
-          [currentYear]: { monthly: 5000, yearly: 60000 },
+          [prevYear]: 10000,
+          [currentYear]: 10000,
         },
       }
 

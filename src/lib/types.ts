@@ -87,11 +87,10 @@ export interface BalanceEntry {
   activities: { type: ActivityType; amount: number; note: string }[]
 }
 
-export interface Expense {
+export interface ExpenseDefinition {
   id: string
   name: string
   categoryId: string
-  amount: number
   frequency: 'monthly' | 'yearly'
 }
 

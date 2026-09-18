@@ -434,6 +434,13 @@ describe('view switching (accounts vs settings)', () => {
 
     fireEvent.click(navTab('Budget'))
 
+    // Budget page defaults to the "Spend" tab; switch to "Expenses" to see
+    // its content.
+    await waitFor(() => {
+      expect(screen.getByText('Expenses')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByText('Expenses'))
+
     await waitFor(() => {
       expect(screen.getByText('Add Expense')).toBeTruthy()
     })

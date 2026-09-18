@@ -1,4 +1,4 @@
-import type { Position, Expense } from './types'
+import type { Position } from './types'
 
 /**
  * Shared color constants for gain/loss display.
@@ -50,15 +50,15 @@ export const DEFAULT_CATEGORIES = [
   'Subscriptions', 'Health', 'Entertainment', 'Debt/Loans', 'Savings', 'Other',
 ] as const
 
-export function toMonthly(amount: number, freq: Expense['frequency']): number {
+export function toMonthly(amount: number, freq: 'monthly' | 'yearly'): number {
   return freq === 'yearly' ? amount / 12 : amount
 }
 
-export function toYearly(amount: number, freq: Expense['frequency']): number {
+export function toYearly(amount: number, freq: 'monthly' | 'yearly'): number {
   return freq === 'yearly' ? amount : amount * 12
 }
 
-export function toPeriod(amount: number, freq: Expense['frequency'], period: 'monthly' | 'yearly'): number {
+export function toPeriod(amount: number, freq: 'monthly' | 'yearly', period: 'monthly' | 'yearly'): number {
   return period === 'monthly' ? toMonthly(amount, freq) : toYearly(amount, freq)
 }
 

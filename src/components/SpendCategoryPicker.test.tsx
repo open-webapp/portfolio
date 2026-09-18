@@ -2,12 +2,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
-import type { Expense } from '../lib/types'
+import type { ExpenseDefinition } from '../lib/types'
 
-const expenses: Expense[] = [
-  { id: 'e1', name: 'Zebra Rent', categoryId: 'c1', amount: 1000, frequency: 'monthly' },
-  { id: 'e2', name: 'Alpha Gym', categoryId: 'c2', amount: 50, frequency: 'monthly' },
-  { id: 'e3', name: 'Mid Internet', categoryId: 'c1', amount: 80, frequency: 'monthly' },
+const definitions: ExpenseDefinition[] = [
+  { id: 'e1', name: 'Zebra Rent', categoryId: 'c1', frequency: 'monthly' },
+  { id: 'e2', name: 'Alpha Gym', categoryId: 'c2', frequency: 'monthly' },
+  { id: 'e3', name: 'Mid Internet', categoryId: 'c1', frequency: 'monthly' },
 ]
 
 const categoriesById = new Map<string, string>([
@@ -23,7 +23,7 @@ describe('SpendCategoryPicker', () => {
   it('renders options sorted alphabetically by expense name with correct label', () => {
     render(
       <SpendCategoryPicker
-        expenses={expenses}
+        definitions={definitions}
         categoriesById={categoriesById}
         value="e1"
         onChange={() => {}}
@@ -47,7 +47,7 @@ describe('SpendCategoryPicker', () => {
 
     render(
       <SpendCategoryPicker
-        expenses={expenses}
+        definitions={definitions}
         categoriesById={categoriesById}
         value="e1"
         onChange={handleChange}
@@ -61,10 +61,10 @@ describe('SpendCategoryPicker', () => {
     expect(handleChange).toHaveBeenCalledWith('e2', 'c2')
   })
 
-  it('renders disabled placeholder select when expenses array is empty', () => {
+  it('renders disabled placeholder select when definitions array is empty', () => {
     render(
       <SpendCategoryPicker
-        expenses={[]}
+        definitions={[]}
         categoriesById={categoriesById}
         value=""
         onChange={() => {}}
@@ -76,13 +76,13 @@ describe('SpendCategoryPicker', () => {
     expect(select.disabled).toBe(true)
     const options = Array.from(select.querySelectorAll('option'))
     expect(options).toHaveLength(1)
-    expect(options[0].textContent).toBe('No expenses defined for this year')
+    expect(options[0].textContent).toBe('No expenses defined')
   })
 
   it('renders without crashing when value matches no current option', () => {
     render(
       <SpendCategoryPicker
-        expenses={expenses}
+        definitions={definitions}
         categoriesById={categoriesById}
         value="dangling-id"
         onChange={() => {}}
@@ -97,7 +97,7 @@ describe('SpendCategoryPicker', () => {
   it('renders "— Uncategorized —" as the first option when value is ""', () => {
     render(
       <SpendCategoryPicker
-        expenses={expenses}
+        definitions={definitions}
         categoriesById={categoriesById}
         value=""
         onChange={() => {}}
@@ -116,7 +116,7 @@ describe('SpendCategoryPicker', () => {
 
     render(
       <SpendCategoryPicker
-        expenses={expenses}
+        definitions={definitions}
         categoriesById={categoriesById}
         value="e1"
         onChange={handleChange}
@@ -130,10 +130,10 @@ describe('SpendCategoryPicker', () => {
     expect(handleChange).toHaveBeenCalledWith('', expect.any(String))
   })
 
-  it('keeps the "no expenses defined for this year" disabled-select messaging without adding a placeholder option', () => {
+  it('keeps the "no expenses defined" disabled-select messaging without adding a placeholder option', () => {
     render(
       <SpendCategoryPicker
-        expenses={[]}
+        definitions={[]}
         categoriesById={categoriesById}
         value=""
         onChange={() => {}}
@@ -145,7 +145,7 @@ describe('SpendCategoryPicker', () => {
     expect(select.disabled).toBe(true)
     const options = Array.from(select.querySelectorAll('option'))
     expect(options).toHaveLength(1)
-    expect(options[0].textContent).toBe('No expenses defined for this year')
+    expect(options[0].textContent).toBe('No expenses defined')
     expect(options[0].textContent).not.toBe('— Uncategorized —')
   })
 })

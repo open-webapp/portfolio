@@ -1,18 +1,14 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
-import { resolveBudgetExpensesForYear, resolveBudgetIncomeForYear, currentBudgetYear, resolveBudgetImportRows } from '../lib/state'
+import { resolveBudgetIncomeForYear, resolveBudgetImportRows } from '../lib/state'
 import { resolveCategoryIdForDescription, resolveSpendExpenseForCategory, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
-import { uid } from '../lib/seed'
 import { BudgetAnalytics } from './BudgetAnalytics'
+import { BudgetExpensesTab } from './BudgetExpensesTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
-import { fmtUSD, toPeriod, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
+import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
 import {
-  visibleExpenses,
-  categoryBreakdown,
   budgetTransactionsForPeriod,
-  actualByCategory,
-  availableBudgetMonths,
   availableBudgetYears,
   excludedCategoryIdSet,
   effectiveCategoryId,
@@ -25,31 +21,6 @@ export interface BudgetPageProps {
   categories: Category[]
   categoryMappings: CategoryMapping[]
   categoryDispatch: (action: CategoryAction) => void
-}
-
-/**
- * Selecting the "+ Add new category…" sentinel from any category <select> in
- * this component opens the new-category dialog instead of `apply`ing
- * directly; any other selection is passed straight through to `apply`.
- * `apply` decides what to do with the resulting category value (e.g. set
- * local field state, dispatch, etc.).
- *
- * window.prompt() doesn't render in a standalone-display installed PWA
- * window (silently no-ops), so new-category entry can't rely on it — hence
- * the in-app dialog.
- */
-type NewCategoryPrompt = { apply: (categoryId: string) => void }
-
-function handleCategorySelectChange(
-  value: string,
-  openNewCategoryDialog: (prompt: NewCategoryPrompt) => void,
-  apply: (categoryId: string) => void
-) {
-  if (value === '__add_new') {
-    openNewCategoryDialog({ apply })
-    return
-  }
-  apply(value)
 }
 
 const textBtnAccent: CSSProperties = {
@@ -100,17 +71,16 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
 }
 
 /**
- * Budget page: Monthly/Yearly period toggle, income/expense/net summary
- * cards, an income editor, an add-expense form, filter/sort controls, and
- * the expense table (inline edit/delete). Category management is added by
- * a later task extending this same component.
+ * Budget page: Expenses/Spend/Analytics tab toggle.
+ * - Expenses tab (BudgetExpensesTab): Category Breakdown (own independent
+ *   year selector) + a multi-year Expense table of global ExpenseDefinitions.
+ * - Spend tab: year selector, 4 summary cards, and the Spend records table
+ *   for `selectedYear`, re-pointed at budgetExpenseDefinitions +
+ *   budgetExpenseAmountsByYear[selectedYear].
+ * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  */
 export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch }: BudgetPageProps) {
-  const [period, setPeriod] = useState<'monthly' | 'yearly' | 'analytics'>('yearly')
-  const [filterCategoryId, setFilterCategoryId] = useState('__all')
-  const [sortBy, setSortBy] = useState<'category' | 'name' | 'amount'>('category')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [showAddExpenseDialog, setShowAddExpenseDialog] = useState(false)
+  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics'>('spend')
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -121,23 +91,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const selectionCellRefs = useRef<Record<string, HTMLTableCellElement | null>>({})
   const [bulkCategoryId, setBulkCategoryId] = useState('')
   const [bulkExpenseId, setBulkExpenseId] = useState('')
-  const [formName, setFormName] = useState('')
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
-  const [formCategoryId, setFormCategoryId] = useState(categories[0]?.id ?? '')
-  const [formAmount, setFormAmount] = useState('')
-  const [formFrequency, setFormFrequency] = useState<'monthly' | 'yearly'>('monthly')
-  const [newCategoryPrompt, setNewCategoryPrompt] = useState<NewCategoryPrompt | null>(null)
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const submitNewCategory = () => {
-    if (!newCategoryPrompt) return
-    const name = newCategoryName.trim()
-    if (!name) return
-    const id = uid('category')
-    categoryDispatch({ type: 'ADD_CATEGORY', id, name })
-    newCategoryPrompt.apply(id)
-    setNewCategoryPrompt(null)
-    setNewCategoryName('')
-  }
   const [editingIncome, setEditingIncome] = useState(false)
   const [incomeEditAmount, setIncomeEditAmount] = useState('')
   const [selectedYear, setSelectedYear] = useState(
@@ -148,12 +102,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     field: 'date' | 'description' | 'category' | 'account' | 'amount'
   } | null>(null)
   const [cellDraft, setCellDraft] = useState('')
-  const [editingExpenseCell, setEditingExpenseCell] = useState<{
-    rowId: string
-    field: 'name' | 'category' | 'frequency' | 'amount'
-  } | null>(null)
-  const [expenseCellDraft, setExpenseCellDraft] = useState('')
-  // Shared by both the Spend records and Expenses per-cell edit flows below.
   const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
   const [recDescription, setRecDescription] = useState('')
@@ -173,88 +121,44 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importResult, setImportResult] = useState<{ detected: number; failed: number; imported: number; duplicates: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
-  // Monthly/Yearly-only computations below take a strict 'monthly' | 'yearly'
-  // period; when the Analytics tab is active these values aren't rendered, so
-  // fall back to 'yearly' just to keep them well-typed and side-effect-free.
-  const effectivePeriod: 'monthly' | 'yearly' = period === 'monthly' ? 'monthly' : 'yearly'
-  const activeYear = period === 'monthly' ? currentBudgetYear() : selectedYear
-  const activeYearExpenses = resolveBudgetExpensesForYear(state.budgetExpensesByYear, activeYear)
-  const activeYearIncome = resolveBudgetIncomeForYear(state.budgetIncomeByYear, activeYear)
+  const totalIncome = resolveBudgetIncomeForYear(state.budgetIncomeByYear, selectedYear)
+  const amountsForYear = state.budgetExpenseAmountsByYear[selectedYear] ?? {}
+  const totalExpense = Object.values(amountsForYear).reduce((sum, a) => sum + a, 0)
 
-  const totalIncome =
-    period === 'monthly'
-      ? activeYearIncome.monthly + activeYearIncome.yearly / 12
-      : activeYearIncome.monthly * 12 + activeYearIncome.yearly
-
-  const totalExpense = activeYearExpenses.reduce(
-    (sum, e) => sum + toPeriod(e.amount, e.frequency, effectivePeriod),
-    0
-  )
-
-  const availableMonths = availableBudgetMonths(state.budgetTransactions, new Date())
   const availableYears = availableBudgetYears(state.budgetTransactions, new Date())
   const currentMonthValue = new Date().toISOString().slice(0, 7)
 
-  // Income/Budgeted are month-agnostic; Actual spend/Variance/Category Breakdown
-  // and the Spend records table below always reflect the current month
-  // (Monthly) or the selected Year (Yearly).
   const periodFilteredTransactions = budgetTransactionsForPeriod(
     state.budgetTransactions,
-    effectivePeriod,
+    'yearly',
     currentMonthValue,
     selectedYear
   )
   const excludedCategoryIds = excludedCategoryIdSet(categories)
   const nonExcludedTransactions = periodFilteredTransactions.filter(
-    (t) => !excludedCategoryIds.has(effectiveCategoryId(t, state.budgetExpensesByYear))
+    (t) => !excludedCategoryIds.has(effectiveCategoryId(t, state.budgetExpenseDefinitions))
   )
   const totalActual = nonExcludedTransactions.reduce((sum, t) => sum + t.amount, 0)
-  const actualByCategoryForPeriod = actualByCategory(nonExcludedTransactions, state.budgetExpensesByYear)
   const variance = totalExpense - totalActual
-  const rangeLabel =
-    period === 'monthly'
-      ? availableMonths.find((m) => m.value === currentMonthValue)?.label ?? currentMonthValue
-      : selectedYear
-
-  const sortedRows = visibleExpenses(activeYearExpenses, filterCategoryId, sortBy, effectivePeriod, categoriesById)
-  const rows = sortDir === 'desc' ? [...sortedRows].reverse() : sortedRows
-  const toggleSort = (field: 'category' | 'name' | 'amount') => {
-    if (sortBy === field) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortBy(field)
-      setSortDir('asc')
-    }
-  }
-  const breakdown = categoryBreakdown(
-    activeYearExpenses,
-    periodFilteredTransactions,
-    effectivePeriod,
-    categories,
-    state.budgetExpensesByYear
-  )
+  const rangeLabel = selectedYear
 
   const saveIncomeEdit = () => {
     const amount = parseFloat(incomeEditAmount) || 0
-    dispatch({
-      type: 'SET_BUDGET_INCOME',
-      year: activeYear,
-      patch: period === 'monthly' ? { monthly: amount } : { yearly: amount },
-    })
+    dispatch({ type: 'SET_BUDGET_INCOME', year: selectedYear, amount })
     setEditingIncome(false)
   }
 
   const recordSourceTransactions = showExcludedRecords
     ? periodFilteredTransactions
     : periodFilteredTransactions.filter(
-        (t) => !excludedCategoryIds.has(effectiveCategoryId(t, state.budgetExpensesByYear))
+        (t) => !excludedCategoryIds.has(effectiveCategoryId(t, state.budgetExpenseDefinitions))
       )
   const filteredRecords = recordSearch.trim()
     ? recordSourceTransactions.filter((t) => {
         const searchLower = recordSearch.toLowerCase()
         const categoryName =
-          categoriesById.get(effectiveCategoryId(t, state.budgetExpensesByYear)) ??
-          effectiveCategoryId(t, state.budgetExpensesByYear)
+          categoriesById.get(effectiveCategoryId(t, state.budgetExpenseDefinitions)) ??
+          effectiveCategoryId(t, state.budgetExpenseDefinitions)
         return (
           t.description.toLowerCase().includes(searchLower) ||
           categoryName.toLowerCase().includes(searchLower) ||
@@ -280,8 +184,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         cmp = a.description.localeCompare(b.description)
         break
       case 'category': {
-        const catA = effectiveCategoryId(a, state.budgetExpensesByYear)
-        const catB = effectiveCategoryId(b, state.budgetExpensesByYear)
+        const catA = effectiveCategoryId(a, state.budgetExpenseDefinitions)
+        const catB = effectiveCategoryId(b, state.budgetExpenseDefinitions)
         const nameA = categoriesById.get(catA) ?? catA
         const nameB = categoriesById.get(catB) ?? catB
         cmp = nameA.localeCompare(nameB)
@@ -415,55 +319,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     commitCellEdit(rowId, field, cellDraft)
   }
 
-  const isEditingExpenseCell = (rowId: string, field: 'name' | 'category' | 'frequency' | 'amount') =>
-    editingExpenseCell?.rowId === rowId && editingExpenseCell.field === field
-
-  const startExpenseCellEdit = (
-    rowId: string,
-    field: 'name' | 'category' | 'frequency' | 'amount',
-    currentValue: string
-  ) => {
-    if (isEditingExpenseCell(rowId, field)) return
-    setEditingExpenseCell({ rowId, field })
-    setExpenseCellDraft(currentValue)
-  }
-
-  const commitExpenseCellEdit = (
-    rowId: string,
-    field: 'name' | 'category' | 'frequency' | 'amount',
-    value: string
-  ) => {
-    let patch: Record<string, unknown> = {}
-    switch (field) {
-      case 'name':
-        patch = { name: value }
-        break
-      case 'amount':
-        patch = { amount: Number(value) }
-        break
-      case 'frequency':
-        patch = { frequency: value }
-        break
-      case 'category':
-        patch = { categoryId: value }
-        break
-    }
-    dispatch({ type: 'UPDATE_BUDGET_EXPENSE', year: activeYear, id: rowId, patch })
-    setEditingExpenseCell(null)
-    setExpenseCellDraft('')
-  }
-
-  const handleExpenseCellInputBlur = (rowId: string, field: 'name' | 'category' | 'frequency' | 'amount') => {
-    if (!editingExpenseCell) return
-    if (skipBlurCommitRef.current) {
-      skipBlurCommitRef.current = false
-      setEditingExpenseCell(null)
-      setExpenseCellDraft('')
-      return
-    }
-    commitExpenseCellEdit(rowId, field, expenseCellDraft)
-  }
-
   const handleAddRecord = () => {
     const amount = parseFloat(recAmount)
     if (!recDate) {
@@ -492,7 +347,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     }
     const recordYear = recDate.slice(0, 4)
     setSelectedYear(recordYear)
-    if (!state.budgetExpensesByYear[recordYear]) {
+    if (!state.budgetExpenseAmountsByYear[recordYear]) {
       dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: recordYear })
     }
     setRecError('')
@@ -526,7 +381,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       withAccount,
       categories,
       categoryMappings,
-      state.budgetExpensesByYear
+      state.budgetExpenseDefinitions
     )
     dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount, categories, categoryMappings })
     setImportResult({ detected, failed: detected - parsed.length, imported: parsed.length - duplicateCount, duplicates: duplicateCount })
@@ -576,7 +431,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         }}
       >
         <div className="seg">
-          {(['monthly', 'yearly', 'analytics'] as const).map((opt) => (
+          {(['expenses', 'spend', 'analytics'] as const).map((opt) => (
             <label
               key={opt}
               className="seg-opt"
@@ -586,12 +441,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               }}
             >
               <input type="radio" name="budgetPeriod" checked={period === opt} readOnly />
-              <span>{opt === 'monthly' ? 'Monthly' : opt === 'yearly' ? 'Yearly' : 'Analytics'}</span>
+              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : 'Analytics'}</span>
             </label>
           ))}
         </div>
 
-        {period === 'yearly' && (
+        {period === 'spend' && (
           <div className="field" style={{ maxWidth: '220px' }}>
             <label>Year</label>
             <select
@@ -600,7 +455,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               value={selectedYear}
               onChange={(e) => {
                 setSelectedYear(e.target.value)
-                if (!state.budgetExpensesByYear[e.target.value]) {
+                if (!state.budgetExpenseAmountsByYear[e.target.value]) {
                   dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: e.target.value })
                 }
                 setRecPage(0)
@@ -618,6 +473,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
 
       {period === 'analytics' ? (
         <BudgetAnalytics state={state} categories={categories} />
+      ) : period === 'expenses' ? (
+        <BudgetExpensesTab state={state} dispatch={dispatch} categories={categories} categoryDispatch={categoryDispatch} />
       ) : (
       <>
       <div
@@ -652,9 +509,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 aria-label="Edit income"
                 title="Edit income"
                 onClick={() => {
-                  setIncomeEditAmount(
-                    String(period === 'monthly' ? activeYearIncome.monthly : activeYearIncome.yearly)
-                  )
+                  setIncomeEditAmount(String(totalIncome))
                   setEditingIncome(true)
                 }}
               >
@@ -664,7 +519,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           )}
         </div>
         <div className="card blueprint elev-sm">
-          <div className="text-muted">Budgeted ({period === 'monthly' ? 'Monthly' : 'Yearly'})</div>
+          <div className="text-muted">Budgeted</div>
           <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalExpense)}</div>
         </div>
         <div className="card blueprint elev-sm">
@@ -732,7 +587,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           >
             <span style={{ fontSize: '12px' }}>{`${selectedRowIds.size} selected`}</span>
             <SpendCategoryPicker
-              expenses={activeYearExpenses}
+              definitions={state.budgetExpenseDefinitions}
               categoriesById={categoriesById}
               value={bulkExpenseId}
               fallbackCategoryId={bulkCategoryId}
@@ -880,10 +735,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                     <td onClick={() => startCellEdit(row.id, 'category', row.spendExpenseId ?? '')}>
                       {isEditingCell(row.id, 'category') ? (
                         <SpendCategoryPicker
-                          expenses={resolveBudgetExpensesForYear(state.budgetExpensesByYear, row.date.slice(0, 4))}
+                          definitions={state.budgetExpenseDefinitions}
                           categoriesById={categoriesById}
                           value={cellDraft}
-                          fallbackCategoryId={effectiveCategoryId(row, state.budgetExpensesByYear)}
+                          fallbackCategoryId={effectiveCategoryId(row, state.budgetExpenseDefinitions)}
                           ariaLabel="Edit record spend category"
                           onChange={(expenseId, categoryId) => {
                             dispatch({
@@ -912,10 +767,9 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                         <span className="tag tag-neutral">
                           {formatSpendCategoryLabel(
                             row.spendExpenseId,
-                            effectiveCategoryId(row, state.budgetExpensesByYear),
-                            state.budgetExpensesByYear,
-                            categoriesById,
-                            row.date.slice(0, 4)
+                            effectiveCategoryId(row, state.budgetExpenseDefinitions),
+                            state.budgetExpenseDefinitions,
+                            categoriesById
                           )}
                         </span>
                       )}
@@ -1051,7 +905,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   const match = resolveCategoryIdForDescription(categoryMappings, e.target.value)
                   if (match) {
                     setRecCategoryId(match)
-                    const foundExpense = resolveSpendExpenseForCategory(activeYearExpenses, match)
+                    const foundExpense = resolveSpendExpenseForCategory(state.budgetExpenseDefinitions, match)
                     if (foundExpense) setRecExpenseId(foundExpense.id)
                   }
                 }
@@ -1061,7 +915,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           <div className="field">
             <label>Spend Category</label>
             <SpendCategoryPicker
-              expenses={activeYearExpenses}
+              definitions={state.budgetExpenseDefinitions}
               categoriesById={categoriesById}
               value={recExpenseId}
               fallbackCategoryId={recCategoryId}
@@ -1106,464 +960,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             {importStatus}
           </span>
         </div>
-      </div>
-
-      {showAddExpenseDialog && (
-        <div
-          className="dialog-backdrop"
-          onClick={() => {
-            setShowAddExpenseDialog(false)
-            setFormName('')
-            setFormCategoryId(categories[0]?.id ?? '')
-            setFormAmount('')
-            setFormFrequency('monthly')
-          }}
-        >
-          <div className="dialog blueprint" onClick={(e) => e.stopPropagation()}>
-            <div className="dialog-title">Add expense</div>
-            <div className="dialog-body">
-              <div className="field">
-                <label>Name</label>
-                <input
-                  type="text"
-                  className="input"
-                  aria-label="Expense name"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Category</label>
-                <select
-                  className="input"
-                  aria-label="Expense category"
-                  value={formCategoryId}
-                  onChange={(e) => handleCategorySelectChange(e.target.value, setNewCategoryPrompt, setFormCategoryId)}
-                >
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                  <option value="__add_new">+ Add new category…</option>
-                </select>
-              </div>
-              <div className="field">
-                <label>Amount</label>
-                <input
-                  type="number"
-                  className="input"
-                  aria-label="Expense amount"
-                  value={formAmount}
-                  onChange={(e) => setFormAmount(e.target.value)}
-                />
-              </div>
-              <div className="field">
-                <label>Frequency</label>
-                <select
-                  className="input"
-                  aria-label="Expense frequency"
-                  value={formFrequency}
-                  onChange={(e) => setFormFrequency(e.target.value as 'monthly' | 'yearly')}
-                >
-                  <option value="monthly">Monthly</option>
-                  <option value="yearly">Yearly</option>
-                </select>
-              </div>
-            </div>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setShowAddExpenseDialog(false)
-                  setFormName('')
-                  setFormCategoryId(categories[0]?.id ?? '')
-                  setFormAmount('')
-                  setFormFrequency('monthly')
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => {
-                  const amount = parseFloat(formAmount)
-                  if (!formName.trim() || !amount || amount <= 0) return
-                  dispatch({
-                    type: 'ADD_BUDGET_EXPENSE',
-                    year: activeYear,
-                    expense: { name: formName.trim(), categoryId: formCategoryId, amount, frequency: formFrequency },
-                  })
-                  setShowAddExpenseDialog(false)
-                  setFormName('')
-                  setFormCategoryId(categories[0]?.id ?? '')
-                  setFormAmount('')
-                  setFormFrequency('monthly')
-                }}
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {newCategoryPrompt && (
-        <div
-          className="dialog-backdrop"
-          onClick={() => {
-            setNewCategoryPrompt(null)
-            setNewCategoryName('')
-          }}
-        >
-          <div className="dialog blueprint" onClick={(e) => e.stopPropagation()}>
-            <div className="dialog-title">New category</div>
-            <div className="dialog-body">
-              <div className="field">
-                <label>Name</label>
-                <input
-                  type="text"
-                  className="input"
-                  aria-label="New category name"
-                  autoFocus
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') submitNewCategory()
-                  }}
-                />
-              </div>
-            </div>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setNewCategoryPrompt(null)
-                  setNewCategoryName('')
-                }}
-              >
-                Cancel
-              </button>
-              <button type="button" className="btn btn-primary" onClick={submitNewCategory}>
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
-      <div className="card blueprint elev-sm">
-        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
-          Expenses
-        </div>
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 'var(--space-3)',
-          flexWrap: 'wrap',
-          alignItems: 'flex-end',
-          marginBottom: 'var(--space-4)',
-        }}
-      >
-        <div className="field">
-          <label>Filter by category</label>
-          <select
-            className="input"
-            aria-label="Filter by category"
-            value={filterCategoryId}
-            onChange={(e) => setFilterCategoryId(e.target.value)}
-          >
-            <option value="__all">All categories</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {rows.length === 0 ? (
-        <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
-          No expenses to show.
-        </div>
-      ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th
-                aria-label="Sort by name"
-                style={{ cursor: 'pointer', userSelect: 'none' }}
-                onClick={() => toggleSort('name')}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                  Name
-                  {sortBy === 'name' && <SortIcon dir={sortDir} />}
-                </span>
-              </th>
-              <th
-                aria-label="Sort by category"
-                style={{ cursor: 'pointer', userSelect: 'none' }}
-                onClick={() => toggleSort('category')}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                  Category
-                  {sortBy === 'category' && <SortIcon dir={sortDir} />}
-                </span>
-              </th>
-              <th>Frequency</th>
-              <th
-                aria-label="Sort by amount"
-                style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
-                onClick={() => toggleSort('amount')}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '2px' }}>
-                  Amount ({period === 'monthly' ? 'Monthly' : 'Yearly'})
-                  {sortBy === 'amount' && <SortIcon dir={sortDir} />}
-                </span>
-              </th>
-              <th style={{ textAlign: 'right' }}>Actual</th>
-              <th style={{ textAlign: 'right' }}>Variance</th>
-              <th style={{ width: '110px' }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              return (
-                <tr key={row.id}>
-                  <td onClick={() => startExpenseCellEdit(row.id, 'name', row.name)}>
-                    {isEditingExpenseCell(row.id, 'name') ? (
-                      <input
-                        type="text"
-                        className="input"
-                        aria-label="Edit expense name"
-                        autoFocus
-                        value={expenseCellDraft}
-                        onChange={(e) => setExpenseCellDraft(e.target.value)}
-                        onKeyDown={handleCellInputKeyDown}
-                        onBlur={() => handleExpenseCellInputBlur(row.id, 'name')}
-                      />
-                    ) : (
-                      row.name
-                    )}
-                  </td>
-                  <td onClick={() => startExpenseCellEdit(row.id, 'category', row.categoryId)}>
-                    {isEditingExpenseCell(row.id, 'category') ? (
-                      <select
-                        className="input"
-                        aria-label="Edit expense category"
-                        autoFocus
-                        value={expenseCellDraft}
-                        onChange={(e) =>
-                          handleCategorySelectChange(e.target.value, setNewCategoryPrompt, (categoryId) => {
-                            // Unlike spend-records' category cell, this does NOT upsert a
-                            // CategoryMapping — mapping upsert is only for transaction-description
-                            // auto-categorization, which doesn't apply to expense names.
-                            dispatch({
-                              type: 'UPDATE_BUDGET_EXPENSE',
-                              year: activeYear,
-                              id: row.id,
-                              patch: { categoryId },
-                            })
-                            setEditingExpenseCell(null)
-                            setExpenseCellDraft('')
-                          })
-                        }
-                      >
-                        {categories.map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                        <option value="__add_new">+ Add new category…</option>
-                      </select>
-                    ) : (
-                      <span className="tag tag-neutral">{categoriesById.get(row.categoryId) ?? row.categoryId}</span>
-                    )}
-                  </td>
-                  <td onClick={() => startExpenseCellEdit(row.id, 'frequency', row.frequency)}>
-                    {isEditingExpenseCell(row.id, 'frequency') ? (
-                      <select
-                        className="input"
-                        aria-label="Edit expense frequency"
-                        autoFocus
-                        value={row.frequency}
-                        onChange={(e) => commitExpenseCellEdit(row.id, 'frequency', e.target.value)}
-                      >
-                        <option value="monthly">Monthly</option>
-                        <option value="yearly">Yearly</option>
-                      </select>
-                    ) : row.frequency === 'monthly' ? (
-                      'Monthly'
-                    ) : (
-                      'Yearly'
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'right' }} onClick={() => startExpenseCellEdit(row.id, 'amount', String(row.amount))}>
-                    {isEditingExpenseCell(row.id, 'amount') ? (
-                      <input
-                        type="number"
-                        className="input"
-                        aria-label="Edit expense amount"
-                        autoFocus
-                        value={expenseCellDraft}
-                        onChange={(e) => setExpenseCellDraft(e.target.value)}
-                        onKeyDown={handleCellInputKeyDown}
-                        onBlur={() => handleExpenseCellInputBlur(row.id, 'amount')}
-                      />
-                    ) : (
-                      fmtUSD(toPeriod(row.amount, row.frequency, period))
-                    )}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    {fmtUSD(actualByCategoryForPeriod[row.categoryId] ?? 0)}
-                  </td>
-                  <td
-                    style={{
-                      textAlign: 'right',
-                      color:
-                        toPeriod(row.amount, row.frequency, period) - (actualByCategoryForPeriod[row.categoryId] ?? 0) >= 0
-                          ? GAIN_COLOR
-                          : LOSS_COLOR,
-                    }}
-                  >
-                    {fmtUSD(toPeriod(row.amount, row.frequency, period) - (actualByCategoryForPeriod[row.categoryId] ?? 0))}
-                  </td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button
-                      type="button"
-                      style={{ ...iconBtn, color: LOSS_COLOR }}
-                      aria-label="Delete expense"
-                      title="Delete expense"
-                      onClick={() => {
-                        const referencingCount = state.budgetTransactions.filter(
-                          (t) => t.date.slice(0, 4) === activeYear && t.spendExpenseId === row.id
-                        ).length
-                        if (referencingCount > 0) {
-                          window.alert(
-                            `Cannot delete: ${referencingCount} spend record(s) use this expense as their Spend Category.`
-                          )
-                          return
-                        }
-                        if (window.confirm('Delete this expense? This cannot be undone.')) {
-                          dispatch({ type: 'DELETE_BUDGET_EXPENSE', year: activeYear, id: row.id })
-                        }
-                      }}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-            {(() => {
-              const rowsTotalAmount = rows.reduce((sum, r) => sum + toPeriod(r.amount, r.frequency, period), 0)
-              const rowsTotalActual = [...new Set(rows.map((r) => r.categoryId))].reduce(
-                (sum, catId) => sum + (actualByCategoryForPeriod[catId] ?? 0),
-                0
-              )
-              const rowsTotalVariance = rowsTotalAmount - rowsTotalActual
-              return (
-                <tr data-testid="expenses-total-row">
-                  <td colSpan={3} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
-                    Total
-                  </td>
-                  <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
-                    {fmtUSD(rowsTotalAmount)}
-                  </td>
-                  <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
-                    {fmtUSD(rowsTotalActual)}
-                  </td>
-                  <td
-                    style={{
-                      textAlign: 'right',
-                      borderTop: '2px solid var(--color-divider)',
-                      fontWeight: 600,
-                      color: rowsTotalVariance >= 0 ? GAIN_COLOR : LOSS_COLOR,
-                    }}
-                  >
-                    {fmtUSD(rowsTotalVariance)}
-                  </td>
-                  <td style={{ borderTop: '2px solid var(--color-divider)' }}></td>
-                </tr>
-              )
-            })()}
-          </tbody>
-        </table>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
-        <button type="button" className="btn btn-primary" onClick={() => setShowAddExpenseDialog(true)}>
-          Add Expense
-        </button>
-      </div>
-      </div>
-
-      <div className="card blueprint elev-sm">
-        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>
-          Category Breakdown
-        </div>
-        {activeYearExpenses.length === 0 ? (
-          <div className="text-muted" style={{ fontSize: '12px' }}>
-            Add expenses to see the breakdown.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            {breakdown.map(({ name, amount, actual, variance, budgetPct, actualPct, actualColor, varianceColor }) => (
-              <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <div>{name}</div>
-                  <div style={{ fontSize: '12px', color: varianceColor }}>
-                    {variance < 0
-                      ? `Over by ${fmtUSD(Math.abs(variance))}`
-                      : `Under by ${fmtUSD(Math.abs(variance))}`}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '8px',
-                  }}
-                >
-                  <div
-                    data-testid="category-bar-budget"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: `${budgetPct}%`,
-                      height: '100%',
-                      borderRadius: '4px',
-                      background: 'var(--color-border, #e5e5e5)',
-                    }}
-                  />
-                  <div
-                    data-testid="category-bar-fill"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: `${actualPct}%`,
-                      height: '100%',
-                      borderRadius: '4px',
-                      background: actualColor,
-                    }}
-                  />
-                </div>
-                <div className="text-muted" style={{ fontSize: '12px' }}>
-                  Budget {fmtUSD(amount)} · Actual {fmtUSD(actual)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
       </div>
       </>
       )}
