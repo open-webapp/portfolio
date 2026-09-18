@@ -167,6 +167,7 @@ const { mockGlobalCategoriesFixture, seedGlobalCategoriesIfNeededMock } = vi.hoi
         dispatch: vi.fn(),
         hydrated: true,
         seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
+        syncNow: vi.fn().mockResolvedValue(undefined),
       },
     },
   }
@@ -840,6 +841,7 @@ describe('global categories wiring', () => {
       dispatch: vi.fn(),
       hydrated: true,
       seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
+      syncNow: vi.fn().mockResolvedValue(undefined),
     }
   })
 

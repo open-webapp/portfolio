@@ -78,22 +78,28 @@ export function useGlobalCategories(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.categories, state.categoryMappings, hydrated, driveConnected, driveAuth, driveProjectId])
 
+  // Pull remote categories/mappings, merge with local, and persist. Shared by
+  // the initial post-connect pull, the 60s poll, and any caller that wants an
+  // on-demand refresh (e.g. after a manual portfolio Drive sync).
+  const pullAndMerge = async () => {
+    if (!driveConnected || !driveAuth || !driveProjectId) return
+    const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId)
+    if (remote === null) return
+    const current = latestStateRef.current
+    const merged = mergeCategoryState(
+      { categories: current.categories, categoryMappings: current.categoryMappings },
+      remote
+    )
+    dispatch({ type: '__REPLACE', state: merged })
+    await saveGlobalCategoryState(merged)
+  }
+
   // Initial pull-once, the first time driveConnected flips true post-hydrate.
   useEffect(() => {
     if (!hydrated || !driveConnected || !driveAuth || !driveProjectId) return
     if (didInitialPullRef.current) return
     didInitialPullRef.current = true
-    ;(async () => {
-      const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId)
-      if (remote === null) return
-      const current = latestStateRef.current
-      const merged = mergeCategoryState(
-        { categories: current.categories, categoryMappings: current.categoryMappings },
-        remote
-      )
-      dispatch({ type: '__REPLACE', state: merged })
-      await saveGlobalCategoryState(merged)
-    })()
+    pullAndMerge()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driveConnected, hydrated])
 
@@ -135,5 +141,6 @@ export function useGlobalCategories(
     dispatch,
     hydrated,
     seedGlobalCategoriesIfNeeded,
+    syncNow: pullAndMerge,
   }
 }

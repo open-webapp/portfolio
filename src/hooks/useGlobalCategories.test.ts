@@ -235,6 +235,40 @@ describe('useGlobalCategories', () => {
     expect(mockPullGlobalCategoriesFromDrive).not.toHaveBeenCalled()
   })
 
+  it('syncNow pulls+merges remote mappings on demand, for use after a manual Drive sync', async () => {
+    const localFixture: GlobalCategoryState = {
+      categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      categoryMappings: [],
+    }
+    mockLoadGlobalCategoryState.mockResolvedValue(localFixture)
+
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
+
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.hydrated).toBe(true)
+
+    // Initial pull already ran (and found nothing new) — simulate a mapping
+    // that landed on Drive from another browser since then.
+    mockPullGlobalCategoriesFromDrive.mockClear()
+    mockPullGlobalCategoriesFromDrive.mockResolvedValue({
+      categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      categoryMappings: [
+        { id: 'm1', substring: 'WHOLE FOODS', categoryId: 'c1', updatedAt: '2026-03-01T00:00:00.000Z' },
+      ],
+    })
+
+    await act(async () => {
+      await result.current.syncNow()
+    })
+
+    expect(result.current.categoryMappings).toHaveLength(1)
+    expect(result.current.categoryMappings[0].substring).toBe('WHOLE FOODS')
+  })
+
   it('excludes tombstoned categories and mappings from hook output', async () => {
     const fixture: GlobalCategoryState = {
       categories: [

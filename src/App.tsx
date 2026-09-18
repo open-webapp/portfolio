@@ -475,6 +475,7 @@ function App() {
     try {
       const fileId = await syncBackup(activePortfolio!, state, sessionKey!, sessionSalt!)
       setBackupFileId(fileId)
+      await globalCategories.syncNow()
       alert('Synced to Drive')
     } catch (error) {
       console.error('Sync failed:', error)
@@ -507,6 +508,7 @@ function App() {
                 fileId
               )
               setBackupFileId(resyncedFileId)
+              await globalCategories.syncNow()
               alert('Synced to Drive')
             } catch {
               setSyncConflict({
@@ -529,7 +531,7 @@ function App() {
     } finally {
       setSyncing(false)
     }
-  }, [state, sessionKey, sessionSalt, backupFileId, activePortfolio])
+  }, [state, sessionKey, sessionSalt, backupFileId, activePortfolio, globalCategories])
 
   const handleConflictTakeRemote = useCallback(async () => {
     const newState = await overwriteLocalWithRemote(activePortfolio!, syncConflict!.fileId, sessionKey!)
