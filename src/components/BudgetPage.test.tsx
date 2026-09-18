@@ -307,7 +307,6 @@ describe('BudgetPage', () => {
       })
       const dispatch = vi.fn()
       const categoryDispatch = vi.fn()
-      vi.spyOn(window, 'prompt').mockReturnValue('Subscriptions')
       render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />)
 
       fireEvent.click(screen.getByLabelText('Edit expense'))
@@ -315,7 +314,10 @@ describe('BudgetPage', () => {
       const categorySelect = screen.getByLabelText('Edit expense category') as HTMLSelectElement
       fireEvent.change(categorySelect, { target: { value: '__add_new' } })
 
-      expect(window.prompt).toHaveBeenCalled()
+      const newCategoryNameInput = screen.getByLabelText('New category name')
+      fireEvent.change(newCategoryNameInput, { target: { value: 'Subscriptions' } })
+      fireEvent.click(within(newCategoryNameInput.closest('.dialog') as HTMLElement).getByText('Add'))
+
       const addCategoryCall = categoryDispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
       expect(addCategoryCall).toBeTruthy()
       expect(addCategoryCall![0].name).toBe('Subscriptions')
@@ -453,7 +455,6 @@ describe('BudgetPage', () => {
     it('the "+ Add new category…" flow dispatches ADD_CATEGORY and the new id flows into ADD_BUDGET_EXPENSE; no UPSERT_CATEGORY_MAPPING', () => {
       const dispatch = vi.fn()
       const categoryDispatch = vi.fn()
-      vi.spyOn(window, 'prompt').mockReturnValue('Subscriptions')
       render(<BudgetPage state={defaultState()} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />)
 
       fireEvent.click(screen.getByText('Add Expense'))
@@ -461,7 +462,10 @@ describe('BudgetPage', () => {
       const categorySelect = screen.getByLabelText('Expense category') as HTMLSelectElement
       fireEvent.change(categorySelect, { target: { value: '__add_new' } })
 
-      expect(window.prompt).toHaveBeenCalled()
+      const newCategoryNameInput = screen.getByLabelText('New category name')
+      fireEvent.change(newCategoryNameInput, { target: { value: 'Subscriptions' } })
+      fireEvent.click(within(newCategoryNameInput.closest('.dialog') as HTMLElement).getByText('Add'))
+
       const addCategoryCall = categoryDispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
       expect(addCategoryCall).toBeTruthy()
       expect(addCategoryCall![0].name).toBe('Subscriptions')
@@ -1022,6 +1026,39 @@ describe('BudgetPage', () => {
       expect(screen.queryByLabelText('Edit record category')).toBeFalsy()
     })
 
+    it('selecting "+ Add new category…" on the record Category cell opens the in-app dialog (not window.prompt) and applies the new category', () => {
+      const state = recordsState()
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      const promptSpy = vi.spyOn(window, 'prompt').mockImplementation(() => {
+        throw new Error('window.prompt must not be used: it no-ops in a standalone-display installed PWA window')
+      })
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />)
+      selectYear2025()
+
+      const row = screen.getByText('Groceries').closest('tr')!
+      fireEvent.click(within(row).getByText('Food'))
+
+      const categorySelect = screen.getByLabelText('Edit record category') as HTMLSelectElement
+      fireEvent.change(categorySelect, { target: { value: '__add_new' } })
+
+      expect(promptSpy).not.toHaveBeenCalled()
+      const newCategoryNameInput = screen.getByLabelText('New category name')
+      fireEvent.change(newCategoryNameInput, { target: { value: 'Subscriptions' } })
+      fireEvent.click(within(newCategoryNameInput.closest('.dialog') as HTMLElement).getByText('Add'))
+
+      const addCategoryCall = categoryDispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
+      expect(addCategoryCall).toBeTruthy()
+      expect(addCategoryCall![0].name).toBe('Subscriptions')
+      const newId = addCategoryCall![0].id
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_TRANSACTION',
+        id: 't1',
+        patch: { categoryId: newId },
+      })
+    })
+
     describe('delete', () => {
       it('does nothing when confirm returns false', () => {
         const state = recordsState()
@@ -1169,11 +1206,14 @@ describe('BudgetPage', () => {
           state = appReducer(state, action)
         })
         const categoryDispatch = vi.fn()
-        vi.spyOn(window, 'prompt').mockReturnValue('Utilities')
         const { rerender } = render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />)
 
         const categorySelect = screen.getByLabelText('Record category') as HTMLSelectElement
         fireEvent.change(categorySelect, { target: { value: '__add_new' } })
+
+        const newCategoryNameInput = screen.getByLabelText('New category name')
+        fireEvent.change(newCategoryNameInput, { target: { value: 'Utilities' } })
+        fireEvent.click(within(newCategoryNameInput.closest('.dialog') as HTMLElement).getByText('Add'))
 
         const addCategoryCall = categoryDispatch.mock.calls.find((c) => c[0].type === 'ADD_CATEGORY')
         expect(addCategoryCall).toBeTruthy()
