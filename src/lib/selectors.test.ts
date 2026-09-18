@@ -1654,9 +1654,9 @@ describe('categoryBreakdown', () => {
     expect(result).toEqual([
       {
         name: 'Housing',
-        amount: 2000,
+        amount: 24000,
         actual: 0,
-        variance: 2000,
+        variance: 24000,
         budgetPct: 100,
         actualPct: 0,
         actualColor: '#3b6ef6',
@@ -1699,30 +1699,47 @@ describe('categoryBreakdown', () => {
     expect(aEntry?.budgetPct).toBe(50)
   })
 
-  it('sums amountsForYear directly per category, with no monthly/yearly period conversion', () => {
-    // categoryBreakdown now takes already-resolved per-year amounts directly (the
-    // Monthly/Yearly period toggle and its toPeriod conversion no longer apply here) —
-    // it just sums amountsForYear[id] per category regardless of `frequency`.
+  it('annualizes per-frequency amounts per category (monthly × 12, yearly as-is)', () => {
+    // Budget snapshots are per-frequency: monthly $2000/mo = $24000/yr,
+    // yearly $12000 = $12000/yr → Housing total $36000/yr.
     const definitions: ExpenseDefinition[] = [
       { id: 'e1', name: 'Rent', categoryId: catHousing.id, frequency: 'monthly' },
       { id: 'e2', name: 'Property Tax', categoryId: catHousing.id, frequency: 'yearly' }
     ]
     const amounts = { e1: 2000, e2: 12000 }
     const result = categoryBreakdown(definitions, amounts, [], allCats)
-    expect(result[0]).toMatchObject({ name: 'Housing', amount: 14000, budgetPct: 100 })
+    expect(result[0]).toMatchObject({ name: 'Housing', amount: 36000, budgetPct: 100 })
+  })
+
+  it('annualizes monthly amounts to yearly before comparing against full-year actuals', () => {
+    // Regression: monthly $2000/mo budget = $24000/yr. Twelve $2000 actuals = $24000.
+    // Variance must be 0, not 2000 - 24000 = -22000.
+    const definitions: ExpenseDefinition[] = [
+      { id: 'e1', name: 'Rent', categoryId: catHousing.id, frequency: 'monthly' }
+    ]
+    const amounts = { e1: 2000 }
+    const transactions: BudgetTransaction[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `t${i + 1}`,
+      date: `2026-${String(i + 1).padStart(2, '0')}-05`,
+      description: 'Rent',
+      categoryId: catHousing.id,
+      amount: 2000
+    }))
+    const result = categoryBreakdown(definitions, amounts, transactions, allCats)
+    expect(result[0]).toMatchObject({ name: 'Housing', amount: 24000, actual: 24000, variance: 0 })
   })
 
   it('computes actual/variance/colors for a fixture with one over-budget and one under-budget category', () => {
-    // Housing: budget 2000, actual 2500 -> over budget (variance -500)
-    // Food: budget 500, actual 300 -> under budget (variance 200)
-    // maxCat = max(2000, 500, 2500, 300) = 2500
+    // Housing: budget 2000/mo = 24000/yr, actual 25000 -> over budget (variance -1000)
+    // Food: budget 500/mo = 6000/yr, actual 300 -> under budget (variance 5700)
+    // maxCat = max(24000, 6000, 25000, 300) = 25000
     const definitions: ExpenseDefinition[] = [
       { id: 'e1', name: 'Rent', categoryId: catHousing.id, frequency: 'monthly' },
       { id: 'e2', name: 'Groceries', categoryId: catFood.id, frequency: 'monthly' }
     ]
     const amounts = { e1: 2000, e2: 500 }
     const transactions: BudgetTransaction[] = [
-      { id: 't1', date: '2026-09-05', description: 'Rent', categoryId: catHousing.id, amount: 2500 },
+      { id: 't1', date: '2026-09-05', description: 'Rent', categoryId: catHousing.id, amount: 25000 },
       { id: 't2', date: '2026-09-10', description: 'Groceries', categoryId: catFood.id, amount: 300 }
     ]
     const result = categoryBreakdown(definitions, amounts, transactions, allCats)
@@ -1731,21 +1748,21 @@ describe('categoryBreakdown', () => {
 
     expect(housing).toEqual({
       name: 'Housing',
-      amount: 2000,
-      actual: 2500,
-      variance: -500,
-      budgetPct: (2000 / 2500) * 100,
+      amount: 24000,
+      actual: 25000,
+      variance: -1000,
+      budgetPct: (24000 / 25000) * 100,
       actualPct: 100,
       actualColor: LOSS_COLOR,
       varianceColor: LOSS_COLOR
     })
     expect(food).toEqual({
       name: 'Food',
-      amount: 500,
+      amount: 6000,
       actual: 300,
-      variance: 200,
-      budgetPct: (500 / 2500) * 100,
-      actualPct: (300 / 2500) * 100,
+      variance: 5700,
+      budgetPct: (6000 / 25000) * 100,
+      actualPct: (300 / 25000) * 100,
       actualColor: '#3b6ef6',
       varianceColor: GAIN_COLOR
     })
@@ -1768,11 +1785,11 @@ describe('categoryBreakdown', () => {
     expect(result).toEqual([
       {
         name: 'Housing',
-        amount: 2000,
+        amount: 24000,
         actual: 2000,
-        variance: 0,
+        variance: 22000,
         budgetPct: 100,
-        actualPct: 100,
+        actualPct: (2000 / 24000) * 100,
         actualColor: '#3b6ef6',
         varianceColor: GAIN_COLOR
       }

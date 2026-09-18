@@ -648,8 +648,9 @@ export function availableBudgetYears(transactions: BudgetTransaction[], now: Dat
 }
 
 /**
- * Aggregate expenses by category for the given period, alongside actual spend from
- * budget transactions in the same period.
+ * Aggregate expenses by category for the given year, alongside actual spend from
+ * budget transactions in the same year. Budget amounts are per-frequency
+ * snapshots annualized via frequency (monthly × 12) so both sides are yearly totals.
  * `budgetPct`/`actualPct` are relative to the largest category total across both
  * budget and actual (not the sum of all categories).
  * Returns entries sorted by budgeted amount descending.
@@ -673,7 +674,7 @@ export function categoryBreakdown(
   const byCategory: Record<string, number> = {}
   definitions.forEach((e) => {
     if (excludedIds.has(e.categoryId)) return
-    const amount = amountsForYear[e.id] ?? 0
+    const amount = toPeriod(amountsForYear[e.id] ?? 0, e.frequency, 'yearly')
     byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + amount
   })
   const actuals = actualByCategory(transactions, definitions)
