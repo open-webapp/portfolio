@@ -670,6 +670,67 @@ describe('BudgetPage', () => {
 
       vi.useRealTimers()
     })
+
+    it('switching to a year with no snapshot dispatches ENSURE_BUDGET_YEAR_SNAPSHOT for that year', () => {
+      const state: AppState = defaultState({
+        budgetExpensesByYear: { '2024': [makeExpense({ id: 'e1' })] },
+        budgetIncomeByYear: { '2024': { monthly: 5000, yearly: 60000 } },
+        budgetTransactions: [makeTransaction({ date: '2026-01-01' })],
+      })
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+      fireEvent.change(yearSelect, { target: { value: '2026' } })
+
+      expect(dispatch).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2026' })
+    })
+
+    it('switching to a year that already has a snapshot does not dispatch ENSURE_BUDGET_YEAR_SNAPSHOT', () => {
+      const state: AppState = defaultState({
+        budgetExpensesByYear: { '2024': [makeExpense({ id: 'e1' })], '2026': [] },
+        budgetIncomeByYear: { '2024': { monthly: 5000, yearly: 60000 }, '2026': { monthly: 0, yearly: 0 } },
+        budgetTransactions: [makeTransaction({ date: '2026-01-01' })],
+      })
+      const dispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+      const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+      fireEvent.change(yearSelect, { target: { value: '2026' } })
+
+      expect(dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' })
+      )
+    })
+
+    it('ENSURE_BUDGET_YEAR_SNAPSHOT reducer action creates real persisted snapshots cloned from the nearest year', () => {
+      const state: AppState = defaultState({
+        budgetExpensesByYear: { '2024': [makeExpense({ id: 'e1', name: 'Rent' })] },
+        budgetIncomeByYear: { '2024': { monthly: 5000, yearly: 60000 } },
+      })
+
+      const next = appReducer(state, { type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2026' })
+
+      expect(next.budgetExpensesByYear['2026']).toEqual(state.budgetExpensesByYear['2024'])
+      expect(next.budgetIncomeByYear['2026']).toEqual(state.budgetIncomeByYear['2024'])
+    })
+
+    it('a snapshot created via ENSURE_BUDGET_YEAR_SNAPSHOT is independent of later edits to the source year (no shared reference bug)', () => {
+      const state: AppState = defaultState({
+        budgetExpensesByYear: { '2024': [makeExpense({ id: 'e1', name: 'Rent', amount: 1000 })] },
+        budgetIncomeByYear: { '2024': { monthly: 5000, yearly: 60000 } },
+      })
+
+      const withSnapshot = appReducer(state, { type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2026' })
+
+      const afterEdit = appReducer(withSnapshot, {
+        type: 'ADD_BUDGET_EXPENSE',
+        year: '2024',
+        expense: { name: 'Gym', categoryId: 'cat-housing', amount: 50, frequency: 'monthly' },
+      })
+
+      expect(afterEdit.budgetExpensesByYear['2026']).toEqual(withSnapshot.budgetExpensesByYear['2026'])
+    })
   })
 
   describe('empty state', () => {
@@ -1701,6 +1762,11 @@ VERSION:102
           makeTransaction({ id: 't2', date: '2025-03-20', description: 'Rent payment', categoryId: 'cat-housing', amount: 1000, accountName: 'Savings' }),
           makeTransaction({ id: 't3', date: '2025-03-12', description: 'Zoo tickets', categoryId: 'cat-zoo', amount: 40, accountName: 'Checking' }),
         ],
+        // Seed a 2025 snapshot so switching the year select to '2025' in these
+        // tests doesn't trigger ENSURE_BUDGET_YEAR_SNAPSHOT (that dispatch is
+        // covered separately; these tests only care about record-table behavior).
+        budgetExpensesByYear: { '2025': [] },
+        budgetIncomeByYear: { '2025': { monthly: 0, yearly: 0 } },
         ...overrides,
       })
     }
