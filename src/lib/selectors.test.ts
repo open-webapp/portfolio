@@ -42,7 +42,8 @@ import {
   budgetAccuracyByYear,
   categoryTrendsYoY,
   topMovers,
-  effectiveCategoryId
+  effectiveCategoryId,
+  formatSpendCategoryLabel
 } from './selectors'
 import { AppState, initialState, clearAccountSelection, updateBudgetExpense } from './state'
 import {
@@ -2759,5 +2760,40 @@ describe('effectiveCategoryId', () => {
     const byYear = { '2024': [makeExpense({ id: 'exp-1', categoryId: 'cat-from-expense' })] }
     expect(() => effectiveCategoryId(tx, byYear)).not.toThrow()
     expect(effectiveCategoryId(tx, byYear)).toBe('cat-fallback')
+  })
+})
+
+describe('formatSpendCategoryLabel', () => {
+  const year = '2026'
+  const budgetExpensesByYear: Record<string, Expense[]> = {
+    [year]: [{ id: 'exp-1', name: 'Netflix', categoryId: 'cat-1', amount: 15, frequency: 'monthly' }]
+  }
+  const categoriesById = new Map<string, string>([
+    ['cat-1', 'Subscriptions'],
+    ['cat-2', 'Groceries']
+  ])
+
+  it('formats "<expense name> (<category name>)" when spendExpenseId resolves to an expense in that year', () => {
+    expect(formatSpendCategoryLabel('exp-1', 'cat-1', budgetExpensesByYear, categoriesById, year)).toBe(
+      'Netflix (Subscriptions)'
+    )
+  })
+
+  it('formats "Uncategorized (<category name>)" when spendExpenseId is unset', () => {
+    expect(formatSpendCategoryLabel(undefined, 'cat-2', budgetExpensesByYear, categoriesById, year)).toBe(
+      'Uncategorized (Groceries)'
+    )
+  })
+
+  it('falls back to "Uncategorized (<category name>)" when spendExpenseId is set but expense not found for that year (stale link)', () => {
+    expect(
+      formatSpendCategoryLabel('exp-does-not-exist', 'cat-2', budgetExpensesByYear, categoriesById, year)
+    ).toBe('Uncategorized (Groceries)')
+  })
+
+  it('falls back to the raw category id when categoryId is not found in categoriesById', () => {
+    expect(formatSpendCategoryLabel(undefined, 'cat-unknown', budgetExpensesByYear, categoriesById, year)).toBe(
+      'Uncategorized (cat-unknown)'
+    )
   })
 })

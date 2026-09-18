@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import type { Expense } from '../lib/types'
@@ -33,7 +33,12 @@ describe('SpendCategoryPicker', () => {
 
     const select = screen.getByLabelText('Spend category')
     const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
-    expect(options).toEqual(['Alpha Gym (Health)', 'Mid Internet (Housing)', 'Zebra Rent (Housing)'])
+    expect(options).toEqual([
+      '— Uncategorized —',
+      'Alpha Gym (Health)',
+      'Mid Internet (Housing)',
+      'Zebra Rent (Housing)',
+    ])
   })
 
   it('calls onChange with expense id and categoryId when an option is selected', async () => {
@@ -87,5 +92,60 @@ describe('SpendCategoryPicker', () => {
 
     const select = screen.getByLabelText('Spend category')
     expect(select).toBeTruthy()
+  })
+
+  it('renders "— Uncategorized —" as the first option when value is ""', () => {
+    render(
+      <SpendCategoryPicker
+        expenses={expenses}
+        categoriesById={categoriesById}
+        value=""
+        onChange={() => {}}
+        ariaLabel="Spend category"
+      />
+    )
+
+    const select = screen.getByLabelText('Spend category')
+    const options = Array.from(select.querySelectorAll('option'))
+    expect(options[0].textContent).toBe('— Uncategorized —')
+    expect((options[0] as HTMLOptionElement).value).toBe('')
+  })
+
+  it('clears the link (calls onChange with empty expense id) when the placeholder is selected after a prior selection', () => {
+    const handleChange = vi.fn()
+
+    render(
+      <SpendCategoryPicker
+        expenses={expenses}
+        categoriesById={categoriesById}
+        value="e1"
+        onChange={handleChange}
+        ariaLabel="Spend category"
+      />
+    )
+
+    const select = screen.getByLabelText('Spend category') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: '' } })
+
+    expect(handleChange).toHaveBeenCalledWith('', expect.any(String))
+  })
+
+  it('keeps the "no expenses defined for this year" disabled-select messaging without adding a placeholder option', () => {
+    render(
+      <SpendCategoryPicker
+        expenses={[]}
+        categoriesById={categoriesById}
+        value=""
+        onChange={() => {}}
+        ariaLabel="Spend category"
+      />
+    )
+
+    const select = screen.getByLabelText('Spend category') as HTMLSelectElement
+    expect(select.disabled).toBe(true)
+    const options = Array.from(select.querySelectorAll('option'))
+    expect(options).toHaveLength(1)
+    expect(options[0].textContent).toBe('No expenses defined for this year')
+    expect(options[0].textContent).not.toBe('— Uncategorized —')
   })
 })

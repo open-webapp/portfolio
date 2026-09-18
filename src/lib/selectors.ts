@@ -1133,3 +1133,28 @@ export function effectiveCategoryId(tx: BudgetTransaction, budgetExpensesByYear:
   return expense ? expense.categoryId : tx.categoryId
 }
 
+/**
+ * Shared display-label formatter for a Budget transaction's spend category,
+ * used by both SpendCategoryPicker (dropdown option labels) and BudgetPage
+ * (read-only cell). Mirrors SpendCategoryPicker's "<expense name> (<category
+ * name>)" format when the transaction is linked to a resolvable Expense for
+ * its year; falls back to "Uncategorized (<category name>)" when unlinked or
+ * when the link is stale (expense not found for that year). If the category
+ * itself can't be resolved via categoriesById, falls back to the raw id.
+ */
+export function formatSpendCategoryLabel(
+  spendExpenseId: string | undefined,
+  categoryId: string,
+  budgetExpensesByYear: Record<string, Expense[]>,
+  categoriesById: Map<string, string>,
+  year: string
+): string {
+  const categoryLabel = categoriesById.get(categoryId) ?? categoryId
+  if (spendExpenseId) {
+    const expenses = budgetExpensesByYear[year] ?? []
+    const expense = expenses.find((e) => e.id === spendExpenseId)
+    if (expense) return `${expense.name} (${categoryLabel})`
+  }
+  return `Uncategorized (${categoryLabel})`
+}
+

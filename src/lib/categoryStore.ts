@@ -1,6 +1,7 @@
-import type { Category, CategoryMapping, BudgetTransaction } from './types'
+import type { Category, CategoryMapping, BudgetTransaction, Expense } from './types'
 import { uid } from './seed'
 import { mergeCategoryState } from './categoryMerge'
+import { effectiveCategoryId } from './selectors'
 
 export interface GlobalCategoryState {
   categories: Category[]
@@ -118,13 +119,27 @@ export function visibleMappings(s: GlobalCategoryState): CategoryMapping[] {
 /**
  * Re-run category mapping resolution against a list of budget transactions, rewriting
  * categoryId for any transaction whose description matches a mapping. Transactions with
- * no match are left untouched. Pure; mappings are filtered for tombstones internally, so
- * callers may pass either the raw or pre-filtered mapping list.
+ * no match are left untouched. When a transaction is linked to a Budget Expense
+ * (spendExpenseId), its effective category (per effectiveCategoryId) is the linked
+ * expense's category, not tx.categoryId — if the resolved mapping disagrees with that
+ * effective category, the link is cleared (spendExpenseId set to undefined) so the
+ * mapping's category actually takes effect; if it agrees, the link is left untouched.
+ * Pure; mappings are filtered for tombstones internally, so callers may pass either the
+ * raw or pre-filtered mapping list.
  */
-export function reapplyMappingsToTransactions(transactions: BudgetTransaction[], mappings: CategoryMapping[]): BudgetTransaction[] {
+export function reapplyMappingsToTransactions(
+  transactions: BudgetTransaction[],
+  mappings: CategoryMapping[],
+  budgetExpensesByYear: Record<string, Expense[]> = {}
+): BudgetTransaction[] {
   return transactions.map((t) => {
     const resolved = resolveCategoryIdForDescription(mappings, t.description)
-    return resolved ? { ...t, categoryId: resolved } : t
+    if (resolved === null) return t
+    const effective = effectiveCategoryId(t, budgetExpensesByYear)
+    if (resolved !== effective) {
+      return { ...t, categoryId: resolved, spendExpenseId: undefined }
+    }
+    return { ...t, categoryId: resolved }
   })
 }
 

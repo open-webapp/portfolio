@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetExpensesForYear, resolveBudgetIncomeForYear, currentBudgetYear, resolveBudgetImportRows } from '../lib/state'
-import { resolveCategoryIdForDescription, type CategoryAction } from '../lib/categoryStore'
+import { resolveCategoryIdForDescription, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
 import { uid } from '../lib/seed'
 import { BudgetAnalytics } from './BudgetAnalytics'
@@ -16,6 +16,7 @@ import {
   availableBudgetYears,
   excludedCategoryIdSet,
   effectiveCategoryId,
+  formatSpendCategoryLabel,
 } from '../lib/selectors'
 
 export interface BudgetPageProps {
@@ -485,6 +486,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       },
     })
     categoryDispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, categoryId: recCategoryId })
+    {
+      const nextMappings = upsertCategoryMapping({ categories, categoryMappings }, description, recCategoryId).categoryMappings
+      dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+    }
     const recordYear = recDate.slice(0, 4)
     setSelectedYear(recordYear)
     if (!state.budgetExpensesByYear[recordYear]) {
@@ -730,6 +735,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               expenses={activeYearExpenses}
               categoriesById={categoriesById}
               value={bulkExpenseId}
+              fallbackCategoryId={bulkCategoryId}
               ariaLabel="Bulk edit spend category"
               onChange={(expenseId, categoryId) => {
                 setBulkExpenseId(expenseId)
@@ -877,26 +883,40 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                           expenses={resolveBudgetExpensesForYear(state.budgetExpensesByYear, row.date.slice(0, 4))}
                           categoriesById={categoriesById}
                           value={cellDraft}
+                          fallbackCategoryId={effectiveCategoryId(row, state.budgetExpensesByYear)}
                           ariaLabel="Edit record spend category"
                           onChange={(expenseId, categoryId) => {
                             dispatch({
                               type: 'UPDATE_BUDGET_TRANSACTION',
                               id: row.id,
-                              patch: { spendExpenseId: expenseId, categoryId },
+                              patch: { spendExpenseId: expenseId || undefined, categoryId },
                             })
                             categoryDispatch({
                               type: 'UPSERT_CATEGORY_MAPPING',
                               description: row.description,
                               categoryId,
                             })
+                            {
+                              const nextMappings = upsertCategoryMapping(
+                                { categories, categoryMappings },
+                                row.description,
+                                categoryId
+                              ).categoryMappings
+                              dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+                            }
                             setEditingCell(null)
                             setCellDraft('')
                           }}
                         />
                       ) : (
                         <span className="tag tag-neutral">
-                          {categoriesById.get(effectiveCategoryId(row, state.budgetExpensesByYear)) ??
-                            effectiveCategoryId(row, state.budgetExpensesByYear)}
+                          {formatSpendCategoryLabel(
+                            row.spendExpenseId,
+                            effectiveCategoryId(row, state.budgetExpensesByYear),
+                            state.budgetExpensesByYear,
+                            categoriesById,
+                            row.date.slice(0, 4)
+                          )}
                         </span>
                       )}
                     </td>
@@ -1040,6 +1060,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               expenses={activeYearExpenses}
               categoriesById={categoriesById}
               value={recExpenseId}
+              fallbackCategoryId={recCategoryId}
               ariaLabel="Record spend category"
               onChange={(expenseId, categoryId) => {
                 setRecExpenseId(expenseId)

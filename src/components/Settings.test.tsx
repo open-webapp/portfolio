@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { useState } from 'react'
 import 'fake-indexeddb/auto'
 import { render, screen, fireEvent, waitFor, cleanup, within, configure } from '@testing-library/react'
 import { SettingsPage, type SettingsPageProps } from './Settings'
 import { initialState } from '../lib/state'
+import { appReducer } from '../lib/reducer'
+import { categoryStoreReducer, type GlobalCategoryState } from '../lib/categoryStore'
 import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
 import * as importExportModule from '../lib/importExport'
@@ -999,15 +1002,6 @@ describe('SettingsPage', () => {
       expect(container.querySelectorAll('svg path[d*="M3 6h18"]').length).toBe(0)
     })
 
-    it('"Re-apply mappings to existing records" button dispatches REAPPLY_CATEGORY_MAPPINGS with the current categoryMappings payload', () => {
-      const { state, categories, categoryMappings } = categoriesFixture()
-      renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Re-apply mappings to existing records' }))
-
-      expect(mockDispatch).toHaveBeenCalledWith({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings })
-    })
-
     it('renders an unchecked "Exclude from spend tracking" checkbox by default; clicking dispatches SET_CATEGORY_EXCLUDE_FROM_SPEND with exclude:true and the re-render reflects the checked state', () => {
       const { state, categories, categoryMappings } = categoriesFixture()
       const { rerender } = renderSettings({ state, categories, categoryMappings, settingsSection: 'categories' })
@@ -1072,6 +1066,149 @@ describe('SettingsPage', () => {
         type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND',
         id: 'cat-rent',
         exclude: false,
+      })
+    })
+  })
+
+  describe('Auto-reapply category mappings on change (T8 - regression, expected to FAIL until T9/T10 wires the auto-trigger)', () => {
+    // Full-store harness: wires `dispatch` through the REAL appReducer (so
+    // REAPPLY_CATEGORY_MAPPINGS actually mutates budgetTransactions) and
+    // `categoryDispatch` through the REAL categoryStoreReducer (so
+    // ADD_CATEGORY_MAPPING/__MERGE_IMPORTED actually mutate categoryMappings),
+    // exactly as App.tsx wires useReducer(appReducer) + useGlobalCategories.
+    // This lets the tests assert on the real end state of a transaction after
+    // a UI-driven mapping change, without clicking the manual "Re-apply
+    // mappings to existing records" button - proving (or, right now,
+    // disproving) that mapping CRUD auto-triggers the reapply.
+    function AutoReapplyHarness({
+      initialAppState,
+      initialCategoryState,
+    }: {
+      initialAppState: ReturnType<typeof initialState>
+      initialCategoryState: GlobalCategoryState
+    }) {
+      const [state, dispatch] = useState(initialAppState)
+      const [categoryState, categoryDispatch] = useState(initialCategoryState)
+      const [settingsSection, setSettingsSection] = useState<'backup' | 'encryption' | 'priceSync' | 'categories'>('categories')
+
+      return (
+        <>
+          {/* Debug probe: SettingsPage has no UI that renders budgetTransactions,
+              so expose the live main-store state here for assertions. */}
+          <pre data-testid="debug-app-state">{JSON.stringify(state.budgetTransactions)}</pre>
+          <SettingsPage
+          state={state}
+          dispatch={(action: any) => dispatch((prev) => appReducer(prev, action))}
+          activePortfolio={{ id: 'p1', name: 'Test Portfolio', dbName: 'portfolio_p1', createdAt: 0 }}
+          driveAuth={{ connect: vi.fn(), disconnect: vi.fn(), ensureFresh: vi.fn(), activate: vi.fn(() => () => {}) } as any}
+          sessionKey={{} as any}
+          sessionSalt={new Uint8Array()}
+          onKeyChange={vi.fn()}
+          onPasswordEntryTimeReset={vi.fn()}
+          onDriveConnected={vi.fn()}
+          onDriveDisconnected={vi.fn()}
+          settingsSection={settingsSection}
+          setSettingsSection={setSettingsSection}
+          runPriceSyncTrigger={vi.fn()}
+          runMutualFundSyncTrigger={vi.fn()}
+          tickerOverviewErrors={{}}
+          mutualFundSyncErrors={{}}
+          categories={categoryState.categories}
+          categoryMappings={categoryState.categoryMappings}
+          categoryDispatch={(action) => categoryDispatch((prev) => categoryStoreReducer(prev, action))}
+          categoriesHydrated={true}
+          driveConnected={false}
+          />
+        </>
+      )
+    }
+
+    function fixtureAppState() {
+      const state = initialState()
+      state.budgetTransactions = [
+        {
+          id: 'tx-1',
+          date: '2026-01-05',
+          description: 'TRADER JOES #123',
+          categoryId: 'cat-other',
+          amount: 42,
+          spendExpenseId: 'exp-old',
+        },
+      ]
+      return state
+    }
+
+    // referencedCategories() only renders a category row once something
+    // references it (a mapping, an expense, or a transaction's categoryId) -
+    // so "Groceries" needs a seed mapping to be visible in the Categories
+    // tab. The seed mapping's substring ("SAFEWAY") is deliberately
+    // non-matching so it doesn't itself trigger the reapply we're testing;
+    // the *new* mapping added via the "+ add substring" control below
+    // ("TRADER JOES", matching the seeded transaction's description) is
+    // what should auto-trigger the reapply.
+    function fixtureCategoryState(): GlobalCategoryState {
+      return {
+        categories: [
+          { id: 'cat-groceries', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'cat-other', name: 'Other', updatedAt: '2026-01-01T00:00:00.000Z' },
+        ],
+        categoryMappings: [
+          { id: 'map-seed', substring: 'SAFEWAY', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+        ],
+      }
+    }
+
+    it('adding a new CategoryMapping via the mapping editor auto-reapplies to a matching transaction, clearing spendExpenseId and updating categoryId, WITHOUT clicking the reapply button', () => {
+      const appState = fixtureAppState()
+      const categoryState = fixtureCategoryState()
+
+      render(<AutoReapplyHarness initialAppState={appState} initialCategoryState={categoryState} />)
+
+      const addInput = screen.getByLabelText('Add substring to Groceries') as HTMLInputElement
+      fireEvent.change(addInput, { target: { value: 'TRADER JOES' } })
+      fireEvent.click(screen.getByLabelText('Add substring button Groceries'))
+
+      // No click on "Re-apply mappings to existing records" anywhere above -
+      // the reapply must have happened automatically for this to pass.
+      const debug = screen.getByTestId('debug-app-state')
+      const transactions = JSON.parse(debug.textContent || '[]')
+      const tx = transactions.find((t: any) => t.id === 'tx-1')
+      expect(tx.categoryId).toBe('cat-groceries')
+      expect(tx.spendExpenseId).toBeUndefined()
+    })
+
+    it('CSV mapping import triggers the same auto-reapply for all matching transactions', async () => {
+      const appState = fixtureAppState()
+      appState.budgetTransactions.push({
+        id: 'tx-2',
+        date: '2026-01-06',
+        description: 'TRADER JOES #456',
+        categoryId: 'cat-other',
+        amount: 15,
+      })
+      const categoryState = fixtureCategoryState()
+
+      render(<AutoReapplyHarness initialAppState={appState} initialCategoryState={categoryState} />)
+      fireEvent.click(screen.getByLabelText('Backup'))
+
+      const imported = {
+        categories: [],
+        categoryMappings: [
+          { id: 'map-imported', substring: 'TRADER JOES', categoryId: 'cat-groceries', updatedAt: '2026-02-01T00:00:00.000Z' },
+        ],
+      }
+      const input = screen.getByLabelText('Import Category Mapping file') as HTMLInputElement
+      const file = new File([JSON.stringify(imported)], 'category-mappings.json', { type: 'application/json' })
+      fireEvent.change(input, { target: { files: [file] } })
+
+      await waitFor(() => {
+        const debug = screen.getByTestId('debug-app-state')
+        const transactions = JSON.parse(debug.textContent || '[]')
+        const tx1 = transactions.find((t: any) => t.id === 'tx-1')
+        const tx2 = transactions.find((t: any) => t.id === 'tx-2')
+        expect(tx1.categoryId).toBe('cat-groceries')
+        expect(tx1.spendExpenseId).toBeUndefined()
+        expect(tx2.categoryId).toBe('cat-groceries')
       })
     })
   })
