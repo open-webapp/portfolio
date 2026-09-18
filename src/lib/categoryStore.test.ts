@@ -16,7 +16,7 @@ import {
   categoryStoreReducer,
   type GlobalCategoryState,
 } from './categoryStore'
-import type { Category, CategoryMapping, BudgetTransaction } from './types'
+import type { Category, CategoryMapping, BudgetTransaction, Expense } from './types'
 
 describe('categoryStore', () => {
   describe('addCategory', () => {
@@ -248,6 +248,77 @@ describe('categoryStore', () => {
       const twice = reapplyMappingsToTransactions(once, mappings)
 
       expect(twice).toEqual(once)
+    })
+
+    // Regression: effectiveCategoryId() (selectors.ts) prefers a linked Expense's
+    // categoryId over tx.categoryId whenever tx.spendExpenseId resolves. Reapplying
+    // mappings must therefore also clear spendExpenseId when the resolved mapping
+    // disagrees with the Expense's category, or the reapply silently no-ops from the
+    // user's point of view (the UI still shows the old, expense-derived category).
+    // These tests exercise the new 3-arg signature
+    // reapplyMappingsToTransactions(transactions, mappings, budgetExpensesByYear),
+    // which does not exist yet — they are expected to fail against the current 2-arg
+    // implementation.
+    it('BUG: clears spendExpenseId and sets categoryId to the resolved mapping when it differs from the linked expense category', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', categoryId: 'cat-B', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      const expenses: Expense[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' },
+      ]
+      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const tx: BudgetTransaction = {
+        id: 'tx-1',
+        date: '2026-01-01',
+        description: 'Costco Gas',
+        categoryId: 'cat-A',
+        spendExpenseId: 'exp-1',
+        amount: 40,
+      }
+
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+
+      const result = updated.find((t) => t.id === 'tx-1')
+      expect(result?.categoryId).toBe('cat-B')
+      expect(result?.spendExpenseId).toBeUndefined()
+    })
+
+    it('BUG: leaves spendExpenseId untouched when the resolved mapping matches the linked expense category', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', categoryId: 'cat-A', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      const expenses: Expense[] = [
+        { id: 'exp-1', name: 'Costco membership', categoryId: 'cat-A', amount: 60, frequency: 'yearly' },
+      ]
+      const budgetExpensesByYear: Record<string, Expense[]> = { '2026': expenses }
+      const tx: BudgetTransaction = {
+        id: 'tx-1',
+        date: '2026-01-01',
+        description: 'Costco Gas',
+        categoryId: 'cat-old',
+        spendExpenseId: 'exp-1',
+        amount: 40,
+      }
+
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+
+      const result = updated.find((t) => t.id === 'tx-1')
+      expect(result?.categoryId).toBe('cat-A')
+      expect(result?.spendExpenseId).toBe('exp-1')
+    })
+
+    it('BUG: preserves old behavior (categoryId-only patch) for a transaction with no spendExpenseId', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', categoryId: 'cat-groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ]
+      const budgetExpensesByYear: Record<string, Expense[]> = {}
+      const tx: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Costco Gas', categoryId: 'cat-old', amount: 40 }
+
+      const updated = reapplyMappingsToTransactions([tx], mappings, budgetExpensesByYear)
+
+      const result = updated.find((t) => t.id === 'tx-1')
+      expect(result?.categoryId).toBe('cat-groceries')
+      expect(result?.spendExpenseId).toBeUndefined()
     })
   })
 

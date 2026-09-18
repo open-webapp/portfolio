@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { useState } from 'react'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { BudgetPage } from './BudgetPage'
@@ -6,6 +7,7 @@ import { initialState, resolveBudgetExpensesForYear, type AppState } from '../li
 import type { Expense, BudgetTransaction, Category, CategoryMapping } from '../lib/types'
 import { GAIN_COLOR, LOSS_COLOR, fmtUSD, toPeriod } from '../lib/computations'
 import { appReducer } from '../lib/reducer'
+import { categoryStoreReducer, initialGlobalCategoryState, type GlobalCategoryState } from '../lib/categoryStore'
 
 function hexToRgb(hex: string): string {
   const n = parseInt(hex.slice(1), 16)
@@ -99,6 +101,33 @@ function makeExpense(overrides: Partial<Expense> = {}): Expense {
     frequency: overrides.frequency ?? 'monthly',
     ...overrides,
   }
+}
+
+// Full-store harness: wires `dispatch` through the REAL appReducer and
+// `categoryDispatch` through the REAL categoryStoreReducer, exactly as
+// App.tsx wires useReducer(appReducer) + useGlobalCategories together. Used
+// to prove (T8, currently expected to FAIL) that UPSERT_CATEGORY_MAPPING
+// dispatches from BudgetPage's per-cell edit / Add Record form auto-trigger
+// a reapply to OTHER matching transactions, without any explicit
+// REAPPLY_CATEGORY_MAPPINGS dispatch from the test itself.
+function BudgetPageHarness({
+  initialAppState,
+  initialCategoryState,
+}: {
+  initialAppState: AppState
+  initialCategoryState: GlobalCategoryState
+}) {
+  const [state, dispatch] = useState(initialAppState)
+  const [categoryState, categoryDispatch] = useState(initialCategoryState)
+  return (
+    <BudgetPage
+      state={state}
+      dispatch={(action: any) => dispatch((prev) => appReducer(prev, action))}
+      categories={categoryState.categories}
+      categoryMappings={categoryState.categoryMappings}
+      categoryDispatch={(action) => categoryDispatch((prev) => categoryStoreReducer(prev, action))}
+    />
+  )
 }
 
 function makeTransaction(overrides: Partial<BudgetTransaction> = {}): BudgetTransaction {
@@ -1285,7 +1314,7 @@ describe('BudgetPage', () => {
       selectYear2025()
 
       const row = screen.getByText('Groceries').closest('tr')!
-      expect(within(row).getByText('Food')).toBeTruthy()
+      expect(within(row).getByText('Uncategorized (Food)')).toBeTruthy()
       expect(within(row).queryByText('cat-food')).toBeFalsy()
     })
 
@@ -1307,7 +1336,7 @@ describe('BudgetPage', () => {
       selectYear2025()
 
       const row = screen.getByText('Hotel booking').closest('tr')!
-      expect(within(row).getByText('Travel')).toBeTruthy()
+      expect(within(row).getByText('Vacation (Travel)')).toBeTruthy()
       expect(within(row).queryByText('Housing')).toBeFalsy()
     })
 
@@ -1382,12 +1411,12 @@ describe('BudgetPage', () => {
       selectYear2025()
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByText('Food'))
+      fireEvent.click(within(row).getByText('Weekly groceries (Food)'))
       const picker = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
       expect(picker.value).toBe('e1')
 
       const row2 = screen.getByText('Rent payment').closest('tr')!
-      fireEvent.click(within(row2).getByText('Housing'))
+      fireEvent.click(within(row2).getByText('Uncategorized (Housing)'))
       const picker2 = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
       // t2 has no spendExpenseId set — the seeded draft ('') matches no <option>, so no
       // expense-of-record is implied; the browser falls back to selecting the first listed option.
@@ -1408,7 +1437,7 @@ describe('BudgetPage', () => {
       selectYear2025()
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByText('Food'))
+      fireEvent.click(within(row).getByText('Uncategorized (Food)'))
 
       const picker = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
       fireEvent.change(picker, { target: { value: 'e2' } })
@@ -1426,13 +1455,40 @@ describe('BudgetPage', () => {
       expect(screen.queryByLabelText('Edit record spend category')).toBeFalsy()
     })
 
+    it('selecting the — Uncategorized — placeholder in the per-cell Spend Category picker clears spendExpenseId but keeps categoryId', () => {
+      const state = recordsState({
+        budgetExpensesByYear: {
+          '2025': [makeExpense({ id: 'e1', name: 'Weekly groceries', categoryId: 'cat-food' }), makeExpense({ id: 'e2', name: 'Mortgage', categoryId: 'cat-housing' })],
+        },
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60, spendExpenseId: 'e1' }),
+        ],
+      })
+      const dispatch = vi.fn()
+      const categoryDispatch = vi.fn()
+      render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={categoryDispatch} />)
+      selectYear2025()
+
+      const row = screen.getByText('Groceries').closest('tr')!
+      fireEvent.click(within(row).getByText('Weekly groceries (Food)'))
+
+      const picker = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
+      fireEvent.change(picker, { target: { value: '' } })
+
+      expect(dispatch).toHaveBeenCalledWith({
+        type: 'UPDATE_BUDGET_TRANSACTION',
+        id: 't1',
+        patch: { spendExpenseId: undefined, categoryId: 'cat-food' },
+      })
+    })
+
     it('opening the Category cell for a row whose contextual year has zero expenses shows the disabled placeholder picker', () => {
       const state = recordsState()
       render(<BudgetPage state={state} dispatch={vi.fn()} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
       selectYear2025()
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByText('Food'))
+      fireEvent.click(within(row).getByText('Uncategorized (Food)'))
 
       const picker = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
       expect(picker.disabled).toBe(true)
@@ -1454,7 +1510,7 @@ describe('BudgetPage', () => {
       selectYear2025()
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByText('Food'))
+      fireEvent.click(within(row).getByText('Uncategorized (Food)'))
 
       const picker = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
       // The dangling spendExpenseId ('e-deleted') matches no <option>, so the draft value
@@ -1472,6 +1528,40 @@ describe('BudgetPage', () => {
         description: 'Groceries',
         categoryId: 'cat-food',
       })
+    })
+
+    it('(T8 - regression, expected to FAIL until T9/T10 wires the auto-trigger) selecting a new Spend Category on one row via the per-cell picker auto-reapplies to an OTHER transaction sharing that same description, via the real store (appReducer + categoryStoreReducer), without clicking "Re-apply mappings to existing records"', () => {
+      const initialAppState: AppState = recordsState({
+        budgetExpensesByYear: {
+          '2025': [makeExpense({ id: 'e2', name: 'Mortgage', categoryId: 'cat-housing' })],
+        },
+        budgetTransactions: [
+          makeTransaction({ id: 't1', date: '2025-03-05', description: 'Groceries', categoryId: 'cat-food', amount: 60 }),
+          makeTransaction({ id: 't-dup', date: '2025-03-08', description: 'Groceries', categoryId: 'cat-food', amount: 22, spendExpenseId: 'exp-stale' }),
+        ],
+      })
+      const initialCategoryState: GlobalCategoryState = {
+        ...initialGlobalCategoryState(),
+        categories: CATEGORIES,
+      }
+
+      render(<BudgetPageHarness initialAppState={initialAppState} initialCategoryState={initialCategoryState} />)
+      selectYear2025()
+
+      const rows = screen.getAllByText('Groceries').map((el) => el.closest('tr')!)
+      const editedRow = rows.find((r) => within(r).queryByText('$60.00'))!
+      const otherRow = rows.find((r) => within(r).queryByText('$22.00'))!
+
+      fireEvent.click(within(editedRow).getByText('Uncategorized (Food)'))
+      const picker = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
+      fireEvent.change(picker, { target: { value: 'e2' } })
+
+      // The OTHER "Groceries" transaction (t-dup, untouched by this edit)
+      // should have had its stale spendExpenseId cleared and categoryId
+      // synced to 'cat-housing' via the same new mapping - proving the
+      // UPSERT_CATEGORY_MAPPING auto-reapplied beyond just the edited row.
+      expect(within(otherRow).getByText('Uncategorized (Housing)')).toBeTruthy()
+      expect(within(otherRow).queryByText('Uncategorized (Food)')).toBeFalsy()
     })
 
     describe('delete', () => {
@@ -1556,6 +1646,35 @@ describe('BudgetPage', () => {
             categoryId: 'cat-entertainment',
             amount: 20,
             spendExpenseId: 'e-ent',
+          },
+        })
+      })
+
+      it('selecting an expense then clearing back to — Uncategorized — still creates a transaction with spendExpenseId undefined', () => {
+        const dispatch = vi.fn()
+        const state = defaultState({
+          budgetExpensesByYear: {
+            [String(new Date().getFullYear())]: [makeExpense({ id: 'e-rent', name: 'Rent', categoryId: 'cat-housing' })],
+          },
+        })
+        render(<BudgetPage state={state} dispatch={dispatch} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} />)
+
+        const picker = screen.getByLabelText('Record spend category') as HTMLSelectElement
+        fireEvent.change(picker, { target: { value: 'e-rent' } })
+        fireEvent.change(picker, { target: { value: '' } })
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-01' } })
+        fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'May rent' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '900' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        expect(dispatch).toHaveBeenCalledWith({
+          type: 'ADD_BUDGET_TRANSACTION',
+          tx: {
+            date: '2025-05-01',
+            description: 'May rent',
+            categoryId: 'cat-housing',
+            amount: 900,
           },
         })
       })
@@ -1787,6 +1906,41 @@ describe('BudgetPage', () => {
         const addTxCall = dispatch.mock.calls.find((c) => c[0].type === 'ADD_BUDGET_TRANSACTION')
         expect(addTxCall![0].tx.categoryId).toBe('cat-travel')
         expect(addTxCall![0].tx.spendExpenseId).toBe('e-trip')
+      })
+
+      it('(T8 - regression, expected to FAIL until T9/T10 wires the auto-trigger) submitting Add Record with a description matching an EXISTING transaction auto-reapplies to that OTHER transaction too, via the real store (appReducer + categoryStoreReducer), without clicking "Re-apply mappings to existing records"', () => {
+        // recCategoryId defaults to CATEGORIES[0] ('cat-housing') per the
+        // sibling "valid input dispatches..." test above.
+        const initialAppState: AppState = defaultState({
+          budgetTransactions: [
+            makeTransaction({ id: 'tx-other', date: '2025-05-02', description: 'Blue Bottle Coffee', categoryId: 'cat-other', amount: 6, spendExpenseId: 'exp-stale' }),
+          ],
+        })
+        const initialCategoryState: GlobalCategoryState = {
+          ...initialGlobalCategoryState(),
+          categories: CATEGORIES,
+        }
+
+        render(<BudgetPageHarness initialAppState={initialAppState} initialCategoryState={initialCategoryState} />)
+
+        fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2025-05-05' } })
+        fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'Blue Bottle Coffee' } })
+        fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '5' } })
+        fireEvent.click(screen.getByText('Add Record'))
+
+        // Switch to Yearly/2025 to bring both records into view.
+        fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+        const rows = screen.getAllByText('Blue Bottle Coffee').map((el) => el.closest('tr')!)
+        const otherRow = rows.find((r) => within(r).queryByText('$6.00'))!
+        expect(otherRow).toBeTruthy()
+        // The pre-existing "Blue Bottle Coffee" transaction (tx-other) should
+        // have had its spendExpenseId cleared and categoryId synced to
+        // 'cat-housing' (the category just chosen on the Add Record form) -
+        // proving the new mapping auto-reapplied to OTHER matching
+        // transactions, not just the new row.
+        expect(within(otherRow).getByText('Uncategorized (Housing)')).toBeTruthy()
+        expect(within(otherRow).queryByText('Uncategorized (Other)')).toBeFalsy()
       })
     })
 
@@ -2323,7 +2477,11 @@ VERSION:102
         // Resolved names: Food, Housing, Zoo -> ascending alphabetically.
         // (raw ids cat-food/cat-housing/cat-zoo would sort the same here by
         // coincidence, so this also checks against the id ordering below.)
-        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[3].textContent)).toEqual(['Food', 'Housing', 'Zoo'])
+        expect(bodyRows().map((tr) => tr.querySelectorAll('td')[3].textContent)).toEqual([
+          'Uncategorized (Food)',
+          'Uncategorized (Housing)',
+          'Uncategorized (Zoo)',
+        ])
       })
 
       it('sorts by Account ascending, then reverses on repeat click', () => {
@@ -2547,8 +2705,8 @@ VERSION:102
         )
         const row1 = screen.getByText('Groceries').closest('tr')!
         const row2 = screen.getByText('Rent payment').closest('tr')!
-        expect(within(row1).getAllByText('Zoo').length).toBeGreaterThan(0)
-        expect(within(row2).getAllByText('Zoo').length).toBeGreaterThan(0)
+        expect(within(row1).getAllByText('Zoo pass (Zoo)').length).toBeGreaterThan(0)
+        expect(within(row2).getAllByText('Zoo pass (Zoo)').length).toBeGreaterThan(0)
       })
 
       it('after Apply, the action bar disappears (selection cleared) and bulkCategoryId/bulkExpenseId reset', () => {
@@ -2589,7 +2747,7 @@ VERSION:102
           state: { budgetExpensesByYear: { '2025': [makeExpense({ id: 'e1', name: 'Mortgage', categoryId: 'cat-housing' })] } },
         })
         const row = screen.getByText('Groceries').closest('tr')!
-        fireEvent.click(within(row).getByText('Food'))
+        fireEvent.click(within(row).getByText('Uncategorized (Food)'))
         const categorySelect = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
         fireEvent.change(categorySelect, { target: { value: 'e1' } })
 
@@ -2873,7 +3031,7 @@ VERSION:102
       fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByText('Food'))
+      fireEvent.click(within(row).getByText('Uncategorized (Food)'))
 
       const expensesCard = screen.getByText('Expenses', { selector: '.card-title' }).closest('.card')!
       fireEvent.click(within(expensesCard).getByText('Housing', { selector: '.tag' }))
@@ -2920,7 +3078,7 @@ VERSION:102
 
       // Per-cell Spend Category picker on the Spend Records table
       const row = screen.getByText('Groceries').closest('tr')!
-      fireEvent.click(within(row).getByText('Food'))
+      fireEvent.click(within(row).getByText('Uncategorized (Food)'))
       const cellSelect = screen.getByLabelText('Edit record spend category') as HTMLSelectElement
       const cellOptionValues = Array.from(cellSelect.querySelectorAll('option')).map((o) => o.value)
       expect(cellOptionValues).toContain('e-zoo')

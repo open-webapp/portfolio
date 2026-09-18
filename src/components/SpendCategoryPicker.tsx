@@ -6,6 +6,7 @@ export interface SpendCategoryPickerProps {
   value: string
   onChange: (expenseId: string, categoryId: string) => void
   ariaLabel: string
+  fallbackCategoryId: string
 }
 
 /**
@@ -19,6 +20,7 @@ export function SpendCategoryPicker({
   value,
   onChange,
   ariaLabel,
+  fallbackCategoryId = '',
 }: SpendCategoryPickerProps) {
   if (expenses.length === 0) {
     return (
@@ -32,6 +34,10 @@ export function SpendCategoryPicker({
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedId = e.target.value
+    if (selectedId === '') {
+      onChange('', fallbackCategoryId)
+      return
+    }
     const expense = expenses.find((exp) => exp.id === selectedId)
     if (!expense) return
     onChange(expense.id, expense.categoryId)
@@ -39,6 +45,7 @@ export function SpendCategoryPicker({
 
   return (
     <select className="input" aria-label={ariaLabel} value={value} onChange={handleChange}>
+      <option value="">— Uncategorized —</option>
       {sortedExpenses.map((exp) => (
         <option key={exp.id} value={exp.id}>
           {exp.name} ({categoriesById.get(exp.categoryId) ?? exp.categoryId})

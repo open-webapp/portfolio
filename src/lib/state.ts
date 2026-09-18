@@ -871,7 +871,10 @@ export function importBudgetTransactions(
 
 /** Rewrite budgetTransactions' categoryId per the given category mappings. */
 export function reapplyCategoryMappingsToState(state: AppState, categoryMappings: CategoryMapping[]): AppState {
-  return { ...state, budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings) }
+  return {
+    ...state,
+    budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpensesByYear),
+  }
 }
 
 

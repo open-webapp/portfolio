@@ -3,6 +3,8 @@ import type { CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
 import type { Portfolio, Category, CategoryMapping } from '../lib/types'
 import type { CategoryAction } from '../lib/categoryStore'
+import { addCategoryMapping, updateCategoryMapping } from '../lib/categoryStore'
+import { mergeCategoryState } from '../lib/categoryMerge'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
 import type { DriveAuthHandle } from '@open-webapp/drive-connect'
 import { syncBackup, getConnectionSnapshot, getPortfolioDriveFolderUrl } from '../lib/drive'
@@ -138,17 +140,10 @@ export function SettingsPage({
   const [newSubstringDraftByCategory, setNewSubstringDraftByCategory] = useState<Record<string, string>>({})
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
   const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
-  const [reapplySuccess, setReapplySuccess] = useState<string | null>(null)
 
   // Category mapping import/export local state
   const categoryImportFileInputRef = useRef<HTMLInputElement>(null)
   const [categoryImportError, setCategoryImportError] = useState<string | null>(null)
-
-  const handleReapplyMappings = useCallback(() => {
-    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings })
-    setReapplySuccess('Re-applied.')
-    setTimeout(() => setReapplySuccess(null), 3000)
-  }, [dispatch, categoryMappings])
 
   const handleCategoryImportFileSelect = useCallback(
     (file: File | null) => {
@@ -159,6 +154,8 @@ export function SettingsPage({
         try {
           const imported = parseCategoryMappingImportFile(String(reader.result ?? ''))
           categoryDispatch({ type: '__MERGE_IMPORTED', imported })
+          const nextMappings = mergeCategoryState({ categories, categoryMappings }, imported).categoryMappings
+          dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
         } catch (error) {
           if (error instanceof CategoryMappingImportError) {
             setCategoryImportError(error.message)
@@ -169,7 +166,7 @@ export function SettingsPage({
       }
       reader.readAsText(file)
     },
-    [categoryDispatch]
+    [categoryDispatch, dispatch, categories, categoryMappings]
   )
 
   const handleFetchPricesNow = useCallback(async () => {
@@ -607,11 +604,18 @@ export function SettingsPage({
                             type="button"
                             style={textBtnAccent}
                             onClick={() => {
+                              const patch = { substring: mappingSubstringDraft.trim() }
                               categoryDispatch({
                                 type: 'UPDATE_CATEGORY_MAPPING',
                                 id: mapping.id,
-                                patch: { substring: mappingSubstringDraft.trim() },
+                                patch,
                               })
+                              const nextMappings = updateCategoryMapping(
+                                { categories, categoryMappings },
+                                mapping.id,
+                                patch
+                              ).categoryMappings
+                              dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
                               setEditingMappingId(null)
                             }}
                           >
@@ -649,7 +653,10 @@ export function SettingsPage({
                     }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newSubstringDraft.trim()) {
-                        categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
+                        const substring = newSubstringDraft.trim()
+                        categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring })
+                        const nextMappings = addCategoryMapping({ categories, categoryMappings }, category.id, substring).categoryMappings
+                        dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
                         setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
                       }
                     }}
@@ -660,7 +667,10 @@ export function SettingsPage({
                     aria-label={`Add substring button ${category.name}`}
                     disabled={!newSubstringDraft.trim()}
                     onClick={() => {
-                      categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring: newSubstringDraft.trim() })
+                      const substring = newSubstringDraft.trim()
+                      categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', categoryId: category.id, substring })
+                      const nextMappings = addCategoryMapping({ categories, categoryMappings }, category.id, substring).categoryMappings
+                      dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
                       setNewSubstringDraftByCategory((prev) => ({ ...prev, [category.id]: '' }))
                     }}
                   >
@@ -671,16 +681,6 @@ export function SettingsPage({
             </div>
           )
         })}
-        <button
-          type="button"
-          className="btn btn-secondary blueprint"
-          onClick={handleReapplyMappings}
-        >
-          Re-apply mappings to existing records
-        </button>
-        {reapplySuccess && (
-          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0 }}>{reapplySuccess}</p>
-        )}
       </section>
       )}
     </div>
