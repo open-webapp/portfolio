@@ -177,6 +177,14 @@ describe('CategoryMappingTab', () => {
     expect(categoryDispatch).not.toHaveBeenCalled()
   })
 
+  it('does not show tombstoned mappings', () => {
+    const data = fixture()
+    data.categoryMappings.push({ id: 'deleted', substring: 'OLD MARKET', spendExpenseId: 'fresh', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: '2026-01-02T00:00:00.000Z' })
+    renderTab(data)
+    expect(screen.getByText('WHOLE FOODS')).toBeTruthy()
+    expect(screen.queryByText('OLD MARKET')).toBeNull()
+  })
+
   it('adds definition-scoped substrings by button and Enter', () => {
     const categoryDispatch = vi.fn()
     renderTab({ categoryDispatch })

@@ -10,3 +10,4 @@ Sibling: `CategoryMappingTab.design.md`.
 - Supports adding, editing, and deleting mapping substrings. Enter saves an edited substring and exits edit mode; delete requires confirmation.
 - Downloads `{ categories, categoryMappings }` as unencrypted JSON. Imports merge valid JSON into the global store; malformed input shows an inline error and changes nothing.
 - Every mapping mutation and successful import immediately reapplies mappings to budget transactions. No manual reapply control exists.
+- Tab CRUD is separate and unchanged from BudgetPage's row-scoped mapping overlay; this tab never renders that overlay. Both surfaces use native confirmation before mapping deletion and immediately reapply the resulting mapping list to the current portfolio.

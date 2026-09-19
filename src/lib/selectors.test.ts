@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { actualIncomeForYear, budgetedIncomeForYear, expenseTableYears, isIncomeOrExcludedTransaction, yearTotalSpend } from './selectors'
-import type { BudgetTransaction, Category, ExpenseDefinition } from './types'
+import { actualIncomeForYear, budgetedIncomeForYear, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, yearTotalSpend } from './selectors'
+import type { BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
   { id: 'income', name: ' Income ', updatedAt: '' },
@@ -57,5 +57,18 @@ describe('expenseTableYears', () => {
       { invalid: {}, '': {} },
       now
     )).toEqual(['', '20', '2026', 'bad', 'invalid'])
+  })
+})
+
+describe('mappingsForExpense', () => {
+  it('excludes tombstoned mappings while preserving substring sort', () => {
+    const mappings = [
+      { id: 'zebra', spendExpenseId: 'groceries', substring: 'zebra' },
+      { id: 'deleted', spendExpenseId: 'groceries', substring: 'apple', deletedAt: '2026-09-19T00:00:00.000Z' },
+      { id: 'alpha', spendExpenseId: 'groceries', substring: 'alpha' },
+      { id: 'other', spendExpenseId: 'salary', substring: 'aardvark' }
+    ] as CategoryMapping[]
+
+    expect(mappingsForExpense(mappings, 'groceries').map((mapping) => mapping.id)).toEqual(['alpha', 'zebra'])
   })
 })

@@ -775,7 +775,9 @@ export function categoryBreakdown(
  * Category mappings for a given expense, sorted alphabetically by substring.
  */
 export function mappingsForExpense(mappings: CategoryMapping[], spendExpenseId: string): CategoryMapping[] {
-  return mappings.filter((m) => m.spendExpenseId === spendExpenseId).sort((a, b) => a.substring.localeCompare(b.substring))
+  return mappings
+    .filter((m) => m.spendExpenseId === spendExpenseId && !m.deletedAt)
+    .sort((a, b) => a.substring.localeCompare(b.substring))
 }
 
 /**
