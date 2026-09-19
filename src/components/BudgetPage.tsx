@@ -159,12 +159,15 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const filteredRecords = recordSearch.trim()
     ? recordSourceTransactions.filter((t) => {
         const searchLower = recordSearch.toLowerCase()
-        const categoryName =
-          categoriesById.get(effectiveCategoryId(t, state.budgetExpenseDefinitions)) ??
-          effectiveCategoryId(t, state.budgetExpenseDefinitions)
+        const categoryLabel = formatSpendCategoryLabel(
+          t.spendExpenseId,
+          effectiveCategoryId(t, state.budgetExpenseDefinitions),
+          state.budgetExpenseDefinitions,
+          categoriesById
+        )
         return (
           t.description.toLowerCase().includes(searchLower) ||
-          categoryName.toLowerCase().includes(searchLower) ||
+          categoryLabel.toLowerCase().includes(searchLower) ||
           (t.accountName ?? '').toLowerCase().includes(searchLower)
         )
       })

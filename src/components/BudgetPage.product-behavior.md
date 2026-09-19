@@ -13,3 +13,7 @@ Sibling: `BudgetPage.design.md`.
 
 - Hosts the category/mapping management UI; see `CategoryMappingTab.product-behavior.md`.
 - Category-mapping JSON import/export and immediate automatic reapply keep their existing behavior.
+
+## Spend Records
+
+- Search matches description, account, and the displayed Spend Category label, including `Uncategorized (<category>)` for unlinked records.
