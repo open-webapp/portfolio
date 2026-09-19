@@ -212,6 +212,7 @@ Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup f
 - Spend excludes Income and `excludeFromSpend` categories. Linked expense-definition categories override a transaction's stored category.
 - Spend shows five read-only cards: budgeted income, actual income, budgeted spending, actual spend, and variance. Income rows are hidden by default and appear with Show excluded.
 - Legacy manual-income fields are discarded on local hydration and backup import/export; they are never converted.
+- Expense definitions are unique by trimmed, case-insensitive name within a category. Re-adding one updates its current-year amount; edits that would duplicate another definition are ignored.
 
 ### Expense CSV Download
 

@@ -703,9 +703,13 @@ export function rolloverBudgetExpenseAmountsIfNeeded(state: AppState, now: Date 
   return ensureExpenseAmountsSnapshotForYear(state, year)
 }
 
+function matchesExpenseDefinition(definition: ExpenseDefinition, candidate: Omit<ExpenseDefinition, 'id'>): boolean {
+  return definition.categoryId === candidate.categoryId && definition.name.trim().toLowerCase() === candidate.name.trim().toLowerCase()
+}
+
 /**
- * Create a new global ExpenseDefinition and seed its amount for the CURRENT
- * real calendar year only (no other year touched). Generates its id.
+ * Create a unique global ExpenseDefinition and seed its amount for the CURRENT
+ * real calendar year only (no other year touched). Reuses matching name/category definitions.
  */
 export function addExpenseDefinition(
   state: AppState,
@@ -713,11 +717,14 @@ export function addExpenseDefinition(
   amount: number,
   now: Date = new Date()
 ): AppState {
-  const id = uid('expense')
+  const existing = state.budgetExpenseDefinitions.find((definition) => matchesExpenseDefinition(definition, def))
+  const id = existing?.id ?? uid('expense')
   const year = currentBudgetYear(now)
   return {
     ...state,
-    budgetExpenseDefinitions: [...state.budgetExpenseDefinitions, { ...def, id }],
+    budgetExpenseDefinitions: existing
+      ? state.budgetExpenseDefinitions
+      : [...state.budgetExpenseDefinitions, { ...def, id }],
     budgetExpenseAmountsByYear: {
       ...state.budgetExpenseAmountsByYear,
       [year]: { ...state.budgetExpenseAmountsByYear[year], [id]: amount },
@@ -827,9 +834,15 @@ export function updateExpenseDefinition(
   id: string,
   patch: Partial<Omit<ExpenseDefinition, 'id'>>
 ): AppState {
+  const existing = state.budgetExpenseDefinitions.find((definition) => definition.id === id)
+  if (!existing) return state
+  const updated = { ...existing, ...patch }
+  if (state.budgetExpenseDefinitions.some((definition) => definition.id !== id && matchesExpenseDefinition(definition, updated))) {
+    return state
+  }
   return {
     ...state,
-    budgetExpenseDefinitions: state.budgetExpenseDefinitions.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    budgetExpenseDefinitions: state.budgetExpenseDefinitions.map((definition) => (definition.id === id ? updated : definition)),
   }
 }
 
@@ -986,6 +999,5 @@ export function reapplyCategoryMappingsToState(state: AppState, categoryMappings
     budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpenseDefinitions),
   }
 }
-
 
 
