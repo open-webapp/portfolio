@@ -857,7 +857,7 @@ describe('global categories wiring', () => {
     mockUnlockLoadedState.current = undefined
   })
 
-  it('passes categories/categoryMappings/categoryDispatch to BudgetPage', async () => {
+  it('passes categories/categoryMappings/categoryDispatch/categoriesHydrated to BudgetPage', async () => {
     // BudgetPage itself hasn't been migrated off `state.categories` yet (T13,
     // not this task) so it currently throws on render — a pre-existing,
     // already-red intermediate state per plan T9's own acceptance note.
@@ -874,9 +874,10 @@ describe('global categories wiring', () => {
     expect(props.categories).toBe(mockGlobalCategoriesFixture.current.categories)
     expect(props.categoryMappings).toBe(mockGlobalCategoriesFixture.current.categoryMappings)
     expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
+    expect(props.categoriesHydrated).toBe(true)
   })
 
-  it('passes categories/categoryMappings/categoryDispatch/categoriesHydrated to SettingsPage', async () => {
+  it('does not pass category-mapping props to SettingsPage', async () => {
     await renderUnlockedApp()
 
     fireEvent.click(screen.getByTitle('Settings'))
@@ -885,10 +886,10 @@ describe('global categories wiring', () => {
     })
 
     const props = settingsPagePropsCapture.current as Record<string, unknown>
-    expect(props.categories).toBe(mockGlobalCategoriesFixture.current.categories)
-    expect(props.categoryMappings).toBe(mockGlobalCategoriesFixture.current.categoryMappings)
-    expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
-    expect(props.categoriesHydrated).toBe(true)
+    expect(props).not.toHaveProperty('categories')
+    expect(props).not.toHaveProperty('categoryMappings')
+    expect(props).not.toHaveProperty('categoryDispatch')
+    expect(props).not.toHaveProperty('categoriesHydrated')
   })
 
   it('passes driveConnected to SettingsPage reflecting useDriveConnection', async () => {
