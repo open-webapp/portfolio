@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
-import { resolveBudgetIncomeForYear, resolveBudgetImportRows } from '../lib/state'
+import { resolveBudgetImportRows } from '../lib/state'
 import { resolveSpendExpenseIdForDescription, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
 import { BudgetAnalytics } from './BudgetAnalytics'
@@ -11,7 +11,10 @@ import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTra
 import {
   budgetTransactionsForPeriod,
   availableBudgetYears,
+  budgetedIncomeForYear,
+  actualIncomeForYear,
   excludedCategoryIdSet,
+  isIncomeOrExcludedTransaction,
   effectiveCategoryId,
   formatSpendCategoryLabel,
 } from '../lib/selectors'
@@ -42,14 +45,6 @@ const iconBtn: CSSProperties = {
   padding: '4px',
   display: 'inline-flex',
   alignItems: 'center',
-}
-
-function PencilIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
-    </svg>
-  )
 }
 
 function TrashIcon() {
@@ -94,8 +89,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [bulkCategoryId, setBulkCategoryId] = useState('')
   const [bulkExpenseId, setBulkExpenseId] = useState('')
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
-  const [editingIncome, setEditingIncome] = useState(false)
-  const [incomeEditAmount, setIncomeEditAmount] = useState('')
   const [selectedYear, setSelectedYear] = useState(
     () => availableBudgetYears(state.budgetTransactions, new Date())[0]
   )
@@ -123,9 +116,24 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importResult, setImportResult] = useState<{ detected: number; failed: number; imported: number; duplicates: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
-  const totalIncome = resolveBudgetIncomeForYear(state.budgetIncomeByYear, selectedYear)
+  const totalBudgetedIncome = budgetedIncomeForYear(
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear,
+    categories,
+    selectedYear
+  )
+  const totalActualIncome = actualIncomeForYear(
+    state.budgetTransactions,
+    categories,
+    state.budgetExpenseDefinitions,
+    selectedYear
+  )
   const amountsForYear = state.budgetExpenseAmountsByYear[selectedYear] ?? {}
-  const totalExpense = Object.values(amountsForYear).reduce((sum, a) => sum + a, 0)
+  const excludedCategoryIds = excludedCategoryIdSet(categories)
+  const totalExpense = state.budgetExpenseDefinitions.reduce(
+    (sum, definition) => excludedCategoryIds.has(definition.categoryId) ? sum : sum + (amountsForYear[definition.id] ?? 0),
+    0
+  )
 
   const availableYears = availableBudgetYears(state.budgetTransactions, new Date())
   const currentMonthValue = new Date().toISOString().slice(0, 7)
@@ -136,24 +144,17 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     currentMonthValue,
     selectedYear
   )
-  const excludedCategoryIds = excludedCategoryIdSet(categories)
   const nonExcludedTransactions = periodFilteredTransactions.filter(
-    (t) => !excludedCategoryIds.has(effectiveCategoryId(t, state.budgetExpenseDefinitions))
+    (t) => !isIncomeOrExcludedTransaction(t, categories, state.budgetExpenseDefinitions)
   )
   const totalActual = nonExcludedTransactions.reduce((sum, t) => sum + t.amount, 0)
   const variance = totalExpense - totalActual
   const rangeLabel = selectedYear
 
-  const saveIncomeEdit = () => {
-    const amount = parseFloat(incomeEditAmount) || 0
-    dispatch({ type: 'SET_BUDGET_INCOME', year: selectedYear, amount })
-    setEditingIncome(false)
-  }
-
   const recordSourceTransactions = showExcludedRecords
     ? periodFilteredTransactions
     : periodFilteredTransactions.filter(
-        (t) => !excludedCategoryIds.has(effectiveCategoryId(t, state.budgetExpenseDefinitions))
+        (t) => !isIncomeOrExcludedTransaction(t, categories, state.budgetExpenseDefinitions)
       )
   const filteredRecords = recordSearch.trim()
     ? recordSourceTransactions.filter((t) => {
@@ -498,39 +499,15 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         }}
       >
         <div className="card blueprint elev-sm">
-          <div className="text-muted">Income</div>
-          {editingIncome ? (
-            <input
-              type="number"
-              className="input"
-              aria-label="Income amount"
-              autoFocus
-              value={incomeEditAmount}
-              onChange={(e) => setIncomeEditAmount(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveIncomeEdit()
-              }}
-            />
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-              <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalIncome)}</div>
-              <button
-                type="button"
-                style={{ ...iconBtn, color: 'var(--color-accent)' }}
-                aria-label="Edit income"
-                title="Edit income"
-                onClick={() => {
-                  setIncomeEditAmount(String(totalIncome))
-                  setEditingIncome(true)
-                }}
-              >
-                <PencilIcon />
-              </button>
-            </div>
-          )}
+          <div className="text-muted">Budgeted income</div>
+          <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalBudgetedIncome)}</div>
         </div>
         <div className="card blueprint elev-sm">
-          <div className="text-muted">Budgeted</div>
+          <div className="text-muted">Actual income ({rangeLabel})</div>
+          <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalActualIncome)}</div>
+        </div>
+        <div className="card blueprint elev-sm">
+          <div className="text-muted">Budgeted spending</div>
           <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalExpense)}</div>
         </div>
         <div className="card blueprint elev-sm">

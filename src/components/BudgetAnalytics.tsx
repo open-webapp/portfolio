@@ -13,6 +13,7 @@ import {
   budgetAccuracyByYear,
   categoryTrendsYoY,
   topMovers,
+  isIncomeOrExcludedTransaction,
 } from '../lib/selectors'
 import { GAIN_COLOR, LOSS_COLOR, glColor } from '../lib/computations'
 
@@ -86,7 +87,9 @@ function EmptyConcernCard({ kicker }: { kicker: string }) {
 
 export function BudgetAnalytics({ state, categories }: BudgetAnalyticsProps) {
   const years = availableBudgetYears(state.budgetTransactions, new Date()).slice(0, 8)
-  const hasData = state.budgetTransactions.length > 0
+  const hasData = state.budgetTransactions.some(
+    (transaction) => !isIncomeOrExcludedTransaction(transaction, categories, state.budgetExpenseDefinitions)
+  )
 
   const overBudget = overBudgetConcern(
     years,
@@ -101,7 +104,6 @@ export function BudgetAnalytics({ state, categories }: BudgetAnalyticsProps) {
     years,
     state.budgetTransactions,
     categories,
-    state.budgetIncomeByYear,
     state.budgetExpenseDefinitions
   )
   const concentrationRisk = concentrationRiskConcern(years, state.budgetTransactions, categories, state.budgetExpenseDefinitions)
@@ -109,7 +111,6 @@ export function BudgetAnalytics({ state, categories }: BudgetAnalyticsProps) {
     years,
     state.budgetTransactions,
     categories,
-    state.budgetIncomeByYear,
     state.budgetExpenseDefinitions
   )
   const maxAbsPct = Math.max(1, ...rateByYear.map((r) => Math.abs(r.pct)))

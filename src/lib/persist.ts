@@ -72,55 +72,17 @@ export function migrateBudgetExpensesByYearIfNeeded(raw: Record<string, unknown>
 }
 
 /**
- * Migration tolerance: raw pre-coalesce blob with flat `budgetIncomeMonthly`/
- * `budgetIncomeYearly` scalars (pre-multi-year budgets) gets folded into
- * `budgetIncomeByYear` under the current budget year, collapsed to a single
- * yearly number (prefer non-zero `yearly`, else `monthly * 12`, else 0). No-op
- * if `budgetIncomeByYear` is already present (even `{}`).
+ * Removes retired manual-income fields before hydration. They are intentionally
+ * discarded rather than converted into categories, definitions, or records.
  */
-export function migrateBudgetIncomeByYearIfNeeded(raw: Record<string, unknown>): Record<string, unknown> {
-  if ('budgetIncomeByYear' in raw) return raw
-  if ('budgetIncomeMonthly' in raw || 'budgetIncomeYearly' in raw) {
-    const monthly = (raw.budgetIncomeMonthly as number | undefined) ?? 0
-    const yearly = (raw.budgetIncomeYearly as number | undefined) ?? 0
-    return {
-      ...raw,
-      budgetIncomeByYear: {
-        [currentBudgetYear()]: yearly !== 0 ? yearly : monthly * 12,
-      },
-      budgetIncomeMonthly: undefined,
-      budgetIncomeYearly: undefined,
-    }
-  }
-  return { ...raw, budgetIncomeByYear: {} }
-}
-
-/**
- * Migration tolerance: raw pre-coalesce blob whose `budgetIncomeByYear`
- * values are still the older per-year `{monthly, yearly}` shape gets each
- * year collapsed to a single yearly number (prefer non-zero `yearly`, else
- * `monthly * 12`, else 0). No-op if `budgetIncomeByYear` is absent (handled
- * above) or its values are already plain numbers.
- */
-export function collapseBudgetIncomeByYearShapeIfNeeded(raw: Record<string, unknown>): Record<string, unknown> {
-  const byYear = raw.budgetIncomeByYear
-  if (typeof byYear !== 'object' || byYear === null) return raw
-  const entries = Object.entries(byYear as Record<string, unknown>)
-  const needsCollapse = entries.some(([, v]) => typeof v === 'object' && v !== null)
-  if (!needsCollapse) return raw
-
-  const collapsed: Record<string, number> = {}
-  for (const [year, value] of entries) {
-    if (typeof value === 'number') {
-      collapsed[year] = value
-      continue
-    }
-    const v = value as { monthly?: number; yearly?: number } | null | undefined
-    const monthly = v?.monthly ?? 0
-    const yearly = v?.yearly ?? 0
-    collapsed[year] = yearly !== 0 ? yearly : monthly * 12
-  }
-  return { ...raw, budgetIncomeByYear: collapsed }
+export function dropLegacyBudgetIncome(raw: Record<string, unknown>): Record<string, unknown> {
+  const {
+    budgetIncomeByYear: _budgetIncomeByYear,
+    budgetIncomeMonthly: _budgetIncomeMonthly,
+    budgetIncomeYearly: _budgetIncomeYearly,
+    ...current
+  } = raw
+  return current
 }
 
 /**
@@ -258,7 +220,6 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     regActivityFilter: loaded.regActivityFilter ?? defaults.regActivityFilter,
     budgetExpenseDefinitions: loaded.budgetExpenseDefinitions ?? defaults.budgetExpenseDefinitions,
     budgetExpenseAmountsByYear: loaded.budgetExpenseAmountsByYear ?? defaults.budgetExpenseAmountsByYear,
-    budgetIncomeByYear: loaded.budgetIncomeByYear ?? defaults.budgetIncomeByYear,
     budgetTransactions: loaded.budgetTransactions ?? defaults.budgetTransactions,
   }
 }
@@ -329,14 +290,9 @@ export async function loadRawPersistedBlob(
   }
 
   const decrypted = (await decryptState(raw as EncryptedEnvelope, key)) as Partial<AppState> & Record<string, unknown>
-  // Order matters: the flat->by-year migrators run first since they produce
-  // the {monthly,yearly}-shaped budgetIncomeByYear / Expense[]-shaped
-  // budgetExpensesByYear that the definitions/collapse migrations below then
-  // consume.
-  const withExpensesByYearMigrated = migrateBudgetExpensesByYearIfNeeded(decrypted)
-  const withIncomeByYearMigrated = migrateBudgetIncomeByYearIfNeeded(withExpensesByYearMigrated)
-  const withIncomeShapeCollapsed = collapseBudgetIncomeByYearShapeIfNeeded(withIncomeByYearMigrated)
-  const withExpenseDefinitionsMigrated = migrateBudgetExpenseDefinitionsIfNeeded(withIncomeShapeCollapsed)
+  const withIncomeDropped = dropLegacyBudgetIncome(decrypted)
+  const withExpensesByYearMigrated = migrateBudgetExpensesByYearIfNeeded(withIncomeDropped)
+  const withExpenseDefinitionsMigrated = migrateBudgetExpenseDefinitionsIfNeeded(withExpensesByYearMigrated)
   return withExpenseDefinitionsMigrated as Partial<AppState> & Record<string, unknown>
 }
 

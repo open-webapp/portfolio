@@ -55,6 +55,7 @@ src/
 - `src/lib/state.ts`: `AppState` interface (data collections + UI filter/selection state) and pure action-helper functions (`addAccount`, `setCategory`, `toggleSort`, `selectAccount`, `restoreClosedPosition`, etc). New mutating features: add a helper here.
 - `src/lib/reducer.ts`: thin `appReducer(state, action)` dispatch table — each `case` calls one `state.ts` helper. No logic lives directly in the reducer or in components.
 - Full `AppState` field list, invariants, and per-field types: see `src/lib/types.ts` and `src/lib/state.ts` (not duplicated here).
+- Budget income is derived in `selectors.ts` from active exact normalized `Income` categories, expense definitions, and budget transactions. No manual income state is persisted or exported.
 
 ## Portfolio Routing Layer (multi-portfolio)
 

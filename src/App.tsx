@@ -683,15 +683,14 @@ function App() {
   }, [sessionKey, isHydrated, activePortfolio?.id])
 
   // One-shot budget year-rollover trigger: once a portfolio is unlocked and
-  // hydrated, ensure the current budget year has expenses/income entries
-  // (seeded from the nearest prior year, or empty), same gating/ref-guard
+  // hydrated, ensure the current budget year has an expense snapshot
+  // seeded from the nearest prior year, same gating/ref-guard
   // pattern as the global-categories seed effect above.
   useEffect(() => {
     if (sessionKey === null || !isHydrated || !activePortfolio) return
     if (budgetRolloverPortfolioIdRef.current === activePortfolio.id) return
     budgetRolloverPortfolioIdRef.current = activePortfolio.id
     dispatch({ type: 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED' })
-    dispatch({ type: 'ROLLOVER_BUDGET_INCOME_IF_NEEDED' })
   }, [sessionKey, isHydrated, activePortfolio?.id])
 
   // Picker route: render the portfolio picker instead of the gate/app shell.

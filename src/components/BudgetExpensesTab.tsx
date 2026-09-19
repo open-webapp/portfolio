@@ -131,12 +131,11 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
     categories
   )
 
-  // Union of years in budgetTransactions + budgetIncomeByYear + budgetExpenseAmountsByYear,
+  // Union of years in budgetTransactions + budgetExpenseAmountsByYear,
   // plus always the real current calendar year, ascending, uncapped.
   const years = (() => {
     const set = new Set<string>([String(new Date().getFullYear())])
     state.budgetTransactions.forEach((t) => set.add(t.date.slice(0, 4)))
-    Object.keys(state.budgetIncomeByYear).forEach((y) => set.add(y))
     Object.keys(state.budgetExpenseAmountsByYear).forEach((y) => set.add(y))
     return [...set].sort()
   })()

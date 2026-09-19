@@ -20,6 +20,10 @@ Directory structure, API contract, component tree, state management, data model,
 
 ## Data Flows
 
+### Budget Income
+
+`Category` active exact normalized `Income` match -> `selectors.ts` income helpers -> BudgetPage income cards and savings-rate selectors. `effectiveCategoryId(transaction, definitions)` resolves a linked definition before all Income/spend classification. `excludedCategoryIdSet` centralizes `excludeFromSpend` and Income exclusion for spend totals and analytics. Budget persistence/export contains definitions, amount snapshots, and transactions only; legacy manual-income keys are dropped during hydration/import.
+
 ### Undo Closed Position
 
 ClosedPosition → ClosedPositionsTable Undo click → findMatchingOpenPosition/isExactLotMatch dedup check (state.ts) → [window.confirm if exact-lot match] → RESTORE_CLOSED_POSITION dispatch → restoreClosedPosition (state.ts)
