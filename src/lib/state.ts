@@ -32,7 +32,6 @@ export interface AppState {
   priceSync: PriceSyncState
   mutualFundSync: MutualFundSyncState
   balanceEntries: BalanceEntry[]
-  budgetIncomeByYear: Record<string, number>
   budgetExpenseDefinitions: ExpenseDefinition[]
   budgetExpenseAmountsByYear: Record<string, Record<string, number>>
   budgetTransactions: BudgetTransaction[]
@@ -80,7 +79,6 @@ export function initialState(): AppState {
     },
     mutualFundSync: { apiKey: '', heldPrices: {}, lastRun: null, callBudget: { date: '', callsUsed: 0 } },
     balanceEntries: [],
-    budgetIncomeByYear: {},
     budgetExpenseDefinitions: [],
     budgetExpenseAmountsByYear: {},
     budgetTransactions: [],
@@ -103,7 +101,7 @@ export function initialState(): AppState {
 }
 
 /**
- * Current budget year key (e.g. "2026") used to index budgetExpenseAmountsByYear/budgetIncomeByYear.
+ * Current budget year key (e.g. "2026") used to index budgetExpenseAmountsByYear.
  */
 export function currentBudgetYear(now: Date = new Date()): string {
   return String(now.getFullYear())
@@ -159,37 +157,23 @@ export function isEmptyExpenseAmountsSnapshot(v: Record<string, number>): boolea
   return Object.keys(v).length === 0
 }
 
-export function isEmptyIncomeSnapshot(v: number): boolean {
-  return v === 0
-}
-
 /**
  * Return a new state with every empty entry removed from
- * `budgetExpenseAmountsByYear` (value `{}`) and `budgetIncomeByYear` (value
- * `0`). Returns the SAME state reference if nothing needs stripping.
+ * `budgetExpenseAmountsByYear` (value `{}`). Returns the SAME state reference
+ * if nothing needs stripping.
  */
 export function stripEmptyBudgetSnapshots(state: AppState): AppState {
   const expenseKeys = Object.keys(state.budgetExpenseAmountsByYear)
   const nonEmptyExpenseKeys = expenseKeys.filter((k) => !isEmptyExpenseAmountsSnapshot(state.budgetExpenseAmountsByYear[k]))
-  const incomeKeys = Object.keys(state.budgetIncomeByYear)
-  const nonEmptyIncomeKeys = incomeKeys.filter((k) => !isEmptyIncomeSnapshot(state.budgetIncomeByYear[k]))
-
   const expensesChanged = nonEmptyExpenseKeys.length !== expenseKeys.length
-  const incomeChanged = nonEmptyIncomeKeys.length !== incomeKeys.length
-
-  if (!expensesChanged && !incomeChanged) return state
+  if (!expensesChanged) return state
 
   const budgetExpenseAmountsByYear = expensesChanged
     ? Object.fromEntries(nonEmptyExpenseKeys.map((k) => [k, state.budgetExpenseAmountsByYear[k]]))
     : state.budgetExpenseAmountsByYear
-  const budgetIncomeByYear = incomeChanged
-    ? Object.fromEntries(nonEmptyIncomeKeys.map((k) => [k, state.budgetIncomeByYear[k]]))
-    : state.budgetIncomeByYear
-
   return {
     ...state,
     budgetExpenseAmountsByYear,
-    budgetIncomeByYear,
   }
 }
 
@@ -633,7 +617,7 @@ export function replaceImportedState(state: AppState, data: ExportableState): Ap
     balanceEntries: data.balanceEntries,
     budgetExpenseDefinitions: data.budgetExpenseDefinitions ?? [],
     budgetExpenseAmountsByYear: data.budgetExpenseAmountsByYear ?? {},
-    budgetIncomeByYear: data.budgetIncomeByYear ?? {},
+    budgetTransactions: data.budgetTransactions ?? [],
     priceSync: {
       ...state.priceSync,
       apiKey: data.priceSync.apiKey,
@@ -805,105 +789,6 @@ export function clearExpenseAmount(state: AppState, year: string, expenseId: str
   }
 }
 
-/**
- * Year-key in `byYear` numerically closest to `targetYear`; ties broken toward
- * the earlier year. Returns null if `byYear` is empty.
- */
-export function nearestBudgetIncomeYear(
-  byYear: Record<string, number>,
-  targetYear: string
-): string | null {
-  return nearestYearKey(byYear, targetYear, isEmptyIncomeSnapshot)
-}
-
-/** Resolve the income value to show for `year`: own snapshot, else nearest year's, else 0. */
-export function resolveBudgetIncomeForYear(
-  byYear: Record<string, number>,
-  year: string
-): number {
-  if (byYear[year] !== undefined && !isEmptyIncomeSnapshot(byYear[year])) return byYear[year]
-  const nearest = nearestBudgetIncomeYear(byYear, year)
-  return nearest ? byYear[nearest] : (byYear[year] ?? 0)
-}
-
-/**
- * Resolve the income value for analytics purposes: own snapshot, else the
- * CURRENT budget year's snapshot specifically (not nearest), else 0.
- */
-export function resolveBudgetIncomeForAnalyticsYear(
-  byYear: Record<string, number>,
-  year: string,
-  now: Date = new Date()
-): number {
-  if (byYear[year] !== undefined) return byYear[year]
-  const current = currentBudgetYear(now)
-  return byYear[current] ?? 0
-}
-
-/**
- * Ensure `budgetIncomeByYear[year]` exists as a REAL persisted snapshot for
- * viewing purposes: no-op if already present, OR if there's no nearest year
- * to clone from yet (leaves it virtual — a year added later can still be
- * copied in on a future switch). Else copies the nearest year's value. Used
- * by the dropdown-switch / add-record-year-jump triggers — NOT by mutation
- * helpers, which need the key to always exist (see `seedBudgetIncomeForYear`).
- */
-export function ensureBudgetIncomeSnapshotForYear(state: AppState, year: string): AppState {
-  if (state.budgetIncomeByYear[year] !== undefined) return state
-  const nearest = nearestBudgetIncomeYear(state.budgetIncomeByYear, year)
-  // nearest is skip-empty (nearestBudgetIncomeYear), so a non-null result is guaranteed non-empty — never persists 0.
-  if (!nearest) return state
-  const seeded = state.budgetIncomeByYear[nearest]
-  return {
-    ...state,
-    budgetIncomeByYear: { ...state.budgetIncomeByYear, [year]: seeded },
-  }
-}
-
-/**
- * Ensure `budgetIncomeByYear[year]` exists: no-op if already present, else
- * copies the nearest year's value (or seeds 0) into `year`. Always
- * guarantees the key exists — called before mutating it.
- */
-export function seedBudgetIncomeForYear(state: AppState, year: string): AppState {
-  if (state.budgetIncomeByYear[year] !== undefined) return state
-  const nearest = nearestBudgetIncomeYear(state.budgetIncomeByYear, year)
-  const seeded = nearest ? state.budgetIncomeByYear[nearest] : 0
-  return {
-    ...state,
-    budgetIncomeByYear: { ...state.budgetIncomeByYear, [year]: seeded },
-  }
-}
-
-/**
- * Roll over into the current budget year if it has no snapshot yet, seeding
- * from the nearest (typically most recent prior) year. No-op if the current
- * year is already snapshotted, or if there is no data anywhere yet.
- */
-export function rolloverBudgetIncomeIfNeeded(state: AppState, now: Date = new Date()): AppState {
-  state = stripEmptyBudgetSnapshots(state)
-  const year = currentBudgetYear(now)
-  if (state.budgetIncomeByYear[year] !== undefined) return state
-  if (Object.keys(state.budgetIncomeByYear).length === 0) return state
-  return ensureBudgetIncomeSnapshotForYear(state, year)
-}
-
-/** Set the income value for a budget year, seeding the year first. Clamped to >= 0. */
-export function setBudgetIncome(state: AppState, year: string, amount: number): AppState {
-  const seeded = seedBudgetIncomeForYear(state, year)
-  const clamped = Math.max(0, amount)
-  const budgetIncomeByYear = { ...seeded.budgetIncomeByYear }
-  if (isEmptyIncomeSnapshot(clamped)) {
-    delete budgetIncomeByYear[year]
-  } else {
-    budgetIncomeByYear[year] = clamped
-  }
-  return {
-    ...seeded,
-    budgetIncomeByYear,
-  }
-}
-
 /** Add a new budget transaction to the Budget page's transaction list. Generates its id. */
 export function addBudgetTransaction(state: AppState, tx: Omit<BudgetTransaction, 'id'>): AppState {
   return { ...state, budgetTransactions: [...state.budgetTransactions, { ...tx, id: uid('budgettx') }] }
@@ -1005,7 +890,6 @@ export function reapplyCategoryMappingsToState(state: AppState, categoryMappings
     budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpenseDefinitions),
   }
 }
-
 
 
 

@@ -204,3 +204,11 @@ Settings > "Backup" tab, "Download" section (stacked below the Google Drive Sync
 ### Upload
 
 Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup file" card — no longer in Settings. See root `product-behavior.md`'s `## Password gate` section for current behavior.
+
+## Budget
+
+- Active categories named exactly `Income` after trim/case normalization define income. Deleted categories and names such as `Other Income` do not.
+- Budgeted income annualizes matching ExpenseDefinition amounts for the selected year; actual income sums signed matching Budget transactions.
+- Spend excludes Income and `excludeFromSpend` categories. Linked expense-definition categories override a transaction's stored category.
+- Spend shows five read-only cards: budgeted income, actual income, budgeted spending, actual spend, and variance. Income rows are hidden by default and appear with Show excluded.
+- Legacy manual-income fields are discarded on local hydration and backup import/export; they are never converted.

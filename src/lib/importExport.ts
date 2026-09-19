@@ -33,7 +33,6 @@ export interface ExportableState {
   csvMappings: SavedCsvMapping[]
   customInstitutions: string[]
   balanceEntries: BalanceEntry[]
-  budgetIncomeByYear: Record<string, number>
   budgetExpenseDefinitions: ExpenseDefinition[]
   budgetExpenseAmountsByYear: Record<string, Record<string, number>>
   budgetTransactions: BudgetTransaction[]
@@ -61,7 +60,6 @@ export function buildExportableState(state: AppState): ExportableState {
     csvMappings: state.csvMappings,
     customInstitutions: state.customInstitutions,
     balanceEntries: state.balanceEntries,
-    budgetIncomeByYear: state.budgetIncomeByYear,
     budgetExpenseDefinitions: state.budgetExpenseDefinitions,
     budgetExpenseAmountsByYear: state.budgetExpenseAmountsByYear,
     budgetTransactions: state.budgetTransactions,
@@ -202,7 +200,6 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
     csvMappings: decrypted.csvMappings ?? [],
     customInstitutions: decrypted.customInstitutions ?? [],
     balanceEntries: decrypted.balanceEntries ?? [],
-    budgetIncomeByYear: decrypted.budgetIncomeByYear ?? {},
     budgetExpenseDefinitions: decrypted.budgetExpenseDefinitions ?? [],
     budgetExpenseAmountsByYear: decrypted.budgetExpenseAmountsByYear ?? {},
     budgetTransactions: decrypted.budgetTransactions ?? [],

@@ -59,6 +59,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 - **Register**: per-account chronological activity/balance ledger; balance-entry dialog supports multiple activities per entry (contribution/withdrawal/transfer/dividend/fee).
 - **Quotes**: read-only table of every held Equity/ETF/Mutual Fund symbol, current price/status/last-updated, with a search box; shows a failure banner when a Polygon name lookup fails for any symbol.
 - **Settings**: three tabs — Backup (Drive connect/sync/restore), Encryption (change password), Quotes API Key (Polygon + Alphavantage key entry, manual "fetch now" triggers, last-run status per provider).
+- **Budget**: active categories named exactly `Income` (trimmed/case-insensitive) derive read-only budgeted and signed actual income. Income is excluded from spend by default; Show excluded reveals those records.
 
 ### Drive backup / restore / conflict
 

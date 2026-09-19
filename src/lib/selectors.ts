@@ -1,5 +1,5 @@
 import type { AppState } from './state'
-import { resolveExpenseAmountsForAnalyticsYear, resolveBudgetIncomeForAnalyticsYear } from './state'
+import { resolveExpenseAmountsForAnalyticsYear } from './state'
 import type { Position, ClosedPosition, Transaction, TaxCategory, ExpenseDefinition, BudgetTransaction, Category, CategoryMapping } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod, GAIN_COLOR, LOSS_COLOR } from './computations'
@@ -530,7 +530,62 @@ export function budgetTransactionsForPeriod(
  * Set of category ids marked excludeFromSpend, used to filter actual-spend figures.
  */
 export function excludedCategoryIdSet(categories: Category[]): Set<string> {
-  return new Set(categories.filter((c) => c.excludeFromSpend).map((c) => c.id))
+  return new Set(categories.filter((c) => c.excludeFromSpend || isIncomeCategory(c)).map((c) => c.id))
+}
+
+/** Active categories whose normalized name is exactly "income". */
+export function incomeCategoryIdSet(categories: Category[]): Set<string> {
+  return new Set(categories.filter(isIncomeCategory).map((c) => c.id))
+}
+
+function isIncomeCategory(category: Category): boolean {
+  return !category.deletedAt && category.name.trim().toLowerCase() === 'income'
+}
+
+/** Whether a transaction resolves to an active Income category. */
+export function isIncomeTransaction(
+  transaction: BudgetTransaction,
+  categories: Category[],
+  definitions: ExpenseDefinition[]
+): boolean {
+  return incomeCategoryIdSet(categories).has(effectiveCategoryId(transaction, definitions))
+}
+
+/** Shared spend exclusion rule for records and all spend aggregates. */
+export function isIncomeOrExcludedTransaction(
+  transaction: BudgetTransaction,
+  categories: Category[],
+  definitions: ExpenseDefinition[]
+): boolean {
+  return excludedCategoryIdSet(categories).has(effectiveCategoryId(transaction, definitions))
+}
+
+/** Annualized Income definition amounts for one selected year. */
+export function budgetedIncomeForYear(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  categories: Category[],
+  year: string
+): number {
+  const incomeIds = incomeCategoryIdSet(categories)
+  const amounts = amountsByYear[year] ?? {}
+  return definitions.reduce((sum, definition) =>
+    incomeIds.has(definition.categoryId)
+      ? sum + toPeriod(amounts[definition.id] ?? 0, definition.frequency, 'yearly')
+      : sum,
+  0)
+}
+
+/** Signed Income transaction total for one selected year. */
+export function actualIncomeForYear(
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  definitions: ExpenseDefinition[],
+  year: string
+): number {
+  return transactions
+    .filter((transaction) => transaction.date.slice(0, 4) === year && isIncomeTransaction(transaction, categories, definitions))
+    .reduce((sum, transaction) => sum + transaction.amount, 0)
 }
 
 /**
@@ -611,11 +666,14 @@ export function monthTotalSpend(
  */
 export function actualByCategory(
   transactions: BudgetTransaction[],
-  definitions: ExpenseDefinition[]
+  definitions: ExpenseDefinition[],
+  categories: Category[] = []
 ): Record<string, number> {
+  const excludedIds = excludedCategoryIdSet(categories)
   const out: Record<string, number> = {}
   transactions.forEach((t) => {
     const catId = effectiveCategoryId(t, definitions)
+    if (excludedIds.has(catId)) return
     out[catId] = (out[catId] ?? 0) + t.amount
   })
   return out
@@ -677,7 +735,7 @@ export function categoryBreakdown(
     const amount = toPeriod(amountsForYear[e.id] ?? 0, e.frequency, 'yearly')
     byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + amount
   })
-  const actuals = actualByCategory(transactions, definitions)
+  const actuals = actualByCategory(transactions, definitions, categories)
   const maxCat = Math.max(1, ...Object.values(byCategory), ...Object.values(actuals))
   return Object.entries(byCategory)
     .sort((a, b) => b[1] - a[1])
@@ -805,15 +863,14 @@ export function savingsRateShrinkingConcern(
   years: string[],
   transactions: BudgetTransaction[],
   categories: Category[],
-  budgetIncomeByYear: Record<string, number>,
-  definitions: ExpenseDefinition[]
+    definitions: ExpenseDefinition[]
 ): { firstYear: string; firstRate: number; lastYear: string; lastRate: number; drop: number } | null {
   if (years.length < 2) return null
   const lastYear = years[0]
   const firstYear = years[years.length - 1]
 
   const rateFor = (year: string): number | null => {
-    const totalIncome = resolveBudgetIncomeForAnalyticsYear(budgetIncomeByYear, year)
+    const totalIncome = actualIncomeForYear(transactions, categories, definitions, year)
     if (totalIncome === 0) return null
     const monthCount = monthsPresentInYear(transactions, categories, year, definitions).length
     if (monthCount === 0) return null
@@ -866,11 +923,10 @@ export function savingsRateByYear(
   years: string[],
   transactions: BudgetTransaction[],
   categories: Category[],
-  budgetIncomeByYear: Record<string, number>,
-  definitions: ExpenseDefinition[]
+    definitions: ExpenseDefinition[]
 ): Array<{ year: string; pct: number; isPositive: boolean }> {
   return years.map((year) => {
-    const income = resolveBudgetIncomeForAnalyticsYear(budgetIncomeByYear, year)
+    const income = actualIncomeForYear(transactions, categories, definitions, year)
     const spend = yearTotalSpend(transactions, categories, year, definitions)
     const pct = income > 0 ? ((income - spend) / income) * 100 : 0
     return { year, pct, isPositive: pct >= 0 }
@@ -903,7 +959,8 @@ export function categoryShareOverTime(
   legend: Array<{ categoryId: string; name: string; color: string }>
   rows: Array<{ year: string; segments: Array<{ categoryId: string; name: string; pct: number; color: string }> }>
 } {
-  const pool = categories.filter((c) => !c.excludeFromSpend && !c.deletedAt)
+  const excludedIds = excludedCategoryIdSet(categories)
+  const pool = categories.filter((c) => !excludedIds.has(c.id) && !c.deletedAt)
   const latestYear = years[0]
   const ranked = [...pool].sort((a, b) => {
     const aTotal = latestYear ? yearCategoryTotalSpend(transactions, categories, latestYear, a.id, definitions) : 0
@@ -979,7 +1036,9 @@ export function budgetAccuracyByYear(
 ): Array<{ year: string; budgetTotal: number; actualTotal: number; variance: number; budgetPct: number; actualPct: number }> {
   return years.map((year) => {
     const amounts = resolveExpenseAmountsForAnalyticsYear(amountsByYear, year)
+    const excludedIds = excludedCategoryIdSet(categories)
     const monthlyBudget = definitions.reduce((sum, d) => {
+      if (excludedIds.has(d.categoryId)) return sum
       const amount = amounts[d.id]
       return amount === undefined ? sum : sum + toPeriod(amount, d.frequency, 'monthly')
     }, 0)
@@ -1145,4 +1204,3 @@ export function formatSpendCategoryLabel(
   }
   return `Uncategorized (${categoryLabel})`
 }
-

@@ -38,14 +38,12 @@ export type AppAction =
   | { type: 'SET_REG_ACCOUNT'; accountId: string | null }
   | { type: 'TOGGLE_REG_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
-  | { type: 'SET_BUDGET_INCOME'; year: string; amount: number }
   | { type: 'ADD_EXPENSE_DEFINITION'; definition: Omit<ExpenseDefinition, 'id'>; amount: number }
   | { type: 'UPDATE_EXPENSE_DEFINITION'; id: string; patch: Partial<Omit<ExpenseDefinition, 'id'>> }
   | { type: 'DELETE_EXPENSE_DEFINITION'; id: string }
   | { type: 'SET_EXPENSE_AMOUNT'; year: string; expenseId: string; amount: number }
   | { type: 'CLEAR_EXPENSE_AMOUNT'; year: string; expenseId: string }
   | { type: 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED' }
-  | { type: 'ROLLOVER_BUDGET_INCOME_IF_NEEDED' }
   | { type: 'ENSURE_BUDGET_YEAR_SNAPSHOT'; year: string }
   | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
   | { type: 'UPDATE_BUDGET_TRANSACTION'; id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }
@@ -180,9 +178,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return StateActions.setRegActivityFilter(state, action.filter)
 
     // Budget page
-    case 'SET_BUDGET_INCOME':
-      return StateActions.setBudgetIncome(state, action.year, action.amount)
-
     case 'ADD_EXPENSE_DEFINITION':
       return StateActions.addExpenseDefinition(state, action.definition, action.amount)
 
@@ -201,14 +196,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED':
       return StateActions.rolloverBudgetExpenseAmountsIfNeeded(state)
 
-    case 'ROLLOVER_BUDGET_INCOME_IF_NEEDED':
-      return StateActions.rolloverBudgetIncomeIfNeeded(state)
-
     case 'ENSURE_BUDGET_YEAR_SNAPSHOT':
-      return StateActions.ensureBudgetIncomeSnapshotForYear(
-        StateActions.ensureExpenseAmountsSnapshotForYear(state, action.year),
-        action.year,
-      )
+      return StateActions.ensureExpenseAmountsSnapshotForYear(state, action.year)
 
     case 'ADD_BUDGET_TRANSACTION':
       return StateActions.addBudgetTransaction(state, action.tx)
