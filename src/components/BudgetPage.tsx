@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetImportRows } from '../lib/state'
-import { resolveSpendExpenseIdForDescription, upsertCategoryMapping, type CategoryAction } from '../lib/categoryStore'
+import {
+  deleteCategoryMapping,
+  resolveSpendExpenseIdForDescription,
+  updateCategoryMapping,
+  upsertCategoryMapping,
+  type CategoryAction,
+} from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
 import { BudgetAnalytics } from './BudgetAnalytics'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
@@ -67,6 +73,15 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
   )
 }
 
+function MappingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+      <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15"></path>
+      <path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 12 20l1.15-1.15"></path>
+    </svg>
+  )
+}
+
 /**
  * Budget page: Expenses/Spend/Analytics tab toggle.
  * - Expenses tab (BudgetExpensesTab): Category Breakdown (own independent
@@ -96,6 +111,9 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     rowId: string
     field: 'date' | 'description' | 'category' | 'account' | 'amount'
   } | null>(null)
+  const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
+  const [editingMappingSubstringId, setEditingMappingSubstringId] = useState<string | null>(null)
+  const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
   const [cellDraft, setCellDraft] = useState('')
   const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
@@ -210,6 +228,58 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const recPaginationActive = searchedRecords.length > RECORDS_PAGE_SIZE
   const recPageCount = Math.ceil(searchedRecords.length / RECORDS_PAGE_SIZE)
   const pagedRecords = searchedRecords.slice(recPage * RECORDS_PAGE_SIZE, recPage * RECORDS_PAGE_SIZE + RECORDS_PAGE_SIZE)
+  const mappingsForExpense = (expenseId: string) =>
+    categoryMappings.filter((mapping) => {
+      const mappingStatus = mapping as CategoryMapping & {
+        tombstoned?: boolean
+        deleted?: boolean
+        deletedAt?: string | null
+      }
+      return mapping.spendExpenseId === expenseId && !mappingStatus.tombstoned && !mappingStatus.deleted && !mappingStatus.deletedAt
+    })
+  const editingMappingRow = editingMappingId
+    ? state.budgetTransactions.find((transaction) => transaction.id === editingMappingId)
+    : undefined
+  const editingMappingExpense = editingMappingRow?.spendExpenseId
+    ? state.budgetExpenseDefinitions.find((definition) => definition.id === editingMappingRow.spendExpenseId)
+    : undefined
+  const editingMappings = editingMappingExpense
+    ? mappingsForExpense(editingMappingExpense.id)
+    : []
+
+  useEffect(() => {
+    if (!editingMappingId) return
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (editingMappingSubstringId) {
+          setEditingMappingSubstringId(null)
+          setMappingSubstringDraft('')
+        } else {
+          setEditingMappingId(null)
+          setMappingSubstringDraft('')
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [editingMappingId, editingMappingSubstringId])
+
+  const saveMappingSubstring = (mapping: CategoryMapping) => {
+    const substring = mappingSubstringDraft.trim()
+    if (!substring || substring === mapping.substring) return
+    categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id: mapping.id, patch: { substring } })
+    const nextMappings = updateCategoryMapping({ categories, categoryMappings }, mapping.id, { substring }).categoryMappings
+    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+    setEditingMappingSubstringId(null)
+    setMappingSubstringDraft('')
+  }
+
+  const deleteMapping = (mapping: CategoryMapping) => {
+    if (!window.confirm('Delete this mapping? This cannot be undone.')) return
+    categoryDispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
+    const nextMappings = deleteCategoryMapping({ categories, categoryMappings }, mapping.id).categoryMappings
+    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+  }
 
   // Clears row selection whenever the visible set/order of Spend records can
   // change out from under it (paging, sorting, searching, or switching
@@ -720,7 +790,27 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                           onBlur={() => handleCellInputBlur(row.id, 'description')}
                         />
                       ) : (
-                        row.description
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                          {row.description}
+                          {row.spendExpenseId &&
+                            state.budgetExpenseDefinitions.some((definition) => definition.id === row.spendExpenseId) &&
+                            mappingsForExpense(row.spendExpenseId).length > 0 && (
+                              <button
+                                type="button"
+                                style={iconBtn}
+                                aria-label={`Edit category mappings for ${row.description}`}
+                                title="Edit category mappings"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setEditingMappingId(row.id)
+                                  setEditingMappingSubstringId(null)
+                                  setMappingSubstringDraft('')
+                                }}
+                              >
+                                <MappingIcon />
+                              </button>
+                            )}
+                        </span>
                       )}
                     </td>
                     <td onClick={() => startCellEdit(row.id, 'category', row.spendExpenseId ?? '')}>
@@ -1069,6 +1159,78 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               >
                 Import
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingMappingId && (
+        <div className="dialog-backdrop">
+          <div
+            className="dialog blueprint"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Category mappings"
+            data-mapping-substring-draft={mappingSubstringDraft}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="dialog-title">Category mappings</div>
+              <button
+                type="button"
+                style={iconBtn}
+                aria-label="Close"
+                onClick={() => {
+                  setEditingMappingId(null)
+                  setEditingMappingSubstringId(null)
+                  setMappingSubstringDraft('')
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div className="dialog-body">
+              {editingMappings.length === 0 ? (
+                <div className="text-muted">No category mappings.</div>
+              ) : (
+                editingMappings.map((mapping) => (
+                  <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    {editingMappingSubstringId === mapping.id ? (
+                      <input
+                        type="text"
+                        className="input"
+                        aria-label="Edit category mapping substring"
+                        autoFocus
+                        value={mappingSubstringDraft}
+                        onChange={(event) => setMappingSubstringDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') saveMappingSubstring(mapping)
+                        }}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        style={{ ...textBtnAccent, color: 'inherit', fontWeight: 400 }}
+                        aria-label={`Edit category mapping ${mapping.substring}`}
+                        onClick={() => {
+                          setEditingMappingSubstringId(mapping.id)
+                          setMappingSubstringDraft(mapping.substring)
+                        }}
+                      >
+                        {mapping.substring}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      style={{ ...iconBtn, color: LOSS_COLOR }}
+                      aria-label={`Delete category mapping ${mapping.substring}`}
+                      title="Delete category mapping"
+                      onClick={() => deleteMapping(mapping)}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
