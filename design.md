@@ -6,6 +6,13 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 React 19.2 + TypeScript + Vite 8, no state library (single `useReducer`), no CSS framework, oxlint, vitest 4 + jsdom + fake-indexeddb + @testing-library/react. Dependencies: `@open-webapp/drive-sync` for Google Drive backup content ops, `@open-webapp/drive-connect` (v0.1.0) for the Drive auth handle + connect/disconnect widget, `papaparse` for CSV, `lucide-react` for icons. Published to GitHub Pages at `/portfolio/` via `.github/workflows/deploy.yml` (auto-triggers on push to `main`, builds `dist` and deploys with `actions/deploy-pages`); `vite.config.ts` sets `base: '/portfolio/'` to match the repo's Pages path. `vite-plugin-pwa` (devDependency, `generateSW` strategy, `registerType: 'autoUpdate'`, `devOptions.enabled: true`) makes the app installable; `npm run build` additionally emits `dist/sw.js` (service worker) + `dist/manifest.webmanifest`, generated build artifacts not source-controlled.
 
+## Click-To-Edit Convention
+
+- Click the displayed editable value itself to enter inline edit mode; do not add a separate pencil affordance.
+- Save with Enter only, then return to read-only text. Blur keeps the editor open.
+- Invalid values leave the persisted value unchanged.
+- Escape cancels the active inline edit without saving. In an overlay, a subsequent Escape closes the overlay.
+
 ## Directory structure
 
 ```
