@@ -190,6 +190,19 @@ describe('CategoryMappingTab', () => {
     expect(categoryDispatch).toHaveBeenCalledWith({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: 'pantry', substring: 'BULK MART' })
   })
 
+  it('saves an edited substring and exits edit mode on Enter', () => {
+    const categoryDispatch = vi.fn()
+    const dispatch = vi.fn()
+    renderTab({ categoryDispatch, dispatch })
+    fireEvent.click(screen.getByLabelText('Edit substring WHOLE FOODS'))
+    const input = screen.getByLabelText('Edit mapping substring')
+    fireEvent.change(input, { target: { value: 'TRADER JOES' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(categoryDispatch).toHaveBeenCalledWith({ type: 'UPDATE_CATEGORY_MAPPING', id: 'whole-foods', patch: { substring: 'TRADER JOES' } })
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'REAPPLY_CATEGORY_MAPPINGS' }))
+    expect(screen.queryByLabelText('Edit mapping substring')).toBeNull()
+  })
+
   it('reflects exclusion state and dispatches its next value', () => {
     const data = fixture()
     data.categories[0] = { ...data.categories[0], excludeFromSpend: true }

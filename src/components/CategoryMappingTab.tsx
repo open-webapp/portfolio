@@ -101,6 +101,14 @@ export function CategoryMappingTab({
     [categoryDispatch, dispatch, categories, categoryMappings, state.budgetExpenseDefinitions]
   )
 
+  const saveMapping = (id: string) => {
+    const patch = { substring: mappingSubstringDraft.trim() }
+    categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id, patch })
+    const nextMappings = updateCategoryMapping({ categories, categoryMappings }, id, patch).categoryMappings
+    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+    setEditingMappingId(null)
+  }
+
   if (!categoriesHydrated) {
     return <section className="card blueprint elev-sm">Loading category mappings...</section>
   }
@@ -203,14 +211,8 @@ export function CategoryMappingTab({
                         <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
                           {isEditingMapping ? (
                             <>
-                              <input className="input" aria-label="Edit mapping substring" value={mappingSubstringDraft} onChange={(e) => setMappingSubstringDraft(e.target.value)} autoFocus />
-                              <button type="button" style={textBtnAccent} onClick={() => {
-                                const patch = { substring: mappingSubstringDraft.trim() }
-                                categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id: mapping.id, patch })
-                                const nextMappings = updateCategoryMapping({ categories, categoryMappings }, mapping.id, patch).categoryMappings
-                                dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
-                                setEditingMappingId(null)
-                              }}>Done</button>
+                              <input className="input" aria-label="Edit mapping substring" value={mappingSubstringDraft} onChange={(e) => setMappingSubstringDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveMapping(mapping.id) }} autoFocus />
+                              <button type="button" style={textBtnAccent} onClick={() => saveMapping(mapping.id)}>Done</button>
                             </>
                           ) : (
                             <>
