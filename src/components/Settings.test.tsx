@@ -1,11 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useState } from 'react'
 import 'fake-indexeddb/auto'
 import { render, screen, fireEvent, waitFor, cleanup, within, configure } from '@testing-library/react'
 import { SettingsPage, type SettingsPageProps } from './Settings'
 import { initialState } from '../lib/state'
-import { appReducer } from '../lib/reducer'
-import { categoryStoreReducer, type GlobalCategoryState } from '../lib/categoryStore'
 import * as driveModule from '../lib/drive'
 import * as persistModule from '../lib/persist'
 import * as importExportModule from '../lib/importExport'
@@ -125,7 +122,6 @@ const mockOnDriveDisconnected = vi.fn()
 const mockSetSettingsSection = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
 const mockRunMutualFundSyncTrigger = vi.fn()
-const mockCategoryDispatch = vi.fn()
 
 // The Alphavantage sub-block is a plain <div>, not a labeled landmark, so it
 // has to be located structurally: it's the second `input[type="password"]`
@@ -171,6 +167,7 @@ describe('SettingsPage', () => {
     const defaultProps: SettingsPageProps = {
       state: initialState(),
       activePortfolio: testPortfolio,
+      driveAuth: { connect: vi.fn(), disconnect: vi.fn(), ensureFresh: vi.fn(), activate: vi.fn(() => () => {}) } as any,
       dispatch: mockDispatch,
       sessionKey,
       sessionSalt,
@@ -184,10 +181,6 @@ describe('SettingsPage', () => {
       runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
       tickerOverviewErrors: {},
       mutualFundSyncErrors: {},
-      categories: [],
-      categoryMappings: [],
-      categoryDispatch: mockCategoryDispatch,
-      categoriesHydrated: true,
       driveConnected: false,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
@@ -256,6 +249,7 @@ describe('SettingsPage', () => {
       const defaultProps: SettingsPageProps = {
         state: initialState(),
         activePortfolio: testPortfolio,
+        driveAuth: { connect: vi.fn(), disconnect: vi.fn(), ensureFresh: vi.fn(), activate: vi.fn(() => () => {}) } as any,
         dispatch: mockDispatch,
         sessionKey,
         sessionSalt,
@@ -269,10 +263,6 @@ describe('SettingsPage', () => {
         runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
         tickerOverviewErrors: {},
         mutualFundSyncErrors: {},
-        categories: [],
-        categoryMappings: [],
-        categoryDispatch: mockCategoryDispatch,
-        categoriesHydrated: true,
         driveConnected: true,
       }
       rerender(<SettingsPage {...defaultProps} />)
@@ -301,11 +291,14 @@ describe('SettingsPage', () => {
   })
 
   describe('Settings tab-seg', () => {
-    it('renders tab-seg with "Backup" and "Encryption" options', () => {
+    it('renders exactly Backup, Encryption, and Quotes API Key options with no category mapping UI', () => {
       renderSettings({ settingsSection: 'backup' })
 
       expect(screen.getByLabelText('Backup')).toBeTruthy()
       expect(screen.getByLabelText('Encryption')).toBeTruthy()
+      expect(screen.getByLabelText('Quotes API Key')).toBeTruthy()
+      expect(screen.queryByLabelText('Categories')).toBeFalsy()
+      expect(screen.queryByText('Category Mapping')).toBeFalsy()
     })
 
     it('clicking Backup tab calls setSettingsSection with "backup"', () => {
@@ -870,14 +863,13 @@ describe('SettingsPage', () => {
       expect(filename).toMatch(/^ledger-backup-\d{4}-\d{2}-\d{2}\.json$/)
     })
 
-    it('no longer renders the old encrypted-backup upload file input (upload UI removed) - only the category-mapping import input can exist, and only once categories are hydrated', () => {
-      const { container } = renderSettings({ settingsSection: 'backup', categoriesHydrated: false })
+    it('no longer renders an encrypted-backup upload file input', () => {
+      const { container } = renderSettings({ settingsSection: 'backup' })
 
       expect(container.querySelector('input[type="file"]')).toBeFalsy()
     })
   })
-
-  describe('Categories', () => {
+  /* CategoryMappingTab coverage moved to CategoryMappingTab.test.tsx.
     function categoriesFixture() {
       const state = initialState()
       const categories = [
@@ -1195,7 +1187,7 @@ describe('SettingsPage', () => {
       return (
         <>
           {/* Debug probe: SettingsPage has no UI that renders budgetTransactions,
-              so expose the live main-store state here for assertions. */}
+              so expose the live main-store state here for assertions. * /}
           <pre data-testid="debug-app-state">{JSON.stringify(state.budgetTransactions)}</pre>
           <SettingsPage
           state={state}
@@ -1376,6 +1368,6 @@ describe('SettingsPage', () => {
       expect(screen.queryByRole('button', { name: 'Import Category Mapping' })).toBeFalsy()
       expect(screen.queryByLabelText('Import Category Mapping file')).toBeFalsy()
     })
-  })
+  }) */
 
 })

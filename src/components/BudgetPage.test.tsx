@@ -54,9 +54,10 @@ function makeTransaction(overrides: Partial<BudgetTransaction> = {}): BudgetTran
 function renderBudgetPage(overrides: {
   state?: AppState
   dispatch?: (action: any) => void
-  categories?: Category[]
-  categoryMappings?: CategoryMapping[]
-  categoryDispatch?: (action: any) => void
+    categories?: Category[]
+    categoryMappings?: CategoryMapping[]
+    categoryDispatch?: (action: any) => void
+    categoriesHydrated?: boolean
 } = {}) {
   return render(
     <BudgetPage
@@ -65,6 +66,7 @@ function renderBudgetPage(overrides: {
       categories={overrides.categories ?? CATEGORIES}
       categoryMappings={overrides.categoryMappings ?? []}
       categoryDispatch={overrides.categoryDispatch ?? vi.fn()}
+      categoriesHydrated={overrides.categoriesHydrated ?? true}
     />
   )
 }
@@ -75,15 +77,17 @@ function switchTab(container: HTMLElement, label: 'Expenses' | 'Spend' | 'Analyt
 
 describe('BudgetPage', () => {
   describe('tab plumbing', () => {
-    it('renders 3 tabs labelled Expenses/Spend/Analytics, Spend checked by default', () => {
+    it('renders four ordered tabs, defaults to Spend, and opens Category Mapping', () => {
       const { container } = renderBudgetPage()
       const seg = container.querySelector('.seg')!
       const radios = seg.querySelectorAll('input[type="radio"]')
-      expect(radios.length).toBe(3)
-      expect(within(seg).getByText('Expenses')).toBeTruthy()
-      expect(within(seg).getByText('Spend')).toBeTruthy()
-      expect(within(seg).getByText('Analytics')).toBeTruthy()
+      expect(radios.length).toBe(4)
+      expect(Array.from(seg.querySelectorAll('span')).map((span) => span.textContent)).toEqual([
+        'Expenses', 'Spend', 'Analytics', 'Category Mapping',
+      ])
       expect((radios[1] as HTMLInputElement).checked).toBe(true) // Spend is default
+      fireEvent.click(within(seg).getByText('Category Mapping'))
+      expect(screen.getAllByText('Category Mapping').length).toBeGreaterThan(1)
     })
 
     it('clicking Expenses switches to the Expenses tab', () => {
@@ -96,6 +100,14 @@ describe('BudgetPage', () => {
       const { container } = renderBudgetPage()
       const seg = container.querySelector('.seg')!
       expect(within(seg).queryByText('Monthly')).toBeFalsy()
+    })
+
+    it('shows a loading mapping tab until global categories hydrate, then mounts the mapping UI', () => {
+      const { container, rerender } = renderBudgetPage({ categoriesHydrated: false })
+      switchTab(container, 'Category Mapping' as any)
+      expect(screen.getByText('Loading category mappings...')).toBeTruthy()
+      rerender(<BudgetPage state={defaultState()} dispatch={vi.fn()} categories={CATEGORIES} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated />)
+      expect(screen.getAllByText('Category Mapping').length).toBeGreaterThan(1)
     })
   })
 

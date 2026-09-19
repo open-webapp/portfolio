@@ -32,10 +32,13 @@ src/
     PortfolioPicker.tsx              — portfolio create/rename/delete/open UI
     Nav.tsx                          — top nav: view tabs, sync button, portfolio-name button (switch portfolio), settings button
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
-    AccountsPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
+    AccountsPage.tsx, BudgetPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
     BudgetExpensesTab.tsx            — budget expense definitions, per-year amounts, and paste import dialog
     BudgetExpensesTab.design.md,
     BudgetExpensesTab.product-behavior.md — component API/data flow and user-visible import behavior
+    CategoryMappingTab.tsx            — Budget-local category/mapping management tab
+    CategoryMappingTab.design.md,
+    CategoryMappingTab.product-behavior.md — component API/data flow and user-visible behavior
     PositionGroupOverlay.tsx, ClosedPositionsTable.tsx, TransactionsTable.tsx,
     AllocationChart.tsx, AssetClassOverrideSelect.tsx, InstitutionSelect.tsx,
     RegisterBalanceDialog.tsx        — view-local widgets
@@ -100,12 +103,14 @@ App.tsx
    │    ├─ shape === 'encrypted' → EnterPasswordScreen
    │    └─ shape === 'absent' → SetPasswordScreen (defends against a portfolio db that's genuinely empty; new portfolios never reach this since they skip the gate entirely)
    └─ unlocked + hydrated → app shell
-        ├─ Nav (view tabs: Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
+        ├─ Nav (view tabs: Budget/Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
+        ├─ state.view === 'budget'    → BudgetPage (local Expenses/Spend/Analytics/Category Mapping tabs; Category Mapping receives global categories only after hydration)
         ├─ state.view === 'accounts'  → AccountsPage
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage
-        ├─ state.view === 'settings'  → SettingsPage (activePortfolio, driveAuth=getDriveAuthFor(activePortfolio), sessionKey/salt, sync/price-sync props)
+        ├─ state.view === 'settings'  → SettingsPage (activePortfolio, driveAuth=getDriveAuthFor(activePortfolio), sessionKey/salt, sync/price-sync props; Backup/Encryption/Quotes API Key only, no category-mapping props)
         ├─ budget expenses → BudgetExpensesTab (local add/import dialogs; paste import parses valid rows, ensures an Uncategorized category, then dispatches `IMPORT_EXPENSE_PASTE` for the selected year)
+        ├─ budget category mapping → CategoryMappingTab (Budget-local tab; hydrated global categories/mappings and category-store dispatch)
         └─ syncConflict → SyncConflictDialog (overlay)
 ```
 

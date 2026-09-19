@@ -4,6 +4,9 @@ Directory structure, API contract, component tree, state management, data model,
 
 ## Component Tree
 
+- `BudgetPage.tsx` owns four local, non-persisted tabs: Expenses, Spend, Analytics, and Category Mapping. Its `period` initializes to `'spend'` on every mount/remount. It passes global category-store props to `CategoryMappingTab`; that child alone defers mapping controls until `categoriesHydrated` is true.
+- `CategoryMappingTab.tsx` owns category rename/exclusion, mapping substring CRUD, and category-mapping JSON import/export. Mapping mutations and successful imports immediately dispatch `REAPPLY_CATEGORY_MAPPINGS` against the merged/current mappings; import/export format and merge semantics are unchanged.
+- `Settings.tsx` has exactly Backup, Encryption, and Quotes API Key tabs. Its props contain no categories, mappings, category dispatcher, or category-hydration state.
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
   - Used by `PositionsTable.tsx` (passes `state.closedPositions`)
   - Used by `AccountsPage.tsx` (passes `acctFilteredClosedPositions(state)`)

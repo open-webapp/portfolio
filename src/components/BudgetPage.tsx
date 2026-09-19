@@ -5,6 +5,7 @@ import { resolveSpendExpenseIdForDescription, upsertCategoryMapping, type Catego
 import type { Category, CategoryMapping } from '../lib/types'
 import { BudgetAnalytics } from './BudgetAnalytics'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
+import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
 import {
@@ -21,6 +22,7 @@ export interface BudgetPageProps {
   categories: Category[]
   categoryMappings: CategoryMapping[]
   categoryDispatch: (action: CategoryAction) => void
+  categoriesHydrated: boolean
 }
 
 const textBtnAccent: CSSProperties = {
@@ -79,8 +81,8 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
  *   budgetExpenseAmountsByYear[selectedYear].
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  */
-export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch }: BudgetPageProps) {
-  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics'>('spend')
+export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated }: BudgetPageProps) {
+  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics' | 'categoryMapping'>('spend')
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -431,7 +433,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         }}
       >
         <div className="seg">
-          {(['expenses', 'spend', 'analytics'] as const).map((opt) => (
+          {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((opt) => (
             <label
               key={opt}
               className="seg-opt"
@@ -441,7 +443,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               }}
             >
               <input type="radio" name="budgetPeriod" checked={period === opt} readOnly />
-              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : 'Analytics'}</span>
+              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : opt === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
             </label>
           ))}
         </div>
@@ -471,7 +473,16 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         )}
       </div>
 
-      {period === 'analytics' ? (
+      {period === 'categoryMapping' ? (
+        <CategoryMappingTab
+          state={state}
+          dispatch={dispatch}
+          categories={categories}
+          categoryMappings={categoryMappings}
+          categoryDispatch={categoryDispatch}
+          categoriesHydrated={categoriesHydrated}
+        />
+      ) : period === 'analytics' ? (
         <BudgetAnalytics state={state} categories={categories} />
       ) : period === 'expenses' ? (
         <BudgetExpensesTab state={state} dispatch={dispatch} categories={categories} categoryDispatch={categoryDispatch} />
