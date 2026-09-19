@@ -17,6 +17,7 @@ import {
   setRegActivityFilter,
   setBudgetIncome,
   addExpenseDefinition,
+  importExpensePaste,
   updateExpenseDefinition,
   deleteExpenseDefinition,
   setExpenseAmount,
@@ -508,6 +509,26 @@ describe('appReducer', () => {
       expect(fromReducer.id.length).toBeGreaterThan(0)
 
       expect(resultFromReducer.budgetExpenseAmountsByYear[thisYear][fromReducer.id]).toBe(2000)
+    })
+  })
+
+  describe('IMPORT_EXPENSE_PASTE', () => {
+    it('returns the same result as importExpensePaste', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseDefinitions: [{ id: 'exp-rent', name: 'Rent', categoryId: 'cat-uncategorized', frequency: 'monthly' }],
+        budgetExpenseAmountsByYear: { '2025': { 'exp-rent': 1800 }, '2026': { 'exp-rent': 2000 } },
+      }
+      const action = {
+        type: 'IMPORT_EXPENSE_PASTE' as const,
+        year: '2026',
+        uncategorizedCategoryId: 'cat-uncategorized',
+        rows: [{ name: ' rent ', amount: 2200 }],
+      }
+
+      expect(appReducer(state, action)).toEqual(
+        importExpensePaste(state, action.year, action.uncategorizedCategoryId, action.rows)
+      )
     })
   })
 

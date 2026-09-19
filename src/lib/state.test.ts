@@ -34,6 +34,8 @@ import {
   expenseDefinitionInUse,
   setExpenseAmount,
   clearExpenseAmount,
+  importExpensePaste,
+  planExpensePasteImport,
   nearestBudgetIncomeYear,
   resolveBudgetIncomeForYear,
   resolveBudgetIncomeForAnalyticsYear,
@@ -1321,6 +1323,89 @@ describe('state helpers', () => {
       const newId = updated.budgetExpenseDefinitions[0].id
       expect(updated.budgetExpenseAmountsByYear['2026']).toEqual({ [newId]: 15 })
       expect(updated.budgetExpenseAmountsByYear['2024']).toEqual({ 'exp-1': 1000 })
+    })
+  })
+
+  describe('importExpensePaste', () => {
+    it('creates monthly definitions and sets only the selected year amounts', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseAmountsByYear: { '2025': { 'exp-existing': 75 } },
+      }
+
+      const updated = importExpensePaste(state, '2026', 'cat-uncategorized', [
+        { name: 'Electricity', amount: 120 },
+        { name: 'Water', amount: 45 },
+      ])
+
+      expect(updated.budgetExpenseDefinitions).toHaveLength(2)
+      expect(updated.budgetExpenseDefinitions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'Electricity', categoryId: 'cat-uncategorized', frequency: 'monthly' }),
+        expect.objectContaining({ name: 'Water', categoryId: 'cat-uncategorized', frequency: 'monthly' }),
+      ]))
+      expect(Object.values(updated.budgetExpenseAmountsByYear['2026']).sort((a, b) => a - b)).toEqual([45, 120])
+      expect(updated.budgetExpenseAmountsByYear['2025']).toEqual({ 'exp-existing': 75 })
+    })
+
+    it('updates the first case- and space-insensitive Uncategorized match without changing its name', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseDefinitions: [
+          { id: 'exp-uncategorized', name: '  Electric Bill  ', categoryId: 'cat-uncategorized', frequency: 'yearly' },
+          { id: 'exp-other', name: 'electric bill', categoryId: 'cat-other', frequency: 'monthly' },
+        ],
+        budgetExpenseAmountsByYear: { '2025': { 'exp-uncategorized': 100 }, '2026': { 'exp-uncategorized': 110 } },
+      }
+
+      const updated = importExpensePaste(state, '2026', 'cat-uncategorized', [{ name: 'ELECTRIC BILL', amount: 135 }])
+
+      expect(updated.budgetExpenseDefinitions).toEqual(state.budgetExpenseDefinitions)
+      expect(updated.budgetExpenseAmountsByYear['2026']['exp-uncategorized']).toBe(135)
+      expect(updated.budgetExpenseAmountsByYear['2025']['exp-uncategorized']).toBe(100)
+    })
+
+    it('counts equal existing amounts as unchanged and creates same-name definitions in other categories', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseDefinitions: [{ id: 'exp-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' }],
+        budgetExpenseAmountsByYear: { '2026': { 'exp-housing': 2000 } },
+      }
+
+      const plan = planExpensePasteImport(state, '2026', 'cat-uncategorized', [{ name: 'Rent', amount: 2000 }])
+      const updated = importExpensePaste(state, '2026', 'cat-uncategorized', [{ name: 'Rent', amount: 2000 }])
+
+      expect(plan.stats).toEqual({ valid: 1, imported: 1, created: 1, updated: 0, unchanged: 0 })
+      expect(updated.budgetExpenseDefinitions).toHaveLength(2)
+      expect(updated.budgetExpenseDefinitions[0]).toEqual(state.budgetExpenseDefinitions[0])
+      expect(updated.budgetExpenseDefinitions[1]).toMatchObject({ name: 'Rent', categoryId: 'cat-uncategorized', frequency: 'monthly' })
+      expect(updated.budgetExpenseAmountsByYear['2026'][updated.budgetExpenseDefinitions[1].id]).toBe(2000)
+    })
+
+    it('leaves an equal selected-year amount unchanged', () => {
+      const state: AppState = {
+        ...initialState(),
+        budgetExpenseDefinitions: [{ id: 'exp-rent', name: 'Rent', categoryId: 'cat-uncategorized', frequency: 'monthly' }],
+        budgetExpenseAmountsByYear: { '2026': { 'exp-rent': 2000 } },
+      }
+
+      const plan = planExpensePasteImport(state, '2026', 'cat-uncategorized', [{ name: ' rent ', amount: 2000 }])
+      const updated = importExpensePaste(state, '2026', 'cat-uncategorized', [{ name: ' rent ', amount: 2000 }])
+
+      expect(plan.stats).toEqual({ valid: 1, imported: 1, created: 0, updated: 0, unchanged: 1 })
+      expect(updated).toBe(state)
+    })
+
+    it('folds duplicate rows using the first spelling and last amount', () => {
+      const state = initialState()
+      const rows = [{ name: '  Phone  ', amount: 50 }, { name: 'phone', amount: 65 }]
+
+      const plan = planExpensePasteImport(state, '2026', 'cat-uncategorized', rows)
+      const updated = importExpensePaste(state, '2026', 'cat-uncategorized', rows)
+
+      expect(plan.stats).toEqual({ valid: 2, imported: 1, created: 1, updated: 0, unchanged: 0 })
+      expect(updated.budgetExpenseDefinitions).toHaveLength(1)
+      expect(updated.budgetExpenseDefinitions[0]).toMatchObject({ name: '  Phone  ', frequency: 'monthly' })
+      expect(updated.budgetExpenseAmountsByYear['2026'][updated.budgetExpenseDefinitions[0].id]).toBe(65)
     })
   })
 

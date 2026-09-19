@@ -33,6 +33,9 @@ src/
     Nav.tsx                          — top nav: view tabs, sync button, portfolio-name button (switch portfolio), settings button
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
     AccountsPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
+    BudgetExpensesTab.tsx            — budget expense definitions, per-year amounts, and paste import dialog
+    BudgetExpensesTab.design.md,
+    BudgetExpensesTab.product-behavior.md — component API/data flow and user-visible import behavior
     PositionGroupOverlay.tsx, ClosedPositionsTable.tsx, TransactionsTable.tsx,
     AllocationChart.tsx, AssetClassOverrideSelect.tsx, InstitutionSelect.tsx,
     RegisterBalanceDialog.tsx        — view-local widgets
@@ -102,6 +105,7 @@ App.tsx
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage
         ├─ state.view === 'settings'  → SettingsPage (activePortfolio, driveAuth=getDriveAuthFor(activePortfolio), sessionKey/salt, sync/price-sync props)
+        ├─ budget expenses → BudgetExpensesTab (local add/import dialogs; paste import parses valid rows, ensures an Uncategorized category, then dispatches `IMPORT_EXPENSE_PASTE` for the selected year)
         └─ syncConflict → SyncConflictDialog (overlay)
 ```
 

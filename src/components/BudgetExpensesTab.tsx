@@ -6,6 +6,8 @@ import type { Category } from '../lib/types'
 import { fmtUSD, LOSS_COLOR } from '../lib/computations'
 import { uid } from '../lib/seed'
 import { categoryBreakdown, availableBudgetYears, visibleExpenses } from '../lib/selectors'
+import { parseExpensePaste } from '../lib/expensePasteImport'
+import { planExpensePasteImport } from '../lib/state'
 
 export interface BudgetExpensesTabProps {
   state: AppState
@@ -82,6 +84,10 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
   const [sortBy, setSortBy] = useState<'category' | 'name'>('category')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [showAddExpenseDialog, setShowAddExpenseDialog] = useState(false)
+  const [showImportExpensesDialog, setShowImportExpensesDialog] = useState(false)
+  const [importYear, setImportYear] = useState(() => String(new Date().getFullYear()))
+  const [importText, setImportText] = useState('')
+  const [importResult, setImportResult] = useState<string | null>(null)
   const [formName, setFormName] = useState('')
   const [formCategoryId, setFormCategoryId] = useState(categories[0]?.id ?? '')
   const [formAmount, setFormAmount] = useState('')
@@ -91,6 +97,20 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: CellField } | null>(null)
   const [cellDraft, setCellDraft] = useState('')
   const skipBlurCommitRef = useRef(false)
+
+  const parsedExpensePaste = parseExpensePaste(importText)
+  const hasValidImportYear = /^\d{4}$/.test(importYear)
+  const uncategorizedCategoryId = categories.find((category) => category.name.trim().toLowerCase() === 'uncategorized')?.id
+  const expensePastePlan = hasValidImportYear
+    ? planExpensePasteImport(state, importYear, uncategorizedCategoryId ?? '', parsedExpensePaste.validRows)
+    : null
+
+  const closeImportExpensesDialog = () => {
+    setShowImportExpensesDialog(false)
+    setImportYear(String(new Date().getFullYear()))
+    setImportText('')
+    setImportResult(null)
+  }
 
   const submitNewCategory = () => {
     if (!newCategoryPrompt) return
@@ -441,12 +461,93 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
           </table>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+          <button type="button" className="btn btn-secondary" onClick={() => setShowImportExpensesDialog(true)}>
+            Import expenses
+          </button>
           <button type="button" className="btn btn-primary" onClick={() => setShowAddExpenseDialog(true)}>
             Add Expense
           </button>
         </div>
       </div>
+
+      {showImportExpensesDialog && (
+        <div className="dialog-backdrop" onClick={closeImportExpensesDialog}>
+          <div className="dialog blueprint" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-title">Import expenses</div>
+            <div className="dialog-body">
+              <div className="field">
+                <label>Year</label>
+                <input
+                  type="text"
+                  className="input"
+                  aria-label="Import expense year"
+                  value={importYear}
+                  onChange={(e) => {
+                    setImportYear(e.target.value)
+                    setImportResult(null)
+                  }}
+                />
+                {!hasValidImportYear && <div className="text-muted" style={{ fontSize: '12px' }}>Enter a four-digit year.</div>}
+              </div>
+              <div className="field">
+                <label>Paste expenses</label>
+                <textarea
+                  className="input"
+                  aria-label="Paste expenses"
+                  rows={8}
+                  value={importText}
+                  onChange={(e) => {
+                    setImportText(e.target.value)
+                    setImportResult(null)
+                  }}
+                />
+                <div className="text-muted" style={{ fontSize: '12px' }}>
+                  Paste a header row followed by Name and Amount rows, separated by tabs or commas.
+                </div>
+              </div>
+              <div className="text-muted" style={{ fontSize: '12px' }}>
+                Total data lines: {parsedExpensePaste.totalDataLines} · Valid: {expensePastePlan?.stats.valid ?? parsedExpensePaste.validRows.length} · Imported: {expensePastePlan?.stats.imported ?? 0} · Skipped invalid: {parsedExpensePaste.errors.length} · Created: {expensePastePlan?.stats.created ?? 0} · Updated: {expensePastePlan?.stats.updated ?? 0} · Unchanged: {expensePastePlan?.stats.unchanged ?? 0}
+              </div>
+              {parsedExpensePaste.errors.length > 0 && (
+                <ul className="text-muted" style={{ fontSize: '12px', margin: 'var(--space-2) 0 0', paddingLeft: 'var(--space-4)' }}>
+                  {parsedExpensePaste.errors.map((error) => (
+                    <li key={`${error.lineNumber}-${error.reason}`}>Line {error.lineNumber}: {error.reason}</li>
+                  ))}
+                </ul>
+              )}
+              {importResult && <div className="text-muted" style={{ fontSize: '12px' }}>{importResult}</div>}
+            </div>
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-secondary" onClick={closeImportExpensesDialog}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!hasValidImportYear || parsedExpensePaste.validRows.length === 0}
+                onClick={() => {
+                  if (!hasValidImportYear || parsedExpensePaste.validRows.length === 0) return
+                  const categoryId = uncategorizedCategoryId ?? uid('category')
+                  if (!uncategorizedCategoryId) {
+                    categoryDispatch({ type: 'ADD_CATEGORY', id: categoryId, name: 'Uncategorized' })
+                  }
+                  const finalPlan = planExpensePasteImport(state, importYear, categoryId, parsedExpensePaste.validRows)
+                  dispatch({
+                    type: 'IMPORT_EXPENSE_PASTE',
+                    year: importYear,
+                    uncategorizedCategoryId: categoryId,
+                    rows: parsedExpensePaste.validRows,
+                  })
+                  setImportResult(`Imported ${finalPlan.stats.imported} expense${finalPlan.stats.imported === 1 ? '' : 's'}: ${finalPlan.stats.created} created, ${finalPlan.stats.updated} updated, ${finalPlan.stats.unchanged} unchanged.`)
+                }}
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddExpenseDialog && (
         <div

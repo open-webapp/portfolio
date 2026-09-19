@@ -741,6 +741,102 @@ export function addExpenseDefinition(
   }
 }
 
+export interface ExpensePasteImportRow {
+  name: string
+  amount: number
+}
+
+export interface ExpensePasteImportStats {
+  valid: number
+  imported: number
+  created: number
+  updated: number
+  unchanged: number
+}
+
+interface PlannedExpensePasteRow extends ExpensePasteImportRow {
+  identity: string
+  existingId?: string
+}
+
+export interface ExpensePasteImportPlan {
+  rows: PlannedExpensePasteRow[]
+  stats: ExpensePasteImportStats
+}
+
+/**
+ * Fold valid pasted rows by normalized name, then classify each identity
+ * against the resolved Uncategorized category without mutating state.
+ */
+export function planExpensePasteImport(
+  state: AppState,
+  year: string,
+  uncategorizedCategoryId: string,
+  rows: ExpensePasteImportRow[]
+): ExpensePasteImportPlan {
+  const folded = new Map<string, ExpensePasteImportRow>()
+  for (const row of rows) {
+    const identity = row.name.trim().toLowerCase()
+    const prior = folded.get(identity)
+    folded.set(identity, { name: prior?.name ?? row.name, amount: row.amount })
+  }
+
+  const existingByIdentity = new Map<string, ExpenseDefinition>()
+  for (const definition of state.budgetExpenseDefinitions) {
+    if (definition.categoryId !== uncategorizedCategoryId) continue
+    const identity = definition.name.trim().toLowerCase()
+    if (!existingByIdentity.has(identity)) existingByIdentity.set(identity, definition)
+  }
+
+  const plannedRows: PlannedExpensePasteRow[] = []
+  let created = 0
+  let updated = 0
+  let unchanged = 0
+  const yearAmounts = state.budgetExpenseAmountsByYear[year] ?? {}
+  for (const [identity, row] of folded) {
+    const existing = existingByIdentity.get(identity)
+    if (!existing) {
+      created += 1
+      plannedRows.push({ ...row, identity })
+    } else {
+      if (yearAmounts[existing.id] === row.amount) unchanged += 1
+      else updated += 1
+      plannedRows.push({ ...row, identity, existingId: existing.id })
+    }
+  }
+
+  return {
+    rows: plannedRows,
+    stats: { valid: rows.length, imported: plannedRows.length, created, updated, unchanged },
+  }
+}
+
+/** Apply every planned pasted expense identity to one selected budget year. */
+export function importExpensePaste(
+  state: AppState,
+  year: string,
+  uncategorizedCategoryId: string,
+  rows: ExpensePasteImportRow[]
+): AppState {
+  const plan = planExpensePasteImport(state, year, uncategorizedCategoryId, rows)
+  if (plan.stats.imported === 0 || (plan.stats.created === 0 && plan.stats.updated === 0)) return state
+
+  const definitions = [...state.budgetExpenseDefinitions]
+  const amounts = { ...state.budgetExpenseAmountsByYear[year] }
+  for (const row of plan.rows) {
+    const id = row.existingId ?? uid('expense')
+    if (!row.existingId) {
+      definitions.push({ id, name: row.name, categoryId: uncategorizedCategoryId, frequency: 'monthly' })
+    }
+    if (amounts[id] !== row.amount) amounts[id] = row.amount
+  }
+  return {
+    ...state,
+    budgetExpenseDefinitions: definitions,
+    budgetExpenseAmountsByYear: { ...state.budgetExpenseAmountsByYear, [year]: amounts },
+  }
+}
+
 /** Patch an existing ExpenseDefinition by ID (affects all years). No-op if the ID isn't found. */
 export function updateExpenseDefinition(
   state: AppState,
@@ -1005,7 +1101,6 @@ export function reapplyCategoryMappingsToState(state: AppState, categoryMappings
     budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpenseDefinitions),
   }
 }
-
 
 
 

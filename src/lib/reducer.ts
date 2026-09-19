@@ -3,6 +3,7 @@ import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
 import type { BalanceEntry, BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
+import type { ExpensePasteImportRow } from './state'
 
 export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
@@ -40,6 +41,7 @@ export type AppAction =
   | { type: 'SET_REG_ACTIVITY_FILTER'; filter: string }
   | { type: 'SET_BUDGET_INCOME'; year: string; amount: number }
   | { type: 'ADD_EXPENSE_DEFINITION'; definition: Omit<ExpenseDefinition, 'id'>; amount: number }
+  | { type: 'IMPORT_EXPENSE_PASTE'; year: string; uncategorizedCategoryId: string; rows: ExpensePasteImportRow[] }
   | { type: 'UPDATE_EXPENSE_DEFINITION'; id: string; patch: Partial<Omit<ExpenseDefinition, 'id'>> }
   | { type: 'DELETE_EXPENSE_DEFINITION'; id: string }
   | { type: 'SET_EXPENSE_AMOUNT'; year: string; expenseId: string; amount: number }
@@ -185,6 +187,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'ADD_EXPENSE_DEFINITION':
       return StateActions.addExpenseDefinition(state, action.definition, action.amount)
+
+    case 'IMPORT_EXPENSE_PASTE':
+      return StateActions.importExpensePaste(state, action.year, action.uncategorizedCategoryId, action.rows)
 
     case 'UPDATE_EXPENSE_DEFINITION':
       return StateActions.updateExpenseDefinition(state, action.id, action.patch)

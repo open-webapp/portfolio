@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { BudgetPage } from './BudgetPage'
 import { initialState, type AppState } from '../lib/state'
+import { appReducer } from '../lib/reducer'
 import type { ExpenseDefinition, BudgetTransaction, Category, CategoryMapping } from '../lib/types'
 import { GAIN_COLOR, LOSS_COLOR, fmtUSD } from '../lib/computations'
 
@@ -201,6 +202,114 @@ describe('BudgetPage', () => {
   })
 
   describe('Expenses tab', () => {
+    describe('paste import', () => {
+      it('opens with the current four-digit year and blocks invalid required years', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-05-01T00:00:00'))
+        const { container } = renderBudgetPage()
+        switchTab(container, 'Expenses')
+        fireEvent.click(screen.getByRole('button', { name: /import expenses/i }))
+
+        const year = screen.getByLabelText('Import expense year') as HTMLInputElement
+        expect(year.value).toBe('2026')
+
+        fireEvent.change(year, { target: { value: '' } })
+        expect((screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement).disabled).toBe(true)
+
+        fireEvent.change(year, { target: { value: '26' } })
+        expect((screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement).disabled).toBe(true)
+        vi.useRealTimers()
+      })
+
+      it('parses a header and mixed comma/tab rows, reporting line errors and preview changes', () => {
+        const { container } = renderBudgetPage()
+        switchTab(container, 'Expenses')
+        fireEvent.click(screen.getByRole('button', { name: /import expenses/i }))
+        fireEvent.change(screen.getByLabelText(/paste/i), {
+          target: {
+            value: [
+              'Name,Amount',
+              '',
+              'Rent,1000',
+              'Rent\t1200',
+              'Rent,1200',
+              'Bad amount,nope',
+              ',100',
+              'Too few',
+              '',
+            ].join('\n'),
+          },
+        })
+
+        const dialog = screen.getByLabelText('Paste expenses').closest('.dialog')!
+        expect(dialog.textContent).toContain('Total data lines: 6 · Valid: 3 · Imported: 1 · Skipped invalid: 3 · Created: 1 · Updated: 0 · Unchanged: 0')
+        expect(dialog.textContent).toContain('Line 6: amount must be a positive decimal number')
+        expect(dialog.textContent).toContain('Line 7: name is required')
+        expect(dialog.textContent).toContain('Line 8: expected exactly two fields')
+      })
+
+      it('reuses a case-insensitive Uncategorized category and dispatches one import batch that upserts matching expenses', () => {
+        const dispatch = vi.fn()
+        const categoryDispatch = vi.fn()
+        const state = defaultState({
+          budgetExpenseDefinitions: [
+            makeDefinition({ id: 'exp-electric', name: '  electric bill  ', categoryId: 'cat-uncategorized', frequency: 'yearly' }),
+            makeDefinition({ id: 'exp-rent-housing', name: 'Rent', categoryId: 'cat-housing', frequency: 'monthly' }),
+          ],
+          budgetExpenseAmountsByYear: { '2026': { 'exp-electric': 110, 'exp-rent-housing': 2000 } },
+        })
+        const categories = [...CATEGORIES, { id: 'cat-uncategorized', name: ' uNcAtEgOrIzEd ', updatedAt: CATEGORY_UPDATED_AT }]
+        const { container } = renderBudgetPage({ state, dispatch, categories, categoryDispatch })
+        switchTab(container, 'Expenses')
+        fireEvent.click(screen.getByRole('button', { name: /import expenses/i }))
+        fireEvent.change(screen.getByLabelText('Import expense year'), { target: { value: '2026' } })
+        fireEvent.change(screen.getByLabelText(/paste/i), {
+          target: { value: 'Name,Amount\nELECTRIC BILL,135\nRent,2000\nPhone,50\nphone,65' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+        const imports = dispatch.mock.calls.map(([action]) => action).filter((action) => action.type === 'IMPORT_EXPENSE_PASTE')
+        expect(imports).toHaveLength(1)
+        expect(imports[0]).toMatchObject({ year: '2026', uncategorizedCategoryId: 'cat-uncategorized' })
+        expect(categoryDispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ADD_CATEGORY' }))
+
+        const updated = appReducer(state, imports[0])
+        expect(updated.budgetExpenseDefinitions.find((definition) => definition.id === 'exp-electric')).toEqual(state.budgetExpenseDefinitions[0])
+        expect(updated.budgetExpenseAmountsByYear['2026']['exp-electric']).toBe(135)
+        expect(updated.budgetExpenseDefinitions.find((definition) => definition.id === 'exp-rent-housing')).toEqual(state.budgetExpenseDefinitions[1])
+        const imported = updated.budgetExpenseDefinitions.filter((definition) => definition.categoryId === 'cat-uncategorized' && definition.id !== 'exp-electric')
+        expect(imported).toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'Rent', frequency: 'monthly' }),
+          expect.objectContaining({ name: 'Phone', frequency: 'monthly' }),
+        ]))
+        expect(imported.filter((definition) => definition.name.trim().toLowerCase() === 'phone')).toHaveLength(1)
+        const phone = imported.find((definition) => definition.name.trim().toLowerCase() === 'phone')!
+        expect(updated.budgetExpenseAmountsByYear['2026'][phone.id]).toBe(65)
+
+        const dialog = screen.getByLabelText('Paste expenses').closest('.dialog')!
+        expect(dialog).toBeTruthy()
+        expect(dialog.textContent).toContain('Total data lines: 4 · Valid: 4 · Imported: 3 · Skipped invalid: 0 · Created: 2 · Updated: 1 · Unchanged: 0')
+      })
+
+      it('creates exactly one Uncategorized category and imports with its generated ID when missing', () => {
+        const dispatch = vi.fn()
+        const categoryDispatch = vi.fn()
+        const { container } = renderBudgetPage({ dispatch, categoryDispatch })
+        switchTab(container, 'Expenses')
+        fireEvent.click(screen.getByRole('button', { name: /import expenses/i }))
+        fireEvent.change(screen.getByLabelText('Import expense year'), { target: { value: '2026' } })
+        fireEvent.change(screen.getByLabelText(/paste/i), { target: { value: 'Name,Amount\nWater,45' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+        const categoryActions = categoryDispatch.mock.calls.map(([action]) => action)
+        expect(categoryActions).toHaveLength(1)
+        expect(categoryActions[0]).toMatchObject({ type: 'ADD_CATEGORY', name: 'Uncategorized' })
+        const imports = dispatch.mock.calls.map(([action]) => action).filter((action) => action.type === 'IMPORT_EXPENSE_PASTE')
+        expect(imports).toHaveLength(1)
+        expect(imports[0].uncategorizedCategoryId).toBe(categoryActions[0].id)
+      })
+    })
+
     it('renders Category Breakdown above the Expense table', () => {
       const state = defaultState({
         budgetExpenseDefinitions: [makeDefinition({ id: 'e1', name: 'Rent' })],
