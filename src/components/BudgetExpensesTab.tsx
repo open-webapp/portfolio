@@ -1,13 +1,15 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { AppState } from '../lib/state'
-import { expenseDefinitionInUse } from '../lib/state'
+import { clearExpenseAmount, expenseDefinitionInUse, setExpenseAmount, updateExpenseDefinition } from '../lib/state'
 import type { CategoryAction } from '../lib/categoryStore'
 import type { Category } from '../lib/types'
 import { fmtUSD, LOSS_COLOR } from '../lib/computations'
 import { uid } from '../lib/seed'
-import { categoryBreakdown, availableBudgetYears, visibleExpenses } from '../lib/selectors'
+import { categoryBreakdown, availableBudgetYears, expenseTableYears, visibleExpenses } from '../lib/selectors'
 import { parseExpensePaste } from '../lib/expensePasteImport'
 import { planExpensePasteImport } from '../lib/state'
+import { buildExpenseCsv } from '../lib/expenseExport'
+import { downloadCsvAsFile } from '../lib/importExport'
 
 export interface BudgetExpensesTabProps {
   state: AppState
@@ -97,6 +99,7 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: CellField } | null>(null)
   const [cellDraft, setCellDraft] = useState('')
   const skipBlurCommitRef = useRef(false)
+  const pendingCommitStateRef = useRef<{ before: AppState; after: AppState } | null>(null)
 
   const parsedExpensePaste = parseExpensePaste(importText)
   const hasValidImportYear = /^\d{4}$/.test(importYear)
@@ -131,14 +134,7 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
     categories
   )
 
-  // Union of years in budgetTransactions + budgetExpenseAmountsByYear,
-  // plus always the real current calendar year, ascending, uncapped.
-  const years = (() => {
-    const set = new Set<string>([String(new Date().getFullYear())])
-    state.budgetTransactions.forEach((t) => set.add(t.date.slice(0, 4)))
-    Object.keys(state.budgetExpenseAmountsByYear).forEach((y) => set.add(y))
-    return [...set].sort()
-  })()
+  const years = expenseTableYears(state.budgetTransactions, state.budgetExpenseAmountsByYear, new Date())
 
   const sortedDefinitions = visibleExpenses(state.budgetExpenseDefinitions, {}, filterCategoryId, sortBy, categoriesById)
   const rows = sortDir === 'desc' ? [...sortedDefinitions].reverse() : sortedDefinitions
@@ -160,19 +156,26 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
   }
 
   const commitEdit = (rowId: string, field: CellField, value: string) => {
+    let postCommitState = state
     if (field === 'name') {
       dispatch({ type: 'UPDATE_EXPENSE_DEFINITION', id: rowId, patch: { name: value } })
+      postCommitState = updateExpenseDefinition(state, rowId, { name: value })
     } else if (field.startsWith('amount:')) {
       const year = field.slice('amount:'.length)
       const trimmed = value.trim()
       if (trimmed === '') {
         dispatch({ type: 'CLEAR_EXPENSE_AMOUNT', year, expenseId: rowId })
+        postCommitState = clearExpenseAmount(state, year, rowId)
       } else {
-        dispatch({ type: 'SET_EXPENSE_AMOUNT', year, expenseId: rowId, amount: Number(trimmed) })
+        const amount = Number(trimmed)
+        dispatch({ type: 'SET_EXPENSE_AMOUNT', year, expenseId: rowId, amount })
+        postCommitState = setExpenseAmount(state, year, rowId, amount)
       }
     }
+    pendingCommitStateRef.current = { before: state, after: postCommitState }
     setEditingCell(null)
     setCellDraft('')
+    return postCommitState
   }
 
   const handleInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -461,6 +464,29 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              const exportState = editingCell && (editingCell.field === 'name' || editingCell.field.startsWith('amount:'))
+                ? commitEdit(editingCell.rowId, editingCell.field, cellDraft)
+                : pendingCommitStateRef.current?.before === state
+                  ? pendingCommitStateRef.current.after
+                  : state
+              const exportDate = new Date()
+              const csv = buildExpenseCsv(
+                exportState.budgetExpenseDefinitions,
+                exportState.budgetExpenseAmountsByYear,
+                exportState.budgetTransactions,
+                categories,
+                exportDate
+              )
+              const filename = `expenses-${exportDate.getFullYear()}-${String(exportDate.getMonth() + 1).padStart(2, '0')}-${String(exportDate.getDate()).padStart(2, '0')}.csv`
+              downloadCsvAsFile(csv, filename)
+            }}
+          >
+            Download Expenses
+          </button>
           <button type="button" className="btn btn-secondary" onClick={() => setShowImportExpensesDialog(true)}>
             Import expenses
           </button>

@@ -706,6 +706,21 @@ export function availableBudgetYears(transactions: BudgetTransaction[], now: Dat
 }
 
 /**
+ * Distinct years for the Expenses table: transaction date prefixes, expense
+ * amount snapshot keys, and the current local year, sorted ascending.
+ */
+export function expenseTableYears(
+  transactions: BudgetTransaction[],
+  amountsByYear: Record<string, Record<string, number>>,
+  now: Date
+): string[] {
+  const years = new Set<string>([String(now.getFullYear())])
+  transactions.forEach((transaction) => years.add(transaction.date.slice(0, 4)))
+  Object.keys(amountsByYear).forEach((year) => years.add(year))
+  return [...years].sort()
+}
+
+/**
  * Aggregate expenses by category for the given year, alongside actual spend from
  * budget transactions in the same year. Budget amounts are per-frequency
  * snapshots annualized via frequency (monthly × 12) so both sides are yearly totals.

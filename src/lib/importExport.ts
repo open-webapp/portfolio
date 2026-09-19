@@ -86,17 +86,20 @@ export async function exportBackup(state: AppState, key: CryptoKey, salt: Uint8A
 }
 
 /**
- * Shared Blob-creation/anchor-click download dance used by both
- * downloadEnvelopeAsFile and downloadJsonAsFile.
+ * Shared Blob-creation/anchor-click download dance used by browser exports.
  */
-function downloadAsJsonFile(data: unknown, filename: string): void {
-  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
+function downloadAsFile(contents: string, filename: string, type: string): void {
+  const blob = new Blob([contents], { type })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = filename
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+function downloadAsJsonFile(data: unknown, filename: string): void {
+  downloadAsFile(JSON.stringify(data), filename, 'application/json')
 }
 
 /**
@@ -112,6 +115,13 @@ export function downloadEnvelopeAsFile(envelope: EncryptedEnvelope, filename: st
  */
 export function downloadJsonAsFile(data: unknown, filename: string): void {
   downloadAsJsonFile(data, filename)
+}
+
+/**
+ * Triggers a browser download of CSV text as a file.
+ */
+export function downloadCsvAsFile(csvText: string, filename: string): void {
+  downloadAsFile(csvText, filename, 'text/csv;charset=utf-8')
 }
 
 // Import-side functionality for restoring app state from a backup file.

@@ -232,16 +232,27 @@ successful name fetch, mirroring `tickerOverview.ts`'s pattern.
 
 ### Import/Export
 
-`importExport.ts` — local encrypted backup file download + re-import, positions/register data only (no quotes-price caches):
+`importExport.ts` — local encrypted backup download/import plus public local-download utilities; backup contains budget data and no quotes-price caches:
 
-- `ExportableState` (type) — strict subset of `AppState`: `accounts`, `positions`, `closedPositions`, `transactions`, `snapshots`, `csvMappings`, `customInstitutions`, `balanceEntries`, `priceSync: { apiKey, lastRun }`, `mutualFundSync: { apiKey, lastRun }`. Excludes `priceSync`/`mutualFundSync`'s `heldPrices`/`lastFetchedDate`/`callBudget` and all UI-state fields.
+- `ExportableState` (type) — strict subset of `AppState`: `accounts`, `positions`, `closedPositions`, `transactions`, `snapshots`, `csvMappings`, `customInstitutions`, `balanceEntries`, `budgetExpenseDefinitions`, `budgetExpenseAmountsByYear`, `budgetTransactions`, `priceSync: { apiKey, lastRun }`, `mutualFundSync: { apiKey, lastRun }`. Excludes `priceSync`/`mutualFundSync`'s `heldPrices`/`lastFetchedDate`/`callBudget` and all UI-state fields.
 - `buildExportableState(state)` — pure pick of the above from `AppState`.
 - `exportBackup(state, key, salt)` — `buildExportableState` then `encryptState` (`./crypto`) → `EncryptedEnvelope`.
 - `downloadEnvelopeAsFile(envelope, filename)` — Blob + anchor-click browser download.
+- `downloadCsvAsFile(csvText, filename)` — public Blob + anchor-click local CSV download (`text/csv;charset=utf-8`); no persistence, import, encryption, or Drive interaction.
 - `ImportDecryptError` (extends `Error`) — wrong password (auth-tag mismatch on decrypt).
 - `ImportMalformedFileError` (extends `Error`) — file isn't valid JSON, or isn't envelope-shaped per `detectEnvelopeShape`.
 - `parseImportFile(fileText)` — `JSON.parse` + `detectEnvelopeShape` check → `EncryptedEnvelope`; throws `ImportMalformedFileError`.
 - `getEnvelopeSaltBytes(envelope: EncryptedEnvelope)` — `Uint8Array`, decodes `envelope.salt` from base64 (wraps the module-private `base64ToBytes`).
 - `decryptImportEnvelope(envelope, password)` — derives key from the envelope's OWN embedded salt (via `getEnvelopeSaltBytes`, not session salt) via `deriveKey`, decrypts via `decryptState`, catches `OperationError` and rethrows as `ImportDecryptError` → `ExportableState`. Coalesces every field against `ExportableState` defaults (`?? []` for arrays, `?? ''`/`?? null` for `apiKey`/`lastRun`) so an older/partial export never injects `undefined`.
 
-`state.ts`'s `replaceImportedState(state, data: ExportableState)` — full replace of the 8 array fields + `priceSync`/`mutualFundSync` `apiKey`/`lastRun` only; spreads existing `priceSync`/`mutualFundSync` first so `heldPrices`/`lastFetchedDate`/`callBudget` survive untouched, and spreads existing `state` first so all UI-state fields pass through unchanged. **Orphaned**: no reducer action dispatches this and no component calls it (its former caller, `GateRestoreFromFilePanel.tsx`, is deleted — `PortfolioPicker.tsx`'s file-import path builds a fresh `AppState` directly in `App.tsx`'s `handleImportFromFile` instead). Only exercised by `state.test.ts`. Not removed as part of this docs pass; flagged for a future cleanup.
+`state.ts`'s `replaceImportedState(state, data: ExportableState)` — full replace of the exported collection fields + `priceSync`/`mutualFundSync` `apiKey`/`lastRun` only; spreads existing `priceSync`/`mutualFundSync` first so `heldPrices`/`lastFetchedDate`/`callBudget` survive untouched, and spreads existing `state` first so all UI-state fields pass through unchanged. **Orphaned**: no reducer action dispatches this and no component calls it (its former caller, `GateRestoreFromFilePanel.tsx`, is deleted — `PortfolioPicker.tsx`'s file-import path builds a fresh `AppState` directly in `App.tsx`'s `handleImportFromFile` instead). Only exercised by `state.test.ts`. Not removed as part of this docs pass; flagged for a future cleanup.
+
+### Budget Expense CSV Export
+
+`expenseExport.ts` — pure unencrypted budget expense-definition CSV builder:
+
+- `buildExpenseCsv(definitions, amountsByYear, transactions, categories, now): string` derives years through `expenseTableYears(transactions, amountsByYear, now)`, sorts every definition by resolved category name then name, and returns CRLF CSV with `Name,Category,Frequency,...years`.
+- Rows contain definition fields and raw per-year amounts only. Transactions contribute date-derived year columns only; no actual transaction field or row is serialized.
+- Missing category IDs are emitted as IDs. Missing amounts are blank. Frequencies display as `Monthly`/`Yearly`.
+- Text is RFC4180 escaped and formula-leading text is apostrophe-prefixed; numeric values, including negative amounts, are unchanged.
+- `BudgetExpensesTab.tsx` builds from full state and shared categories, commits a focused name/amount edit first, and passes the result to `downloadCsvAsFile` as `expenses-YYYY-MM-DD.csv` using the click's local date. No import, persistence, encryption, or Drive path is involved.

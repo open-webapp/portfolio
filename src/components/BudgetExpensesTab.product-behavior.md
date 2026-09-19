@@ -2,6 +2,18 @@
 
 Component behavior reference. Sibling: `BudgetExpensesTab.design.md`.
 
+## Expense CSV Download
+
+- `Download Expenses` is the first action button, before `Import expenses` and `Add Expense`.
+- Clicking it immediately downloads locally; it opens no dialog and does not import, persist, encrypt, sync, or contact Drive.
+- Filename: `expenses-YYYY-MM-DD.csv`, using the click's local calendar date and zero-padded month/day.
+- File columns: `Name`, `Category`, `Frequency`, then every shared expense-table year (years from budget transaction dates and amount-map keys, plus the current calendar year).
+- File rows: every expense definition, regardless of visible category filter/table sort; rows sort by resolved category name, then expense name. Categories missing from shared categories use their stored category ID. Frequency is `Monthly` or `Yearly`; unset year amounts are blank and set amounts are raw numbers.
+- Budget transactions affect only the year columns. Actual transaction description, account, amount, and transaction rows are never exported.
+- With no definitions, the file contains only the header row and applicable years.
+- Text fields use CSV escaping and formula-leading text (`=`, `+`, `-`, `@`) is prefixed with an apostrophe. Numeric amounts, including negative values, remain numeric.
+- A focused inline name or amount draft is committed before download; an Escape-cancelled draft is excluded.
+
 ## Paste Import
 
 - `Import expenses` opens a dialog with a year field and paste area.

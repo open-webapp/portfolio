@@ -212,3 +212,11 @@ Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup f
 - Spend excludes Income and `excludeFromSpend` categories. Linked expense-definition categories override a transaction's stored category.
 - Spend shows five read-only cards: budgeted income, actual income, budgeted spending, actual spend, and variance. Income rows are hidden by default and appear with Show excluded.
 - Legacy manual-income fields are discarded on local hydration and backup import/export; they are never converted.
+
+### Expense CSV Download
+
+- Budget > Expenses > `Download Expenses` immediately saves a local, unencrypted `expenses-YYYY-MM-DD.csv`; no dialog, import, persistence, encryption, or Google Drive operation occurs.
+- The file includes every expense definition, not just filtered/sorted visible rows, ordered by category name then expense name. Columns are Name, Category, Frequency, and all expense-table years: transaction-date years, amount-map years, and the current year.
+- It includes definition fields and raw yearly amounts only. Budget transactions supply year columns only; no actual transaction record, description, account, or amount is exported.
+- An empty definitions list produces a header-only CSV. Formula-leading text is guarded for spreadsheet safety; negative numeric amounts remain numeric.
+- Clicking download commits a focused inline name or amount edit. An Escape-cancelled draft is not exported.

@@ -18,6 +18,15 @@ type BudgetExpensesTabProps = {
 - `categories` supplies category labels and locates `Uncategorized`.
 - `categoryDispatch` creates `Uncategorized` when absent.
 
+## Expense CSV Download
+
+- The table action group is ordered: `Download Expenses`, `Import expenses`, `Add Expense`.
+- Download click has no local dialog/state. It calls `buildExpenseCsv` from `lib/expenseExport.ts`, then `downloadCsvAsFile` from `lib/importExport.ts`.
+- Builder inputs are the complete `budgetExpenseDefinitions`, `budgetExpenseAmountsByYear`, and `budgetTransactions` state plus shared categories and one click-time `Date`; visible table filtering/sorting does not scope the file.
+- Before building, a focused inline name or amount edit is committed and its projected post-edit state is used. Escaped/cancelled drafts are not included. Category/frequency changes commit through their own controls.
+- `buildExpenseCsv(definitions, amountsByYear, transactions, categories, now): string` derives columns with shared `expenseTableYears(transactions, amountsByYear, now)`, resolves category names, sorts all definitions by category then name, and returns CRLF CSV. Transactions contribute years only; no transaction row/data is emitted.
+- `downloadCsvAsFile(csvText, filename): void` is the public browser Blob/anchor local-download utility (`text/csv;charset=utf-8`); it has no import, persistence, encryption, or Drive path.
+
 ## Import Dialog
 
 - Local state: visibility, `importYear` (initialized/reset to current four-digit year), pasted text, and post-import result text.

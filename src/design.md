@@ -19,7 +19,7 @@ src/
     drive.ts                         — per-portfolio Drive backup/restore/conflict + auth
     crypto.ts                        — AES-GCM encrypt/decrypt, key derivation
     csv.ts, accounts.ts, positionsImport.ts, transactionsImport.ts,
-    importExport.ts, importPreview.ts, pastedTable.ts — CSV import pipeline
+    importExport.ts, expenseExport.ts, importPreview.ts, pastedTable.ts — local export/download helpers and CSV import pipeline
     (mapping-profile fields live on SavedCsvMapping in types.ts / csvMappings in AppState)
     selectors.ts                     — derived/filtered view data for components
     computations.ts                  — position market value/cost basis/G-L math
@@ -33,9 +33,9 @@ src/
     Nav.tsx                          — top nav: view tabs, sync button, portfolio-name button (switch portfolio), settings button
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
     AccountsPage.tsx, BudgetPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
-    BudgetExpensesTab.tsx            — budget expense definitions, per-year amounts, and paste import dialog
+    BudgetExpensesTab.tsx            — budget expense definitions, per-year amounts, direct CSV download, and paste import dialog
     BudgetExpensesTab.design.md,
-    BudgetExpensesTab.product-behavior.md — component API/data flow and user-visible import behavior
+    BudgetExpensesTab.product-behavior.md — component API/data flow and user-visible expense import/download behavior
     CategoryMappingTab.tsx            — Budget-local category/mapping management tab
     CategoryMappingTab.design.md,
     CategoryMappingTab.product-behavior.md — component API/data flow and user-visible behavior
@@ -110,7 +110,7 @@ App.tsx
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage
         ├─ state.view === 'settings'  → SettingsPage (activePortfolio, driveAuth=getDriveAuthFor(activePortfolio), sessionKey/salt, sync/price-sync props; Backup/Encryption/Quotes API Key only, no category-mapping props)
-        ├─ budget expenses → BudgetExpensesTab (local add/import dialogs; paste import parses valid rows, ensures an Uncategorized category, then dispatches `IMPORT_EXPENSE_PASTE` for the selected year)
+        ├─ budget expenses → BudgetExpensesTab (direct local `Download Expenses` builds full-state definition CSV via `expenseExport.ts` + `downloadCsvAsFile`; local add/import dialogs; paste import parses valid rows, ensures an Uncategorized category, then dispatches `IMPORT_EXPENSE_PASTE` for the selected year)
         ├─ budget category mapping → CategoryMappingTab (Budget-local tab; hydrated global categories/mappings and category-store dispatch)
         └─ syncConflict → SyncConflictDialog (overlay)
 ```
@@ -120,3 +120,5 @@ App.tsx
 ## Data Model
 
 Full type definitions, field reference, and domain invariants (natural keys, replace-on-reimport rules, dedup keys, computed-field rules): see `src/lib/types.ts` (types) and root `CLAUDE.md`'s Architecture section (invariants). Not duplicated here.
+
+- `expenseExport.ts` is a pure budget expense-definition CSV module. It receives full definitions, amount maps, budget transactions, shared categories, and a date; it emits all definitions sorted by category/name with shared year columns. The Budget Expenses download passes its CSV directly to the browser-local `downloadCsvAsFile`; it has no expense-import or Drive route.

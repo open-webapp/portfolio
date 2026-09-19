@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actualIncomeForYear, budgetedIncomeForYear, isIncomeOrExcludedTransaction, yearTotalSpend } from './selectors'
+import { actualIncomeForYear, budgetedIncomeForYear, expenseTableYears, isIncomeOrExcludedTransaction, yearTotalSpend } from './selectors'
 import type { BudgetTransaction, Category, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
@@ -28,5 +28,34 @@ describe('derived budget income', () => {
   it('excludes Income from spend totals', () => {
     const transactions = [tx({ categoryId: 'income', amount: 5000 }), tx({ id: 'food', amount: 100 })]
     expect(yearTotalSpend(transactions, categories, '2025', definitions)).toBe(100)
+  })
+})
+
+describe('expenseTableYears', () => {
+  const now = new Date(2026, 8, 19)
+
+  it('returns the ascending union of the current year, transaction years, and amount snapshot years', () => {
+    expect(expenseTableYears(
+      [tx({ date: '2024-01-01' }), tx({ id: 'later', date: '2027-12-31' })],
+      { '2023': {}, '2025': {} },
+      now
+    )).toEqual(['2023', '2024', '2025', '2026', '2027'])
+  })
+
+  it('deduplicates years and returns only the current year without transaction or amount data', () => {
+    expect(expenseTableYears(
+      [tx({ date: '2026-01-01' }), tx({ id: 'duplicate', date: '2026-02-01' })],
+      { '2026': {}, '2025': {} },
+      now
+    )).toEqual(['2025', '2026'])
+    expect(expenseTableYears([], {}, now)).toEqual(['2026'])
+  })
+
+  it('includes malformed legacy date prefixes and amount keys without throwing', () => {
+    expect(expenseTableYears(
+      [tx({ date: 'bad' }), tx({ id: 'short', date: '20' })],
+      { invalid: {}, '': {} },
+      now
+    )).toEqual(['', '20', '2026', 'bad', 'invalid'])
   })
 })
