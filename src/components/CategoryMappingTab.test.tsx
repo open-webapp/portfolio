@@ -23,10 +23,19 @@ function fixture() {
   state.budgetExpenseDefinitions = [
     { id: 'fresh', name: 'Fresh Groceries', categoryId: 'grocery', frequency: 'monthly' },
     { id: 'pantry', name: 'Pantry Groceries', categoryId: 'grocery', frequency: 'monthly' },
+    { id: 'dining', name: 'Dining Out', categoryId: 'dining', frequency: 'monthly' },
+  ]
+  state.budgetTransactions = [
+    { id: 'direct-grocery', date: '2024-01-01', description: 'MARKET', categoryId: 'grocery', amount: 10 },
+    { id: 'linked-grocery', date: '2025-01-01', description: 'WHOLE FOODS', categoryId: 'other', amount: 20, spendExpenseId: 'fresh' },
+    { id: 'stale-grocery', date: '2026-01-01', description: 'RESTAURANT', categoryId: 'grocery', amount: 30, spendExpenseId: 'dining' },
+    { id: 'unrelated', date: '2023-01-01', description: 'TRANSFER', categoryId: 'other', amount: 40 },
   ]
   const categories: Category[] = [
     { id: 'grocery', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'dining', name: 'Dining', updatedAt: '2026-01-01T00:00:00.000Z' },
     { id: 'unused', name: 'Unused Category', updatedAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'other', name: 'Other', updatedAt: '2026-01-01T00:00:00.000Z' },
   ]
   const categoryMappings: CategoryMapping[] = [
     { id: 'whole-foods', substring: 'WHOLE FOODS', spendExpenseId: 'fresh', updatedAt: '2026-01-01T00:00:00.000Z' },
@@ -48,14 +57,103 @@ describe('CategoryMappingTab', () => {
     expect(screen.getByText('Category Mapping')).toBeTruthy()
   })
 
-  it('groups mappings by definition, keeps unused categories mapping-free, and has no category delete', () => {
-    const { container } = renderTab()
+  it('groups mappings by definition, keeps unused categories mapping-free, and offers deletion except for Other', () => {
+    renderTab()
     expect(screen.getByText('Fresh Groceries (Groceries)')).toBeTruthy()
     expect(screen.getByText('Pantry Groceries (Groceries)')).toBeTruthy()
-    expect(screen.getAllByPlaceholderText('+ add substring')).toHaveLength(2)
+    expect(screen.getAllByPlaceholderText('+ add substring')).toHaveLength(3)
     const unused = screen.getByText('Unused Category').closest('div')!.parentElement!
     expect(unused.querySelector('input[placeholder="+ add substring"]')).toBeNull()
-    expect(Array.from(container.querySelectorAll('button')).some((b) => /^Delete category/.test(b.getAttribute('aria-label') ?? ''))).toBe(false)
+    expect(screen.getByLabelText('Delete category Unused Category')).toBeTruthy()
+    expect(screen.queryByLabelText('Delete category Other')).toBeNull()
+  })
+
+  it('shows effective spend-record counts for every category header', () => {
+    renderTab()
+    expect(screen.getByText('0 spend records')).toBeTruthy()
+    expect(screen.getAllByText('1 spend record')).toHaveLength(2)
+    expect(screen.getByText('2 spend records')).toBeTruthy()
+  })
+
+  it('deletes a category after confirming the irreversible action', () => {
+    const categoryDispatch = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderTab({ categoryDispatch })
+    fireEvent.click(screen.getByLabelText('Delete category Unused Category'))
+    expect(window.confirm).toHaveBeenCalledWith('Delete category "Unused Category"? This cannot be undone.')
+    expect(categoryDispatch).toHaveBeenCalledWith({ type: 'DELETE_CATEGORY', id: 'unused' })
+  })
+
+  it('does not delete a category when confirmation is declined', () => {
+    const categoryDispatch = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderTab({ categoryDispatch })
+    fireEvent.click(screen.getByLabelText('Delete category Unused Category'))
+    expect(categoryDispatch).not.toHaveBeenCalled()
+  })
+
+  it('blocks deletion when spend records use the category', () => {
+    const data = fixture()
+    data.state.budgetExpenseDefinitions = []
+    data.state.budgetTransactions = [{ id: 'spend', date: '2026-01-01', description: 'MARKET', categoryId: 'grocery', amount: 10 }]
+    const categoryDispatch = vi.fn()
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderTab({ ...data, categoryDispatch })
+    fireEvent.click(screen.getByLabelText('Delete category Groceries'))
+    expect(alert).toHaveBeenCalledWith('Cannot delete category "Groceries": 1 Spend record uses it.')
+    expect(confirm).not.toHaveBeenCalled()
+    expect(categoryDispatch).not.toHaveBeenCalled()
+  })
+
+  it('blocks deletion when expense definitions use the category', () => {
+    const data = fixture()
+    data.state.budgetTransactions = []
+    const categoryDispatch = vi.fn()
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderTab({ ...data, categoryDispatch })
+    fireEvent.click(screen.getByLabelText('Delete category Groceries'))
+    expect(alert).toHaveBeenCalledWith('Cannot delete category "Groceries": 2 Expense definitions use it.')
+    expect(confirm).not.toHaveBeenCalled()
+    expect(categoryDispatch).not.toHaveBeenCalled()
+  })
+
+  it('reports both blockers in one alert when both spend records and definitions use the category', () => {
+    const categoryDispatch = vi.fn()
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderTab({ categoryDispatch })
+    fireEvent.click(screen.getByLabelText('Delete category Groceries'))
+    expect(alert).toHaveBeenCalledWith('Cannot delete category "Groceries": 2 Spend records and 2 Expense definitions use it.')
+    expect(alert).toHaveBeenCalledTimes(1)
+    expect(confirm).not.toHaveBeenCalled()
+    expect(categoryDispatch).not.toHaveBeenCalled()
+  })
+
+  it('updates header counts and deletion blocks when records and definitions change', () => {
+    const data = fixture()
+    data.state.budgetTransactions = []
+    data.state.budgetExpenseDefinitions = []
+    const categoryDispatch = vi.fn()
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { rerender } = renderTab({ ...data, categoryDispatch })
+    expect(screen.getByLabelText('Delete category Groceries').parentElement!.textContent).toContain('0 spend records')
+    fireEvent.click(screen.getByLabelText('Delete category Groceries'))
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(categoryDispatch).toHaveBeenCalledWith({ type: 'DELETE_CATEGORY', id: 'grocery' })
+
+    const changed = fixture()
+    changed.state.budgetTransactions = [{ id: 'spend', date: '2026-01-01', description: 'MARKET', categoryId: 'grocery', amount: 10 }]
+    changed.state.budgetExpenseDefinitions = [{ id: 'definition', name: 'Market', categoryId: 'grocery', frequency: 'monthly' }]
+    changed.categories = changed.categories.map((category) => category.id === 'grocery' ? { ...category, name: 'Food' } : category)
+    rerender(<CategoryMappingTab {...changed} dispatch={vi.fn()} categoryDispatch={categoryDispatch} categoriesHydrated />)
+    expect(screen.getByText('1 spend record')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Delete category Food'))
+    expect(alert).toHaveBeenLastCalledWith('Cannot delete category "Food": 1 Spend record and 1 Expense definition use it.')
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(categoryDispatch).toHaveBeenCalledTimes(1)
   })
 
   it('places mapping edit before text and delete after it, and confirms deletion', () => {

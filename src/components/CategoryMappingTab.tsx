@@ -11,7 +11,7 @@ import {
   parseCategoryMappingImportFile,
 } from '../lib/importExport'
 import { LOSS_COLOR } from '../lib/computations'
-import { mappingsForExpense } from '../lib/selectors'
+import { effectiveCategoryId, mappingsForExpense } from '../lib/selectors'
 
 const iconBtn: CSSProperties = {
   border: 'none',
@@ -142,6 +142,11 @@ export function CategoryMappingTab({
       {categories.map((category) => {
         const isEditingCategory = editingCategoryId === category.id
         const expenses = state.budgetExpenseDefinitions.filter((e) => e.categoryId === category.id)
+        const spendRecordCount = state.budgetTransactions.filter(
+          (transaction) => effectiveCategoryId(transaction, state.budgetExpenseDefinitions) === category.id,
+        ).length
+        const spendRecordText = `${spendRecordCount} spend record${spendRecordCount === 1 ? '' : 's'}`
+        const expenseDefinitionText = `${expenses.length} expense definition${expenses.length === 1 ? '' : 's'}`
         return (
           <div key={category.id} style={{ marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-3)', borderBottom: '1px solid var(--border-color, #ddd)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -162,10 +167,27 @@ export function CategoryMappingTab({
                   }}><PencilIcon /></button>
                 </>
               )}
+              <span>{spendRecordText}</span>
+              <span>{expenseDefinitionText}</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', marginLeft: 'var(--space-2)' }}>
                 <input type="checkbox" aria-label={`Exclude ${category.name} from spend tracking`} checked={category.excludeFromSpend ?? false} onChange={(e) => categoryDispatch({ type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND', id: category.id, exclude: e.target.checked })} />
                 Exclude from spend tracking
               </label>
+              {category.name !== 'Other' && (
+                <button type="button" style={{ ...iconBtn, color: LOSS_COLOR }} aria-label={`Delete category ${category.name}`} title="Delete category" onClick={() => {
+                  if (spendRecordCount || expenses.length) {
+                    const blockers = [
+                      spendRecordCount && `${spendRecordCount} Spend record${spendRecordCount === 1 ? '' : 's'}`,
+                      expenses.length && `${expenses.length} Expense definition${expenses.length === 1 ? '' : 's'}`,
+                    ].filter(Boolean).join(' and ')
+                    window.alert(`Cannot delete category "${category.name}": ${blockers} ${spendRecordCount + expenses.length === 1 ? 'uses' : 'use'} it.`)
+                    return
+                  }
+                  if (window.confirm(`Delete category "${category.name}"? This cannot be undone.`)) {
+                    categoryDispatch({ type: 'DELETE_CATEGORY', id: category.id })
+                  }
+                }}><TrashIcon /></button>
+              )}
             </div>
             <div style={{ marginLeft: 'var(--space-5)', marginTop: 'var(--space-2)' }}>
               {expenses.map((expense) => {
