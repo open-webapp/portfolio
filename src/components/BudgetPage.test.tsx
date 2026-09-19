@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { BudgetPage } from './BudgetPage'
 import { initialState } from '../lib/state'
@@ -22,5 +22,29 @@ describe('BudgetPage derived income', () => {
     expect(screen.getByText(`Actual income (${new Date().getFullYear()})`)).toBeTruthy()
     expect(screen.getAllByText('$12,000.00')).toHaveLength(1)
     expect(screen.queryByLabelText('Edit income')).toBeNull()
+  })
+
+  it('finds unlinked spend records by their displayed Uncategorized category label', () => {
+    const year = new Date().getFullYear()
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'grocery', date: `${year}-01-01`, description: 'Market run', categoryId: 'food', amount: 42 },
+      ],
+    }
+    render(
+      <BudgetPage
+        state={state}
+        dispatch={vi.fn()}
+        categories={[{ id: 'food', name: 'Food', updatedAt: '' }]}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+      />
+    )
+
+    fireEvent.change(screen.getAllByLabelText('Search records').at(-1)!, { target: { value: 'Uncategorized' } })
+
+    expect(screen.getByText('Market run')).toBeTruthy()
+    expect(screen.getByText('Uncategorized (Food)')).toBeTruthy()
   })
 })
