@@ -6,9 +6,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
  * app callers, only this test). Two behaviours it must get right, neither of
  * which drive-sync provides:
  *
- * 1. drive-sync drops `includeFolders` on the way to openPicker, so a picker
- *    opened without a parent folder can never reach a backup that lives in a
- *    nested folder. The wrapper must scope the picker to the app folder.
+ * 1. Scoped pickers default to the app folder, while unscoped pickers can
+ *    browse Drive normally and request folders.
  * 2. Cancelling the picker rejects with PickerCancelledError. That is a no-op,
  *    not a failure, and must surface as `null`.
  */
@@ -51,7 +50,7 @@ describe('drive.project().pickFile', () => {
       { fileId: 'file-1', name: 'portfolio-state.json', mimeType: 'application/json' },
     ])
 
-    const file = await drive.project('app').pickFile({ includeFolders: true })
+    const file = await drive.project('app').pickFile()
 
     expect(file).toEqual({
       id: 'file-1',
@@ -75,10 +74,22 @@ describe('drive.project().pickFile', () => {
     expect(mockEnsureFolderPath).not.toHaveBeenCalled()
   })
 
-  it('returns null when the user cancels instead of surfacing an error', async () => {
+  it('leaves unscoped folder browsing unparented and forwards includeFolders', async () => {
+    mockPickFile.mockResolvedValue([])
+
+    await drive.project('app').pickFile({ unscoped: true, includeFolders: true })
+
+    const passed = mockPickFile.mock.calls[0][0]
+    expect(passed).not.toHaveProperty('parentFolderId')
+    expect(passed.includeFolders).toBe(true)
+    expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+  })
+
+  it('returns null when the user cancels a scoped or unscoped picker', async () => {
     mockPickFile.mockRejectedValue(new PickerCancelledError())
 
-    await expect(drive.project('app').pickFile({ includeFolders: true })).resolves.toBeNull()
+    await expect(drive.project('app').pickFile()).resolves.toBeNull()
+    await expect(drive.project('app').pickFile({ unscoped: true, includeFolders: true })).resolves.toBeNull()
   })
 
   it('still propagates genuine picker failures', async () => {

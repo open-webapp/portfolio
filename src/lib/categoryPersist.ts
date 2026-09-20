@@ -15,6 +15,7 @@ interface MigrationMeta {
 
 interface DriveSyncMeta {
   lastKnownRemoteModifiedTime?: string
+  sharedFileId?: string
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
@@ -161,6 +162,15 @@ export async function getLastKnownRemoteModifiedTime(): Promise<string | undefin
 
 export async function setLastKnownRemoteModifiedTime(iso: string): Promise<void> {
   await putValue<DriveSyncMeta>(META_STORE, DRIVE_SYNC_KEY, { lastKnownRemoteModifiedTime: iso })
+}
+
+export async function getSharedCategoryDriveFileId(): Promise<string | undefined> {
+  const meta = await getValue<DriveSyncMeta>(META_STORE, DRIVE_SYNC_KEY)
+  return meta?.sharedFileId
+}
+
+export async function setSharedCategoryDriveFileId(id: string | null): Promise<void> {
+  await putValue<DriveSyncMeta>(META_STORE, DRIVE_SYNC_KEY, { sharedFileId: id ?? undefined })
 }
 
 /**

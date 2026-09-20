@@ -1,9 +1,24 @@
-import { useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import type { Portfolio } from '../lib/types'
 import type { EncryptedEnvelope } from '../lib/crypto'
 import { nameKey } from '../lib/portfolioRegistry'
-import { parseImportFile, ImportMalformedFileError, ImportDecryptError } from '../lib/importExport'
-import { DriveDecryptError, DriveMalformedBackupError } from '../lib/drive'
+import {
+  downloadJsonAsFile,
+  parseCategoryMappingImportFile,
+  parseImportFile,
+  ImportMalformedFileError,
+  ImportDecryptError,
+} from '../lib/importExport'
+import { drive, DriveDecryptError, DriveMalformedBackupError, getPickerDriveAuth } from '../lib/drive'
+import { pullGlobalCategoriesFromDrive } from '../lib/categoryDrive'
+import {
+  getSharedCategoryDriveFileId,
+  loadGlobalCategoryState,
+  saveGlobalCategoryState,
+  setSharedCategoryDriveFileId,
+} from '../lib/categoryPersist'
+import { mergeCategoryState } from '../lib/categoryMerge'
+import { SharedSourceBadge, UnlinkButton } from './SharedSource'
 
 export interface PortfolioPickerProps {
   portfolios: Portfolio[]
@@ -12,22 +27,28 @@ export interface PortfolioPickerProps {
   onDelete: (id: string) => Promise<void>
   onOpen: (id: string) => void
   onImportFromDriveFolder: (folder: { name: string; id: string }, password: string) => Promise<void>
+  onImportSharedPortfolio: (folder: { name: string; id: string }, password: string) => Promise<void>
   onImportFromFile: (envelope: EncryptedEnvelope, name: string, password: string) => Promise<void>
   onListDriveFolders: () => Promise<{ name: string; id: string }[]>
   isOnline: boolean
 }
 
 /**
- * PortfolioPicker: lists existing portfolios (rename inline, delete, open) and
- * a create-new-portfolio form below. Layout mirrors notesdiary's ProjectPicker
- * (centered column, list section + create section, meta line, text-link
- * delete) but uses this app's own design-system classes (card/btn/input).
+ * PortfolioPicker: lists existing portfolios (rename inline, delete, open),
+ * creates/imports portfolios, and manages global category-mapping import/export.
+ * Uses this app's design-system classes (card/btn/input).
  */
 interface DriveRowState {
   password: string
   error: string | null
   importing: boolean
   passwordOpen: boolean
+}
+
+function driveImportErrorMessage(err: unknown): string {
+  if (err instanceof DriveDecryptError) return 'Incorrect password.'
+  if (err instanceof DriveMalformedBackupError) return 'Could not import this portfolio.'
+  return err instanceof Error ? err.message : 'Could not import this portfolio.'
 }
 
 export function PortfolioPicker({
@@ -37,6 +58,7 @@ export function PortfolioPicker({
   onDelete,
   onOpen,
   onImportFromDriveFolder,
+  onImportSharedPortfolio,
   onImportFromFile,
   onListDriveFolders,
   isOnline,
@@ -65,6 +87,22 @@ export function PortfolioPicker({
   const [driveListLoading, setDriveListLoading] = useState(false)
   const [driveEmptyMessage, setDriveEmptyMessage] = useState<string | null>(null)
   const [driveRowState, setDriveRowState] = useState<Record<string, DriveRowState>>({})
+  const [sharedImportFolder, setSharedImportFolder] = useState<{ name: string; id: string } | null>(null)
+  const [sharedImportState, setSharedImportState] = useState<DriveRowState | null>(null)
+
+  const [globalCategoryState, setGlobalCategoryState] = useState<Awaited<ReturnType<typeof loadGlobalCategoryState>>>({
+    categories: [],
+    categoryMappings: [],
+    budgetAccountRules: [],
+  })
+  const [categoryMappingImportError, setCategoryMappingImportError] = useState<string | null>(null)
+  const categoryMappingInputRef = useRef<HTMLInputElement | null>(null)
+  const [sharedCategoryDriveFileId, setSharedCategoryDriveFileIdState] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    void loadGlobalCategoryState([]).then(setGlobalCategoryState)
+    void getSharedCategoryDriveFileId().then(setSharedCategoryDriveFileIdState)
+  }, [])
 
   const startRename = (portfolio: Portfolio) => {
     setRenamingId(portfolio.id)
@@ -83,6 +121,70 @@ export function PortfolioPicker({
   const cancelRename = () => {
     setRenamingId(null)
     setRenameDraft('')
+  }
+
+  const handleDownloadCategoryMapping = () => {
+    downloadJsonAsFile(
+      {
+        categories: globalCategoryState.categories,
+        categoryMappings: globalCategoryState.categoryMappings,
+        budgetAccountRules: globalCategoryState.budgetAccountRules,
+      },
+      'category-mapping.json',
+    )
+  }
+
+  const handleCategoryMappingImport = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      const imported = parseCategoryMappingImportFile(await file.text())
+      const merged = mergeCategoryState(globalCategoryState, imported)
+      await saveGlobalCategoryState(merged)
+      // The picker has no portfolio transactions to reapply; opening a portfolio hydrates its mappings.
+      setGlobalCategoryState(merged)
+      setCategoryMappingImportError(null)
+    } catch {
+      setCategoryMappingImportError('This is not a valid category mapping file.')
+    } finally {
+      e.target.value = ''
+    }
+  }
+
+  const handleSharedCategoryMappingDriveImport = async () => {
+    try {
+      const pickedFile = await drive.project('picker').pickFile({
+        unscoped: true,
+        mimeTypes: ['application/json'],
+        multiSelect: false,
+      })
+      if (!pickedFile) return
+
+      const remote = await pullGlobalCategoriesFromDrive(getPickerDriveAuth(), 'picker', pickedFile.id)
+      if (!remote) {
+        setCategoryMappingImportError('This is not a valid shared category mapping file.')
+        return
+      }
+
+      const merged = mergeCategoryState(globalCategoryState, remote)
+      await saveGlobalCategoryState(merged)
+      await setSharedCategoryDriveFileId(pickedFile.id)
+      setGlobalCategoryState(merged)
+      setCategoryMappingImportError(null)
+    } catch {
+      setCategoryMappingImportError('Could not import the shared category mapping from Google Drive.')
+    }
+  }
+
+  const handleUnlinkSharedCategoryMapping = async () => {
+    try {
+      await setSharedCategoryDriveFileId(null)
+      setSharedCategoryDriveFileIdState(undefined)
+      setCategoryMappingImportError(null)
+    } catch {
+      setCategoryMappingImportError('Could not unlink the shared category mapping.')
+    }
   }
 
   const handleDelete = async (portfolio: Portfolio) => {
@@ -262,18 +364,31 @@ export function PortfolioPicker({
     try {
       await onImportFromDriveFolder(folder, password)
     } catch (err) {
-      let message = 'Could not import this portfolio.'
-      if (err instanceof DriveDecryptError) {
-        message = 'Incorrect password.'
-      } else if (err instanceof DriveMalformedBackupError) {
-        message = 'Could not import this portfolio.'
-      } else if (err instanceof Error) {
-        message = err.message
-      }
+      const message = driveImportErrorMessage(err)
       setDriveRowState((prev) => ({
         ...prev,
         [folder.id]: { ...(prev[folder.id] ?? { passwordOpen: true }), password: '', error: message, importing: false, passwordOpen: true },
       }))
+    }
+  }
+
+  const handlePickSharedPortfolio = async () => {
+    const folder = await drive.project('picker').pickFile({ unscoped: true, includeFolders: true, multiSelect: false })
+    if (!folder) return
+    setSharedImportFolder({ name: folder.name, id: folder.id })
+    setSharedImportState({ password: '', error: null, importing: false, passwordOpen: true })
+  }
+
+  const handleSubmitSharedImport = async () => {
+    if (!sharedImportFolder || !sharedImportState) return
+
+    setSharedImportState({ ...sharedImportState, importing: true, error: null })
+    try {
+      await onImportSharedPortfolio(sharedImportFolder, sharedImportState.password)
+      setSharedImportFolder(null)
+      setSharedImportState(null)
+    } catch (err) {
+      setSharedImportState({ ...sharedImportState, password: '', error: driveImportErrorMessage(err), importing: false })
     }
   }
 
@@ -322,7 +437,7 @@ export function PortfolioPicker({
                       />
                     ) : (
                       <div className="card-title" onClick={() => startRename(portfolio)} style={{ cursor: 'pointer' }}>
-                        {portfolio.name}
+                        {portfolio.name} {portfolio.sharedDriveFolderId && <SharedSourceBadge />}
                       </div>
                     )}
                     <p className="card-body" style={{ fontSize: 12, margin: 'var(--space-1) 0 0' }}>
@@ -369,6 +484,63 @@ export function PortfolioPicker({
           >
             {driveListLoading ? 'Loading Google Drive...' : 'Load from Google Drive'}
           </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ border: 'none', background: 'none', cursor: 'pointer', marginLeft: 'var(--space-3)' }}
+            onClick={() => void handlePickSharedPortfolio()}
+          >
+            Import a shared portfolio
+          </button>
+
+          {sharedImportFolder && sharedImportState && (
+            <div className="card blueprint elev-sm" style={{ marginTop: 'var(--space-3)' }}>
+              <div className="card-title">{sharedImportFolder.name}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                <div className="field">
+                  <label>Password</label>
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="Enter the portfolio's password"
+                    value={sharedImportState.password}
+                    autoFocus
+                    autoComplete="current-password"
+                    disabled={sharedImportState.importing}
+                    onChange={(e) => setSharedImportState({ ...sharedImportState, password: e.target.value, error: null })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        void handleSubmitSharedImport()
+                      }
+                    }}
+                  />
+                </div>
+                {sharedImportState.error && (
+                  <div className="tag tag-outline" style={{ marginBottom: 0 }}>
+                    {sharedImportState.error}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                  <button type="button" className="btn btn-primary" disabled={sharedImportState.importing} onClick={() => void handleSubmitSharedImport()}>
+                    {sharedImportState.importing ? 'Importing...' : 'Import'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ border: 'none', background: 'none', cursor: 'pointer' }}
+                    disabled={sharedImportState.importing}
+                    onClick={() => {
+                      setSharedImportFolder(null)
+                      setSharedImportState(null)
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {driveListError && (
             <div className="tag tag-outline" style={{ marginTop: 'var(--space-2)' }}>
@@ -655,6 +827,54 @@ export function PortfolioPicker({
                 Cancel
               </button>
             </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ width: '100%', maxWidth: 480, paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-divider)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+          <h2 className="card-title" style={{ fontSize: 18, margin: 0 }}>
+            Global Mapping
+          </h2>
+          {sharedCategoryDriveFileId && <SharedSourceBadge />}
+          {sharedCategoryDriveFileId && <UnlinkButton confirmText="Unlink this shared category mapping?" onUnlink={handleUnlinkSharedCategoryMapping} />}
+        </div>
+        <input
+          ref={categoryMappingInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: 'none' }}
+          onChange={(e) => void handleCategoryMappingImport(e)}
+        />
+        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={globalCategoryState.categories.length === 0 && globalCategoryState.categoryMappings.length === 0}
+            onClick={handleDownloadCategoryMapping}
+          >
+            Download Category Mapping
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ border: 'none', background: 'none', cursor: 'pointer' }}
+            onClick={() => categoryMappingInputRef.current?.click()}
+          >
+            Import Category Mapping
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ border: 'none', background: 'none', cursor: 'pointer' }}
+            onClick={() => void handleSharedCategoryMappingDriveImport()}
+          >
+            Import a shared mapping from Google Drive
+          </button>
+        </div>
+        {categoryMappingImportError && (
+          <div className="tag tag-outline" style={{ marginTop: 'var(--space-2)' }}>
+            {categoryMappingImportError}
           </div>
         )}
       </div>

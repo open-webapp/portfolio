@@ -7,12 +7,14 @@ const mockLoadGlobalCategoryState = vi.fn()
 const mockSaveGlobalCategoryState = vi.fn()
 const mockGetLastKnownRemoteModifiedTime = vi.fn()
 const mockSetLastKnownRemoteModifiedTime = vi.fn()
+const mockGetSharedCategoryDriveFileId = vi.fn()
 
 vi.mock('../lib/categoryPersist', () => ({
   loadGlobalCategoryState: (...args: unknown[]) => mockLoadGlobalCategoryState(...args),
   saveGlobalCategoryState: (...args: unknown[]) => mockSaveGlobalCategoryState(...args),
   getLastKnownRemoteModifiedTime: (...args: unknown[]) => mockGetLastKnownRemoteModifiedTime(...args),
   setLastKnownRemoteModifiedTime: (...args: unknown[]) => mockSetLastKnownRemoteModifiedTime(...args),
+  getSharedCategoryDriveFileId: (...args: unknown[]) => mockGetSharedCategoryDriveFileId(...args),
 }))
 
 const mockPullGlobalCategoriesFromDrive = vi.fn()
@@ -50,6 +52,7 @@ describe('useGlobalCategories', () => {
     mockSaveGlobalCategoryState.mockReset().mockResolvedValue(undefined)
     mockGetLastKnownRemoteModifiedTime.mockReset().mockResolvedValue(undefined)
     mockSetLastKnownRemoteModifiedTime.mockReset().mockResolvedValue(undefined)
+    mockGetSharedCategoryDriveFileId.mockReset().mockResolvedValue(undefined)
     mockPullGlobalCategoriesFromDrive.mockReset().mockResolvedValue(null)
     mockPushGlobalCategoriesToDrive.mockReset().mockResolvedValue(undefined)
     mockGetGlobalCategoriesModifiedTime.mockReset().mockResolvedValue(null)
@@ -132,7 +135,8 @@ describe('useGlobalCategories', () => {
     expect(mockPushGlobalCategoriesToDrive).toHaveBeenCalledWith(
       fakeDriveAuth,
       'proj-1',
-      expect.objectContaining({ budgetAccountRules: [] })
+      expect.objectContaining({ budgetAccountRules: [] }),
+      undefined
     )
   })
 
@@ -162,7 +166,8 @@ describe('useGlobalCategories', () => {
     expect(mockPushGlobalCategoriesToDrive).toHaveBeenCalledWith(
       fakeDriveAuth,
       'proj-1',
-      expect.objectContaining({ budgetAccountRules: [rule] })
+      expect.objectContaining({ budgetAccountRules: [rule] }),
+      undefined
     )
   })
 
@@ -278,6 +283,8 @@ describe('useGlobalCategories', () => {
     })
 
     expect(mockPullGlobalCategoriesFromDrive).toHaveBeenCalledTimes(1)
+    expect(mockGetGlobalCategoriesModifiedTime).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', undefined)
+    expect(mockPullGlobalCategoriesFromDrive).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', undefined)
     expect(mockSetLastKnownRemoteModifiedTime).toHaveBeenCalledWith('2026-03-01T00:00:00.000Z')
 
     mockPullGlobalCategoriesFromDrive.mockClear()
@@ -357,8 +364,148 @@ describe('useGlobalCategories', () => {
       'proj-1',
       expect.objectContaining({
         categoryMappings: expect.arrayContaining([expect.objectContaining({ substring: 'WHOLE FOODS' })]),
-      })
+      }),
+      undefined
     )
+  })
+
+  it('threads a persisted shared file ID through push, pull, and polling', async () => {
+    mockGetSharedCategoryDriveFileId.mockResolvedValue('shared-file-1')
+    mockGetLastKnownRemoteModifiedTime.mockResolvedValue('2026-01-01T00:00:00.000Z')
+    mockGetGlobalCategoriesModifiedTime.mockResolvedValue('2026-03-01T00:00:00.000Z')
+    mockPullGlobalCategoriesFromDrive.mockResolvedValue(emptyState())
+
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
+
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockPullGlobalCategoriesFromDrive).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-1')
+
+    mockPushGlobalCategoriesToDrive.mockClear()
+    mockGetGlobalCategoriesModifiedTime.mockClear()
+    mockPullGlobalCategoriesFromDrive.mockClear()
+    act(() => {
+      result.current.dispatch({ type: 'ADD_CATEGORY', id: 'c1', name: 'Groceries' })
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+
+    expect(mockPushGlobalCategoriesToDrive).toHaveBeenCalledWith(
+      fakeDriveAuth,
+      'proj-1',
+      expect.any(Object),
+      'shared-file-1'
+    )
+    expect(mockGetGlobalCategoriesModifiedTime).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-1')
+    expect(mockPullGlobalCategoriesFromDrive).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-1')
+  })
+
+  it('refreshes the shared file ID before subsequent push and poll cycles', async () => {
+    mockGetSharedCategoryDriveFileId.mockResolvedValue(undefined)
+    mockGetLastKnownRemoteModifiedTime.mockResolvedValue('2026-01-01T00:00:00.000Z')
+    mockGetGlobalCategoriesModifiedTime.mockResolvedValue('2026-03-01T00:00:00.000Z')
+    mockPullGlobalCategoriesFromDrive.mockResolvedValue(emptyState())
+
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    mockPushGlobalCategoriesToDrive.mockClear()
+    mockGetGlobalCategoriesModifiedTime.mockClear()
+    mockGetSharedCategoryDriveFileId.mockResolvedValue('shared-file-2')
+
+    act(() => {
+      result.current.dispatch({ type: 'ADD_CATEGORY', id: 'c1', name: 'Groceries' })
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+
+    expect(mockPushGlobalCategoriesToDrive).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', expect.any(Object), 'shared-file-2')
+    expect(mockGetGlobalCategoriesModifiedTime).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-2')
+  })
+
+  it('retains local state when pulling an invalid shared file ID fails', async () => {
+    mockLoadGlobalCategoryState.mockResolvedValue({ categories: [], categoryMappings: [], budgetAccountRules: [rule] })
+    mockGetSharedCategoryDriveFileId.mockResolvedValue('stale-file')
+    mockPullGlobalCategoriesFromDrive.mockResolvedValue(null)
+
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockPullGlobalCategoriesFromDrive).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'stale-file')
+    expect(result.current.budgetAccountRules).toEqual([rule])
+  })
+
+  it('retains the picker-saved local state when a revoked shared-file poll is swallowed by the Drive layer', async () => {
+    const pickerSavedState: GlobalCategoryState = {
+      categories: [{ id: 'shared-category', name: 'Shared category', updatedAt: '2026-03-01T00:00:00.000Z' }],
+      categoryMappings: [{ id: 'shared-mapping', substring: 'MARKET', spendExpenseId: 'expense-1', updatedAt: '2026-03-01T00:00:00.000Z' }],
+      budgetAccountRules: [],
+    }
+    mockLoadGlobalCategoryState.mockResolvedValue(pickerSavedState)
+    mockGetSharedCategoryDriveFileId.mockResolvedValue('shared-file-1')
+    mockGetLastKnownRemoteModifiedTime.mockResolvedValue('2026-01-01T00:00:00.000Z')
+    // categoryDrive converts inaccessible/stale file metadata into null.
+    mockGetGlobalCategoriesModifiedTime.mockResolvedValue(null)
+
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
+
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockGetGlobalCategoriesModifiedTime).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-1')
+    expect(result.current.categories).toEqual(pickerSavedState.categories)
+    expect(result.current.categoryMappings).toEqual(pickerSavedState.categoryMappings)
+  })
+
+  it('hydrates the picker-saved state before merging the same shared file without a duplicate local save', async () => {
+    const pickerSavedState: GlobalCategoryState = {
+      categories: [{ id: 'shared-category', name: 'Shared category', updatedAt: '2026-03-01T00:00:00.000Z' }],
+      categoryMappings: [{ id: 'shared-mapping', substring: 'MARKET', spendExpenseId: 'expense-1', updatedAt: '2026-03-01T00:00:00.000Z' }],
+      budgetAccountRules: [],
+    }
+    mockLoadGlobalCategoryState.mockResolvedValue(pickerSavedState)
+    mockGetSharedCategoryDriveFileId.mockResolvedValue('shared-file-1')
+    mockPullGlobalCategoriesFromDrive.mockResolvedValue(pickerSavedState)
+
+    const { result } = renderHook(() => useGlobalCategories(fakeDriveAuth, true, 'proj-1'))
+
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockLoadGlobalCategoryState).toHaveBeenCalledWith([])
+    expect(mockPullGlobalCategoriesFromDrive).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-1')
+    expect(result.current.categories).toEqual(pickerSavedState.categories)
+    expect(result.current.categoryMappings).toEqual(pickerSavedState.categoryMappings)
+    expect(mockSaveGlobalCategoryState).toHaveBeenCalledTimes(1)
   })
 
   it('syncNow pulls+merges remote mappings on demand, for use after a manual Drive sync', async () => {

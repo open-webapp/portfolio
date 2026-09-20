@@ -52,18 +52,23 @@ function normalizeGlobalCategoryState(value: GlobalCategoryState): GlobalCategor
  */
 export async function pullGlobalCategoriesFromDrive(
   driveAuth: ReturnType<typeof getDriveAuthFor>,
-  projectId: string
+  projectId: string,
+  fileId?: string
 ): Promise<GlobalCategoryState | null> {
   await driveAuth.ensureFresh()
 
   const project = legacyDriveSync.project(projectId)
-  const folderId = await project.ensureFolderPath()
-  const files = await project.files.list({ folderId, nameEquals: FILENAME })
-  if (files.length === 0) return null
+  let resolvedFileId = fileId
+  if (!resolvedFileId) {
+    const folderId = await project.ensureFolderPath()
+    const files = await project.files.list({ folderId, nameEquals: FILENAME })
+    if (files.length === 0) return null
+    resolvedFileId = files[0].id
+  }
 
   let content: unknown
   try {
-    content = await project.files.read(files[0].id)
+    content = await project.files.read(resolvedFileId)
   } catch {
     return null
   }
@@ -104,11 +109,22 @@ export async function pullGlobalCategoriesFromDrive(
 export async function pushGlobalCategoriesToDrive(
   driveAuth: ReturnType<typeof getDriveAuthFor>,
   projectId: string,
-  state: GlobalCategoryState
+  state: GlobalCategoryState,
+  fileId?: string
 ): Promise<void> {
   await driveAuth.ensureFresh()
 
   const project = legacyDriveSync.project(projectId)
+  const content = JSON.stringify(state)
+  if (fileId) {
+    await project.files.write({
+      fileId,
+      content,
+      mimeType: 'application/json',
+    })
+    return
+  }
+
   const folderId = await project.ensureFolderPath()
   const files = await project.files.list({ folderId, nameEquals: FILENAME })
   const existingFileId = files.length > 0 ? files[0].id : undefined
@@ -117,7 +133,7 @@ export async function pushGlobalCategoriesToDrive(
     fileId: existingFileId,
     folderId,
     name: FILENAME,
-    content: JSON.stringify(state),
+    content,
     mimeType: 'application/json',
   })
 }
@@ -133,11 +149,21 @@ export async function pushGlobalCategoriesToDrive(
  */
 export async function getGlobalCategoriesModifiedTime(
   driveAuth: ReturnType<typeof getDriveAuthFor>,
-  projectId: string
+  projectId: string,
+  fileId?: string
 ): Promise<string | null> {
   await driveAuth.ensureFresh()
 
   const project = legacyDriveSync.project(projectId)
+  if (fileId) {
+    try {
+      const status = await project.files.status(fileId)
+      return status.remoteModifiedTime ?? null
+    } catch {
+      return null
+    }
+  }
+
   const folderId = await project.ensureFolderPath()
   const files = await project.files.list({ folderId, nameEquals: FILENAME })
   if (files.length === 0) return null

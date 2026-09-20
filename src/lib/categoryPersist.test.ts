@@ -7,6 +7,8 @@ import {
   markGlobalStoreSeeded,
   getLastKnownRemoteModifiedTime,
   setLastKnownRemoteModifiedTime,
+  getSharedCategoryDriveFileId,
+  setSharedCategoryDriveFileId,
   _resetCategoryDbForTests,
 } from './categoryPersist'
 import { initialGlobalCategoryState } from './categoryStore'
@@ -95,6 +97,14 @@ describe('categoryPersist', () => {
     expect(await getLastKnownRemoteModifiedTime()).toBeUndefined()
     await setLastKnownRemoteModifiedTime('2026-02-03T04:05:06.000Z')
     expect(await getLastKnownRemoteModifiedTime()).toBe('2026-02-03T04:05:06.000Z')
+  })
+
+  it('getSharedCategoryDriveFileId starts undefined, round-trips, and clears', async () => {
+    expect(await getSharedCategoryDriveFileId()).toBeUndefined()
+    await setSharedCategoryDriveFileId('drive-file-123')
+    expect(await getSharedCategoryDriveFileId()).toBe('drive-file-123')
+    await setSharedCategoryDriveFileId(null)
+    expect(await getSharedCategoryDriveFileId()).toBeUndefined()
   })
 
   it('is independent of any setActivePortfolioDb call', async () => {
