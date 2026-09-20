@@ -1248,7 +1248,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       {editingMappingId && (
         <div className="dialog-backdrop">
           <div
-            className="dialog blueprint"
+            className="dialog blueprint category-mapping-dialog"
             role="dialog"
             aria-modal="true"
             aria-label="Category mappings"

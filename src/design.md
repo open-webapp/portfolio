@@ -48,7 +48,7 @@ src/
     SyncConflictDialog.tsx           — Drive UI
     import/
       ImportDialog.tsx, index.ts     — CSV import dialog
-  styles/styles.css                  — verbatim design-bundle CSS port
+  styles/styles.css                  — shared design-bundle CSS port; category-mapping dialogs constrain their viewport height and scroll their body
   test/                              — shared test setup/fixtures
 ```
 

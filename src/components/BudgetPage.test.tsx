@@ -482,6 +482,12 @@ describe('BudgetPage category mapping overlay', () => {
     return { ...view, dispatch, categoryDispatch }
   }
 
+  it('uses the scrollable dialog variant for category mappings', () => {
+    renderOverlay()
+
+    expect(screen.getByRole('dialog', { name: 'Category mappings' }).className).toContain('category-mapping-dialog')
+  })
+
   const ReapplyHarness = ({ mappings: initialMappings }: { mappings: typeof mappings }) => {
     const [appState, dispatch] = useReducer(appReducer, {
       ...state,
