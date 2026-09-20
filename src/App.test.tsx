@@ -969,7 +969,7 @@ describe('global categories wiring', () => {
     })
   })
 
-  it('does not pass category-mapping props to SettingsPage', async () => {
+  it('passes budget-spend-accounts props (but not category-mapping props) to SettingsPage', async () => {
     await renderUnlockedApp()
 
     fireEvent.click(screen.getByTitle('Settings'))
@@ -980,8 +980,10 @@ describe('global categories wiring', () => {
     const props = settingsPagePropsCapture.current as Record<string, unknown>
     expect(props).not.toHaveProperty('categories')
     expect(props).not.toHaveProperty('categoryMappings')
-    expect(props).not.toHaveProperty('categoryDispatch')
-    expect(props).not.toHaveProperty('categoriesHydrated')
+    expect(props).toHaveProperty('budgetTransactions')
+    expect(props.budgetAccountRules).toBe(mockGlobalCategoriesFixture.current.budgetAccountRules)
+    expect(props.categoriesHydrated).toBe(true)
+    expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
   })
 
   it('passes driveConnected to SettingsPage reflecting useDriveConnection', async () => {
