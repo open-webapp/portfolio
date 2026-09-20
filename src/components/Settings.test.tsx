@@ -120,6 +120,7 @@ const mockOnPasswordEntryTimeReset = vi.fn()
 const mockOnDriveConnected = vi.fn()
 const mockOnDriveDisconnected = vi.fn()
 const mockSetSettingsSection = vi.fn()
+const mockCategoryDispatch = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
 const mockRunMutualFundSyncTrigger = vi.fn()
 
@@ -182,6 +183,10 @@ describe('SettingsPage', () => {
       tickerOverviewErrors: {},
       mutualFundSyncErrors: {},
       driveConnected: false,
+      budgetTransactions: [],
+      budgetAccountRules: [],
+      categoriesHydrated: true,
+      categoryDispatch: mockCategoryDispatch,
     }
     return render(<SettingsPage {...defaultProps} {...overrides} />)
   }
@@ -264,6 +269,10 @@ describe('SettingsPage', () => {
         tickerOverviewErrors: {},
         mutualFundSyncErrors: {},
         driveConnected: true,
+        budgetTransactions: [],
+        budgetAccountRules: [],
+        categoriesHydrated: true,
+        categoryDispatch: mockCategoryDispatch,
       }
       rerender(<SettingsPage {...defaultProps} />)
 
@@ -291,13 +300,25 @@ describe('SettingsPage', () => {
   })
 
   describe('Settings tab-seg', () => {
-    it('renders exactly Backup, Encryption, and Quotes API Key options with no category mapping UI', () => {
+    it('renders exactly Backup, Encryption, Quotes API Key, and Spend Accounts options with no category mapping UI in the first three tabs', () => {
       renderSettings({ settingsSection: 'backup' })
 
       expect(screen.getByLabelText('Backup')).toBeTruthy()
       expect(screen.getByLabelText('Encryption')).toBeTruthy()
       expect(screen.getByLabelText('Quotes API Key')).toBeTruthy()
+      expect(screen.getByLabelText('Spend Accounts')).toBeTruthy()
       expect(screen.queryByLabelText('Categories')).toBeFalsy()
+      // Scoped to the first 3 tabs' rendered content: backup shows no
+      // category mapping UI.
+      expect(screen.queryByText('Category Mapping')).toBeFalsy()
+    })
+
+    it('encryption and priceSync tabs render no category mapping UI', () => {
+      const { unmount } = renderSettings({ settingsSection: 'encryption' })
+      expect(screen.queryByText('Category Mapping')).toBeFalsy()
+      unmount()
+
+      renderSettings({ settingsSection: 'priceSync' })
       expect(screen.queryByText('Category Mapping')).toBeFalsy()
     })
 
@@ -319,6 +340,104 @@ describe('SettingsPage', () => {
       expect(mockSetSettingsSection).toHaveBeenCalledWith('encryption')
     })
 
+    it('clicking Spend Accounts tab calls setSettingsSection with "spendAccounts"', () => {
+      renderSettings({ settingsSection: 'backup' })
+
+      const spendAccountsInput = screen.getByLabelText('Spend Accounts') as HTMLInputElement
+      fireEvent.click(spendAccountsInput)
+
+      expect(mockSetSettingsSection).toHaveBeenCalledWith('spendAccounts')
+    })
+  })
+
+  describe('Spend Accounts section', () => {
+    // Fixture shapes copied from BudgetAccountsTab.test.tsx (rule shape,
+    // transaction row shape) and BudgetPage.test.tsx (positiveRule shape).
+    const spendRules = [
+      {
+        normalizedName: 'primary checking',
+        displayName: 'Primary Checking',
+        statementConvention: 'positiveSpend' as const,
+        updatedAt: '',
+      },
+    ]
+    const spendTransactions = [
+      { id: 'one', date: '2026-01-01', description: 'Store', categoryId: 'other', amount: -10, accountName: 'Primary Checking' },
+    ]
+
+    it('renders BudgetAccountsTab account rows; hydrated-gating shows loading state; reconcile and row actions dispatch', () => {
+      const { unmount } = renderSettings({
+        settingsSection: 'spendAccounts',
+        budgetTransactions: spendTransactions,
+        budgetAccountRules: spendRules,
+        categoriesHydrated: true,
+        categoryDispatch: mockCategoryDispatch,
+      })
+
+      // BudgetAccountsTab content renders (account rows visible).
+      expect(screen.getByText('Primary Checking')).toBeTruthy()
+      expect(screen.getByText('Canonical amount: positive = spend')).toBeTruthy()
+      expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
+      expect(screen.queryByText('Change Encryption Password')).toBeFalsy()
+      unmount()
+
+      // Hydrated-gating: re-render with categoriesHydrated:false shows the
+      // non-editable/loading state per BudgetAccountsTab's own behavior.
+      const gated = renderSettings({
+        settingsSection: 'spendAccounts',
+        budgetTransactions: spendTransactions,
+        budgetAccountRules: spendRules,
+        categoriesHydrated: false,
+        categoryDispatch: mockCategoryDispatch,
+      })
+      expect(screen.getByText('Loading budget accounts...')).toBeTruthy()
+      expect(screen.queryByText('Primary Checking')).toBeFalsy()
+      gated.unmount()
+    })
+
+    it('clicking the reconcile action fires dispatch with RECONCILE_BUDGET_ACCOUNT_CONVENTIONS and a row-level action fires categoryDispatch', () => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      renderSettings({
+        settingsSection: 'spendAccounts',
+        budgetTransactions: spendTransactions,
+        budgetAccountRules: spendRules,
+        categoriesHydrated: true,
+        categoryDispatch: mockCategoryDispatch,
+      })
+
+      // No false positives before any interaction.
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS' }),
+      )
+      expect(mockCategoryDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'CONFIGURE_BUDGET_ACCOUNT_RULE' }),
+      )
+
+      // Clicking an unrelated (already-active) convention fires nothing.
+      const convention = screen.getByLabelText('Statement convention for Primary Checking')
+      fireEvent.click(within(convention).getByText('Statement positive = spend'))
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS' }),
+      )
+      expect(mockCategoryDispatch).not.toHaveBeenCalled()
+
+      // Clicking the other convention is the reconcile action: it fires
+      // categoryDispatch (row-level CONFIGURE) and dispatch (RECONCILE).
+      fireEvent.click(within(convention).getByText('Statement negative = spend'))
+      expect(mockCategoryDispatch).toHaveBeenCalledWith({
+        type: 'CONFIGURE_BUDGET_ACCOUNT_RULE',
+        name: 'Primary Checking',
+        convention: 'negativeSpend',
+      })
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS',
+        rules: expect.arrayContaining([expect.objectContaining({ statementConvention: 'negativeSpend' })]),
+      })
+      confirm.mockRestore()
+    })
+  })
+
+  describe('Settings tab-seg (hr divider)', () => {
     it('renders .hr divider immediately after the tab-seg', () => {
       const { container } = renderSettings({ settingsSection: 'backup' })
 

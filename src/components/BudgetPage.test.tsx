@@ -443,8 +443,8 @@ describe('BudgetPage budget account imports and signed amounts', () => {
   })
 })
 
-describe('BudgetPage Accounts tab', () => {
-  it('places Accounts fifth, immediately after Category Mapping', () => {
+describe('BudgetPage Accounts tab removed', () => {
+  it('renders exactly four tabs with no Accounts tab', () => {
     render(
       <BudgetPage
         state={initialState()}
@@ -457,10 +457,9 @@ describe('BudgetPage Accounts tab', () => {
     )
 
     expect(Array.from(document.querySelectorAll('input[name="budgetPeriod"] + span'), (tab) => tab.textContent)).toEqual([
-      'Expenses', 'Spend', 'Analytics', 'Category Mapping', 'Accounts',
+      'Expenses', 'Spend', 'Analytics', 'Category Mapping',
     ])
-    fireEvent.click(screen.getByText('Accounts'))
-    expect(screen.getByText('Import statement transactions to configure account sign rules.')).toBeTruthy()
+    expect(screen.queryByText('Accounts')).toBeNull()
   })
 })
 

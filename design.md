@@ -10,8 +10,8 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 ## Budget
 
-- `BudgetPage` has five non-persisted local tabs: `expenses`, `spend`, `analytics`, `categoryMapping`, `accounts`; default: `spend`.
-- `BudgetAccountsTab` receives current-portfolio transactions and visible global `budgetAccountRules`. It confirms configure/remove actions and then dispatches `RECONCILE_BUDGET_ACCOUNT_CONVENTIONS` for the active portfolio.
+- `BudgetPage` has four non-persisted local tabs: `expenses`, `spend`, `analytics`, `categoryMapping`; default: `spend`.
+- `BudgetAccountsTab` mounts from Settings' Spend Accounts tab. It receives current-portfolio transactions and visible global `budgetAccountRules`. It confirms configure/remove actions and then dispatches `RECONCILE_BUDGET_ACCOUNT_CONVENTIONS` for the active portfolio.
 - Budget imports require an existing canonical account or a new account name. `convertBudgetAccountImportRows` canonicalizes the selected account name and converts a `positiveSpend` statement to canonical negative spend before `IMPORT_BUDGET_TRANSACTIONS` deduplication.
 - `negativeSpend` is the permanent default when no rule exists. Import persists an applied-convention marker even if all rows are duplicates.
 - CSV/OFX/QFX parsers are unchanged; they return raw parsed rows only.
@@ -39,7 +39,7 @@ interface GlobalCategoryState {
 - Per-portfolio `AppState.budgetAccountAppliedConventions: Record<string, StatementConvention>` records the convention applied to each normalized imported account.
 - `IMPORT_BUDGET_TRANSACTIONS` receives `appliedConvention: { accountName, statementConvention }` and updates the marker even for a duplicate-only import.
 - `reconcileBudgetAccountConventions(state, rules)` delegates to `reconcileBudgetAccountRules`: it compares markers with the current rule/default, flips matching amounts once when conventions differ, canonicalizes a rule-backed account name, and updates markers.
-- `App.tsx` reconciles before rendering a hydrated/opened portfolio and after global-rule changes. A confirmed Accounts-tab rule action reconciles the active portfolio immediately.
+- `App.tsx` reconciles before rendering a hydrated/opened portfolio and after global-rule changes. A confirmed Settings > Spend Accounts tab rule action reconciles the active portfolio immediately.
 
 ## Persistence and Drive
 

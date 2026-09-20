@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
-import type { Portfolio } from '../lib/types'
+import type { BudgetTransaction, Portfolio } from '../lib/types'
+import type { CategoryAction, GlobalCategoryState } from '../lib/categoryStore'
 import { GoogleDriveWidget } from '@open-webapp/drive-connect'
 import type { DriveAuthHandle } from '@open-webapp/drive-connect'
 import { syncBackup, getConnectionSnapshot, getPortfolioDriveFolderUrl } from '../lib/drive'
@@ -11,6 +12,7 @@ import {
   exportBackup,
   downloadEnvelopeAsFile,
 } from '../lib/importExport'
+import { BudgetAccountsTab } from './BudgetAccountsTab'
 
 const textBtnAccent: CSSProperties = {
   border: 'none',
@@ -53,13 +55,17 @@ export interface SettingsPageProps {
   onPasswordEntryTimeReset: () => void
   onDriveConnected: (connection: unknown) => void
   onDriveDisconnected: () => void
-  settingsSection: 'backup' | 'encryption' | 'priceSync'
-  setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync') => void
+  settingsSection: 'backup' | 'encryption' | 'priceSync' | 'spendAccounts'
+  setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync' | 'spendAccounts') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
   runMutualFundSyncTrigger: () => Promise<void>
   tickerOverviewErrors: Record<string, string>
   mutualFundSyncErrors: Record<string, string>
   driveConnected: boolean
+  budgetTransactions: BudgetTransaction[]
+  budgetAccountRules: GlobalCategoryState['budgetAccountRules']
+  categoriesHydrated: boolean
+  categoryDispatch: (action: CategoryAction) => void
 }
 
 /**
@@ -83,6 +89,10 @@ export function SettingsPage({
   tickerOverviewErrors,
   mutualFundSyncErrors,
   driveConnected,
+  budgetTransactions,
+  budgetAccountRules,
+  categoriesHydrated,
+  categoryDispatch,
 }: SettingsPageProps) {
   // Change Password local state
   const [currentPasswordInput, setCurrentPasswordInput] = useState('')
@@ -230,6 +240,16 @@ export function SettingsPage({
             onClick={() => setSettingsSection('priceSync')}
           />
           Quotes API Key
+        </label>
+        <label className="seg-opt">
+          <input
+            type="radio"
+            name="settingsSection"
+            checked={settingsSection === 'spendAccounts'}
+            readOnly
+            onClick={() => setSettingsSection('spendAccounts')}
+          />
+          Spend Accounts
         </label>
       </div>
       <div className="hr" style={{ marginBottom: 'var(--space-5)' }} />
@@ -427,6 +447,17 @@ export function SettingsPage({
           )}
         </div>
       </section>
+      )}
+
+      {/* Spend Accounts section */}
+      {settingsSection === 'spendAccounts' && (
+        <BudgetAccountsTab
+          transactions={budgetTransactions}
+          budgetAccountRules={budgetAccountRules}
+          hydrated={categoriesHydrated}
+          dispatch={categoryDispatch}
+          onReconcile={(rules) => dispatch({ type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS', rules })}
+        />
       )}
 
     </div>

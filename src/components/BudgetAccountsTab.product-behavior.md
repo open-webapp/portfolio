@@ -2,7 +2,7 @@
 
 Sibling: `BudgetAccountsTab.design.md`.
 
-- Rendered only through Budget's Accounts tab.
+- Rendered only through Settings' Spend Accounts tab.
 - Before global categories hydrate, displays `Loading budget accounts...`.
 - Lists the canonical union of configured account rules and nonblank account names observed in the current portfolio's transactions, with local transaction counts.
 - No accounts show `Import statement transactions to configure account sign rules.` and no add form.

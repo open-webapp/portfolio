@@ -17,7 +17,6 @@ import {
 } from '../lib/budgetAccountRules'
 import { BudgetAnalytics } from './BudgetAnalytics'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
-import { BudgetAccountsTab } from './BudgetAccountsTab'
 import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
@@ -112,7 +111,7 @@ function MappingIcon() {
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  */
 export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [] }: BudgetPageProps) {
-  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics' | 'categoryMapping' | 'accounts'>('spend')
+  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics' | 'categoryMapping'>('spend')
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -544,7 +543,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         }}
       >
         <div className="seg">
-          {(['expenses', 'spend', 'analytics', 'categoryMapping', 'accounts'] as const).map((opt) => (
+          {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((opt) => (
             <label
               key={opt}
               className="seg-opt"
@@ -554,7 +553,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               }}
             >
               <input type="radio" name="budgetPeriod" checked={period === opt} readOnly />
-              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : opt === 'analytics' ? 'Analytics' : opt === 'categoryMapping' ? 'Category Mapping' : 'Accounts'}</span>
+              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : opt === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
             </label>
           ))}
         </div>
@@ -585,15 +584,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         )}
       </div>
 
-      {period === 'accounts' ? (
-        <BudgetAccountsTab
-          transactions={state.budgetTransactions}
-          budgetAccountRules={budgetAccountRules}
-          hydrated={categoriesHydrated}
-          dispatch={categoryDispatch}
-          onReconcile={(rules) => dispatch({ type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS', rules })}
-        />
-      ) : period === 'categoryMapping' ? (
+      {period === 'categoryMapping' ? (
         <CategoryMappingTab
           state={state}
           dispatch={dispatch}

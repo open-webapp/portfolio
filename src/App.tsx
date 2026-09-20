@@ -119,7 +119,7 @@ function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   // Which section of the Settings page is active
-  const [settingsSection, setSettingsSection] = useState<'backup' | 'encryption' | 'priceSync'>('backup')
+  const [settingsSection, setSettingsSection] = useState<'backup' | 'encryption' | 'priceSync' | 'spendAccounts'>('backup')
 
   // Ref for debounce timeout
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -890,6 +890,10 @@ function App() {
               driveConnected={connected}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
+              budgetTransactions={state.budgetTransactions}
+              budgetAccountRules={globalCategories.budgetAccountRules}
+              categoriesHydrated={globalCategories.hydrated}
+              categoryDispatch={globalCategories.dispatch}
               runPriceSyncTrigger={runPriceSyncTrigger}
               runMutualFundSyncTrigger={runMutualFundSyncTrigger}
               tickerOverviewErrors={tickerOverviewErrors}
