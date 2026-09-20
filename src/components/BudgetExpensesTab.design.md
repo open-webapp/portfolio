@@ -47,3 +47,10 @@ type BudgetExpensesTabProps = {
 - Existing-definition match: first definition with that identity in the target `Uncategorized` category only.
 - New definitions retain first pasted spelling, target `Uncategorized`, and use `monthly` frequency.
 - Definitions are year-independent. `budgetExpenseAmountsByYear[year]` is the only amount map mutated by an import; other years remain unchanged.
+
+## Category Drilldown
+
+- Local `useState<string | null>` stores the expanded `categoryId`; selecting a category replaces the prior expansion, and selecting it again clears it.
+- `ChevronIcon` renders the per-category expand/collapse affordance.
+- The component consumes `categoryBreakdown()` rows with existing category totals plus additive `categoryId`, `drillLines`, and `unlinkedActual` fields.
+- `drillLines` supplies linked definition budget, exact `spendExpenseId`-matched actual, variance, and bar values; `unlinkedActual` supplies the category actual not linked to a definition.

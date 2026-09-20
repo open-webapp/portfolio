@@ -865,6 +865,7 @@ export function categoryBreakdown(
   transactions: BudgetTransaction[],
   categories: Category[]
 ): Array<{
+  categoryId: string
   name: string
   amount: number
   actual: number
@@ -873,6 +874,19 @@ export function categoryBreakdown(
   actualPct: number
   actualColor: string
   varianceColor: string
+  drillLines: Array<{
+    id: string
+    name: string
+    frequencyLabel: string
+    budget: number
+    actual: number
+    variance: number
+    budgetPct: number
+    actualPct: number
+    actualColor: string
+    varianceColor: string
+  }>
+  unlinkedActual: number | null
 }> {
   const excludedIds = excludedCategoryIdSet(categories)
   const byCategory: Record<string, number> = {}
@@ -882,14 +896,22 @@ export function categoryBreakdown(
     byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + amount
   })
   const actuals = actualByCategory(transactions, definitions, categories)
-  return Object.entries(byCategory)
-    .sort((a, b) => b[1] - a[1])
-    .map(([categoryId, amount]) => {
+  return [...new Set([...categories.filter((c) => !excludedIds.has(c.id)).map((c) => c.id), ...Object.keys(byCategory), ...Object.keys(actuals)])]
+    .sort((a, b) => (byCategory[b] ?? 0) - (byCategory[a] ?? 0))
+    .map((categoryId) => {
+      const amount = byCategory[categoryId] ?? 0
       const actual = actuals[categoryId] ?? 0
       const variance = amount - actual
       const categoryMax = Math.max(1, amount, actual)
       const name = categories.find((c) => c.id === categoryId)?.name ?? categoryId
+      const catDefs = definitions.filter((d) => d.categoryId === categoryId && !excludedIds.has(categoryId))
+      const catTx = transactions.filter((t) => effectiveCategoryId(t, definitions) === categoryId)
+      const linkedIds = new Set(catDefs.map((d) => d.id))
+      const unlinkedSum = catTx
+        .filter((t) => !t.spendExpenseId || !linkedIds.has(t.spendExpenseId))
+        .reduce((sum, t) => sum - t.amount, 0)
       return {
+        categoryId,
         name,
         amount,
         actual,
@@ -897,7 +919,28 @@ export function categoryBreakdown(
         budgetPct: (amount / categoryMax) * 100,
         actualPct: (actual / categoryMax) * 100,
         actualColor: variance >= 0 ? '#3b6ef6' : LOSS_COLOR,
-        varianceColor: variance >= 0 ? GAIN_COLOR : LOSS_COLOR
+        varianceColor: variance >= 0 ? GAIN_COLOR : LOSS_COLOR,
+        drillLines: catDefs.map((catDef) => {
+          const budget = toPeriod(amountsForYear[catDef.id] ?? 0, catDef.frequency, 'yearly')
+          const actualForExp = catTx
+            .filter((t) => t.spendExpenseId === catDef.id)
+            .reduce((sum, t) => sum - t.amount, 0)
+          const drillVariance = budget - actualForExp
+          const drillMax = Math.max(1, budget, actualForExp)
+          return {
+            id: catDef.id,
+            name: catDef.name,
+            frequencyLabel: catDef.frequency === 'monthly' ? 'Monthly' : 'Yearly',
+            budget,
+            actual: actualForExp,
+            variance: drillVariance,
+            budgetPct: (budget / drillMax) * 100,
+            actualPct: (actualForExp / drillMax) * 100,
+            actualColor: drillVariance >= 0 ? '#3b6ef6' : LOSS_COLOR,
+            varianceColor: drillVariance >= 0 ? GAIN_COLOR : LOSS_COLOR
+          }
+        }),
+        unlinkedActual: unlinkedSum !== 0 ? unlinkedSum : null
       }
     })
 }

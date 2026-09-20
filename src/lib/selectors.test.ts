@@ -62,6 +62,77 @@ describe('categoryBreakdown', () => {
       { name: 'Utilities', budgetPct: 100, actualPct: 50 },
     ])
   })
+
+  it('provides drill lines for each definition and no unlinked actual when all spend is linked', () => {
+    const categoryDefs: ExpenseDefinition[] = [
+      { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
+      { id: 'dining', name: 'Dining', categoryId: 'food', frequency: 'yearly' },
+    ]
+    const result = categoryBreakdown(
+      categoryDefs,
+      { groceries: 100, dining: 500 },
+      [
+        tx({ id: 'groceries-tx', spendExpenseId: 'groceries', amount: -75 }),
+        tx({ id: 'dining-tx', spendExpenseId: 'dining', amount: -600 }),
+      ],
+      [{ id: 'food', name: 'Food', updatedAt: '' }]
+    )
+
+    expect(result).toMatchObject([{
+      categoryId: 'food',
+      actual: 675,
+      unlinkedActual: null,
+      drillLines: [
+        { id: 'groceries', name: 'Groceries', frequencyLabel: 'Monthly', budget: 1200, actual: 75, variance: 1125, budgetPct: 100, actualPct: 6.25 },
+        { id: 'dining', name: 'Dining', frequencyLabel: 'Yearly', budget: 500, actual: 600, variance: -100, budgetPct: 83.33333333333334, actualPct: 100 },
+      ],
+    }])
+  })
+
+  it('reconciles linked and unlinked actual spend within a category', () => {
+    const result = categoryBreakdown(
+      [{ id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' }],
+      { groceries: 500 },
+      [
+        tx({ id: 'linked', spendExpenseId: 'groceries', amount: -100 }),
+        tx({ id: 'unlinked', amount: -30 }),
+        tx({ id: 'stale-link', spendExpenseId: 'missing', amount: -20 }),
+      ],
+      [{ id: 'food', name: 'Food', updatedAt: '' }]
+    )[0]
+
+    expect(result.unlinkedActual).toBe(50)
+    expect(result.drillLines[0]).toMatchObject({ budget: 500, actual: 100, variance: 400 })
+    expect(result.drillLines.reduce((sum, line) => sum + line.actual, 0) + (result.unlinkedActual ?? 0)).toBe(result.actual)
+  })
+
+  it('returns all actual spend as unlinked when a category has no definitions', () => {
+    const result = categoryBreakdown(
+      [],
+      {},
+      [tx({ id: 'food-tx', amount: -80 })],
+      [{ id: 'food', name: 'Food', updatedAt: '' }]
+    )
+
+    expect(result).toMatchObject([{ categoryId: 'food', actual: 80, drillLines: [], unlinkedActual: 80 }])
+  })
+
+  it('returns null unlinked actual for a definition-free category with no spend', () => {
+    expect(categoryBreakdown([], {}, [], [{ id: 'food', name: 'Food', updatedAt: '' }])).toMatchObject([
+      { categoryId: 'food', actual: 0, drillLines: [], unlinkedActual: null },
+    ])
+  })
+
+  it('omits excluded categories entirely rather than emitting empty drilldown data', () => {
+    const result = categoryBreakdown(
+      [{ id: 'ignored-expense', name: 'Ignored expense', categoryId: 'ignored', frequency: 'yearly' }],
+      { 'ignored-expense': 100 },
+      [tx({ id: 'ignored-tx', categoryId: 'ignored', amount: -50 })],
+      [{ id: 'ignored', name: 'Ignored', updatedAt: '', excludeFromSpend: true }]
+    )
+
+    expect(result.find((row) => row.categoryId === 'ignored')).toBeUndefined()
+  })
 })
 
 describe('expenseTableYears', () => {

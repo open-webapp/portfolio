@@ -20,6 +20,8 @@ afterEach(() => {
 const categories: Category[] = [
   { id: 'bills', name: 'Bills', updatedAt: '' },
   { id: 'housing', name: 'Housing', updatedAt: '' },
+  { id: 'food', name: 'Food', updatedAt: '' },
+  { id: 'travel', name: 'Travel', updatedAt: '' },
 ]
 
 function renderTab(state: AppState, actions: AppAction[] = []) {
@@ -156,5 +158,124 @@ describe('BudgetExpensesTab expense downloads', () => {
       `Name,Category,Frequency,${year}\r\nUtility,Bills,Monthly,10\r\n`,
       expect.stringMatching(/^expenses-\d{4}-\d{2}-\d{2}\.csv$/)
     )
+  })
+})
+
+describe('BudgetExpensesTab category breakdown drilldown', () => {
+  const year = String(new Date().getFullYear())
+  const transaction = (id: string, categoryId: string, amount: number, spendExpenseId?: string) => ({
+    id,
+    date: `${year}-01-01`,
+    description: id,
+    categoryId,
+    amount,
+    ...(spendExpenseId ? { spendExpenseId } : {}),
+  })
+  const categoryRow = (name: string) => screen.getAllByText(name).at(-1)!
+
+  it('shows linked expense lines with their budget and actual amounts', () => {
+    renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [
+        { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' },
+        { id: 'dining', name: 'Dining', categoryId: 'food', frequency: 'yearly' },
+      ],
+      budgetExpenseAmountsByYear: { [year]: { groceries: 120, dining: 80 } },
+      budgetTransactions: [
+        transaction('grocery-actual', 'food', -100, 'groceries'),
+        transaction('dining-actual', 'food', -60, 'dining'),
+      ],
+    })
+
+    fireEvent.click(categoryRow('Food'))
+
+    expect(screen.getByText('Groceries (Yearly)')).toBeTruthy()
+    expect(screen.getByText('Dining (Yearly)')).toBeTruthy()
+    expect(screen.getByTestId('category-drill-line-groceries').textContent).toContain('Budget $120.00 · Actual $100.00')
+    expect(screen.getByTestId('category-drill-line-dining').textContent).toContain('Budget $80.00 · Actual $60.00')
+  })
+
+  it('keeps only one category panel expanded', () => {
+    renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [
+        { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' },
+        { id: 'flight', name: 'Flight', categoryId: 'travel', frequency: 'yearly' },
+      ],
+      budgetExpenseAmountsByYear: { [year]: { groceries: 120, flight: 300 } },
+    })
+
+    fireEvent.click(categoryRow('Food'))
+    expect(screen.getByText('Groceries (Yearly)')).toBeTruthy()
+    fireEvent.click(categoryRow('Travel'))
+
+    expect(screen.queryByText('Groceries (Yearly)')).toBeNull()
+    expect(screen.getByText('Flight (Yearly)')).toBeTruthy()
+  })
+
+  it('collapses an expanded category when clicked again', () => {
+    renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [{ id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' }],
+      budgetExpenseAmountsByYear: { [year]: { groceries: 120 } },
+    })
+
+    fireEvent.click(categoryRow('Food'))
+    expect(screen.getByText('Groceries (Yearly)')).toBeTruthy()
+    fireEvent.click(categoryRow('Food'))
+    expect(screen.queryByText('Groceries (Yearly)')).toBeNull()
+  })
+
+  it('shows unlinked transactions only for categories that have them', () => {
+    renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [
+        { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' },
+        { id: 'flight', name: 'Flight', categoryId: 'travel', frequency: 'yearly' },
+      ],
+      budgetExpenseAmountsByYear: { [year]: { groceries: 120, flight: 300 } },
+      budgetTransactions: [
+        transaction('grocery-actual', 'food', -100, 'groceries'),
+        transaction('food-unlinked', 'food', -25),
+        transaction('flight-actual', 'travel', -200, 'flight'),
+      ],
+    })
+
+    fireEvent.click(categoryRow('Food'))
+    expect(screen.getByText('Unlinked transactions')).toBeTruthy()
+    expect(screen.getByText('$25.00')).toBeTruthy()
+    fireEvent.click(categoryRow('Travel'))
+    expect(screen.queryByText('Unlinked transactions')).toBeNull()
+  })
+
+  it('shows unlinked actuals instead of the empty drilldown message when no definitions exist', () => {
+    renderTab({
+      ...initialState(),
+      budgetTransactions: [transaction('food-unlinked', 'food', -45)],
+    })
+
+    fireEvent.click(categoryRow('Food'))
+
+    expect(screen.getByText('Unlinked transactions')).toBeTruthy()
+    expect(screen.getByText('$45.00')).toBeTruthy()
+    expect(screen.queryByText('No budget lines in this category.')).toBeNull()
+  })
+
+  it('shows the empty drilldown message when a category has no definitions or actuals', () => {
+    renderTab(initialState())
+
+    fireEvent.click(categoryRow('Food'))
+
+    expect(screen.getByText('No budget lines in this category.')).toBeTruthy()
+    expect(screen.queryByText('Unlinked transactions')).toBeNull()
+  })
+
+  it('renders Expenses before Category Breakdown', () => {
+    renderTab(initialState())
+
+    expect(Array.from(document.querySelectorAll('.card-title')).map((element) => element.textContent)).toEqual([
+      'Expenses',
+      'Category Breakdown',
+    ])
   })
 })

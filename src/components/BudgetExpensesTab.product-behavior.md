@@ -42,3 +42,11 @@ Component behavior reference. Sibling: `BudgetExpensesTab.design.md`.
 - Successful import leaves the dialog open and shows its result count.
 - Changing the year or pasted text clears the result message.
 - Cancel, backdrop close, and dialog close reset the year to the current year, clear pasted text, and clear the result message.
+
+## Category Drilldown
+
+- Clicking a Category Breakdown category row or its chevron expands/collapses its details; expansion is a single accordion, so opening one category closes another.
+- Each linked expense line shows budget, exact actual from records linked by `spendExpenseId`, variance, and budget/actual bars.
+- **Unlinked transactions** appears exactly when the category's unlinked actual is nonzero, including when it has zero expense definitions.
+- No definitions and no unlinked spend: show "No budget lines in this category."
+- No definitions but unlinked spend: show the **Unlinked transactions** row, not the empty copy.

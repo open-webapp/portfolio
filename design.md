@@ -15,6 +15,7 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 - Budget imports require an existing canonical account or a new account name. `convertBudgetAccountImportRows` canonicalizes the selected account name and converts a `positiveSpend` statement to canonical negative spend before `IMPORT_BUDGET_TRANSACTIONS` deduplication.
 - `negativeSpend` is the permanent default when no rule exists. Import persists an applied-convention marker even if all rows are duplicates.
 - CSV/OFX/QFX parsers are unchanged; they return raw parsed rows only.
+- `categoryBreakdown()` returns additive, non-breaking drilldown fields for existing callers: `categoryId`, `drillLines`, and `unlinkedActual`.
 
 ## Global Categories
 
