@@ -561,7 +561,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
 
         {period === 'spend' && (
           <div className="field" style={{ maxWidth: '220px' }}>
-            <label>Year</label>
             <select
               className="input"
               aria-label="Select year"
