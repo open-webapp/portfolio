@@ -15,14 +15,14 @@ import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
 import {
-  budgetTransactionsForPeriod,
-  availableBudgetYears,
-  budgetedIncomeForYear,
-  actualIncomeForYear,
-  excludedCategoryIdSet,
   isIncomeOrExcludedTransaction,
   effectiveCategoryId,
   formatSpendCategoryLabel,
+  SPEND_ALL_YEARS,
+  spendBudgetYears,
+  spendTransactionsForScope,
+  spendCardTotals,
+  type SpendScope,
 } from '../lib/selectors'
 
 export interface BudgetPageProps {
@@ -43,6 +43,8 @@ const textBtnAccent: CSSProperties = {
   fontWeight: 600,
   padding: 0,
 }
+
+const SPEND_ALL_OPTION_VALUE = '__spend_all_years__'
 
 const iconBtn: CSSProperties = {
   border: 'none',
@@ -86,9 +88,7 @@ function MappingIcon() {
  * Budget page: Expenses/Spend/Analytics tab toggle.
  * - Expenses tab (BudgetExpensesTab): Category Breakdown (own independent
  *   year selector) + a multi-year Expense table of global ExpenseDefinitions.
- * - Spend tab: year selector, 4 summary cards, and the Spend records table
- *   for `selectedYear`, re-pointed at budgetExpenseDefinitions +
- *   budgetExpenseAmountsByYear[selectedYear].
+ * - Spend tab: scope selector, summary cards, and the Spend records table.
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  */
 export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated }: BudgetPageProps) {
@@ -104,8 +104,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [bulkCategoryId, setBulkCategoryId] = useState('')
   const [bulkExpenseId, setBulkExpenseId] = useState('')
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
-  const [selectedYear, setSelectedYear] = useState(
-    () => availableBudgetYears(state.budgetTransactions, new Date())[0]
+  const [selectedScope, setSelectedScope] = useState<SpendScope>(
+    () => spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
   )
   const [editingCell, setEditingCell] = useState<{
     rowId: string
@@ -134,40 +134,24 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importResult, setImportResult] = useState<{ detected: number; failed: number; imported: number; duplicates: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
-  const totalBudgetedIncome = budgetedIncomeForYear(
+  const { budgetedIncome: totalBudgetedIncome, actualIncome: totalActualIncome, budgetedSpend: totalExpense, actualSpend: totalActual, variance } = spendCardTotals(
     state.budgetExpenseDefinitions,
     state.budgetExpenseAmountsByYear,
-    categories,
-    selectedYear
-  )
-  const totalActualIncome = actualIncomeForYear(
     state.budgetTransactions,
     categories,
-    state.budgetExpenseDefinitions,
-    selectedYear
-  )
-  const amountsForYear = state.budgetExpenseAmountsByYear[selectedYear] ?? {}
-  const excludedCategoryIds = excludedCategoryIdSet(categories)
-  const totalExpense = state.budgetExpenseDefinitions.reduce(
-    (sum, definition) => excludedCategoryIds.has(definition.categoryId) ? sum : sum + (amountsForYear[definition.id] ?? 0),
-    0
+    selectedScope
   )
 
-  const availableYears = availableBudgetYears(state.budgetTransactions, new Date())
-  const currentMonthValue = new Date().toISOString().slice(0, 7)
+  const availableYears = spendBudgetYears(state.budgetTransactions)
 
-  const periodFilteredTransactions = budgetTransactionsForPeriod(
-    state.budgetTransactions,
-    'yearly',
-    currentMonthValue,
-    selectedYear
-  )
-  const nonExcludedTransactions = periodFilteredTransactions.filter(
-    (t) => !isIncomeOrExcludedTransaction(t, categories, state.budgetExpenseDefinitions)
-  )
-  const totalActual = nonExcludedTransactions.reduce((sum, t) => sum + t.amount, 0)
-  const variance = totalExpense - totalActual
-  const rangeLabel = selectedYear
+  useEffect(() => {
+    if (selectedScope !== SPEND_ALL_YEARS && !availableYears.includes(selectedScope)) {
+      setSelectedScope(SPEND_ALL_YEARS)
+    }
+  }, [availableYears, selectedScope])
+
+  const periodFilteredTransactions = spendTransactionsForScope(state.budgetTransactions, selectedScope)
+  const rangeLabel = selectedScope === SPEND_ALL_YEARS ? 'All years' : selectedScope
 
   const recordSourceTransactions = showExcludedRecords
     ? periodFilteredTransactions
@@ -289,7 +273,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setSelectionAnchorId(null)
     setBulkCategoryId('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recPage, recSortBy, recSortDir, recordSearch, period, selectedYear])
+  }, [recPage, recSortBy, recSortDir, recordSearch, period, selectedScope])
 
   const selectionRangeIds = (anchorId: string, targetIdx: number): Set<string> => {
     const anchorIdx = pagedRecords.findIndex((r) => r.id === anchorId)
@@ -422,9 +406,11 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
     }
     const recordYear = recDate.slice(0, 4)
-    setSelectedYear(recordYear)
-    if (!state.budgetExpenseAmountsByYear[recordYear]) {
-      dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: recordYear })
+    if (selectedScope !== SPEND_ALL_YEARS) {
+      setSelectedScope(recordYear)
+      if (!state.budgetExpenseAmountsByYear[recordYear]) {
+        dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: recordYear })
+      }
     }
     setRecError('')
     setRecDate('')
@@ -528,15 +514,17 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             <select
               className="input"
               aria-label="Select year"
-              value={selectedYear}
+              value={selectedScope === SPEND_ALL_YEARS ? SPEND_ALL_OPTION_VALUE : selectedScope}
               onChange={(e) => {
-                setSelectedYear(e.target.value)
-                if (!state.budgetExpenseAmountsByYear[e.target.value]) {
-                  dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: e.target.value })
+                const scope = e.target.value === SPEND_ALL_OPTION_VALUE ? SPEND_ALL_YEARS : e.target.value
+                setSelectedScope(scope)
+                if (scope !== SPEND_ALL_YEARS && !state.budgetExpenseAmountsByYear[scope]) {
+                  dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: scope })
                 }
                 setRecPage(0)
               }}
             >
+              <option value={SPEND_ALL_OPTION_VALUE}>All</option>
               {availableYears.map((y) => (
                 <option key={y} value={y}>
                   {y}
