@@ -86,6 +86,23 @@ export async function renamePortfolio(id: string, newName: string): Promise<Port
   return updated
 }
 
+export async function setSharedDriveFolderId(id: string, folderId: string): Promise<Portfolio> {
+  const current = await getPortfolio(id)
+  if (!current) throw new Error('Portfolio not found')
+  const updated: Portfolio = { ...current, sharedDriveFolderId: folderId }
+  await putPortfolio(updated)
+  return updated
+}
+
+export async function unlinkSharedPortfolioFolder(id: string): Promise<Portfolio> {
+  const current = await getPortfolio(id)
+  if (!current) throw new Error('Portfolio not found')
+  const updated: Portfolio = { ...current }
+  delete updated.sharedDriveFolderId
+  await putPortfolio(updated)
+  return updated
+}
+
 export async function deletePortfolio(id: string): Promise<void> {
   const portfolio = await getPortfolio(id)
   if (!portfolio) return

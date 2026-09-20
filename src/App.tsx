@@ -36,6 +36,8 @@ import {
   renamePortfolio,
   deletePortfolio,
   getPortfolio,
+  setSharedDriveFolderId,
+  unlinkSharedPortfolioFolder,
 } from './lib/portfolioRegistry'
 import { decryptImportEnvelope, getEnvelopeSaltBytes } from './lib/importExport'
 import { deriveKey, generateSalt, type EncryptedEnvelope } from './lib/crypto'
@@ -296,6 +298,14 @@ function App() {
     setPortfolios(await listPortfolios())
   }, [])
 
+  const handleUnlinkSharedFolder = useCallback(async (id: string) => {
+    await unlinkSharedPortfolioFolder(id)
+    setPortfolios(await listPortfolios())
+    setActivePortfolio((prev) => (
+      prev?.id === id ? { ...prev, sharedDriveFolderId: undefined } : prev
+    ))
+  }, [])
+
   // Transitions straight from the picker's inline unlock step into the
   // unlocked app shell for `portfolio`, bypassing PasswordGate entirely.
   // `setGateShape('encrypted')` is a harmless placeholder so a later
@@ -332,6 +342,18 @@ function App() {
     setActivePortfolioDb(portfolio.dbName)
     setPortfolios(await listPortfolios())
     await handleOpenUnlocked(portfolio, key, salt, importedState, true)
+  }, [handleOpenUnlocked])
+
+  // Imports a Drive backup shared by another user. The selected folder becomes
+  // this portfolio's permanent sync target instead of creating a new folder.
+  const handleImportSharedPortfolio = useCallback(async (pickedFolder: { name: string; id: string }, password: string) => {
+    const { state: importedState, key, salt } = await decryptDriveFolderBackup(pickedFolder.id, password)
+    const portfolio = await createPortfolio(pickedFolder.name)
+    await setSharedDriveFolderId(portfolio.id, pickedFolder.id)
+    const sharedPortfolio = await getPortfolio(portfolio.id)
+    setActivePortfolioDb(portfolio.dbName)
+    setPortfolios(await listPortfolios())
+    await handleOpenUnlocked(sharedPortfolio ?? { ...portfolio, sharedDriveFolderId: pickedFolder.id }, key, salt, importedState, true)
   }, [handleOpenUnlocked])
 
   // Imports a portfolio backup from a locally-picked export file, registering
@@ -771,6 +793,7 @@ function App() {
         onOpen={navigateToPortfolio}
         onCreateNew={handleCreateNewPortfolio}
         onImportFromDriveFolder={handleImportFromDriveFolder}
+        onImportSharedPortfolio={handleImportSharedPortfolio}
         onImportFromFile={handleImportFromFile}
         onListDriveFolders={listPortfolioFoldersOnDrive}
         isOnline={isOnline}
@@ -887,6 +910,7 @@ function App() {
               }}
               onDriveConnected={onDriveConnected}
               onDriveDisconnected={onDriveDisconnected}
+              onUnlinkSharedFolder={handleUnlinkSharedFolder}
               driveConnected={connected}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}

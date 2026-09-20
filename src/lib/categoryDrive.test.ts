@@ -117,6 +117,25 @@ describe('categoryDrive', () => {
       expect(mockFilesRead).toHaveBeenCalledWith('file-1')
     })
 
+    it('reads an explicit fileId without resolving the shared folder', async () => {
+      const state: GlobalCategoryState = { categories: [], categoryMappings: [], budgetAccountRules: [] }
+      mockFilesRead.mockResolvedValue(JSON.stringify(state))
+
+      await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId, 'known-file')).resolves.toEqual(state)
+
+      expect(mockFilesRead).toHaveBeenCalledWith('known-file')
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+    })
+
+    it('returns null when an explicit fileId is stale or inaccessible', async () => {
+      mockFilesRead.mockRejectedValue(new Error('not found'))
+
+      await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId, 'stale-file')).resolves.toBeNull()
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+    })
+
     it('defaults budgetAccountRules for an older Drive file', async () => {
       const oldState = { categories: [], categoryMappings: [] }
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
@@ -201,6 +220,28 @@ describe('categoryDrive', () => {
       )
     })
 
+    it('writes to an explicit fileId without resolving the shared folder', async () => {
+      mockFilesWrite.mockResolvedValue({ id: 'known-file' })
+
+      await pushGlobalCategoriesToDrive(driveAuth, testProjectId, state, 'known-file')
+
+      expect(mockFilesWrite).toHaveBeenCalledWith({
+        fileId: 'known-file',
+        content: JSON.stringify(state),
+        mimeType: 'application/json',
+      })
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+    })
+
+    it('propagates a write failure for an explicit stale or inaccessible fileId', async () => {
+      mockFilesWrite.mockRejectedValue(new Error('not found'))
+
+      await expect(pushGlobalCategoriesToDrive(driveAuth, testProjectId, state, 'stale-file')).rejects.toThrow('not found')
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+    })
+
     it('propagates a rejected ensureFresh() uncaught', async () => {
       vi.mocked(driveAuth.ensureFresh).mockRejectedValue(new Error('connection boom'))
       await expect(pushGlobalCategoriesToDrive(driveAuth, testProjectId, state)).rejects.toThrow('connection boom')
@@ -223,6 +264,24 @@ describe('categoryDrive', () => {
       const result = await getGlobalCategoriesModifiedTime(driveAuth, testProjectId)
       expect(result).toBe('2026-09-14T12:00:00Z')
       expect(mockFilesStatus).toHaveBeenCalledWith('file-1')
+    })
+
+    it('gets status for an explicit fileId without resolving the shared folder', async () => {
+      mockFilesStatus.mockResolvedValue({ exists: true, remoteModifiedTime: '2026-09-14T12:00:00Z' })
+
+      await expect(getGlobalCategoriesModifiedTime(driveAuth, testProjectId, 'known-file')).resolves.toBe('2026-09-14T12:00:00Z')
+
+      expect(mockFilesStatus).toHaveBeenCalledWith('known-file')
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+    })
+
+    it('returns null when an explicit fileId is stale or inaccessible', async () => {
+      mockFilesStatus.mockRejectedValue(new Error('not found'))
+
+      await expect(getGlobalCategoriesModifiedTime(driveAuth, testProjectId, 'stale-file')).resolves.toBeNull()
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
     })
 
     it('propagates a rejected ensureFresh() uncaught', async () => {

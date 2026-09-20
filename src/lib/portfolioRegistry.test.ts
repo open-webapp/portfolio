@@ -5,6 +5,8 @@ import {
   getPortfolio,
   createPortfolio,
   renamePortfolio,
+  setSharedDriveFolderId,
+  unlinkSharedPortfolioFolder,
   deletePortfolio,
   nameKey,
   isMigratedPortfolio,
@@ -131,6 +133,40 @@ describe('portfolioRegistry CRUD', () => {
     await createPortfolio('Bar')
 
     await expect(renamePortfolio(a.id, 'Foo')).resolves.not.toThrow()
+  })
+
+  it('sets a shared Drive folder ID and persists it', async () => {
+    const created = await createPortfolio('Foo')
+
+    const updated = await setSharedDriveFolderId(created.id, 'folder-123')
+
+    expect(updated.sharedDriveFolderId).toBe('folder-123')
+    expect((await getPortfolio(created.id))?.sharedDriveFolderId).toBe('folder-123')
+    expect((await listPortfolios()).find((p) => p.id === created.id)?.sharedDriveFolderId).toBe('folder-123')
+  })
+
+  it('unlinks a shared Drive folder ID and safely handles portfolios without one', async () => {
+    const withFolder = await createPortfolio('Foo')
+    const withoutFolder = await createPortfolio('Bar')
+    await setSharedDriveFolderId(withFolder.id, 'folder-123')
+
+    const unlinked = await unlinkSharedPortfolioFolder(withFolder.id)
+    const unchanged = await unlinkSharedPortfolioFolder(withoutFolder.id)
+
+    expect(unlinked.sharedDriveFolderId).toBeUndefined()
+    expect(unchanged.sharedDriveFolderId).toBeUndefined()
+    expect((await getPortfolio(withFolder.id))?.sharedDriveFolderId).toBeUndefined()
+    expect((await listPortfolios()).find((p) => p.id === withFolder.id)?.sharedDriveFolderId).toBeUndefined()
+  })
+
+  it('rejects shared Drive folder changes for unknown portfolios without affecting existing portfolios', async () => {
+    const existing = await createPortfolio('Foo')
+
+    await expect(setSharedDriveFolderId('port-missing', 'folder-123')).rejects.toThrow('Portfolio not found')
+    await expect(unlinkSharedPortfolioFolder('port-missing')).rejects.toThrow('Portfolio not found')
+
+    expect(await getPortfolio(existing.id)).toEqual(existing)
+    expect(await listPortfolios()).toEqual([existing])
   })
 
   it('deletePortfolio removes the row', async () => {

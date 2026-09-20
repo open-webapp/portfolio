@@ -11,6 +11,7 @@ import {
   exportBackup,
   downloadEnvelopeAsFile,
 } from '../lib/importExport'
+import { SharedSourceBadge, UnlinkButton } from './SharedSource'
 
 const textBtnAccent: CSSProperties = {
   border: 'none',
@@ -53,6 +54,7 @@ export interface SettingsPageProps {
   onPasswordEntryTimeReset: () => void
   onDriveConnected: (connection: unknown) => void
   onDriveDisconnected: () => void
+  onUnlinkSharedFolder: (id: string) => Promise<void>
   settingsSection: 'backup' | 'encryption' | 'priceSync'
   setSettingsSection: (s: 'backup' | 'encryption' | 'priceSync') => void
   runPriceSyncTrigger: (overrideDate?: string) => Promise<void>
@@ -76,6 +78,7 @@ export function SettingsPage({
   onPasswordEntryTimeReset,
   onDriveConnected,
   onDriveDisconnected,
+  onUnlinkSharedFolder,
   settingsSection,
   setSettingsSection,
   runPriceSyncTrigger,
@@ -139,6 +142,17 @@ export function SettingsPage({
       setFetchingMutualFunds(false)
     }
   }, [runMutualFundSyncTrigger])
+
+  const handleUnlinkSharedFolder = useCallback(async () => {
+    setDriveSyncWarning(null)
+    try {
+      await onUnlinkSharedFolder(activePortfolio.id)
+    } catch (error) {
+      console.error('Unlinking shared Drive folder failed:', error)
+      const message = error instanceof Error ? error.message : String(error)
+      setDriveSyncWarning(`Could not unlink shared Drive folder: ${message}`)
+    }
+  }, [activePortfolio.id, onUnlinkSharedFolder])
 
 
   const handleChangePassword = useCallback(async () => {
@@ -237,12 +251,20 @@ export function SettingsPage({
       {/* Google Drive Sync section */}
       {settingsSection === 'backup' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
-        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Google Drive Sync</div>
+        <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>
+          Google Drive Sync{activePortfolio.sharedDriveFolderId && <> <SharedSourceBadge /></>}
+        </div>
         <GoogleDriveWidget
           auth={driveAuth}
           onConnected={onDriveConnected}
           onDisconnected={onDriveDisconnected}
         />
+        {activePortfolio.sharedDriveFolderId && (
+          <UnlinkButton
+            confirmText="Unlink this shared Google Drive folder?"
+            onUnlink={handleUnlinkSharedFolder}
+          />
+        )}
         {folderUrl && (
           <a
             href={folderUrl}
@@ -252,6 +274,9 @@ export function SettingsPage({
           >
             View in Google Drive
           </a>
+        )}
+        {driveSyncWarning && (
+          <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{driveSyncWarning}</p>
         )}
       </section>
       )}

@@ -130,6 +130,7 @@ import {
   overwriteLocalWithRemote,
   overwriteRemoteWithLocal,
   restoreBackupFromFileId,
+  resolvePortfolioFolderId,
   syncBackup,
 } from './drive'
 import { encryptState, generateSalt, deriveKey } from './crypto'
@@ -157,6 +158,14 @@ const testPortfolio: Portfolio = {
   name: 'Test Portfolio',
   dbName: 'portfolio_app_state_v1-port-test-primary',
   createdAt: 2,
+}
+
+const sharedFolderPortfolio: Portfolio = {
+  ...testPortfolio,
+  id: 'port-shared-folder',
+  name: 'Shared Folder Portfolio',
+  dbName: 'portfolio_app_state_v1-port-shared-folder',
+  sharedDriveFolderId: 'shared-folder-id',
 }
 
 describe('conflict-reconcile helpers', () => {
@@ -237,6 +246,14 @@ describe('conflict-reconcile helpers', () => {
       mockFilesStatus.mockRejectedValue(new Error('drive unavailable'))
 
       await expect(getBackupFileStatus(testPortfolio, 'file-1')).rejects.toThrow('drive unavailable')
+    })
+
+    it('checks the file directly without resolving a portfolio folder', async () => {
+      mockFilesStatus.mockResolvedValue({ exists: true, lastRestoredAt: null })
+
+      await getBackupFileStatus(sharedFolderPortfolio, 'file-1')
+
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
     })
   })
 
@@ -391,6 +408,13 @@ describe('conflict-reconcile helpers', () => {
       expect(url).toBe('https://drive.google.com/drive/folders/folder-abc')
     })
 
+    it('uses sharedDriveFolderId without calling ensureFolderPath', async () => {
+      const url = await getPortfolioDriveFolderUrl(sharedFolderPortfolio)
+
+      expect(url).toBe('https://drive.google.com/drive/folders/shared-folder-id')
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+    })
+
     it('scopes the folder lookup to the given portfolio (per-portfolio, not global)', async () => {
       mockEnsureFolderPath.mockResolvedValue('folder-xyz')
 
@@ -407,6 +431,27 @@ describe('conflict-reconcile helpers', () => {
       mockEnsureFolderPath.mockRejectedValue(new Error('folder lookup boom'))
 
       await expect(getPortfolioDriveFolderUrl(testPortfolio)).rejects.toThrow('folder lookup boom')
+    })
+  })
+
+  describe('resolvePortfolioFolderId', () => {
+    it('uses sharedDriveFolderId without Drive I/O', async () => {
+      await expect(resolvePortfolioFolderId(sharedFolderPortfolio, mockFakeProject as never)).resolves.toBe('shared-folder-id')
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+    })
+
+    it('uses ensureFolderPath for a portfolio without sharedDriveFolderId', async () => {
+      mockEnsureFolderPath.mockResolvedValue('private-folder-id')
+
+      await expect(resolvePortfolioFolderId(testPortfolio, mockFakeProject as never)).resolves.toBe('private-folder-id')
+      expect(mockEnsureFolderPath).toHaveBeenCalledTimes(1)
+    })
+
+    it('propagates an ensureFolderPath failure unchanged when no shared folder is set', async () => {
+      const error = new Error('folder lookup boom')
+      mockEnsureFolderPath.mockRejectedValue(error)
+
+      await expect(resolvePortfolioFolderId(testPortfolio, mockFakeProject as never)).rejects.toBe(error)
     })
   })
 
@@ -507,6 +552,59 @@ describe('conflict-reconcile helpers', () => {
     })
   })
 
+  describe('shared Drive folder resolution', () => {
+    it('uses the stored shared folder ID for the complete backup helper chain without resolving a name path', async () => {
+      const salt = generateSalt()
+      const key = await deriveKey('password', salt)
+      mockFilesList
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 'file-1' }])
+      mockFilesWrite.mockResolvedValue({ id: 'file-1' })
+      mockFilesStatus.mockResolvedValue({ exists: true, lastRestoredAt: null })
+
+      await expect(syncBackup(sharedFolderPortfolio, initialState(), key, salt)).resolves.toBe('file-1')
+      await expect(getBackupFileId(sharedFolderPortfolio)).resolves.toBe('file-1')
+      await expect(getPortfolioDriveFolderUrl(sharedFolderPortfolio)).resolves.toBe(
+        'https://drive.google.com/drive/folders/shared-folder-id'
+      )
+      await expect(getBackupFileStatus(sharedFolderPortfolio, 'file-1')).resolves.toEqual({ exists: true })
+
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).toHaveBeenNthCalledWith(1, {
+        folderId: 'shared-folder-id',
+        nameEquals: 'portfolio-state.json',
+      })
+      expect(mockFilesList).toHaveBeenNthCalledWith(2, {
+        folderId: 'shared-folder-id',
+        nameEquals: 'portfolio-state.json',
+      })
+      expect(mockFilesWrite).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'shared-folder-id' }))
+      expect(mockFilesStatus).toHaveBeenCalledWith('file-1')
+    })
+
+    it('syncBackup lists and writes in sharedDriveFolderId without calling ensureFolderPath', async () => {
+      const salt = generateSalt()
+      const key = await deriveKey('password', salt)
+      mockFilesList.mockResolvedValue([])
+      mockFilesWrite.mockResolvedValue({ id: 'file-1' })
+
+      await expect(syncBackup(sharedFolderPortfolio, initialState(), key, salt)).resolves.toBe('file-1')
+
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).toHaveBeenCalledWith({ folderId: 'shared-folder-id', nameEquals: 'portfolio-state.json' })
+      expect(mockFilesWrite).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'shared-folder-id' }))
+    })
+
+    it('getBackupFileId lists sharedDriveFolderId without calling ensureFolderPath', async () => {
+      mockFilesList.mockResolvedValue([{ id: 'file-1' }])
+
+      await expect(getBackupFileId(sharedFolderPortfolio)).resolves.toBe('file-1')
+
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).toHaveBeenCalledWith({ folderId: 'shared-folder-id', nameEquals: 'portfolio-state.json' })
+    })
+  })
+
   describe('migrateLegacyDriveFolderIfNeeded', () => {
     beforeEach(() => {
       mockGetConnectionSync.mockReset()
@@ -584,6 +682,17 @@ describe('conflict-reconcile helpers', () => {
 
     it('on a NON-migrated portfolio, is an immediate no-op — zero API calls, guard short-circuits before checking connection', async () => {
       await migrateLegacyDriveFolderIfNeeded(testPortfolio)
+
+      expect(mockGetConnectionSync).not.toHaveBeenCalled()
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+      expect(mockFilesRead).not.toHaveBeenCalled()
+      expect(mockFilesWrite).not.toHaveBeenCalled()
+      expect(mockFilesRemove).not.toHaveBeenCalled()
+    })
+
+    it('with sharedDriveFolderId, is an immediate no-op before Drive I/O', async () => {
+      await migrateLegacyDriveFolderIfNeeded(sharedFolderPortfolio)
 
       expect(mockGetConnectionSync).not.toHaveBeenCalled()
       expect(mockEnsureFolderPath).not.toHaveBeenCalled()

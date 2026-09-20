@@ -279,6 +279,8 @@ function driveSyncForPortfolio(portfolio: Portfolio) {
 /**
  * Wrapper around drive-sync that overrides pickFile to return a single file
  * object with an 'id' property instead of an array of PickedFile objects.
+ * Pass `unscoped: true` to browse without defaulting `parentFolderId` to the
+ * app folder; an explicitly supplied `parentFolderId` is always preserved.
  * Originally built for the now-deleted `DriveRestorePanel` component; it has
  * no current callers in the app (only exercised directly by
  * drivePickFile.test.ts). Left in place rather than removed here — see
@@ -305,18 +307,18 @@ export const drive = {
           throw new Error('Google Picker API key and project number are required for file picker. Set VITE_GOOGLE_PICKER_API_KEY and VITE_GOOGLE_PROJECT_NUMBER.')
         }
 
-        // drive-sync's pickFile forwards only apiKey/appId/mimeTypes/multiSelect/
-        // parentFolderId to openPicker — `includeFolders` is dropped on the way
-        // through. Backups live in a nested folder (OpenWebApp/Portfolio), so a
-        // picker without folder navigation can never reach them. Scope the view
-        // to that folder directly instead: parentFolderId *is* forwarded, and it
-        // puts the backup at the picker's root.
-        const { includeFolders: _includeFolders, ...pickerOptions } = (options ?? {}) as {
+        // Backups live in a nested folder (OpenWebApp/Portfolio), so the legacy
+        // picker defaults to that folder. Unscoped callers opt out to browse
+        // Drive normally; includeFolders must reach drive-sync unchanged.
+        const { unscoped, ...pickerOptions } = (options ?? {}) as {
+          unscoped?: boolean
           includeFolders?: boolean
           parentFolderId?: string
           [key: string]: unknown
         }
-        const parentFolderId: string = pickerOptions.parentFolderId ?? (await project.ensureFolderPath())
+        if (!Object.prototype.hasOwnProperty.call(pickerOptions, 'parentFolderId') && !unscoped) {
+          pickerOptions.parentFolderId = await project.ensureFolderPath()
+        }
 
         let result
         try {
@@ -324,7 +326,6 @@ export const drive = {
             ...pickerOptions,
             apiKey,
             appId: projectNumber,
-            parentFolderId,
           })
         } catch (err) {
           // Cancelling the picker rejects rather than resolving empty. That is a
@@ -395,6 +396,18 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: s
 }
 
 /**
+ * Uses a portfolio's shared Drive folder when one was selected; otherwise
+ * creates/resolves its private portfolio folder as before.
+ */
+export async function resolvePortfolioFolderId(
+  portfolio: Portfolio,
+  project: ReturnType<typeof legacyDriveSync.project>
+): Promise<string> {
+  if (portfolio.sharedDriveFolderId) return portfolio.sharedDriveFolderId
+  return await withTimeout(project.ensureFolderPath(), DRIVE_IO_TIMEOUT_MS, 'ensureFolderPath')
+}
+
+/**
  * Decrypts a backup envelope into a usable AppState.
  *
  * The coalesce step is not optional. A Drive backup written by an older build
@@ -430,12 +443,8 @@ export async function syncBackup(portfolio: Portfolio, state: AppState, key: Cry
     await getDriveAuthFor(portfolio).ensureFresh()
     const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
 
-    // Ensure app folder structure (OpenWebApp/Portfolio) exists
-    const folderId = await withTimeout(
-      project.ensureFolderPath(),
-      DRIVE_IO_TIMEOUT_MS,
-      'ensureFolderPath'
-    )
+    // Use the shared folder when configured, otherwise ensure the private folder.
+    const folderId = await resolvePortfolioFolderId(portfolio, project)
 
     // Find the existing backup file by name so we can update it instead of creating a new one
     const existingFiles = await withTimeout(
@@ -485,11 +494,7 @@ export async function getBackupFileId(portfolio: Portfolio): Promise<string | nu
   try {
     const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
 
-    const folderId = await withTimeout(
-      project.ensureFolderPath(),
-      DRIVE_IO_TIMEOUT_MS,
-      'ensureFolderPath'
-    )
+    const folderId = await resolvePortfolioFolderId(portfolio, project)
 
     const files = await withTimeout(
       project.files.list({
@@ -529,7 +534,7 @@ export async function getBackupFileId(portfolio: Portfolio): Promise<string | nu
  */
 export async function getPortfolioDriveFolderUrl(portfolio: Portfolio): Promise<string> {
   const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
-  const folderId = await withTimeout(project.ensureFolderPath(), DRIVE_IO_TIMEOUT_MS, 'ensureFolderPath')
+  const folderId = await resolvePortfolioFolderId(portfolio, project)
   return `https://drive.google.com/drive/folders/${folderId}`
 }
 

@@ -3,16 +3,36 @@ import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-li
 import { PortfolioPicker, type PortfolioPickerProps } from './PortfolioPicker'
 import type { Portfolio } from '../lib/types'
 import type { EncryptedEnvelope } from '../lib/crypto'
-import { parseImportFile, ImportMalformedFileError, ImportDecryptError } from '../lib/importExport'
-import { DriveDecryptError } from '../lib/drive'
+import {
+  downloadJsonAsFile,
+  parseCategoryMappingImportFile,
+  parseImportFile,
+  ImportMalformedFileError,
+  ImportDecryptError,
+} from '../lib/importExport'
+import { drive, DriveDecryptError, DriveMalformedBackupError, getPickerDriveAuth } from '../lib/drive'
+import { pullGlobalCategoriesFromDrive } from '../lib/categoryDrive'
+import {
+  getSharedCategoryDriveFileId,
+  loadGlobalCategoryState,
+  saveGlobalCategoryState,
+  setSharedCategoryDriveFileId,
+} from '../lib/categoryPersist'
+import { mergeCategoryState } from '../lib/categoryMerge'
 
 vi.mock('../lib/importExport', () => ({
+  downloadJsonAsFile: vi.fn(),
+  parseCategoryMappingImportFile: vi.fn(),
   parseImportFile: vi.fn(),
   ImportMalformedFileError: class ImportMalformedFileError extends Error {},
   ImportDecryptError: class ImportDecryptError extends Error {},
 }))
 
 vi.mock('../lib/drive', () => ({
+  drive: {
+    project: vi.fn(),
+  },
+  getPickerDriveAuth: vi.fn(),
   DriveDecryptError: class DriveDecryptError extends Error {
     salt: unknown
     envelope: unknown
@@ -24,6 +44,21 @@ vi.mock('../lib/drive', () => ({
     }
   },
   DriveMalformedBackupError: class DriveMalformedBackupError extends Error {},
+}))
+
+vi.mock('../lib/categoryDrive', () => ({
+  pullGlobalCategoriesFromDrive: vi.fn(),
+}))
+
+vi.mock('../lib/categoryPersist', () => ({
+  loadGlobalCategoryState: vi.fn(),
+  saveGlobalCategoryState: vi.fn(),
+  getSharedCategoryDriveFileId: vi.fn(),
+  setSharedCategoryDriveFileId: vi.fn(),
+}))
+
+vi.mock('../lib/categoryMerge', () => ({
+  mergeCategoryState: vi.fn(),
 }))
 
 const fakeEnvelope: EncryptedEnvelope = {
@@ -51,6 +86,7 @@ function renderPicker(overrides: Partial<PortfolioPickerProps> = {}) {
     onDelete: vi.fn().mockResolvedValue(undefined),
     onOpen: vi.fn(),
     onImportFromDriveFolder: vi.fn().mockResolvedValue(undefined),
+    onImportSharedPortfolio: vi.fn().mockResolvedValue(undefined),
     onImportFromFile: vi.fn().mockResolvedValue(undefined),
     onListDriveFolders: vi.fn().mockResolvedValue([]),
     isOnline: true,
@@ -69,6 +105,15 @@ describe('PortfolioPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.confirm = vi.fn().mockReturnValue(true)
+    vi.mocked(loadGlobalCategoryState).mockResolvedValue({
+      categories: [],
+      categoryMappings: [],
+      budgetAccountRules: [],
+    } as never)
+    vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue(undefined)
+    vi.mocked(setSharedCategoryDriveFileId).mockResolvedValue(undefined)
+    vi.mocked(getPickerDriveAuth).mockReturnValue({} as never)
+    vi.mocked(drive.project).mockReturnValue({ pickFile: vi.fn().mockResolvedValue(null) } as never)
   })
 
   afterEach(() => {
@@ -97,6 +142,207 @@ describe('PortfolioPicker', () => {
       await waitFor(() => {
         expect(props.onDelete).toHaveBeenCalledWith('p1')
       })
+    })
+  })
+
+  describe('global mapping', () => {
+    it('loads empty global state and enables Download after importing a valid mapping', async () => {
+      const imported = {
+        categories: [{ id: 'food', name: 'Food' }],
+        categoryMappings: [],
+        budgetAccountRules: [],
+      }
+      vi.mocked(parseCategoryMappingImportFile).mockReturnValue(imported as never)
+      vi.mocked(mergeCategoryState).mockReturnValue(imported as never)
+      vi.mocked(saveGlobalCategoryState).mockResolvedValue(undefined)
+      const { container } = renderPicker()
+
+      const download = screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement
+      expect(download.disabled).toBe(true)
+      await waitFor(() => {
+        expect(loadGlobalCategoryState).toHaveBeenCalledWith([])
+      })
+
+      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[1] as HTMLInputElement
+      fireEvent.change(mappingInput, {
+        target: { files: [new File(['{}'], 'mapping.json', { type: 'application/json' })] },
+      })
+
+      await waitFor(() => {
+        expect(saveGlobalCategoryState).toHaveBeenCalledWith(imported)
+        expect(download.disabled).toBe(false)
+      })
+      fireEvent.click(download)
+      expect(downloadJsonAsFile).toHaveBeenCalledWith(imported, 'category-mapping.json')
+    })
+
+    it('merges imported mappings with the loaded state instead of replacing it', async () => {
+      const existing = {
+        categories: [{ id: 'existing', name: 'Existing' }],
+        categoryMappings: [{ id: 'existing-mapping' }],
+        budgetAccountRules: [],
+      }
+      const imported = { categories: [{ id: 'new', name: 'New' }], categoryMappings: [], budgetAccountRules: [] }
+      const merged = {
+        categories: [...existing.categories, ...imported.categories],
+        categoryMappings: existing.categoryMappings,
+        budgetAccountRules: [],
+      }
+      vi.mocked(loadGlobalCategoryState).mockResolvedValue(existing as never)
+      vi.mocked(parseCategoryMappingImportFile).mockReturnValue(imported as never)
+      vi.mocked(mergeCategoryState).mockReturnValue(merged as never)
+      vi.mocked(saveGlobalCategoryState).mockResolvedValue(undefined)
+      const { container } = renderPicker()
+
+      await waitFor(() => {
+        expect((screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement).disabled).toBe(false)
+      })
+      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[1] as HTMLInputElement
+      fireEvent.change(mappingInput, { target: { files: [new File(['{}'], 'mapping.json')] } })
+
+      await waitFor(() => {
+        expect(mergeCategoryState).toHaveBeenCalledWith(existing, imported)
+        expect(saveGlobalCategoryState).toHaveBeenCalledWith(merged)
+      })
+    })
+
+    it('shows an inline error for malformed imports without changing Download state', async () => {
+      vi.mocked(parseCategoryMappingImportFile).mockImplementation(() => {
+        throw new Error('bad file')
+      })
+      const { container } = renderPicker()
+      const download = screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement
+      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[1] as HTMLInputElement
+
+      fireEvent.change(mappingInput, { target: { files: [new File(['not json'], 'mapping.json')] } })
+
+      expect(await screen.findByText('This is not a valid category mapping file.')).toBeTruthy()
+      expect(download.disabled).toBe(true)
+      expect(saveGlobalCategoryState).not.toHaveBeenCalled()
+    })
+
+    it('imports a picked shared mapping from Drive, merges it, and saves its file ID', async () => {
+      const existing = {
+        categories: [{ id: 'existing', name: 'Existing' }],
+        categoryMappings: [],
+        budgetAccountRules: [],
+      }
+      const remote = {
+        categories: [{ id: 'shared', name: 'Shared' }],
+        categoryMappings: [],
+        budgetAccountRules: [],
+      }
+      const merged = {
+        categories: [...existing.categories, ...remote.categories],
+        categoryMappings: [],
+        budgetAccountRules: [],
+      }
+      const pickFile = vi.fn().mockResolvedValue({ id: 'shared-file' })
+      const auth = {} as never
+      vi.mocked(loadGlobalCategoryState).mockResolvedValue(existing as never)
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      vi.mocked(getPickerDriveAuth).mockReturnValue(auth)
+      vi.mocked(pullGlobalCategoriesFromDrive).mockResolvedValue(remote as never)
+      vi.mocked(mergeCategoryState).mockReturnValue(merged as never)
+      vi.mocked(saveGlobalCategoryState).mockResolvedValue(undefined)
+      vi.mocked(setSharedCategoryDriveFileId).mockResolvedValue(undefined)
+      renderPicker()
+
+      await waitFor(() => {
+        expect((screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement).disabled).toBe(false)
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared mapping from Google Drive' }))
+
+      await waitFor(() => {
+        expect(pickFile).toHaveBeenCalledWith({ unscoped: true, mimeTypes: ['application/json'], multiSelect: false })
+        expect(pullGlobalCategoriesFromDrive).toHaveBeenCalledWith(auth, 'picker', 'shared-file')
+        expect(mergeCategoryState).toHaveBeenCalledWith(existing, remote)
+        expect(saveGlobalCategoryState).toHaveBeenCalledWith(merged)
+        expect(setSharedCategoryDriveFileId).toHaveBeenCalledWith('shared-file')
+      })
+      expect(pullGlobalCategoriesFromDrive).toHaveBeenCalledTimes(1)
+      expect(mergeCategoryState).toHaveBeenCalledTimes(1)
+      expect(saveGlobalCategoryState).toHaveBeenCalledTimes(1)
+      expect(setSharedCategoryDriveFileId).toHaveBeenCalledTimes(1)
+      fireEvent.click(screen.getByRole('button', { name: 'Download Category Mapping' }))
+      expect(downloadJsonAsFile).toHaveBeenCalledWith(merged, 'category-mapping.json')
+    })
+
+    it('does nothing when the shared mapping picker is cancelled', async () => {
+      const pickFile = vi.fn().mockResolvedValue(null)
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared mapping from Google Drive' }))
+
+      await waitFor(() => expect(pickFile).toHaveBeenCalledTimes(1))
+      expect(pullGlobalCategoriesFromDrive).not.toHaveBeenCalled()
+      expect(mergeCategoryState).not.toHaveBeenCalled()
+      expect(saveGlobalCategoryState).not.toHaveBeenCalled()
+      expect(setSharedCategoryDriveFileId).not.toHaveBeenCalled()
+    })
+
+    it('shows the Shared badge only when a shared mapping file ID is persisted', async () => {
+      vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue('shared-file')
+      renderPicker()
+
+      await waitFor(() => {
+        expect(within(screen.getByText('Global Mapping').parentElement as HTMLElement).getByText('Shared')).toBeTruthy()
+      })
+    })
+
+    it('unlinks the shared mapping without changing local category data', async () => {
+      const localState = {
+        categories: [{ id: 'food', name: 'Food' }],
+        categoryMappings: [{ id: 'food-mapping' }],
+        budgetAccountRules: [{ id: 'food-rule' }],
+      }
+      vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue('shared-file')
+      vi.mocked(loadGlobalCategoryState).mockResolvedValue(localState as never)
+      renderPicker()
+
+      const header = screen.getByText('Global Mapping').parentElement as HTMLElement
+      await waitFor(() => expect(within(header).getByText('Shared')).toBeTruthy())
+      fireEvent.click(within(header).getByRole('button', { name: 'Unlink' }))
+
+      await waitFor(() => {
+        expect(setSharedCategoryDriveFileId).toHaveBeenCalledWith(null)
+        expect(within(header).queryByText('Shared')).toBeFalsy()
+      })
+      expect(saveGlobalCategoryState).not.toHaveBeenCalled()
+      expect(mergeCategoryState).not.toHaveBeenCalled()
+    })
+
+    it('does not render an unlink control when no shared mapping override is set', () => {
+      renderPicker()
+
+      const header = screen.getByText('Global Mapping').parentElement as HTMLElement
+      expect(within(header).queryByRole('button', { name: 'Unlink' })).toBeFalsy()
+      expect(setSharedCategoryDriveFileId).not.toHaveBeenCalled()
+    })
+
+    it('does not start a polling interval while rendering the Global Mapping section', async () => {
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
+      renderPicker()
+
+      await Promise.resolve()
+
+      expect(setIntervalSpy).not.toHaveBeenCalled()
+      setIntervalSpy.mockRestore()
+    })
+
+    it('shows an inline error without saving the file ID when the picked shared mapping is malformed', async () => {
+      const pickFile = vi.fn().mockResolvedValue({ id: 'malformed-file' })
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      vi.mocked(pullGlobalCategoriesFromDrive).mockResolvedValue(null)
+      renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared mapping from Google Drive' }))
+
+      expect(await screen.findByText('This is not a valid shared category mapping file.')).toBeTruthy()
+      expect(mergeCategoryState).not.toHaveBeenCalled()
+      expect(saveGlobalCategoryState).not.toHaveBeenCalled()
+      expect(setSharedCategoryDriveFileId).not.toHaveBeenCalled()
     })
   })
 
@@ -288,6 +534,79 @@ describe('PortfolioPicker', () => {
         expect(onImportFromDriveFolder).toHaveBeenCalledWith({ name: 'Alpha', id: 'd1' }, 'correct-pw')
       })
     })
+
+    it('picks a shared portfolio and imports it with the entered password', async () => {
+      const pickFile = vi.fn().mockResolvedValue({ name: 'Team portfolio', id: 'shared-folder' })
+      const onImportSharedPortfolio = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      renderPicker({ onImportSharedPortfolio })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
+
+      const passwordInput = await screen.findByPlaceholderText("Enter the portfolio's password")
+      fireEvent.change(passwordInput, { target: { value: 'correct-pw' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+      await waitFor(() => {
+        expect(pickFile).toHaveBeenCalledWith({ unscoped: true, includeFolders: true, multiSelect: false })
+        expect(onImportSharedPortfolio).toHaveBeenCalledWith({ name: 'Team portfolio', id: 'shared-folder' }, 'correct-pw')
+      })
+    })
+
+    it('does nothing when the shared portfolio picker is cancelled', async () => {
+      const pickFile = vi.fn().mockResolvedValue(null)
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
+
+      await waitFor(() => expect(pickFile).toHaveBeenCalledTimes(1))
+      expect(screen.queryByPlaceholderText("Enter the portfolio's password")).toBeFalsy()
+    })
+
+    it('shows the existing incorrect-password error for a shared portfolio import', async () => {
+      const pickFile = vi.fn().mockResolvedValue({ name: 'Team portfolio', id: 'shared-folder' })
+      const onImportSharedPortfolio = vi
+        .fn()
+        .mockRejectedValue(new DriveDecryptError('nope', new Uint8Array(), fakeEnvelope))
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      renderPicker({ onImportSharedPortfolio })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
+      const passwordInput = await screen.findByPlaceholderText("Enter the portfolio's password")
+      fireEvent.change(passwordInput, { target: { value: 'wrong' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+      expect(await screen.findByText('Incorrect password.')).toBeTruthy()
+    })
+
+    it('shows the existing malformed-backup error for a picked shared folder', async () => {
+      const pickFile = vi.fn().mockResolvedValue({ name: 'Team portfolio', id: 'shared-folder' })
+      const onImportSharedPortfolio = vi
+        .fn()
+        .mockRejectedValue(new DriveMalformedBackupError('missing portfolio-state.json'))
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      renderPicker({ onImportSharedPortfolio })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
+      const passwordInput = await screen.findByPlaceholderText("Enter the portfolio's password")
+      fireEvent.change(passwordInput, { target: { value: 'correct-pw' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+
+      expect(await screen.findByText('Could not import this portfolio.')).toBeTruthy()
+    })
+  })
+
+  it('shows the Shared badge only for portfolios linked to a shared Drive folder', () => {
+    renderPicker({
+      portfolios: [
+        makePortfolio({ id: 'shared', name: 'Shared portfolio', sharedDriveFolderId: 'folder-1' }),
+        makePortfolio({ id: 'local', name: 'Local portfolio' }),
+      ],
+    })
+
+    expect(within(screen.getByText('Shared portfolio').closest('.card') as HTMLElement).getByText('Shared')).toBeTruthy()
+    expect(within(screen.getByText('Local portfolio').closest('.card') as HTMLElement).queryByText('Shared')).toBeFalsy()
   })
 
   describe('Create panel', () => {

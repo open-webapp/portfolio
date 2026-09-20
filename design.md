@@ -30,8 +30,10 @@ interface GlobalCategoryState {
 - `GlobalCategoryState` is cross-portfolio and is not part of `AppState`.
 - `categoryStoreReducer` owns category/mapping CRUD plus `CONFIGURE_BUDGET_ACCOUNT_RULE` and `DELETE_BUDGET_ACCOUNT_RULE`. Rule identity is `normalizedName`; deletion tombstones the record.
 - `mergeCategoryState(a, b)` merges categories/mappings by `id` and rules by `normalizedName`; larger `deletedAt ?? updatedAt` wins, ties retain `a`.
-- `categoryPersist.ts` stores one global IndexedDB document; `categoryDrive.ts` reads/writes unencrypted shared Drive `OpenWebApp/Portfolio/category-mappings.json`.
+- `categoryPersist.ts` stores one global IndexedDB document; its `DriveSyncMeta` has optional `lastKnownRemoteModifiedTime` and `sharedFileId` fields.
+- `categoryDrive.ts` reads/writes unencrypted shared Drive `OpenWebApp/Portfolio/category-mappings.json`. `pullGlobalCategoriesFromDrive`, `pushGlobalCategoriesToDrive`, and `getGlobalCategoriesModifiedTime` each accept optional `fileId?: string`; when supplied, they read/write/status that file instead of resolving it by name in the shared root.
 - `useGlobalCategories(driveAuth, driveConnected, driveProjectId, budgetExpenseDefinitions?)` hydrates once, returns visible `{ categories, categoryMappings, budgetAccountRules, dispatch, hydrated, seedGlobalCategoriesIfNeeded, syncNow }`, debounce-saves locally (500ms), merges Drive initial/manual/polled pulls, immediately pushes connected local edits, and polls every 60 seconds.
+- `PortfolioPicker` has a separate one-shot global-mapping path: it loads/saves the global category document locally, can merge a picker-selected shared Drive mapping, and stores/unlinks its `sharedFileId`. It is distinct from the `useGlobalCategories` lifecycle and starts no interval.
 - `App.tsx` prop-drills global categories, mappings, rules, hydration state, and `categoryDispatch` into `BudgetPage`; no context.
 
 ## Account Sign Reconciliation
@@ -43,5 +45,15 @@ interface GlobalCategoryState {
 
 ## Persistence and Drive
 
-- Portfolio encrypted state and its Drive `portfolio-state.json` remain per portfolio.
+```ts
+interface Portfolio {
+  id: string
+  name: string
+  dbName: string
+  createdAt: number
+  sharedDriveFolderId?: string
+}
+```
+- Portfolio encrypted state and its Drive `portfolio-state.json` remain per portfolio unless `sharedDriveFolderId` is set.
+- `resolvePortfolioFolderId(portfolio, project)` returns `portfolio.sharedDriveFolderId` when present; otherwise it resolves the private `OpenWebApp/Portfolio/<portfolio.name>` folder. `syncBackup`, `getBackupFileId`, and `getPortfolioDriveFolderUrl` use this resolver. `getBackupFileStatus` checks its supplied backup file ID directly, including IDs found in a shared folder.
 - Global category state, including account rules, is separate from portfolio backups and uses its global IndexedDB document and shared Drive JSON file.

@@ -1,15 +1,9 @@
-import { useCallback, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { AppState } from '../lib/state'
 import type { Category, CategoryMapping } from '../lib/types'
 import type { CategoryAction } from '../lib/categoryStore'
 import { addCategoryMapping, deleteCategoryMapping, updateCategoryMapping } from '../lib/categoryStore'
-import { mergeCategoryState } from '../lib/categoryMerge'
-import {
-  CategoryMappingImportError,
-  downloadJsonAsFile,
-  parseCategoryMappingImportFile,
-} from '../lib/importExport'
 import { LOSS_COLOR } from '../lib/computations'
 import { effectiveCategoryId, mappingsForExpense } from '../lib/selectors'
 
@@ -74,33 +68,6 @@ export function CategoryMappingTab({
   const [newSubstringDraftByExpense, setNewSubstringDraftByExpense] = useState<Record<string, string>>({})
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
   const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
-  const categoryImportFileInputRef = useRef<HTMLInputElement>(null)
-  const [categoryImportError, setCategoryImportError] = useState<string | null>(null)
-
-  const handleCategoryImportFileSelect = useCallback(
-    (file: File | null) => {
-      setCategoryImportError(null)
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = () => {
-        try {
-          const imported = parseCategoryMappingImportFile(String(reader.result ?? ''), state.budgetExpenseDefinitions)
-          categoryDispatch({ type: '__MERGE_IMPORTED', imported })
-          const nextMappings = mergeCategoryState({ categories, categoryMappings, budgetAccountRules: [] }, imported).categoryMappings
-          dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
-        } catch (error) {
-          if (error instanceof CategoryMappingImportError) {
-            setCategoryImportError(error.message)
-          } else {
-            throw error
-          }
-        }
-      }
-      reader.readAsText(file)
-    },
-    [categoryDispatch, dispatch, categories, categoryMappings, state.budgetExpenseDefinitions]
-  )
-
   const saveMapping = (id: string) => {
     const patch = { substring: mappingSubstringDraft.trim() }
     categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id, patch })
@@ -115,37 +82,6 @@ export function CategoryMappingTab({
 
   return (
     <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
-      <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-        <button
-          className="btn btn-primary blueprint"
-          onClick={() => {
-            const now = new Date()
-            const yyyy = now.getFullYear()
-            const mm = String(now.getMonth() + 1).padStart(2, '0')
-            const dd = String(now.getDate()).padStart(2, '0')
-            downloadJsonAsFile({ categories, categoryMappings, budgetAccountRules: [] }, `category-mappings-${yyyy}-${mm}-${dd}.json`)
-          }}
-        >
-          Download Category Mapping
-        </button>
-        <button className="btn btn-secondary blueprint" onClick={() => categoryImportFileInputRef.current?.click()}>
-          Import Category Mapping
-        </button>
-        <input
-          ref={categoryImportFileInputRef}
-          type="file"
-          accept="application/json"
-          aria-label="Import Category Mapping file"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            handleCategoryImportFileSelect(e.target.files?.[0] || null)
-            e.target.value = ''
-          }}
-        />
-      </div>
-      {categoryImportError && (
-        <p style={{ marginTop: 'var(--space-3)', marginBottom: 0, color: '#8a3c2e' }}>{categoryImportError}</p>
-      )}
       <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Category Mapping</div>
       {categories.map((category) => {
         const isEditingCategory = editingCategoryId === category.id

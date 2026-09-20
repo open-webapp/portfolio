@@ -11,6 +11,7 @@ import {
   saveGlobalCategoryState,
   getLastKnownRemoteModifiedTime,
   setLastKnownRemoteModifiedTime,
+  getSharedCategoryDriveFileId,
 } from '../lib/categoryPersist'
 import {
   pullGlobalCategoriesFromDrive,
@@ -39,6 +40,7 @@ export function useGlobalCategories(
   const didInitialPullRef = useRef(false)
   const [initialPullDone, setInitialPullDone] = useState(false)
   const latestStateRef = useRef(state)
+  const sharedCategoryDriveFileIdRef = useRef<string | undefined>(undefined)
   latestStateRef.current = state
 
   // One-shot hydrate on mount. Deferred while budgetExpenseDefinitions is
@@ -55,8 +57,12 @@ export function useGlobalCategories(
     didHydrateRef.current = true
     let cancelled = false
     ;(async () => {
-      const loaded = await loadGlobalCategoryState(budgetExpenseDefinitions)
+      const [loaded, sharedCategoryDriveFileId] = await Promise.all([
+        loadGlobalCategoryState(budgetExpenseDefinitions),
+        getSharedCategoryDriveFileId(),
+      ])
       if (cancelled) return
+      sharedCategoryDriveFileIdRef.current = sharedCategoryDriveFileId
       dispatch({ type: '__REPLACE', state: { ...loaded, budgetAccountRules: loaded.budgetAccountRules ?? [] } })
       setHydrated(true)
     })()
@@ -94,11 +100,14 @@ export function useGlobalCategories(
   useEffect(() => {
     if (!hydrated || !initialPullDone) return
     if (!driveConnected || !driveAuth || !driveProjectId) return
-    pushGlobalCategoriesToDrive(driveAuth, driveProjectId, {
-      categories: state.categories,
-      categoryMappings: state.categoryMappings,
-      budgetAccountRules: state.budgetAccountRules,
-    }).catch(console.error)
+    ;(async () => {
+      sharedCategoryDriveFileIdRef.current = await getSharedCategoryDriveFileId()
+      await pushGlobalCategoriesToDrive(driveAuth, driveProjectId, {
+        categories: state.categories,
+        categoryMappings: state.categoryMappings,
+        budgetAccountRules: state.budgetAccountRules,
+      }, sharedCategoryDriveFileIdRef.current)
+    })().catch(console.error)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.categories, state.categoryMappings, state.budgetAccountRules, hydrated, initialPullDone, driveConnected, driveAuth, driveProjectId])
 
@@ -107,7 +116,8 @@ export function useGlobalCategories(
   // on-demand refresh (e.g. after a manual portfolio Drive sync).
   const pullAndMerge = async () => {
     if (!driveConnected || !driveAuth || !driveProjectId) return
-    const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId)
+    sharedCategoryDriveFileIdRef.current = await getSharedCategoryDriveFileId()
+    const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId, sharedCategoryDriveFileIdRef.current)
     if (remote === null) return
     const current = latestStateRef.current
     const merged = mergeCategoryState(
@@ -138,11 +148,12 @@ export function useGlobalCategories(
     const id = setInterval(() => {
       if (!driveConnected || !driveAuth || !driveProjectId) return
       ;(async () => {
-        const modifiedTime = await getGlobalCategoriesModifiedTime(driveAuth, driveProjectId)
+        sharedCategoryDriveFileIdRef.current = await getSharedCategoryDriveFileId()
+        const modifiedTime = await getGlobalCategoriesModifiedTime(driveAuth, driveProjectId, sharedCategoryDriveFileIdRef.current)
         if (modifiedTime === null) return
         const bookmark = await getLastKnownRemoteModifiedTime()
         if (bookmark && modifiedTime <= bookmark) return
-        const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId)
+        const remote = await pullGlobalCategoriesFromDrive(driveAuth, driveProjectId, sharedCategoryDriveFileIdRef.current)
         if (remote === null) return
         const current = latestStateRef.current
         const merged = mergeCategoryState(

@@ -1,17 +1,11 @@
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { CategoryMappingTab } from './CategoryMappingTab'
 import { initialState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
 import { categoryStoreReducer, type GlobalCategoryState } from '../lib/categoryStore'
 import type { Category, CategoryMapping } from '../lib/types'
-import * as importExportModule from '../lib/importExport'
-
-vi.mock('../lib/importExport', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../lib/importExport')>()),
-  downloadJsonAsFile: vi.fn(),
-}))
 
 afterEach(() => {
   cleanup()
@@ -55,6 +49,12 @@ describe('CategoryMappingTab', () => {
     const data = fixture()
     rerender(<CategoryMappingTab {...data} dispatch={vi.fn()} categoryDispatch={vi.fn()} categoriesHydrated />)
     expect(screen.getByText('Category Mapping')).toBeTruthy()
+  })
+
+  it('does not render relocated category mapping import and export controls', () => {
+    renderTab()
+    expect(screen.queryByRole('button', { name: 'Download Category Mapping' })).toBeFalsy()
+    expect(screen.queryByRole('button', { name: 'Import Category Mapping' })).toBeFalsy()
   })
 
   it('groups mappings by definition, keeps unused categories mapping-free, and offers deletion except for Other', () => {
@@ -222,30 +222,10 @@ describe('CategoryMappingTab', () => {
     expect(categoryDispatch).toHaveBeenCalledWith({ type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND', id: 'grocery', exclude: false })
   })
 
-  it('exports a dated mapping file and resets the file input after every selection', async () => {
-    const data = fixture()
-    const categoryDispatch = vi.fn()
-    renderTab({ ...data, categoryDispatch })
-    fireEvent.click(screen.getByRole('button', { name: 'Download Category Mapping' }))
-    expect(importExportModule.downloadJsonAsFile).toHaveBeenCalledWith({ categories: data.categories, categoryMappings: data.categoryMappings, budgetAccountRules: [] }, expect.stringMatching(/^category-mappings-\d{4}-\d{2}-\d{2}\.json$/))
-    const input = screen.getByLabelText('Import Category Mapping file') as HTMLInputElement
-    const file = new File([JSON.stringify({ categories: [], categoryMappings: [] })], 'mapping.json', { type: 'application/json' })
-    fireEvent.change(input, { target: { files: [file] } })
-    await waitFor(() => expect(categoryDispatch).toHaveBeenCalledWith({ type: '__MERGE_IMPORTED', imported: { categories: [], categoryMappings: [], budgetAccountRules: [] } }))
-    expect(input.value).toBe('')
-  })
-
-  it('shows parser errors without dispatching', async () => {
-    const categoryDispatch = vi.fn()
-    renderTab({ categoryDispatch })
-    fireEvent.change(screen.getByLabelText('Import Category Mapping file'), { target: { files: [new File(['bad'], 'bad.json')] } })
-    await waitFor(() => expect(screen.getByText('Import file is not valid JSON.')).toBeTruthy())
-    expect(categoryDispatch).not.toHaveBeenCalled()
-  })
 })
 
 describe('CategoryMappingTab automatic reapply', () => {
-  function Harness({ initialCategoryState, operation }: { initialCategoryState: GlobalCategoryState; operation: 'add' | 'edit' | 'delete' | 'import' }) {
+  function Harness({ initialCategoryState }: { initialCategoryState: GlobalCategoryState }) {
     const initial = fixture().state
     initial.budgetTransactions = [{ id: 'tx', date: '2026-01-01', description: 'TRADER JOES', categoryId: 'other', amount: 10, spendExpenseId: 'old' }]
     const [state, setState] = useState(initial)
@@ -254,18 +234,18 @@ describe('CategoryMappingTab automatic reapply', () => {
     return <><pre data-testid="transaction">{JSON.stringify(state.budgetTransactions[0])}</pre><CategoryMappingTab state={state} dispatch={(a) => { actions.push(a); setState((s) => appReducer(s, a)) }} categories={categoryState.categories} categoryMappings={categoryState.categoryMappings} categoryDispatch={(a) => setCategoryState((s) => categoryStoreReducer(s, a))} categoriesHydrated /></>
   }
 
-  function run(operation: 'add' | 'edit' | 'delete' | 'import') {
+  function run(operation: 'add' | 'edit' | 'delete') {
     ;(window as any).__mappingActions = []
     const data = fixture()
-    const categoryMappings = operation === 'add' || operation === 'import' ? [] : [
+    const categoryMappings = operation === 'add' ? [] : [
       { id: 'target', substring: operation === 'edit' ? 'SAFEWAY' : 'TRADER JOES', spendExpenseId: 'fresh', updatedAt: '2026-01-01T00:00:00.000Z' },
       ...(operation === 'delete' ? [{ id: 'fallback', substring: 'JOES', spendExpenseId: 'pantry', updatedAt: '2025-01-01T00:00:00.000Z' }] : []),
     ]
-    render(<Harness initialCategoryState={{ categories: data.categories, categoryMappings }} operation={operation} />)
+    render(<Harness initialCategoryState={{ categories: data.categories, categoryMappings }} />)
     return data
   }
 
-  it('add, edit, delete, and import each dispatch immediate next mappings and reapply matching transactions', async () => {
+  it('add, edit, and delete each dispatch immediate next mappings and reapply matching transactions', () => {
     run('add')
     const add = screen.getByLabelText('Add substring to Fresh Groceries (Groceries)')
     fireEvent.change(add, { target: { value: 'TRADER JOES' } }); fireEvent.keyDown(add, { key: 'Enter' })
@@ -278,9 +258,5 @@ describe('CategoryMappingTab automatic reapply', () => {
     cleanup(); run('delete'); vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.click(screen.getByLabelText('Delete substring TRADER JOES'))
     expect((window as any).__mappingActions.at(-1)).toMatchObject({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: expect.any(Array) })
-    cleanup(); run('import')
-    fireEvent.change(screen.getByLabelText('Import Category Mapping file'), { target: { files: [new File([JSON.stringify({ categories: [], categoryMappings: [{ id: 'import', substring: 'TRADER JOES', spendExpenseId: 'fresh', updatedAt: '2026-01-01T00:00:00.000Z' }] })], 'mapping.json')] } })
-    await waitFor(() => expect((window as any).__mappingActions.at(-1)).toMatchObject({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: [expect.objectContaining({ id: 'import' })] }))
-    expect(JSON.parse(screen.getByTestId('transaction').textContent!).spendExpenseId).toBe('fresh')
   })
 })

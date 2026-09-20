@@ -8,7 +8,13 @@ import { importTransactions } from './lib/transactionsImport'
 import { peekEnvelopeShape, savePersistedApp, setActivePortfolioDb } from './lib/persist'
 import { driveAuth } from './lib/drive'
 import { useDriveConnection } from '@open-webapp/drive-connect'
-import { createPortfolio, _resetRegistryForTests } from './lib/portfolioRegistry'
+import {
+  createPortfolio,
+  getPortfolio,
+  listPortfolios,
+  setSharedDriveFolderId,
+  _resetRegistryForTests,
+} from './lib/portfolioRegistry'
 import App from './App'
 
 const REGISTRY_DB_NAME = 'portfolio-registry'
@@ -250,6 +256,17 @@ vi.mock('./components/PasswordGate', () => ({
         MockUnlock
       </button>
     )
+  },
+}))
+
+const { portfolioPickerPropsCapture } = vi.hoisted(() => ({
+  portfolioPickerPropsCapture: { current: undefined as unknown },
+}))
+
+vi.mock('./components/PortfolioPicker', () => ({
+  PortfolioPicker: (props: Record<string, unknown>) => {
+    portfolioPickerPropsCapture.current = props
+    return <button>Create</button>
   },
 }))
 
@@ -1362,6 +1379,20 @@ describe('Drive sync conflict resolution', () => {
     expect(screen.queryByText('Drive backup changed')).toBeFalsy()
   })
 
+  it('(edge — revoked shared folder) a shared portfolio sync failure uses the existing generic sync-error alert', async () => {
+    const driveModule = await import('./lib/drive')
+    const portfolio = await getPortfolio(window.location.hash.slice('#/portfolio/'.length))
+    await setSharedDriveFolderId(portfolio!.id, 'revoked-shared-folder')
+    vi.mocked(driveModule.syncBackup).mockRejectedValue(new Error('shared folder access revoked'))
+
+    await renderAndSync()
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith('Sync failed: shared folder access revoked')
+    })
+    expect(screen.queryByText('Drive backup changed')).toBeFalsy()
+  })
+
   it('(edge) a NeedsReauthError from syncBackup falls through to the generic "Sync failed" alert, with no dialog', async () => {
     const driveModule = await import('./lib/drive')
     vi.mocked(driveModule.syncBackup).mockRejectedValue(
@@ -1541,5 +1572,70 @@ describe('multi-portfolio routing', () => {
       expect(screen.getByText('Create')).toBeTruthy()
     })
     expect(screen.queryByText('Positions')).toBeFalsy()
+  })
+})
+
+describe('shared Drive portfolio import', () => {
+  beforeEach(async () => {
+    await clearRegistryStore()
+    _resetRegistryForTests()
+    window.location.hash = '#/'
+    portfolioPickerPropsCapture.current = undefined
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+  })
+
+  async function renderSharedImportHandler() {
+    render(<App />)
+    await waitFor(() => expect(portfolioPickerPropsCapture.current).toBeTruthy())
+    return (portfolioPickerPropsCapture.current as {
+      onImportSharedPortfolio: (folder: { name: string; id: string }, password: string) => Promise<void>
+    }).onImportSharedPortfolio
+  }
+
+  it('registers the selected Drive folder as the shared sync target and opens the imported portfolio unlocked', async () => {
+    const driveModule = await import('./lib/drive')
+    const importedState = initialState()
+    vi.mocked(driveModule.decryptDriveFolderBackup).mockResolvedValue({
+      state: importedState,
+      key: mockSessionKey,
+      salt: mockSessionSalt,
+    })
+
+    const onImportSharedPortfolio = await renderSharedImportHandler()
+    await act(async () => {
+      await onImportSharedPortfolio({ name: 'Shared household', id: 'shared-folder-1' }, 'correct-pw')
+    })
+
+    const [portfolio] = await listPortfolios()
+    expect(portfolio).toMatchObject({ name: 'Shared household', sharedDriveFolderId: 'shared-folder-1' })
+    expect(await getPortfolio(portfolio.id)).toMatchObject({ sharedDriveFolderId: 'shared-folder-1' })
+    expect(setActivePortfolioDb).toHaveBeenCalledWith(portfolio.dbName)
+    await waitFor(() => expect(screen.getByText('Positions')).toBeTruthy())
+  })
+
+  it('propagates a local name collision without special-casing it', async () => {
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.decryptDriveFolderBackup).mockResolvedValue({
+      state: initialState(),
+      key: mockSessionKey,
+      salt: mockSessionSalt,
+    })
+    await createPortfolio('Shared household')
+
+    const onImportSharedPortfolio = await renderSharedImportHandler()
+
+    await expect(onImportSharedPortfolio({ name: 'Shared household', id: 'shared-folder-1' }, 'correct-pw'))
+      .rejects.toThrow(/name already exists/i)
+  })
+
+  it.each(['DriveDecryptError', 'DriveMalformedBackupError'] as const)('propagates %s for picker inline handling', async (errorName) => {
+    const driveModule = await import('./lib/drive')
+    const error = new driveModule[errorName]('import failed')
+    vi.mocked(driveModule.decryptDriveFolderBackup).mockRejectedValue(error)
+
+    const onImportSharedPortfolio = await renderSharedImportHandler()
+
+    await expect(onImportSharedPortfolio({ name: 'Shared household', id: 'shared-folder-1' }, 'wrong-pw'))
+      .rejects.toBe(error)
   })
 })

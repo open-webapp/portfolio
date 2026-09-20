@@ -119,6 +119,7 @@ const mockOnKeyChange = vi.fn()
 const mockOnPasswordEntryTimeReset = vi.fn()
 const mockOnDriveConnected = vi.fn()
 const mockOnDriveDisconnected = vi.fn()
+const mockOnUnlinkSharedFolder = vi.fn()
 const mockSetSettingsSection = vi.fn()
 const mockRunPriceSyncTrigger = vi.fn()
 const mockRunMutualFundSyncTrigger = vi.fn()
@@ -175,6 +176,7 @@ describe('SettingsPage', () => {
       onPasswordEntryTimeReset: mockOnPasswordEntryTimeReset,
       onDriveConnected: mockOnDriveConnected,
       onDriveDisconnected: mockOnDriveDisconnected,
+      onUnlinkSharedFolder: mockOnUnlinkSharedFolder,
       settingsSection: 'backup',
       setSettingsSection: mockSetSettingsSection,
       runPriceSyncTrigger: mockRunPriceSyncTrigger,
@@ -201,6 +203,82 @@ describe('SettingsPage', () => {
       fireEvent.click(screen.getByTestId('widget-disconnect'))
 
       expect(mockOnDriveDisconnected).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('Shared Drive folder', () => {
+    const sharedPortfolio = { ...testPortfolio, sharedDriveFolderId: 'shared-folder-id' }
+
+    it('renders the shared badge and unlink action only for a shared portfolio', () => {
+      renderSettings()
+
+      expect(screen.queryByText('Shared')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Unlink' })).toBeNull()
+
+      cleanup()
+      renderSettings({ activePortfolio: sharedPortfolio })
+
+      expect(screen.getByText('Shared')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Unlink' })).toBeTruthy()
+    })
+
+    it('confirms unlink, calls the callback, and removes the badge after the portfolio prop updates', async () => {
+      ;(global.confirm as ReturnType<typeof vi.fn>).mockReturnValue(true)
+      mockOnUnlinkSharedFolder.mockResolvedValue(undefined)
+      const { rerender } = renderSettings({ activePortfolio: sharedPortfolio })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Unlink' }))
+
+      await waitFor(() => {
+        expect(mockOnUnlinkSharedFolder).toHaveBeenCalledWith(sharedPortfolio.id)
+      })
+
+      rerender(<SettingsPage {...{
+        state: initialState(),
+        activePortfolio: testPortfolio,
+        driveAuth: { connect: vi.fn(), disconnect: vi.fn(), ensureFresh: vi.fn(), activate: vi.fn(() => () => {}) } as any,
+        dispatch: mockDispatch,
+        sessionKey,
+        sessionSalt,
+        onKeyChange: mockOnKeyChange,
+        onPasswordEntryTimeReset: mockOnPasswordEntryTimeReset,
+        onDriveConnected: mockOnDriveConnected,
+        onDriveDisconnected: mockOnDriveDisconnected,
+        onUnlinkSharedFolder: mockOnUnlinkSharedFolder,
+        settingsSection: 'backup' as const,
+        setSettingsSection: mockSetSettingsSection,
+        runPriceSyncTrigger: mockRunPriceSyncTrigger,
+        runMutualFundSyncTrigger: mockRunMutualFundSyncTrigger,
+        tickerOverviewErrors: {},
+        mutualFundSyncErrors: {},
+        driveConnected: false,
+      }} />)
+
+      expect(screen.queryByText('Shared')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Unlink' })).toBeNull()
+    })
+
+    it('leaves the badge in place when unlink confirmation is cancelled', () => {
+      ;(global.confirm as ReturnType<typeof vi.fn>).mockReturnValue(false)
+      renderSettings({ activePortfolio: sharedPortfolio })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Unlink' }))
+
+      expect(mockOnUnlinkSharedFolder).not.toHaveBeenCalled()
+      expect(screen.getByText('Shared')).toBeTruthy()
+    })
+
+    it('keeps the badge and shows an inline warning when unlink fails', async () => {
+      ;(global.confirm as ReturnType<typeof vi.fn>).mockReturnValue(true)
+      mockOnUnlinkSharedFolder.mockRejectedValue(new Error('registry write failed'))
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      renderSettings({ activePortfolio: sharedPortfolio })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Unlink' }))
+
+      expect(await screen.findByText('Could not unlink shared Drive folder: registry write failed')).toBeTruthy()
+      expect(screen.getByText('Shared')).toBeTruthy()
+      consoleErrorSpy.mockRestore()
     })
   })
 
