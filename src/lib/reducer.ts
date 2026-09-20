@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
-import type { BalanceEntry, BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
+import type { BalanceEntry, BudgetAccountRule, BudgetTransaction, Category, CategoryMapping, ExpenseDefinition, StatementConvention } from './types'
 import type { ExpensePasteImportRow } from './state'
 
 export type AppAction =
@@ -56,7 +56,9 @@ export type AppAction =
       rows: { date: string; description: string; amount: number; accountName?: string }[]
       categories: Category[]
       categoryMappings: CategoryMapping[]
+      appliedConvention: { accountName: string; statementConvention: StatementConvention }
     }
+  | { type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS'; rules: BudgetAccountRule[] }
   | { type: 'REAPPLY_CATEGORY_MAPPINGS'; categoryMappings: CategoryMapping[] }
 
 /**
@@ -225,8 +227,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         action.rows,
         action.categories,
         action.categoryMappings,
-        state.budgetExpenseDefinitions
+        state.budgetExpenseDefinitions,
+        action.appliedConvention,
       )
+
+    case 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS':
+      return StateActions.reconcileBudgetAccountConventions(state, action.rules)
 
     case 'REAPPLY_CATEGORY_MAPPINGS':
       return StateActions.reapplyCategoryMappingsToState(state, action.categoryMappings)

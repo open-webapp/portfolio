@@ -227,11 +227,11 @@ describe('CategoryMappingTab', () => {
     const categoryDispatch = vi.fn()
     renderTab({ ...data, categoryDispatch })
     fireEvent.click(screen.getByRole('button', { name: 'Download Category Mapping' }))
-    expect(importExportModule.downloadJsonAsFile).toHaveBeenCalledWith({ categories: data.categories, categoryMappings: data.categoryMappings }, expect.stringMatching(/^category-mappings-\d{4}-\d{2}-\d{2}\.json$/))
+    expect(importExportModule.downloadJsonAsFile).toHaveBeenCalledWith({ categories: data.categories, categoryMappings: data.categoryMappings, budgetAccountRules: [] }, expect.stringMatching(/^category-mappings-\d{4}-\d{2}-\d{2}\.json$/))
     const input = screen.getByLabelText('Import Category Mapping file') as HTMLInputElement
     const file = new File([JSON.stringify({ categories: [], categoryMappings: [] })], 'mapping.json', { type: 'application/json' })
     fireEvent.change(input, { target: { files: [file] } })
-    await waitFor(() => expect(categoryDispatch).toHaveBeenCalledWith({ type: '__MERGE_IMPORTED', imported: { categories: [], categoryMappings: [] } }))
+    await waitFor(() => expect(categoryDispatch).toHaveBeenCalledWith({ type: '__MERGE_IMPORTED', imported: { categories: [], categoryMappings: [], budgetAccountRules: [] } }))
     expect(input.value).toBe('')
   })
 

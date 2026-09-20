@@ -55,7 +55,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 
 ### Views
 
-- **Budget**: four local tabs — Expenses, Spend, Analytics, and Category Mapping. Spend is selected whenever the page mounts or remounts. Category Mapping does not render its controls until the global categories store has hydrated; it shows a loading message first. Its mapping import/export and automatic immediate reapply behavior are unchanged.
+- **Budget**: five local tabs — Expenses, Spend, Analytics, Category Mapping, and Accounts. Spend is selected whenever the page mounts or remounts. Category Mapping and Accounts wait for global-store hydration. Accounts configures shared statement-sign rules; imports require an account and canonicalize imported signs before dedup. CSV/OFX/QFX parsers do not change.
 - **Positions (Accounts)**: account/category drill-down, position tables, allocation chart, closed-positions table with undo.
 - **Register**: per-account chronological activity/balance ledger; balance-entry dialog supports multiple activities per entry (contribution/withdrawal/transfer/dividend/fee).
 - **Quotes**: read-only table of every held Equity/ETF/Mutual Fund symbol, current price/status/last-updated, with a search box; shows a failure banner when a Polygon name lookup fails for any symbol.

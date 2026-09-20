@@ -1,15 +1,17 @@
-import type { Category, CategoryMapping, BudgetTransaction, ExpenseDefinition } from './types'
+import type { BudgetAccountRule, Category, CategoryMapping, BudgetTransaction, ExpenseDefinition, StatementConvention } from './types'
 import { uid } from './seed'
 import { mergeCategoryState } from './categoryMerge'
+import { normalizeBudgetAccountName } from './budgetAccountRules'
 
 export interface GlobalCategoryState {
   categories: Category[]
   categoryMappings: CategoryMapping[]
+  budgetAccountRules: BudgetAccountRule[]
 }
 
 /** Fresh, empty global category state. */
 export function initialGlobalCategoryState(): GlobalCategoryState {
-  return { categories: [], categoryMappings: [] }
+  return { categories: [], categoryMappings: [], budgetAccountRules: [] }
 }
 
 /** Add a new category with a caller-supplied id (so the caller can synchronously know the new id). */
@@ -93,6 +95,49 @@ export function deleteCategoryMapping(s: GlobalCategoryState, id: string): Globa
   }
 }
 
+/** Create or update a live budget-account sign convention rule. */
+export function configureBudgetAccountRule(
+  s: GlobalCategoryState,
+  name: string,
+  convention: StatementConvention
+): GlobalCategoryState {
+  const normalizedName = normalizeBudgetAccountName(name)
+  if (!normalizedName) return s
+
+  const existing = s.budgetAccountRules.find((rule) => !rule.deletedAt && rule.normalizedName === normalizedName)
+  if (existing) {
+    if (existing.statementConvention === convention) return s
+    const now = new Date().toISOString()
+    return {
+      ...s,
+      budgetAccountRules: s.budgetAccountRules.map((rule) =>
+        rule === existing ? { ...rule, statementConvention: convention, updatedAt: now } : rule
+      ),
+    }
+  }
+
+  const rule: BudgetAccountRule = {
+    normalizedName,
+    displayName: name.trim(),
+    statementConvention: convention,
+    updatedAt: new Date().toISOString(),
+  }
+  return { ...s, budgetAccountRules: [...s.budgetAccountRules, rule] }
+}
+
+/** Tombstone a live budget-account rule. */
+export function deleteBudgetAccountRule(s: GlobalCategoryState, normalizedName: string): GlobalCategoryState {
+  const existing = s.budgetAccountRules.find((rule) => !rule.deletedAt && rule.normalizedName === normalizedName)
+  if (!existing) return s
+  const now = new Date().toISOString()
+  return {
+    ...s,
+    budgetAccountRules: s.budgetAccountRules.map((rule) =>
+      rule === existing ? { ...rule, deletedAt: now, updatedAt: now } : rule
+    ),
+  }
+}
+
 /**
  * Resolve the spendExpenseId for a transaction description by finding all non-tombstoned
  * mappings whose substring (case-insensitive) appears in the description, and returning
@@ -113,6 +158,11 @@ export function visibleCategories(s: GlobalCategoryState): Category[] {
 /** Non-tombstoned category mappings, in original order. */
 export function visibleMappings(s: GlobalCategoryState): CategoryMapping[] {
   return s.categoryMappings.filter((m) => !m.deletedAt)
+}
+
+/** Non-tombstoned budget-account rules, in original order. */
+export function visibleBudgetAccountRules(s: GlobalCategoryState): BudgetAccountRule[] {
+  return s.budgetAccountRules.filter((rule) => !rule.deletedAt)
 }
 
 /**
@@ -170,6 +220,8 @@ export type CategoryAction =
   | { type: 'ADD_CATEGORY_MAPPING'; spendExpenseId: string; substring: string }
   | { type: 'DELETE_CATEGORY_MAPPING'; id: string }
   | { type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE'; spendExpenseId: string }
+  | { type: 'CONFIGURE_BUDGET_ACCOUNT_RULE'; name: string; convention: StatementConvention }
+  | { type: 'DELETE_BUDGET_ACCOUNT_RULE'; normalizedName: string }
   | { type: '__REPLACE'; state: GlobalCategoryState }
   | { type: '__MERGE_IMPORTED'; imported: GlobalCategoryState }
 
@@ -203,6 +255,10 @@ export function categoryStoreReducer(s: GlobalCategoryState, a: CategoryAction):
       return deleteCategoryMapping(s, a.id)
     case 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE':
       return deleteCategoryMappingsForExpense(s, a.spendExpenseId)
+    case 'CONFIGURE_BUDGET_ACCOUNT_RULE':
+      return configureBudgetAccountRule(s, a.name, a.convention)
+    case 'DELETE_BUDGET_ACCOUNT_RULE':
+      return deleteBudgetAccountRule(s, a.normalizedName)
     default:
       return s
   }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   initialGlobalCategoryState,
   addCategory,
@@ -12,12 +12,15 @@ import {
   resolveSpendExpenseIdForDescription,
   visibleCategories,
   visibleMappings,
+  configureBudgetAccountRule,
+  deleteBudgetAccountRule,
+  visibleBudgetAccountRules,
   reapplyMappingsToTransactions,
   resolveSpendExpenseForCategory,
   categoryStoreReducer,
   type GlobalCategoryState,
 } from './categoryStore'
-import type { Category, CategoryMapping, BudgetTransaction, ExpenseDefinition } from './types'
+import type { BudgetAccountRule, Category, CategoryMapping, BudgetTransaction, ExpenseDefinition } from './types'
 
 describe('categoryStore', () => {
   describe('addCategory', () => {
@@ -208,6 +211,64 @@ describe('categoryStore', () => {
     })
   })
 
+  describe('budget account rules', () => {
+    it('creates then updates a rule while preserving its first live display name', () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime('2026-01-01T00:00:00.000Z')
+        const created = configureBudgetAccountRule(initialGlobalCategoryState(), ' Primary Checking ', 'negativeSpend')
+        vi.setSystemTime('2026-01-01T00:00:00.001Z')
+        const updated = configureBudgetAccountRule(created, 'PRIMARY CHECKING', 'positiveSpend')
+
+        expect(updated.budgetAccountRules).toHaveLength(1)
+        expect(updated.budgetAccountRules[0]).toMatchObject({
+          normalizedName: 'primary checking',
+          displayName: 'Primary Checking',
+          statementConvention: 'positiveSpend',
+        })
+        expect(updated.budgetAccountRules[0].updatedAt).not.toBe(created.budgetAccountRules[0].updatedAt)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('uses one rule for differently spelled versions of the same account name', () => {
+      const first = configureBudgetAccountRule(initialGlobalCategoryState(), 'Savings', 'negativeSpend')
+      const second = configureBudgetAccountRule(first, ' savings ', 'positiveSpend')
+
+      expect(second.budgetAccountRules).toHaveLength(1)
+      expect(second.budgetAccountRules[0].displayName).toBe('Savings')
+    })
+
+    it('is a reference-equal no-op for a matching convention or blank name', () => {
+      const configured = configureBudgetAccountRule(initialGlobalCategoryState(), 'Checking', 'negativeSpend')
+
+      expect(configureBudgetAccountRule(configured, ' checking ', 'negativeSpend')).toBe(configured)
+      const empty = initialGlobalCategoryState()
+      expect(configureBudgetAccountRule(empty, '   ', 'positiveSpend')).toBe(empty)
+      expect(empty.budgetAccountRules).toEqual([])
+    })
+
+    it('tombstones a live rule and ignores unknown or already tombstoned names', () => {
+      const configured = configureBudgetAccountRule(initialGlobalCategoryState(), 'Checking', 'negativeSpend')
+      const deleted = deleteBudgetAccountRule(configured, 'checking')
+
+      expect(deleted.budgetAccountRules[0].deletedAt).toBeTruthy()
+      expect(deleted.budgetAccountRules[0].updatedAt).toBe(deleted.budgetAccountRules[0].deletedAt)
+      expect(deleteBudgetAccountRule(configured, 'unknown')).toBe(configured)
+      expect(deleteBudgetAccountRule(deleted, 'checking')).toBe(deleted)
+    })
+
+    it('filters tombstoned rules from the visible list', () => {
+      const rules: BudgetAccountRule[] = [
+        { normalizedName: 'checking', displayName: 'Checking', statementConvention: 'negativeSpend', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { normalizedName: 'savings', displayName: 'Savings', statementConvention: 'positiveSpend', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: '2026-01-02T00:00:00.000Z' },
+      ]
+
+      expect(visibleBudgetAccountRules({ ...initialGlobalCategoryState(), budgetAccountRules: rules })).toEqual([rules[0]])
+    })
+  })
+
   describe('visibleCategories / visibleMappings', () => {
     it('filters out tombstoned records and preserves order', () => {
       const categories: Category[] = [
@@ -219,7 +280,7 @@ describe('categoryStore', () => {
         { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
         { id: 'map-2', substring: 'Deleted', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: '2026-01-02T00:00:00.000Z' },
       ]
-      const s: GlobalCategoryState = { categories, categoryMappings: mappings }
+      const s: GlobalCategoryState = { categories, categoryMappings: mappings, budgetAccountRules: [] }
       expect(visibleCategories(s)).toEqual([categories[0], categories[2]])
       expect(visibleMappings(s)).toEqual([mappings[0]])
     })
@@ -470,6 +531,7 @@ describe('categoryStore', () => {
         categoryMappings: [
           { id: 'm1', substring: 'walmart', spendExpenseId: 'exp-1', updatedAt: '2024-01-01T00:00:00.000Z' },
         ],
+        budgetAccountRules: [],
       }
       const imported: GlobalCategoryState = {
         categories: [
@@ -480,6 +542,7 @@ describe('categoryStore', () => {
           { id: 'm1', substring: 'walmart-b', spendExpenseId: 'exp-1', updatedAt: '2024-01-09T00:00:00.000Z' },
           { id: 'm2', substring: 'costco', spendExpenseId: 'exp-2', updatedAt: '2024-01-01T00:00:00.000Z' },
         ],
+        budgetAccountRules: [],
       }
       const updated = categoryStoreReducer(s, { type: '__MERGE_IMPORTED', imported })
 

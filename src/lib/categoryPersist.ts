@@ -65,7 +65,12 @@ export async function loadGlobalCategoryState(
   budgetExpenseDefinitions: ExpenseDefinition[]
 ): Promise<GlobalCategoryState> {
   const state = await getValue<GlobalCategoryState>(STATE_STORE, STATE_KEY)
-  const loaded = state ?? initialGlobalCategoryState()
+  const loaded = state
+    ? {
+        ...state,
+        budgetAccountRules: Array.isArray(state.budgetAccountRules) ? state.budgetAccountRules : [],
+      }
+    : initialGlobalCategoryState()
   return migrateCategoryMappingsToSpendKey(loaded, budgetExpenseDefinitions)
 }
 

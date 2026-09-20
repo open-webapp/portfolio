@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   addExpenseDefinition,
   ensureExpenseAmountsSnapshotForYear,
+  importBudgetTransactions,
   initialState,
+  reconcileBudgetAccountConventions,
   rolloverBudgetExpenseAmountsIfNeeded,
   stripEmptyBudgetSnapshots,
   updateExpenseDefinition,
 } from './state'
+import type { BudgetAccountRule, StatementConvention } from './types'
 
 describe('budget state', () => {
   it('has no manual income state', () => {
@@ -49,5 +52,55 @@ describe('budget state', () => {
     }
 
     expect(updateExpenseDefinition(state, 'utilities', { name: ' rent ' })).toBe(state)
+  })
+})
+
+describe('budget account conventions', () => {
+  const positiveRule: BudgetAccountRule = {
+    normalizedName: 'checking',
+    displayName: 'Checking',
+    statementConvention: 'positiveSpend',
+    updatedAt: '',
+  }
+  const row = { date: '2026-09-19', description: 'Store', amount: -10, accountName: 'Checking' }
+
+  it('records the selected import convention even when every converted row deduplicates', () => {
+    const state = { ...initialState(), budgetTransactions: [{ id: 'existing', categoryId: 'other', ...row }] }
+    const result = importBudgetTransactions(state, [row], [{ id: 'other', name: 'Other', updatedAt: '' }], [], [], {
+      accountName: ' Checking ',
+      statementConvention: 'positiveSpend',
+    })
+
+    expect(result.budgetTransactions).toBe(state.budgetTransactions)
+    expect(result.budgetAccountAppliedConventions).toEqual({ checking: 'positiveSpend' })
+  })
+
+  it('preserves converted records when their canonical natural keys collide', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'first', categoryId: 'other', ...row, accountName: 'checking' },
+        { id: 'second', categoryId: 'other', ...row },
+      ],
+      budgetAccountAppliedConventions: { checking: 'positiveSpend' as const },
+    }
+
+    expect(reconcileBudgetAccountConventions(state, [{ ...positiveRule, statementConvention: 'negativeSpend' }]).budgetTransactions)
+      .toHaveLength(2)
+  })
+
+  it('does not add an invalid import marker for an unassigned account', () => {
+    const state = initialState()
+    const result = importBudgetTransactions(state, [], [], [], [], {
+      accountName: 'Unassigned',
+      statementConvention: 'invalid' as StatementConvention,
+    })
+
+    expect(result).toBe(state)
+  })
+
+  it('keeps the same state reference when reconciliation has nothing to apply', () => {
+    const state = initialState()
+    expect(reconcileBudgetAccountConventions(state, [positiveRule])).toBe(state)
   })
 })

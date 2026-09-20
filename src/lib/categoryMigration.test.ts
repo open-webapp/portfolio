@@ -22,13 +22,13 @@ describe('computeSeedFromPortfolio', () => {
     const categories = [{ id: 'c1', name: 'Groceries', updatedAt: '2024-01-01T00:00:00.000Z' }]
     const categoryMappings = [{ id: 'm1', substring: 'whole foods', spendExpenseId: 'exp-1', updatedAt: '2024-01-01T00:00:00.000Z' }]
     const result = computeSeedFromPortfolio({ categories, categoryMappings })
-    expect(result).toEqual({ categories, categoryMappings })
+    expect(result).toEqual({ categories, categoryMappings, budgetAccountRules: [] })
   })
 
   it('defaults categoryMappings to [] when missing', () => {
     const categories = [{ id: 'c1', name: 'Groceries', updatedAt: '2024-01-01T00:00:00.000Z' }]
     const result = computeSeedFromPortfolio({ categories })
-    expect(result).toEqual({ categories, categoryMappings: [] })
+    expect(result).toEqual({ categories, categoryMappings: [], budgetAccountRules: [] })
   })
 
   it('returns null when no categories key at all', () => {
@@ -48,7 +48,7 @@ describe('seedGlobalCategoriesIfNeeded', () => {
 
     await seedGlobalCategoriesIfNeeded(portfolio, { categories, categoryMappings })
 
-    expect(saveGlobalCategoryState).toHaveBeenCalledWith({ categories, categoryMappings })
+    expect(saveGlobalCategoryState).toHaveBeenCalledWith({ categories, categoryMappings, budgetAccountRules: [] })
     expect(markGlobalStoreSeeded).toHaveBeenCalled()
   })
 

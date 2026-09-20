@@ -10,9 +10,11 @@ src/
   main.tsx / index.css               — entry point
   hooks/
     useHashRoute.ts                  — hash-based route hook
+    useGlobalCategories.ts            — global category/mapping/account-rule hydrate, persist, Drive sync hook
   lib/
     types.ts                         — domain model (Portfolio, Account, Position, Transaction, ...)
-    state.ts / reducer.ts            — AppState + useReducer action helpers/dispatch table
+    state.ts / reducer.ts            — AppState + useReducer action helpers/dispatch table; per-portfolio applied account-convention markers
+    categoryStore.ts / categoryMerge.ts / categoryPersist.ts / categoryDrive.ts / categoryMigration.ts — global categories, mappings, and account sign rules
     portfolioRegistry.ts             — portfolio CRUD + legacy-db migration (own IndexedDB)
     router.ts                        — hash parse/navigate helpers
     persist.ts                       — per-portfolio IndexedDB read/write/encrypt
@@ -34,6 +36,7 @@ src/
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
     AccountsPage.tsx, BudgetPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
     BudgetExpensesTab.tsx            — budget expense definitions, per-year amounts, direct CSV download, and paste import dialog
+    BudgetAccountsTab.tsx            — global statement-convention rule controls
     BudgetExpensesTab.design.md,
     BudgetExpensesTab.product-behavior.md — component API/data flow and user-visible expense import/download behavior
     CategoryMappingTab.tsx            — Budget-local category/mapping management tab
@@ -56,6 +59,8 @@ src/
 - `src/lib/reducer.ts`: thin `appReducer(state, action)` dispatch table — each `case` calls one `state.ts` helper. No logic lives directly in the reducer or in components.
 - Full `AppState` field list, invariants, and per-field types: see `src/lib/types.ts` and `src/lib/state.ts` (not duplicated here).
 - Budget income is derived in `selectors.ts` from active exact normalized `Income` categories, expense definitions, and budget transactions. No manual income state is persisted or exported.
+- `GlobalCategoryState = { categories: Category[]; categoryMappings: CategoryMapping[]; budgetAccountRules: BudgetAccountRule[] }` is global across portfolios. `useGlobalCategories` hydrates it, saves edits to its own IndexedDB store (500ms debounce), merges initial/polled/manual Drive data with `mergeCategoryState`, immediately pushes connected local edits to shared unencrypted `category-mappings.json`, and returns visible records plus `dispatch`, `hydrated`, and `syncNow`.
+- `budgetAccountAppliedConventions: Record<string, StatementConvention>` remains per-portfolio `AppState` data. Budget imports require an account, canonicalize its name/sign before import dedup, and persist the applied convention marker even when all rows dedup. `App.tsx` reconciles markers/rules before shell render after hydrate and after global-rule changes; the Budget Accounts tab confirms then reconciles local changes immediately. Parsers are unchanged.
 
 ## Portfolio Routing Layer (multi-portfolio)
 
@@ -105,7 +110,7 @@ App.tsx
    │    └─ shape === 'absent' → SetPasswordScreen (defends against a portfolio db that's genuinely empty; new portfolios never reach this since they skip the gate entirely)
    └─ unlocked + hydrated → app shell
         ├─ Nav (view tabs: Budget/Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
-        ├─ state.view === 'budget'    → BudgetPage (local Expenses/Spend/Analytics/Category Mapping tabs; Category Mapping receives global categories only after hydration)
+        ├─ state.view === 'budget'    → BudgetPage (local Expenses/Spend/Analytics/Category Mapping/Accounts tabs; receives hydrated global categories, mappings, and account rules)
         ├─ state.view === 'accounts'  → AccountsPage
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage

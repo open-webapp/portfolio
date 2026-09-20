@@ -8,9 +8,16 @@ import {
   upsertCategoryMapping,
   type CategoryAction,
 } from '../lib/categoryStore'
-import type { Category, CategoryMapping } from '../lib/types'
+import type { BudgetAccountRule, Category, CategoryMapping } from '../lib/types'
+import {
+  budgetAccountViewRows,
+  canonicalBudgetAccountName,
+  convertBudgetAccountImportRows,
+  desiredBudgetAccountConvention,
+} from '../lib/budgetAccountRules'
 import { BudgetAnalytics } from './BudgetAnalytics'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
+import { BudgetAccountsTab } from './BudgetAccountsTab'
 import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
@@ -33,6 +40,7 @@ export interface BudgetPageProps {
   categoryMappings: CategoryMapping[]
   categoryDispatch: (action: CategoryAction) => void
   categoriesHydrated: boolean
+  budgetAccountRules?: BudgetAccountRule[]
 }
 
 const textBtnAccent: CSSProperties = {
@@ -103,8 +111,8 @@ function MappingIcon() {
  * - Spend tab: scope selector, summary cards, and the Spend records table.
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  */
-export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated }: BudgetPageProps) {
-  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics' | 'categoryMapping'>('spend')
+export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [] }: BudgetPageProps) {
+  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics' | 'categoryMapping' | 'accounts'>('spend')
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -141,11 +149,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importTab, setImportTab] = useState<'paste' | 'upload'>('paste')
   const [csvText, setCsvText] = useState('')
   const [importFileName, setImportFileName] = useState('')
+  const [importAccountSelection, setImportAccountSelection] = useState('')
   const [importAccountName, setImportAccountName] = useState('')
   const [importStatus, setImportStatus] = useState('Never imported')
   const [importError, setImportError] = useState<string | null>(null)
   const [importFileKind, setImportFileKind] = useState<'csv' | 'ofx' | null>(null)
-  const [importResult, setImportResult] = useState<{ detected: number; failed: number; imported: number; duplicates: number } | null>(null)
+  const [importResult, setImportResult] = useState<{ detected: number; converted: number; failed: number; imported: number; duplicates: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
   const { budgetedIncome: totalBudgetedIncome, actualIncome: totalActualIncome, budgetedSpend: totalExpense, actualSpend: totalActual, variance } = spendCardTotals(
@@ -157,6 +166,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   )
 
   const availableYears = spendBudgetYears(state.budgetTransactions)
+  const importAccounts = budgetAccountViewRows(budgetAccountRules, state.budgetTransactions)
+  const selectedImportAccountName = importAccountSelection === '__new__'
+    ? importAccountName.trim()
+    : canonicalBudgetAccountName(budgetAccountRules, importAccountSelection) ?? importAccountSelection.trim()
 
   useEffect(() => {
     if (selectedScope !== SPEND_ALL_YEARS && !availableYears.includes(selectedScope)) {
@@ -267,7 +280,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     const substring = mappingSubstringDraft.trim()
     if (!substring || substring === mapping.substring) return
     categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id: mapping.id, patch: { substring } })
-    const nextMappings = updateCategoryMapping({ categories, categoryMappings }, mapping.id, { substring }).categoryMappings
+    const nextMappings = updateCategoryMapping({ categories, categoryMappings, budgetAccountRules }, mapping.id, { substring }).categoryMappings
     dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
     setEditingMappingSubstringId(null)
     setMappingSubstringDraft('')
@@ -276,7 +289,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const deleteMapping = (mapping: CategoryMapping) => {
     if (!window.confirm('Delete this mapping? This cannot be undone.')) return
     categoryDispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
-    const nextMappings = deleteCategoryMapping({ categories, categoryMappings }, mapping.id).categoryMappings
+    const nextMappings = deleteCategoryMapping({ categories, categoryMappings, budgetAccountRules }, mapping.id).categoryMappings
     dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
   }
 
@@ -363,7 +376,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         patch = { accountName: value.trim() || undefined }
         break
       case 'amount':
-        patch = { amount: parseFloat(value) || 0 }
+        if (!Number.isFinite(Number(value))) {
+          setEditingCell(null)
+          setCellDraft('')
+          return
+        }
+        patch = { amount: Number(value) }
         break
     }
     dispatch({ type: 'UPDATE_BUDGET_TRANSACTION', id: rowId, patch })
@@ -395,13 +413,13 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   }
 
   const handleAddRecord = () => {
-    const amount = parseFloat(recAmount)
+    const amount = Number(recAmount)
     if (!recDate) {
       setRecError('Date is required.')
       return
     }
-    if (!amount || amount <= 0) {
-      setRecError('Amount must be greater than 0.')
+    if (!Number.isFinite(amount) || amount === 0) {
+      setRecError('Amount must be a nonzero number.')
       return
     }
     const description = recDescription.trim() || (categoriesById.get(recCategoryId) ?? recCategoryId)
@@ -417,7 +435,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     })
     categoryDispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, spendExpenseId: recExpenseId })
     {
-      const nextMappings = upsertCategoryMapping({ categories, categoryMappings }, description, recExpenseId).categoryMappings
+      const nextMappings = upsertCategoryMapping({ categories, categoryMappings, budgetAccountRules }, description, recExpenseId).categoryMappings
       dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
     }
     const recordYear = recDate.slice(0, 4)
@@ -452,22 +470,39 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   }
 
   const reportImport = (parsed: Array<{ date: string; description: string; amount: number }>, detected: number) => {
-    const withAccount = parsed.map((r) => ({ ...r, accountName: importAccountName.trim() }))
+    if (!selectedImportAccountName || parsed.length === 0) return
+    const withAccount = parsed.map((r) => ({ ...r, accountName: selectedImportAccountName }))
+    const convertedRows = convertBudgetAccountImportRows(withAccount, budgetAccountRules)
     const { duplicateCount } = resolveBudgetImportRows(
       state.budgetTransactions,
-      withAccount,
+      convertedRows,
       categories,
       categoryMappings,
       state.budgetExpenseDefinitions
     )
-    dispatch({ type: 'IMPORT_BUDGET_TRANSACTIONS', rows: withAccount, categories, categoryMappings })
-    setImportResult({ detected, failed: detected - parsed.length, imported: parsed.length - duplicateCount, duplicates: duplicateCount })
-    setImportStatus(`${parsed.length} row(s) detected`)
+    dispatch({
+      type: 'IMPORT_BUDGET_TRANSACTIONS',
+      rows: convertedRows,
+      categories,
+      categoryMappings,
+      appliedConvention: {
+        accountName: selectedImportAccountName,
+        statementConvention: desiredBudgetAccountConvention(budgetAccountRules, selectedImportAccountName),
+      },
+    })
+    setImportResult({ detected, converted: parsed.length, failed: detected - parsed.length, imported: parsed.length - duplicateCount, duplicates: duplicateCount })
+    setImportStatus(`${parsed.length} row(s) converted`)
   }
 
   const handleImport = () => {
     if (importTab === 'paste') {
-      reportImport(parseBudgetTransactionsCsv(csvText), countBudgetCsvDataRows(csvText))
+      const parsed = parseBudgetTransactionsCsv(csvText)
+      if (parsed.length === 0) {
+        setImportError('No transactions found in CSV — check it has date/description/amount columns')
+        return
+      }
+      setImportError(null)
+      reportImport(parsed, countBudgetCsvDataRows(csvText))
     } else if (importFileKind === 'csv') {
       const parsed = parseBudgetTransactionsCsv(csvText)
       if (parsed.length === 0) {
@@ -490,6 +525,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const closeImportDialog = () => {
     setShowImportDialog(false)
     setCsvText('')
+    setImportAccountSelection('')
     setImportAccountName('')
     setImportError(null)
     setImportFileKind(null)
@@ -508,7 +544,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         }}
       >
         <div className="seg">
-          {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((opt) => (
+          {(['expenses', 'spend', 'analytics', 'categoryMapping', 'accounts'] as const).map((opt) => (
             <label
               key={opt}
               className="seg-opt"
@@ -518,7 +554,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               }}
             >
               <input type="radio" name="budgetPeriod" checked={period === opt} readOnly />
-              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : opt === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
+              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : opt === 'analytics' ? 'Analytics' : opt === 'categoryMapping' ? 'Category Mapping' : 'Accounts'}</span>
             </label>
           ))}
         </div>
@@ -550,7 +586,15 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         )}
       </div>
 
-      {period === 'categoryMapping' ? (
+      {period === 'accounts' ? (
+        <BudgetAccountsTab
+          transactions={state.budgetTransactions}
+          budgetAccountRules={budgetAccountRules}
+          hydrated={categoriesHydrated}
+          dispatch={categoryDispatch}
+          onReconcile={(rules) => dispatch({ type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS', rules })}
+        />
+      ) : period === 'categoryMapping' ? (
         <CategoryMappingTab
           state={state}
           dispatch={dispatch}
@@ -848,7 +892,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                             })
                             {
                               const nextMappings = upsertCategoryMapping(
-                                { categories, categoryMappings },
+                                { categories, categoryMappings, budgetAccountRules },
                                 row.description,
                                 expenseId
                               ).categoryMappings
@@ -1030,11 +1074,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             />
           </div>
           <div className="field">
-            <label>Amount</label>
+            <label>Amount (signed)</label>
             <input
               type="number"
               className="input"
               aria-label="Record amount"
+              placeholder="Use - for refunds or credits"
               value={recAmount}
               onChange={(e) => setRecAmount(e.target.value)}
             />
@@ -1072,14 +1117,31 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             <div className="dialog-title">Import transactions</div>
             <div className="dialog-body">
               <div className="field" style={{ marginBottom: 'var(--space-3)' }}>
-                <label>Account name</label>
-                <input
-                  type="text"
+                <label>Import account</label>
+                <select
                   className="input"
-                  aria-label="Import account name"
-                  value={importAccountName}
-                  onChange={(e) => setImportAccountName(e.target.value)}
-                />
+                  aria-label="Import account"
+                  value={importAccountSelection}
+                  onChange={(e) => setImportAccountSelection(e.target.value)}
+                >
+                  <option value="">Select an account</option>
+                  {importAccounts.map((account) => (
+                    <option key={account.accountName} value={account.accountName}>
+                      {account.accountName}
+                    </option>
+                  ))}
+                  <option value="__new__">New account</option>
+                </select>
+                {importAccountSelection === '__new__' && (
+                  <input
+                    type="text"
+                    className="input"
+                    aria-label="New import account name"
+                    value={importAccountName}
+                    onChange={(e) => setImportAccountName(e.target.value)}
+                    style={{ marginTop: 'var(--space-2)' }}
+                  />
+                )}
               </div>
 
               <div className="seg" style={{ marginBottom: 'var(--space-3)' }}>
@@ -1156,6 +1218,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   style={{ marginTop: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: '2px' }}
                 >
                   <div>{importResult.detected} row(s) detected</div>
+                  <div>{importResult.converted} row(s) converted</div>
                   <div style={{ color: GAIN_COLOR }}>{importResult.imported} imported</div>
                   {importResult.duplicates > 0 && <div>{importResult.duplicates} skipped (already imported)</div>}
                   {importResult.failed > 0 && (
@@ -1174,7 +1237,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 type="button"
                 className="btn btn-primary"
                 onClick={handleImport}
-                disabled={!importAccountName.trim() || (importTab === 'upload' && !!importError)}
+                disabled={!selectedImportAccountName || (importTab === 'upload' && !!importError)}
               >
                 Import
               </button>

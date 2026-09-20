@@ -107,6 +107,7 @@ describe('categoryDrive', () => {
       const state: GlobalCategoryState = {
         categories: [{ id: 'cat-1', name: 'Food', updatedAt: '2026-01-01T00:00:00Z' }],
         categoryMappings: [{ id: 'map-1', substring: 'starbucks', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00Z' }],
+        budgetAccountRules: [{ id: 'rule-1', accountId: 'account-1', sign: 'negative' }],
       }
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesRead.mockResolvedValue(JSON.stringify(state))
@@ -114,6 +115,32 @@ describe('categoryDrive', () => {
       const result = await pullGlobalCategoriesFromDrive(driveAuth, testProjectId)
       expect(result).toEqual(state)
       expect(mockFilesRead).toHaveBeenCalledWith('file-1')
+    })
+
+    it('defaults budgetAccountRules for an older Drive file', async () => {
+      const oldState = { categories: [], categoryMappings: [] }
+      mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
+      mockFilesRead.mockResolvedValue(JSON.stringify(oldState))
+
+      await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId)).resolves.toEqual({
+        ...oldState,
+        budgetAccountRules: [],
+      })
+    })
+
+    it('drops malformed budgetAccountRules entries while retaining rule objects', async () => {
+      mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
+      mockFilesRead.mockResolvedValue(JSON.stringify({
+        categories: [],
+        categoryMappings: [],
+        budgetAccountRules: [{ id: 'rule-1' }, null, 'not a rule', 42, []],
+      }))
+
+      await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId)).resolves.toEqual({
+        categories: [],
+        categoryMappings: [],
+        budgetAccountRules: [{ id: 'rule-1' }],
+      })
     })
 
     it('returns null (not thrown) for malformed JSON content', async () => {
@@ -143,6 +170,7 @@ describe('categoryDrive', () => {
     const state: GlobalCategoryState = {
       categories: [{ id: 'cat-1', name: 'Food', updatedAt: '2026-01-01T00:00:00Z' }],
       categoryMappings: [],
+      budgetAccountRules: [{ id: 'rule-1', accountId: 'account-1', sign: 'negative' }],
     }
 
     it('writes with no fileId when no existing file is found (create path)', async () => {

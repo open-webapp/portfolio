@@ -6,18 +6,23 @@ function mergeTimestamp(record: { updatedAt: string; deletedAt?: string }): stri
 }
 
 /**
- * Union two arrays of timestamped, id-keyed records. For an id present on both sides,
- * keep whichever record has the larger `deletedAt ?? updatedAt`; ties keep `a`'s copy.
- * Ids present on only one side pass through unchanged.
+ * Union two arrays of timestamped records. For a shared key, keep whichever record has
+ * the larger `deletedAt ?? updatedAt`; ties keep `a`'s copy. Records present on only one
+ * side pass through unchanged.
  */
-function mergeById<T extends { id: string; updatedAt: string; deletedAt?: string }>(a: T[], b: T[]): T[] {
-  const bById = new Map(b.map((r) => [r.id, r]))
+function mergeById<T extends { updatedAt: string; deletedAt?: string }>(
+  a: T[],
+  b: T[],
+  keySelector: (record: T) => string = (record) => (record as T & { id: string }).id
+): T[] {
+  const bById = new Map(b.map((r) => [keySelector(r), r]))
   const result: T[] = []
   const seen = new Set<string>()
 
   for (const recordA of a) {
-    seen.add(recordA.id)
-    const recordB = bById.get(recordA.id)
+    const key = keySelector(recordA)
+    seen.add(key)
+    const recordB = bById.get(key)
     if (!recordB) {
       result.push(recordA)
     } else {
@@ -26,20 +31,25 @@ function mergeById<T extends { id: string; updatedAt: string; deletedAt?: string
   }
 
   for (const recordB of b) {
-    if (!seen.has(recordB.id)) result.push(recordB)
+    if (!seen.has(keySelector(recordB))) result.push(recordB)
   }
 
   return result
 }
 
 /**
- * Merge two GlobalCategoryState snapshots. `categories` and `categoryMappings` are
- * merged independently by id, keeping the record with the larger `deletedAt ?? updatedAt`
- * timestamp on conflict (ties keep `a`'s copy). Pure; no IO.
+ * Merge two GlobalCategoryState snapshots. Categories and mappings merge by id; budget
+ * account rules merge by normalized name. Conflicts keep the record with the larger
+ * `deletedAt ?? updatedAt` timestamp; ties keep `a`'s copy. Pure; no IO.
  */
 export function mergeCategoryState(a: GlobalCategoryState, b: GlobalCategoryState): GlobalCategoryState {
   return {
     categories: mergeById(a.categories, b.categories),
     categoryMappings: mergeById(a.categoryMappings, b.categoryMappings),
+    budgetAccountRules: mergeById(
+      Array.isArray(a.budgetAccountRules) ? a.budgetAccountRules : [],
+      Array.isArray(b.budgetAccountRules) ? b.budgetAccountRules : [],
+      (rule) => rule.normalizedName
+    ),
   }
 }

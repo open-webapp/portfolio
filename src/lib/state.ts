@@ -15,10 +15,13 @@ import type {
   BudgetTransaction,
   Category,
   CategoryMapping,
+  BudgetAccountRule,
+  StatementConvention,
 } from './types'
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
 import { resolveSpendExpenseIdForDescription, reapplyMappingsToTransactions } from './categoryStore'
+import { normalizeBudgetAccountName, reconcileBudgetAccountRules } from './budgetAccountRules'
 
 export interface AppState {
   // Data collections
@@ -35,6 +38,7 @@ export interface AppState {
   budgetExpenseDefinitions: ExpenseDefinition[]
   budgetExpenseAmountsByYear: Record<string, Record<string, number>>
   budgetTransactions: BudgetTransaction[]
+  budgetAccountAppliedConventions: Record<string, StatementConvention>
 
   // UI state
   view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'
@@ -82,6 +86,7 @@ export function initialState(): AppState {
     budgetExpenseDefinitions: [],
     budgetExpenseAmountsByYear: {},
     budgetTransactions: [],
+    budgetAccountAppliedConventions: {},
 
     // UI state
     view: 'accounts',
@@ -980,7 +985,8 @@ export function importBudgetTransactions(
   rows: Array<{ date: string; description: string; amount: number; accountName?: string }>,
   categories: Category[],
   categoryMappings: CategoryMapping[],
-  budgetExpenseDefinitions: ExpenseDefinition[]
+  budgetExpenseDefinitions: ExpenseDefinition[],
+  appliedConvention: { accountName: string; statementConvention: StatementConvention },
 ): AppState {
   const { toAdd } = resolveBudgetImportRows(
     state.budgetTransactions,
@@ -989,7 +995,39 @@ export function importBudgetTransactions(
     categoryMappings,
     budgetExpenseDefinitions
   )
-  return { ...state, budgetTransactions: [...state.budgetTransactions, ...toAdd] }
+  const normalizedName = normalizeBudgetAccountName(appliedConvention.accountName)
+  const isValidConvention =
+    appliedConvention.statementConvention === 'negativeSpend' ||
+    appliedConvention.statementConvention === 'positiveSpend'
+  const budgetAccountAppliedConventions = normalizedName && isValidConvention &&
+    state.budgetAccountAppliedConventions[normalizedName] !== appliedConvention.statementConvention
+    ? { ...state.budgetAccountAppliedConventions, [normalizedName]: appliedConvention.statementConvention }
+    : state.budgetAccountAppliedConventions
+
+  if (toAdd.length === 0 && budgetAccountAppliedConventions === state.budgetAccountAppliedConventions) return state
+  return {
+    ...state,
+    budgetTransactions: toAdd.length === 0 ? state.budgetTransactions : [...state.budgetTransactions, ...toAdd],
+    budgetAccountAppliedConventions,
+  }
+}
+
+/** Reconcile imported transaction signs and canonical account names with account rules. */
+export function reconcileBudgetAccountConventions(state: AppState, rules: BudgetAccountRule[]): AppState {
+  const reconciled = reconcileBudgetAccountRules(
+    state.budgetTransactions,
+    rules,
+    state.budgetAccountAppliedConventions,
+  )
+  if (
+    reconciled.transactions === state.budgetTransactions &&
+    reconciled.markers === state.budgetAccountAppliedConventions
+  ) return state
+  return {
+    ...state,
+    budgetTransactions: reconciled.transactions,
+    budgetAccountAppliedConventions: reconciled.markers,
+  }
 }
 
 /** Rewrite budgetTransactions' categoryId/spendExpenseId per the given category mappings. */
@@ -999,5 +1037,4 @@ export function reapplyCategoryMappingsToState(state: AppState, categoryMappings
     budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpenseDefinitions),
   }
 }
-
 

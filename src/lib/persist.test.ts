@@ -9,4 +9,8 @@ describe('budget persistence migration', () => {
     expect(raw).not.toHaveProperty('budgetIncomeYearly')
     expect(coalesceWithDefaults(raw)).not.toHaveProperty('budgetIncomeByYear')
   })
+
+  it('defaults missing budget account convention markers from old blobs', () => {
+    expect(coalesceWithDefaults({ budgetTransactions: [] }).budgetAccountAppliedConventions).toEqual({})
+  })
 })

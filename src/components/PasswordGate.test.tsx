@@ -98,6 +98,20 @@ describe('PasswordGate', () => {
         expect(onUnlock).toHaveBeenCalledWith(fakeKey, fakeSalt)
       })
     })
+
+    it('keeps the submission pending until an async onUnlock completes', async () => {
+      let finishUnlock!: () => void
+      const pendingUnlock = vi.fn(() => new Promise<void>((resolve) => { finishUnlock = resolve }))
+      renderPasswordGate({ shape: 'absent', onUnlock: pendingUnlock, onBackToPicker })
+
+      fillAndSubmitSetPassword('longenough', 'longenough')
+
+      await waitFor(() => expect(pendingUnlock).toHaveBeenCalledWith(fakeKey, fakeSalt))
+      expect((screen.getByRole('button', { name: 'Setting password...' }) as HTMLButtonElement).disabled).toBe(true)
+
+      finishUnlock()
+      await waitFor(() => expect((screen.getByRole('button', { name: 'Set password' }) as HTMLButtonElement).disabled).toBe(false))
+    })
   })
 
   describe('shape: encrypted — enter-password screen', () => {

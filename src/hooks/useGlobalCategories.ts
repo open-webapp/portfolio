@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import {
   categoryStoreReducer,
   initialGlobalCategoryState,
+  visibleBudgetAccountRules,
   visibleCategories,
   visibleMappings,
 } from '../lib/categoryStore'
@@ -56,7 +57,7 @@ export function useGlobalCategories(
     ;(async () => {
       const loaded = await loadGlobalCategoryState(budgetExpenseDefinitions)
       if (cancelled) return
-      dispatch({ type: '__REPLACE', state: loaded })
+      dispatch({ type: '__REPLACE', state: { ...loaded, budgetAccountRules: loaded.budgetAccountRules ?? [] } })
       setHydrated(true)
     })()
     return () => {
@@ -74,11 +75,15 @@ export function useGlobalCategories(
       return
     }
     const id = setTimeout(() => {
-      saveGlobalCategoryState({ categories: state.categories, categoryMappings: state.categoryMappings })
+      saveGlobalCategoryState({
+        categories: state.categories,
+        categoryMappings: state.categoryMappings,
+        budgetAccountRules: state.budgetAccountRules,
+      })
     }, SAVE_DEBOUNCE_MS)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.categories, state.categoryMappings, hydrated])
+  }, [state.categories, state.categoryMappings, state.budgetAccountRules, hydrated])
 
   // Immediate fire-and-forget push to Drive when connected. Gated on
   // initialPullDone: pushGlobalCategoriesToDrive does a blind full-file
@@ -92,9 +97,10 @@ export function useGlobalCategories(
     pushGlobalCategoriesToDrive(driveAuth, driveProjectId, {
       categories: state.categories,
       categoryMappings: state.categoryMappings,
+      budgetAccountRules: state.budgetAccountRules,
     }).catch(console.error)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.categories, state.categoryMappings, hydrated, initialPullDone, driveConnected, driveAuth, driveProjectId])
+  }, [state.categories, state.categoryMappings, state.budgetAccountRules, hydrated, initialPullDone, driveConnected, driveAuth, driveProjectId])
 
   // Pull remote categories/mappings, merge with local, and persist. Shared by
   // the initial post-connect pull, the 60s poll, and any caller that wants an
@@ -105,7 +111,11 @@ export function useGlobalCategories(
     if (remote === null) return
     const current = latestStateRef.current
     const merged = mergeCategoryState(
-      { categories: current.categories, categoryMappings: current.categoryMappings },
+      {
+        categories: current.categories,
+        categoryMappings: current.categoryMappings,
+        budgetAccountRules: current.budgetAccountRules,
+      },
       remote
     )
     dispatch({ type: '__REPLACE', state: merged })
@@ -136,7 +146,11 @@ export function useGlobalCategories(
         if (remote === null) return
         const current = latestStateRef.current
         const merged = mergeCategoryState(
-          { categories: current.categories, categoryMappings: current.categoryMappings },
+          {
+            categories: current.categories,
+            categoryMappings: current.categoryMappings,
+            budgetAccountRules: current.budgetAccountRules,
+          },
           remote
         )
         dispatch({ type: '__REPLACE', state: merged })
@@ -161,6 +175,7 @@ export function useGlobalCategories(
   return {
     categories: visibleCategories(state),
     categoryMappings: visibleMappings(state),
+    budgetAccountRules: visibleBudgetAccountRules(state),
     dispatch,
     hydrated,
     seedGlobalCategoriesIfNeeded,

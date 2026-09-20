@@ -5,7 +5,7 @@ import { loadPersistedApp, peekStoredSalt } from '../lib/persist'
 
 export interface PasswordGateProps {
   shape: 'absent' | 'encrypted'
-  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => void
+  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => Promise<void> | void
   onBackToPicker: () => void
 }
 
@@ -114,7 +114,7 @@ function SetPasswordScreen({
   onUnlock,
   onBackToPicker,
 }: {
-  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => void
+  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => Promise<void> | void
   onBackToPicker: () => void
 }) {
   const [password, setPassword] = useState('')
@@ -139,7 +139,7 @@ function SetPasswordScreen({
     try {
       const salt = generateSalt()
       const key = await deriveKey(password, salt)
-      onUnlock(key, salt)
+      await onUnlock(key, salt)
     } finally {
       setSubmitting(false)
     }
@@ -198,7 +198,7 @@ function EnterPasswordScreen({
   onUnlock,
   onBackToPicker,
 }: {
-  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => void
+  onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => Promise<void> | void
   onBackToPicker: () => void
 }) {
   const [password, setPassword] = useState('')
@@ -216,7 +216,7 @@ function EnterPasswordScreen({
       const salt = await peekStoredSalt()
       const key = await deriveKey(password, salt as Uint8Array)
       const loadedState = await loadPersistedApp(key)
-      onUnlock(key, salt as Uint8Array, loadedState ?? undefined)
+      await onUnlock(key, salt as Uint8Array, loadedState ?? undefined)
     } catch {
       setError('Incorrect password')
       setPassword('')

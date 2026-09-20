@@ -31,6 +31,16 @@ function isGlobalCategoryStateShape(value: unknown): value is GlobalCategoryStat
   return Array.isArray(v.categories) && Array.isArray(v.categoryMappings)
 }
 
+function normalizeGlobalCategoryState(value: GlobalCategoryState): GlobalCategoryState {
+  const rules = (value as unknown as Record<string, unknown>).budgetAccountRules
+  return {
+    ...value,
+    budgetAccountRules: Array.isArray(rules)
+      ? rules.filter((rule) => !!rule && typeof rule === 'object' && !Array.isArray(rule)) as GlobalCategoryState['budgetAccountRules']
+      : [],
+  }
+}
+
 /**
  * Reads and parses the global category-mappings file from Drive.
  *
@@ -76,7 +86,7 @@ export async function pullGlobalCategoriesFromDrive(
   try {
     const parsed = JSON.parse(contentStr)
     if (!isGlobalCategoryStateShape(parsed)) return null
-    return parsed
+    return normalizeGlobalCategoryState(parsed)
   } catch {
     return null
   }

@@ -66,10 +66,21 @@ describe('categoryPersist', () => {
       categoryMappings: [
         { id: 'catmap-1', substring: 'trader joe', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
       ],
+      budgetAccountRules: [{ id: 'rule-1', accountId: 'account-1', sign: 'negative' }],
     }
     await saveGlobalCategoryState(state)
     const loaded = await loadGlobalCategoryState([])
     expect(loaded).toEqual(state)
+  })
+
+  it('defaults budgetAccountRules for a stored state that predates the field', async () => {
+    const oldState = {
+      categories: [{ id: 'cat-1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      categoryMappings: [],
+    }
+    await saveGlobalCategoryState(oldState as GlobalCategoryState)
+
+    await expect(loadGlobalCategoryState([])).resolves.toEqual({ ...oldState, budgetAccountRules: [] })
   })
 
   it('isGlobalStoreSeeded starts false; markGlobalStoreSeeded flips it to true; second call is a no-op', async () => {
@@ -91,8 +102,8 @@ describe('categoryPersist', () => {
     // and categoryPersist must still work cleanly on its own db.
     const state = await loadGlobalCategoryState([])
     expect(state).toEqual(initialGlobalCategoryState())
-    await saveGlobalCategoryState({ categories: [], categoryMappings: [] })
-    expect(await loadGlobalCategoryState([])).toEqual({ categories: [], categoryMappings: [] })
+    await saveGlobalCategoryState({ categories: [], categoryMappings: [], budgetAccountRules: [] })
+    expect(await loadGlobalCategoryState([])).toEqual({ categories: [], categoryMappings: [], budgetAccountRules: [] })
   })
 
   describe('categoryId → spendExpenseId one-time migration', () => {
@@ -145,6 +156,7 @@ describe('categoryPersist', () => {
         categoryMappings: [
           { id: 'catmap-1', substring: 'trader joe', spendExpenseId: 'exp-1', updatedAt: TS },
         ],
+        budgetAccountRules: [],
       }
       await saveGlobalCategoryState(state)
       const loaded = await loadGlobalCategoryState(defs)

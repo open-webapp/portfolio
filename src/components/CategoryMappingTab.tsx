@@ -86,7 +86,7 @@ export function CategoryMappingTab({
         try {
           const imported = parseCategoryMappingImportFile(String(reader.result ?? ''), state.budgetExpenseDefinitions)
           categoryDispatch({ type: '__MERGE_IMPORTED', imported })
-          const nextMappings = mergeCategoryState({ categories, categoryMappings }, imported).categoryMappings
+          const nextMappings = mergeCategoryState({ categories, categoryMappings, budgetAccountRules: [] }, imported).categoryMappings
           dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
         } catch (error) {
           if (error instanceof CategoryMappingImportError) {
@@ -104,7 +104,7 @@ export function CategoryMappingTab({
   const saveMapping = (id: string) => {
     const patch = { substring: mappingSubstringDraft.trim() }
     categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id, patch })
-    const nextMappings = updateCategoryMapping({ categories, categoryMappings }, id, patch).categoryMappings
+    const nextMappings = updateCategoryMapping({ categories, categoryMappings, budgetAccountRules: [] }, id, patch).categoryMappings
     dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
     setEditingMappingId(null)
   }
@@ -123,7 +123,7 @@ export function CategoryMappingTab({
             const yyyy = now.getFullYear()
             const mm = String(now.getMonth() + 1).padStart(2, '0')
             const dd = String(now.getDate()).padStart(2, '0')
-            downloadJsonAsFile({ categories, categoryMappings }, `category-mappings-${yyyy}-${mm}-${dd}.json`)
+            downloadJsonAsFile({ categories, categoryMappings, budgetAccountRules: [] }, `category-mappings-${yyyy}-${mm}-${dd}.json`)
           }}
         >
           Download Category Mapping
@@ -224,7 +224,7 @@ export function CategoryMappingTab({
                               <button type="button" style={{ ...iconBtn, color: LOSS_COLOR }} aria-label={`Delete substring ${mapping.substring}`} title="Delete substring" onClick={() => {
                                 if (!window.confirm('Delete this mapping? This cannot be undone.')) return
                                 categoryDispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
-                                const nextMappings = deleteCategoryMapping({ categories, categoryMappings }, mapping.id).categoryMappings
+                                 const nextMappings = deleteCategoryMapping({ categories, categoryMappings, budgetAccountRules: [] }, mapping.id).categoryMappings
                                 dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
                               }}><TrashIcon /></button>
                             </>
@@ -237,7 +237,7 @@ export function CategoryMappingTab({
                         if (e.key === 'Enter' && newSubstringDraft.trim()) {
                           const substring = newSubstringDraft.trim()
                           categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring })
-                          const nextMappings = addCategoryMapping({ categories, categoryMappings }, expense.id, substring).categoryMappings
+                           const nextMappings = addCategoryMapping({ categories, categoryMappings, budgetAccountRules: [] }, expense.id, substring).categoryMappings
                           dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
                           setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
                         }
@@ -245,7 +245,7 @@ export function CategoryMappingTab({
                       <button type="button" style={textBtnAccent} aria-label={`Add substring button ${expenseLabel}`} disabled={!newSubstringDraft.trim()} onClick={() => {
                         const substring = newSubstringDraft.trim()
                         categoryDispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring })
-                        const nextMappings = addCategoryMapping({ categories, categoryMappings }, expense.id, substring).categoryMappings
+                         const nextMappings = addCategoryMapping({ categories, categoryMappings, budgetAccountRules: [] }, expense.id, substring).categoryMappings
                         dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
                         setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
                       }}>Add</button>

@@ -237,7 +237,8 @@ describe('BudgetPage Spend scopes', () => {
     const actions = renderSpendHarness()
     fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
     fireEvent.click(screen.getByText('Import transactions…'))
-    fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Imported account' } })
+    fireEvent.change(screen.getByLabelText('Import account'), { target: { value: '__new__' } })
+    fireEvent.change(screen.getByLabelText('New import account name'), { target: { value: 'Imported account' } })
     fireEvent.change(screen.getByLabelText('Paste CSV text'), {
       target: { value: 'Date,Description,Amount\n2026-02-01,Imported all scope,30' },
     })
@@ -290,6 +291,176 @@ describe('BudgetPage Spend scopes', () => {
 
     expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('__spend_all_years__')
     expect(actions).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' }))
+  })
+})
+
+describe('BudgetPage budget account imports and signed amounts', () => {
+  const categories = [{ id: 'other', name: 'Other', updatedAt: '' }]
+  const positiveRule = {
+    normalizedName: 'primary checking',
+    displayName: 'Primary Checking',
+    statementConvention: 'positiveSpend' as const,
+    updatedAt: '',
+  }
+
+  const renderBudget = (state = initialState(), dispatch = vi.fn(), rules = [positiveRule]) => {
+    render(
+      <BudgetPage
+        state={state}
+        dispatch={dispatch}
+        categories={categories}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        categoriesHydrated
+        budgetAccountRules={rules}
+      />
+    )
+    return dispatch
+  }
+
+  const openImport = () => {
+    fireEvent.click(screen.getByText('Import transactions…'))
+    return screen.getByLabelText('Import account') as HTMLSelectElement
+  }
+
+  it('requires an observed account or a nonblank new account', () => {
+    renderBudget()
+    const account = openImport()
+    const importButton = screen.getByText('Import') as HTMLButtonElement
+
+    expect(Array.from(account.options, (option) => option.text)).toEqual([
+      'Select an account',
+      'Primary Checking',
+      'New account',
+    ])
+    expect(importButton.disabled).toBe(true)
+
+    fireEvent.change(account, { target: { value: '__new__' } })
+    expect(importButton.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('New import account name'), { target: { value: '  Cash  ' } })
+    expect(importButton.disabled).toBe(false)
+  })
+
+  it('converts positive CSV rows before deduplication and reports every import outcome', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [{ id: 'existing', date: '2026-02-01', description: 'Store', categoryId: 'other', amount: -10, accountName: 'Primary Checking' }],
+    }
+    const dispatch = renderBudget(state)
+    const account = openImport()
+    fireEvent.change(account, { target: { value: 'Primary Checking' } })
+    fireEvent.change(screen.getByLabelText('Paste CSV text'), {
+      target: { value: 'Date,Description,Amount\n2026-02-01,Store,10' },
+    })
+    fireEvent.click(screen.getByText('Import'))
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'IMPORT_BUDGET_TRANSACTIONS',
+      rows: [expect.objectContaining({ amount: -10, accountName: 'Primary Checking' })],
+      appliedConvention: { accountName: 'Primary Checking', statementConvention: 'positiveSpend' },
+    }))
+    expect(screen.getByText('1 row(s) detected')).toBeTruthy()
+    expect(screen.getAllByText('1 row(s) converted')).toHaveLength(2)
+    expect(screen.getByText('0 imported')).toBeTruthy()
+    expect(screen.getByText('1 skipped (already imported)')).toBeTruthy()
+  })
+
+  it('keeps the default negative-spend convention unchanged', () => {
+    const dispatch = renderBudget(initialState(), vi.fn(), [])
+    const account = openImport()
+    fireEvent.change(account, { target: { value: '__new__' } })
+    fireEvent.change(screen.getByLabelText('New import account name'), { target: { value: 'Cash' } })
+    fireEvent.change(screen.getByLabelText('Paste CSV text'), {
+      target: { value: 'Date,Description,Amount\n2026-02-01,Store,10' },
+    })
+    fireEvent.click(screen.getByText('Import'))
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      rows: [expect.objectContaining({ amount: 10, accountName: 'Cash' })],
+      appliedConvention: { accountName: 'Cash', statementConvention: 'negativeSpend' },
+    }))
+  })
+
+  it('converts positive OFX rows before dispatching them', () => {
+    class MockFileReader {
+      result = '<STMTTRN><DTPOSTED>20260201<NAME>Store<TRNAMT>10</STMTTRN>'
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null
+
+      readAsText() {
+        this.onload?.(new ProgressEvent('load'))
+      }
+    }
+    vi.stubGlobal('FileReader', MockFileReader)
+    const dispatch = renderBudget()
+    const account = openImport()
+    fireEvent.change(account, { target: { value: 'Primary Checking' } })
+    fireEvent.click(screen.getByText('Upload file'))
+    fireEvent.change(screen.getByLabelText('CSV, OFX, or QFX file'), {
+      target: { files: [new File(['ignored'], 'statement.ofx')] },
+    })
+    fireEvent.click(screen.getByText('Import'))
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      rows: [expect.objectContaining({ amount: -10, accountName: 'Primary Checking' })],
+    }))
+    vi.unstubAllGlobals()
+  })
+
+  it('does not dispatch an import marker when CSV parsing produces no valid rows', () => {
+    const dispatch = renderBudget()
+    const account = openImport()
+    fireEvent.change(account, { target: { value: 'Primary Checking' } })
+    fireEvent.change(screen.getByLabelText('Paste CSV text'), { target: { value: 'bad,row' } })
+    fireEvent.click(screen.getByText('Import'))
+
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'IMPORT_BUDGET_TRANSACTIONS' }))
+    expect(screen.getByText(/No transactions found in CSV/)).toBeTruthy()
+  })
+
+  it('persists signed manual amounts and rejects zero or nonnumeric values', () => {
+    const actions = vi.fn()
+    const state = initialState()
+    const Harness = () => {
+      const [appState, dispatch] = useReducer(appReducer, state)
+      return <BudgetPage state={appState} dispatch={(action) => { actions(action); dispatch(action) }} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated budgetAccountRules={[positiveRule]} />
+    }
+    render(<Harness />)
+
+    fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2026-02-01' } })
+    fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '-12.50' } })
+    fireEvent.click(screen.getByText('Add Record'))
+    expect(actions).toHaveBeenCalledWith(expect.objectContaining({ type: 'ADD_BUDGET_TRANSACTION', tx: expect.objectContaining({ amount: -12.5 }) }))
+    expect(screen.getByTestId('records-total-row').textContent).toContain('-$12.50')
+
+    fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2026-02-02' } })
+    fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '0' } })
+    fireEvent.click(screen.getByText('Add Record'))
+    expect(screen.getByText('Amount must be a nonzero number.')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: 'not-a-number' } })
+    fireEvent.click(screen.getByText('Add Record'))
+    expect(screen.getByText('Amount must be a nonzero number.')).toBeTruthy()
+  })
+})
+
+describe('BudgetPage Accounts tab', () => {
+  it('places Accounts fifth, immediately after Category Mapping', () => {
+    render(
+      <BudgetPage
+        state={initialState()}
+        dispatch={vi.fn()}
+        categories={[]}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        categoriesHydrated
+      />,
+    )
+
+    expect(Array.from(document.querySelectorAll('input[name="budgetPeriod"] + span'), (tab) => tab.textContent)).toEqual([
+      'Expenses', 'Spend', 'Analytics', 'Category Mapping', 'Accounts',
+    ])
+    fireEvent.click(screen.getByText('Accounts'))
+    expect(screen.getByText('Import statement transactions to configure account sign rules.')).toBeTruthy()
   })
 })
 

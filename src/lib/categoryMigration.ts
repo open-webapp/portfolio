@@ -14,6 +14,9 @@ export function computeSeedFromPortfolio(rawBlob: Record<string, unknown>): Glob
   return {
     categories: rawBlob.categories as Category[],
     categoryMappings: (rawBlob.categoryMappings as CategoryMapping[]) ?? [],
+    budgetAccountRules: Array.isArray(rawBlob.budgetAccountRules)
+      ? rawBlob.budgetAccountRules as GlobalCategoryState['budgetAccountRules']
+      : [],
   }
 }
 

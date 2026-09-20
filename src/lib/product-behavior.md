@@ -215,6 +215,7 @@ Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup f
 - Income and excluded rows are hidden by default; Show excluded changes table rows only. Adding or importing records while `All` is selected keeps `All`; removing the last row in, or moving a row out of, a concrete selected year returns scope to `All`.
 - Legacy manual-income fields are discarded on local hydration and backup import/export; they are never converted.
 - Expense definitions are unique by trimmed, case-insensitive name within a category. Re-adding one updates its current-year amount; edits that would duplicate another definition are ignored.
+- Imported account conventions are persisted per normalized account name in `budgetAccountAppliedConventions`; a duplicate-only import still records its applied convention. `negativeSpend` is the permanent silent default; a `positiveSpend` rule canonicalizes positive imported spend to negative. Rule changes/removal require confirmation and reconcile the open portfolio immediately; other portfolios reconcile when opened. **Known limitation:** manual transactions have no provenance, so a later convention change flips their matching sign too, with no exclusion. Parsers are unchanged.
 
 ### Expense CSV Download
 

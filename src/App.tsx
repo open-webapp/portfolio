@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
-import { initialState, type AppState } from './lib/state'
+import { initialState, reconcileBudgetAccountConventions, type AppState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb, loadRawPersistedBlob } from './lib/persist'
 import { useGlobalCategories } from './hooks/useGlobalCategories'
@@ -71,6 +71,7 @@ function App() {
 
   // State management with hydration
   const [isHydrated, setIsHydrated] = useState(false)
+  const [hydrationError, setHydrationError] = useState<string | null>(null)
   const [state, dispatch] = useReducer(appReducer, initialState())
 
   // Password-gate session state: null sessionKey/sessionSalt means the gate hasn't
@@ -101,12 +102,9 @@ function App() {
     activePortfolio ? getDriveAuthFor(activePortfolio) : null,
     connected,
     activePortfolio ? driveAuthProjectIdFor(activePortfolio) : null,
-    // Undefined until the portfolio state hydrates post-unlock: the hook
-    // defers its one-shot hydrate (and the categoryId→spendExpenseId
-    // migration inside loadGlobalCategoryState) until the active portfolio's
-    // real definitions are available, so legacy mappings can't be dropped by
-    // a premature empty-defs migration run.
-    isHydrated ? state.budgetExpenseDefinitions : undefined
+    // Undefined until the decrypted portfolio state is installed. The shell
+    // remains gated separately while the hook hydrates and rules reconcile.
+    sessionKey ? state.budgetExpenseDefinitions : undefined
   )
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
@@ -153,6 +151,20 @@ function App() {
   // once per portfolio activation rather than on every re-render.
   const categoriesSeededPortfolioIdRef = useRef<string | null>(null)
   const budgetRolloverPortfolioIdRef = useRef<string | null>(null)
+  const activePortfolioIdRef = useRef<string | null>(null)
+  const hydrationGenerationRef = useRef(0)
+  const globalCategoriesHydratedRef = useRef(false)
+  const globalCategoriesRulesRef = useRef(globalCategories.budgetAccountRules)
+  const globalCategoriesHydrationWaitersRef = useRef<Array<() => void>>([])
+
+  globalCategoriesHydratedRef.current = globalCategories.hydrated
+  globalCategoriesRulesRef.current = globalCategories.budgetAccountRules
+
+  useEffect(() => {
+    if (!globalCategories.hydrated) return
+    const waiters = globalCategoriesHydrationWaitersRef.current.splice(0)
+    for (const resolve of waiters) resolve()
+  }, [globalCategories.hydrated])
 
   // Activates a resolved portfolio as the active one. If this is a real
   // switch away from a DIFFERENT, previously-active portfolio (as opposed to
@@ -162,6 +174,10 @@ function App() {
   // picker, e.g. browser back/forward or a hand-edited URL) can never carry
   // portfolio A's decrypted session/state into portfolio B's gate.
   const activatePortfolio = useCallback((p: Portfolio) => {
+    if (activePortfolioIdRef.current !== p.id) {
+      activePortfolioIdRef.current = p.id
+      hydrationGenerationRef.current += 1
+    }
     if (prevActivePortfolioIdRef.current !== null && prevActivePortfolioIdRef.current !== p.id) {
       setSessionKey(null)
       setSessionSalt(null)
@@ -175,6 +191,57 @@ function App() {
     setActivePortfolioDb(p.dbName)
     setActivePortfolio(p)
   }, [])
+
+  const waitForGlobalCategoriesHydration = useCallback(() => {
+    if (globalCategoriesHydratedRef.current) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      globalCategoriesHydrationWaitersRef.current.push(resolve)
+    })
+  }, [])
+
+  // The first shell render is delayed until the shared account conventions are
+  // available and have been applied to this portfolio's decrypted state.
+  const hydrateBudgetAccountRulesThenReconcile = useCallback(async (
+    loadedState: AppState,
+    key: CryptoKey,
+    salt: Uint8Array,
+    portfolio: Portfolio,
+    persistLoadedState = false,
+  ) => {
+    activatePortfolio(portfolio)
+    const generation = hydrationGenerationRef.current
+    setHydrationError(null)
+    setIsHydrated(false)
+    setSessionKey(key)
+    setSessionSalt(salt)
+    dispatch({ type: '__SET_STATE', newState: loadedState })
+
+    try {
+      await waitForGlobalCategoriesHydration()
+      if (connected) {
+        await globalCategories.syncNow()
+        // Let the hook's merge dispatch publish its latest rule reference.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      }
+
+      if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
+
+      const reconciledState = reconcileBudgetAccountConventions(loadedState, globalCategoriesRulesRef.current)
+      if (reconciledState !== loadedState || persistLoadedState) {
+        await savePersistedApp(reconciledState, key, salt)
+      }
+
+      if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
+      dispatch({ type: '__SET_STATE', newState: reconciledState })
+      setIsHydrated(true)
+      passwordEntryTimeRef.current = Date.now()
+      lastActivityTimeRef.current = Date.now()
+      setGateShape('encrypted')
+    } catch (error) {
+      if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
+      setHydrationError(error instanceof Error ? error.message : 'Could not finish loading this portfolio.')
+    }
+  }, [activatePortfolio, connected, globalCategories, waitForGlobalCategoriesHydration])
 
   // Load the portfolio registry once on mount.
   useEffect(() => {
@@ -235,17 +302,10 @@ function App() {
   // gateShape-resolution effect (keyed on activePortfolio.id) doesn't
   // regress the UI back to a gate render before it resolves for real —
   // sessionKey being non-null is what actually gates PasswordGate rendering.
-  const handleOpenUnlocked = useCallback((portfolio: Portfolio, key: CryptoKey, salt: Uint8Array, loadedState: AppState) => {
-    activatePortfolio(portfolio)
-    setSessionKey(key)
-    setSessionSalt(salt)
-    dispatch({ type: '__SET_STATE', newState: loadedState })
-    setIsHydrated(true)
-    passwordEntryTimeRef.current = Date.now()
-    lastActivityTimeRef.current = Date.now()
-    setGateShape('encrypted')
+  const handleOpenUnlocked = useCallback(async (portfolio: Portfolio, key: CryptoKey, salt: Uint8Array, loadedState: AppState, persistLoadedState = false) => {
+    await hydrateBudgetAccountRulesThenReconcile(loadedState, key, salt, portfolio, persistLoadedState)
     navigateToPortfolio(portfolio.id)
-  }, [activatePortfolio])
+  }, [hydrateBudgetAccountRulesThenReconcile])
 
   // Creates a brand-new portfolio with its own password (derives a fresh
   // salt/key pair rather than reusing any other portfolio's), persists an
@@ -258,9 +318,8 @@ function App() {
     const portfolio = await createPortfolio(name)
     setActivePortfolioDb(portfolio.dbName)
     const newState = initialState()
-    await savePersistedApp(newState, key, salt)
     setPortfolios(await listPortfolios())
-    handleOpenUnlocked(portfolio, key, salt, newState)
+    await handleOpenUnlocked(portfolio, key, salt, newState, true)
   }, [handleOpenUnlocked])
 
   // Imports a portfolio backup from a Drive folder (one of the folders
@@ -271,9 +330,8 @@ function App() {
     const { state: importedState, key, salt } = await decryptDriveFolderBackup(folder.id, password)
     const portfolio = await createPortfolio(folder.name)
     setActivePortfolioDb(portfolio.dbName)
-    await savePersistedApp(importedState, key, salt)
     setPortfolios(await listPortfolios())
-    handleOpenUnlocked(portfolio, key, salt, importedState)
+    await handleOpenUnlocked(portfolio, key, salt, importedState, true)
   }, [handleOpenUnlocked])
 
   // Imports a portfolio backup from a locally-picked export file, registering
@@ -304,9 +362,8 @@ function App() {
     }
     const portfolio = await createPortfolio(name)
     setActivePortfolioDb(portfolio.dbName)
-    await savePersistedApp(finalState, key, saltBytes)
     setPortfolios(await listPortfolios())
-    handleOpenUnlocked(portfolio, key, saltBytes, finalState)
+    await handleOpenUnlocked(portfolio, key, saltBytes, finalState, true)
   }, [handleOpenUnlocked])
 
   // Determine the password-gate shape on mount, and again whenever the
@@ -557,6 +614,8 @@ function App() {
   // touch gateShape/sessionKey — once activePortfolio is null and the picker
   // route renders, those are no longer read.
   const handleBackToPicker = useCallback(() => {
+    hydrationGenerationRef.current += 1
+    activePortfolioIdRef.current = null
     setSessionKey(null)
     setSessionSalt(null)
     dispatch({ type: '__SET_STATE', newState: initialState() })
@@ -564,6 +623,13 @@ function App() {
     setActivePortfolio(null)
     navigateToPicker()
   }, [])
+
+  // Rule changes after the shell opens (including a Drive merge) affect only
+  // the currently open portfolio; unopened portfolios are never read here.
+  useEffect(() => {
+    if (sessionKey === null || !isHydrated || !activePortfolio) return
+    dispatch({ type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS', rules: globalCategories.budgetAccountRules })
+  }, [sessionKey, isHydrated, activePortfolio?.id, globalCategories.budgetAccountRules])
 
   // Locks the app due to inactivity/absolute timeout: flushes the current
   // state (best-effort) then clears the session, without touching gateShape
@@ -736,16 +802,12 @@ function App() {
     return (
       <PasswordGate
         shape={gateShape}
-        onUnlock={(key, salt, loadedState) => {
-          setSessionKey(key)
-          setSessionSalt(salt)
-          if (loadedState) {
-            dispatch({ type: '__SET_STATE', newState: loadedState })
-          }
-          setIsHydrated(true)
-          passwordEntryTimeRef.current = Date.now()
-          lastActivityTimeRef.current = Date.now()
-        }}
+        onUnlock={(key, salt, loadedState) => hydrateBudgetAccountRulesThenReconcile(
+          loadedState ?? initialState(),
+          key,
+          salt,
+          activePortfolio,
+        )}
         onBackToPicker={handleBackToPicker}
       />
     )
@@ -755,7 +817,7 @@ function App() {
   if (!isHydrated) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <p>Loading...</p>
+        <p>{hydrationError ?? 'Loading...'}</p>
       </div>
     )
   }
@@ -788,6 +850,7 @@ function App() {
               categoryMappings={globalCategories.categoryMappings}
               categoryDispatch={globalCategories.dispatch}
               categoriesHydrated={globalCategories.hydrated}
+              budgetAccountRules={globalCategories.budgetAccountRules}
             />
           </div>
         ) : state.view === 'accounts' ? (

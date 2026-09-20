@@ -4,7 +4,7 @@ Directory structure, API contract, component tree, state management, data model,
 
 ## Component Tree
 
-- `BudgetPage.tsx` owns four local, non-persisted tabs: Expenses, Spend, Analytics, and Category Mapping. Its `period` initializes to `'spend'` on every mount/remount. Spend's local `selectedScope` initializes to the newest transaction-backed year, or the `SPEND_ALL_YEARS` sentinel; the sentinel stays local to Spend and is never a budget-snapshot key. It passes global category-store props to `CategoryMappingTab`; that child alone defers mapping controls until `categoriesHydrated` is true.
+- `BudgetPage.tsx` owns five local, non-persisted tabs: Expenses, Spend, Analytics, Category Mapping, and Accounts. `period` initializes to `'spend'`; Spend `selectedScope` initializes to the newest transaction-backed year or `SPEND_ALL_YEARS`. Category Mapping and Accounts defer controls until `categoriesHydrated`; Accounts receives global `budgetAccountRules` and dispatches local reconciliation after a confirmed rule change.
 - `CategoryMappingTab.tsx` owns category rename/exclusion, mapping substring CRUD, and category-mapping JSON import/export. Mapping mutations and successful imports immediately dispatch `REAPPLY_CATEGORY_MAPPINGS` against the merged/current mappings; import/export format and merge semantics are unchanged.
 - `Settings.tsx` has exactly Backup, Encryption, and Quotes API Key tabs. Its props contain no categories, mappings, category dispatcher, or category-hydration state.
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
@@ -21,6 +21,8 @@ Directory structure, API contract, component tree, state management, data model,
 ## Data Flows
 
 ### Budget Income
+
+`GlobalCategoryState = { categories: Category[]; categoryMappings: CategoryMapping[]; budgetAccountRules: BudgetAccountRule[] }` is shared through `categoryStore`, `categoryPersist`, `categoryDrive` (`category-mappings.json`), `categoryMerge`, and `useGlobalCategories`. Rules merge by `normalizedName`, tombstone on delete, and use `negativeSpend` as the permanent default. `AppState.budgetAccountAppliedConventions: Record<normalizedAccountName, StatementConvention>` records each portfolio's applied convention. BudgetPage requires an import account, converts rows to canonical signs/names before `IMPORT_BUDGET_TRANSACTIONS` dedup, and stores the marker even for an all-duplicate batch. `App.tsx` reconciles before rendering an opened portfolio and after global-rule changes; `RECONCILE_BUDGET_ACCOUNT_CONVENTIONS` delegates to `reconcileBudgetAccountRules`. Parsers are unchanged. Manual transactions have no provenance, so reconciliation also flips their matching amounts.
 
 `Category` active exact normalized `Income` match -> `selectors.ts` income helpers -> BudgetPage income cards and savings-rate selectors. `effectiveCategoryId(transaction, definitions)` resolves a linked definition before all Income/spend classification. `excludedCategoryIdSet` centralizes `excludeFromSpend` and Income exclusion for spend totals and analytics. Shared spend selectors negate debit-signed amounts; credits/refunds therefore reduce actual spend. Budget persistence/export contains definitions, amount snapshots, and transactions only; legacy manual-income keys are dropped during hydration/import.
 

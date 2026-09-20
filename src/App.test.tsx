@@ -165,6 +165,7 @@ const { mockGlobalCategoriesFixture, seedGlobalCategoriesIfNeededMock } = vi.hoi
       current: {
         categories: [] as unknown[],
         categoryMappings: [] as unknown[],
+        budgetAccountRules: [] as { normalizedName: string; displayName: string; statementConvention: 'negativeSpend' | 'positiveSpend'; updatedAt: string }[],
         dispatch: vi.fn(),
         hydrated: true,
         seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
@@ -846,6 +847,7 @@ describe('global categories wiring', () => {
     mockGlobalCategoriesFixture.current = {
       categories: [{ id: 'cat-1', name: 'Groceries' }],
       categoryMappings: [{ id: 'map-1', substring: 'trader joes', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      budgetAccountRules: [],
       dispatch: vi.fn(),
       hydrated: true,
       seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
@@ -875,6 +877,79 @@ describe('global categories wiring', () => {
     expect(props.categoryMappings).toBe(mockGlobalCategoriesFixture.current.categoryMappings)
     expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
     expect(props.categoriesHydrated).toBe(true)
+    expect(props.budgetAccountRules).toBe(mockGlobalCategoriesFixture.current.budgetAccountRules)
+  })
+
+  it('reconciles budget account rules and persists the result before opening the shell', async () => {
+    const loaded = initialState()
+    loaded.budgetTransactions = [{
+      id: 'budget-transaction-1',
+      date: '2026-01-01',
+      description: 'Groceries',
+      categoryId: '',
+      accountName: 'checking',
+      amount: 75,
+    }]
+    loaded.budgetAccountAppliedConventions = { checking: 'negativeSpend' }
+    mockUnlockLoadedState.current = loaded
+    mockGlobalCategoriesFixture.current.budgetAccountRules = [{
+      normalizedName: 'checking',
+      displayName: 'Checking',
+      statementConvention: 'positiveSpend',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }]
+    vi.mocked(savePersistedApp).mockClear()
+
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('MockUnlock')).toBeTruthy())
+    fireEvent.click(screen.getByText('MockUnlock'))
+
+    await waitFor(() => expect(screen.getByText('Positions')).toBeTruthy())
+    const [savedState] = vi.mocked(savePersistedApp).mock.calls[0]
+    expect(savedState.budgetTransactions[0]).toMatchObject({ accountName: 'Checking', amount: -75 })
+    expect(savedState.budgetAccountAppliedConventions).toEqual({ checking: 'positiveSpend' })
+
+    fireEvent.click(navTab('Budget'))
+    await waitFor(() => expect(budgetPagePropsCapture.current).toBeTruthy())
+    expect((budgetPagePropsCapture.current as { state: typeof loaded }).state.budgetTransactions[0].amount).toBe(-75)
+  })
+
+  it('waits for global category hydration before reconciling rules or rendering the unlocked shell', async () => {
+    const loaded = initialState()
+    loaded.budgetTransactions = [{
+      id: 'budget-transaction-1',
+      date: '2026-01-01',
+      description: 'Groceries',
+      categoryId: '',
+      accountName: 'checking',
+      amount: 75,
+    }]
+    mockUnlockLoadedState.current = loaded
+    mockGlobalCategoriesFixture.current.hydrated = false
+    mockGlobalCategoriesFixture.current.budgetAccountRules = [{
+      normalizedName: 'checking',
+      displayName: 'Checking',
+      statementConvention: 'positiveSpend',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }]
+    vi.mocked(savePersistedApp).mockClear()
+
+    const { rerender } = render(<App />)
+    await waitFor(() => expect(screen.getByText('MockUnlock')).toBeTruthy())
+    fireEvent.click(screen.getByText('MockUnlock'))
+
+    await waitFor(() => expect(screen.getByText('Loading...')).toBeTruthy())
+    expect(screen.queryByText('Positions')).toBeFalsy()
+    expect(savePersistedApp).not.toHaveBeenCalled()
+
+    mockGlobalCategoriesFixture.current.hydrated = true
+    rerender(<App />)
+
+    await waitFor(() => expect(screen.getByText('Positions')).toBeTruthy())
+    expect(vi.mocked(savePersistedApp).mock.calls[0][0].budgetTransactions[0]).toMatchObject({
+      accountName: 'Checking',
+      amount: -75,
+    })
   })
 
   it('does not pass category-mapping props to SettingsPage', async () => {

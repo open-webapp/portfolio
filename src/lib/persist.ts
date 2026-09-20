@@ -221,6 +221,7 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     budgetExpenseDefinitions: loaded.budgetExpenseDefinitions ?? defaults.budgetExpenseDefinitions,
     budgetExpenseAmountsByYear: loaded.budgetExpenseAmountsByYear ?? defaults.budgetExpenseAmountsByYear,
     budgetTransactions: loaded.budgetTransactions ?? defaults.budgetTransactions,
+    budgetAccountAppliedConventions: loaded.budgetAccountAppliedConventions ?? defaults.budgetAccountAppliedConventions,
   }
 }
 

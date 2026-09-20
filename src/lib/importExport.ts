@@ -324,5 +324,8 @@ export function parseCategoryMappingImportFile(
   return {
     categories: parsed.categories as unknown as GlobalCategoryState['categories'],
     categoryMappings,
+    budgetAccountRules: Array.isArray(parsed.budgetAccountRules)
+      ? parsed.budgetAccountRules as GlobalCategoryState['budgetAccountRules']
+      : [],
   }
 }

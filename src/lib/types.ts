@@ -100,8 +100,18 @@ export interface BudgetTransaction {
   description: string
   categoryId: string
   spendExpenseId?: string
-  accountName?: string
+  accountName?: string // Source account name; canonical matching is trimmed and case-insensitive.
   amount: number
+}
+
+export type StatementConvention = 'negativeSpend' | 'positiveSpend'
+
+export interface BudgetAccountRule {
+  normalizedName: string
+  displayName: string
+  statementConvention: 'negativeSpend' | 'positiveSpend'
+  updatedAt: string // ISO
+  deletedAt?: string // ISO
 }
 
 export interface Category {

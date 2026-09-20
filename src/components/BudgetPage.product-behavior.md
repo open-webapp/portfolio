@@ -4,10 +4,17 @@ Sibling: `BudgetPage.design.md`.
 
 ## Tabs
 
-- Four local tabs: Expenses, Spend, Analytics, Category Mapping.
+- Five local tabs: Expenses, Spend, Analytics, Category Mapping, Accounts.
 - Spend is the default on every mount/remount.
 - Tab selection is not persisted.
 - Category Mapping renders `Loading category mappings...` until global categories hydrate; mapping controls are unavailable before then.
+
+## Accounts
+
+- Hosts global account statement-convention rules. `negativeSpend` (negative amount = spend) is the permanent silent default; `positiveSpend` converts imported positive spend to canonical negative amounts.
+- A convention change or rule removal requires native confirmation. A confirmed action reconciles matching records in the open portfolio immediately; other portfolios reconcile when opened.
+- **Known limitation:** manual records have no provenance. A later convention change flips their matching amount too; there is no exclusion.
+- Rules are global: they share the category store, its IndexedDB state, `category-mappings.json` Drive file, merge, and `useGlobalCategories` hook.
 
 ## Category Mapping
 
@@ -25,3 +32,4 @@ Sibling: `BudgetPage.design.md`.
 - The overlay is scoped by selected row ID to that row's linked expense's live mappings only. It cannot add mappings; X closes it and it remains open when empty.
 - In the overlay, click a mapping substring to edit it inline. Enter saves a trimmed, non-empty changed value and reapplies mappings to the current portfolio; blur, invalid input, and unchanged input keep editing open. Escape first cancels inline editing, then closes the overlay.
 - Deleting a mapping requires native confirmation, immediately reapplies mappings to the current portfolio, and leaves the overlay open when no mappings remain.
+- Import requires an existing account selection or a new account name; that name applies to the entire batch. Imported rows are canonicalized before dedup, and the applied convention marker persists even for a duplicate-only import. CSV/OFX/QFX parsers are unchanged.
