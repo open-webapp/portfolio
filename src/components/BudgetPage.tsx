@@ -17,6 +17,7 @@ import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTra
 import {
   isIncomeOrExcludedTransaction,
   effectiveCategoryId,
+  computeRecurringSpendIds,
   formatSpendCategoryLabel,
   SPEND_ALL_YEARS,
   spendBudgetYears,
@@ -67,6 +68,17 @@ function TrashIcon() {
   )
 }
 
+function RepeatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+      <path d="M17 2l4 4-4 4"></path>
+      <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+      <path d="M7 22l-4-4 4-4"></path>
+      <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+    </svg>
+  )
+}
+
 function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="11" height="11">
@@ -98,12 +110,14 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
   const [recPage, setRecPage] = useState(0)
   const [showExcludedRecords, setShowExcludedRecords] = useState(false)
+  const [showRecurringOnly, setShowRecurringOnly] = useState(false)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null)
   const selectionCellRefs = useRef<Record<string, HTMLTableCellElement | null>>({})
   const [bulkCategoryId, setBulkCategoryId] = useState('')
   const [bulkExpenseId, setBulkExpenseId] = useState('')
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
+  const recurringIds = computeRecurringSpendIds(state.budgetTransactions, categories, state.budgetExpenseDefinitions)
   const [selectedScope, setSelectedScope] = useState<SpendScope>(
     () => spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
   )
@@ -174,6 +188,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         )
       })
     : recordSourceTransactions
+  const recurringFilteredRecords = showRecurringOnly ? filteredRecords.filter((t) => recurringIds.has(t.id)) : filteredRecords
   const toggleRecSort = (field: 'date' | 'description' | 'category' | 'account' | 'amount') => {
     if (recSortBy === field) {
       setRecSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -182,7 +197,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       setRecSortDir(field === 'date' ? 'desc' : 'asc')
     }
   }
-  const searchedRecords = [...filteredRecords].sort((a, b) => {
+  const searchedRecords = [...recurringFilteredRecords].sort((a, b) => {
     let cmp = 0
     switch (recSortBy) {
       case 'date':
@@ -273,7 +288,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setSelectionAnchorId(null)
     setBulkCategoryId('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recPage, recSortBy, recSortDir, recordSearch, period, selectedScope])
+  }, [recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope])
 
   const selectionRangeIds = (anchorId: string, targetIdx: number): Set<string> => {
     const anchorIdx = pagedRecords.findIndex((r) => r.id === anchorId)
@@ -609,6 +624,17 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               />
               Show excluded
             </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '12px' }}>
+              <input
+                type="checkbox"
+                checked={showRecurringOnly}
+                onChange={(e) => {
+                  setShowRecurringOnly(e.target.checked)
+                  setRecPage(0)
+                }}
+              />
+              Show recurring only
+            </label>
             <div className="field" style={{ margin: 0, width: '220px' }}>
               <input
                 className="input"
@@ -876,6 +902,11 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                       )}
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {recurringIds.has(row.id) && (
+                        <span style={{ ...iconBtn, cursor: 'default' }} title="Recurring spend">
+                          <RepeatIcon />
+                        </span>
+                      )}
                       <button
                         type="button"
                         style={{ ...iconBtn, color: LOSS_COLOR }}

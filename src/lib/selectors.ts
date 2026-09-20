@@ -533,6 +533,91 @@ export function excludedCategoryIdSet(categories: Category[]): Set<string> {
   return new Set(categories.filter((c) => c.excludeFromSpend || isIncomeCategory(c)).map((c) => c.id))
 }
 
+/**
+ * Flags BudgetTransactions that form a chain of the same (accountName,
+ * effectiveCategoryId) across >=3 CONSECUTIVE calendar months, with each
+ * month's amount within +/-10% of the chain's running average (recomputed
+ * as the chain grows). Computed over the FULL transaction history passed
+ * in -- caller must not pre-filter by year/scope, so the flag is stable
+ * regardless of the Spend tab's year selector. Records whose effective
+ * category has excludeFromSpend are never considered. Returns the set of
+ * BudgetTransaction ids that are a chain's representative for their month
+ * in any chain reaching length >=3.
+ */
+export function computeRecurringSpendIds(
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  definitions: ExpenseDefinition[]
+): Set<string> {
+  const excludedIds = excludedCategoryIdSet(categories)
+  const groups = new Map<string, BudgetTransaction[]>()
+
+  transactions.forEach((transaction) => {
+    const categoryId = effectiveCategoryId(transaction, definitions)
+    if (excludedIds.has(categoryId)) return
+    const key = `${transaction.accountName ?? ''}|${categoryId}`
+    const group = groups.get(key) ?? []
+    group.push(transaction)
+    groups.set(key, group)
+  })
+
+  const recurringIds = new Set<string>()
+  groups.forEach((group) => {
+    const byMonth = new Map<string, BudgetTransaction[]>()
+    const consumedIds = new Set<string>()
+    group.forEach((transaction) => {
+      const month = transaction.date.slice(0, 7)
+      const bucket = byMonth.get(month) ?? []
+      bucket.push(transaction)
+      byMonth.set(month, bucket)
+    })
+
+    const flagChain = (chain: BudgetTransaction[]) => {
+      if (chain.length >= 3) chain.forEach((transaction) => recurringIds.add(transaction.id))
+    }
+    let chain: BudgetTransaction[] = []
+    let runningAverage = 0
+    let previousMonth: string | undefined
+
+    [...byMonth.keys()].sort().forEach((month) => {
+      if (previousMonth) {
+        const [previousYear, previousMonthNumber] = previousMonth.split('-').map(Number)
+        const [year, monthNumber] = month.split('-').map(Number)
+        if (year * 12 + monthNumber !== previousYear * 12 + previousMonthNumber + 1) {
+          flagChain(chain)
+          chain = []
+          runningAverage = 0
+        }
+      }
+
+      const bucket = byMonth.get(month)!
+      const candidate = chain.length === 0
+        ? bucket.find((transaction) => !consumedIds.has(transaction.id))
+        : bucket
+          .filter((transaction) =>
+            !consumedIds.has(transaction.id) &&
+            Math.abs(Math.abs(transaction.amount) - runningAverage) <= runningAverage * 0.1
+          )
+          .sort((a, b) => Math.abs(Math.abs(a.amount) - runningAverage) - Math.abs(Math.abs(b.amount) - runningAverage))[0]
+
+      if (candidate) {
+        consumedIds.add(candidate.id)
+        chain.push(candidate)
+        runningAverage = chain.reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0) / chain.length
+      } else {
+        flagChain(chain)
+        chain = []
+        runningAverage = 0
+      }
+      previousMonth = month
+    })
+
+    flagChain(chain)
+  })
+
+  return recurringIds
+}
+
 /** Active categories whose normalized name is exactly "income". */
 export function incomeCategoryIdSet(categories: Category[]): Set<string> {
   return new Set(categories.filter(isIncomeCategory).map((c) => c.id))

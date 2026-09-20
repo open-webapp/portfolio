@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
 import type { BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
@@ -182,5 +182,123 @@ describe('mappingsForExpense', () => {
     ] as CategoryMapping[]
 
     expect(mappingsForExpense(mappings, 'groceries').map((mapping) => mapping.id)).toEqual(['alpha', 'zebra'])
+  })
+})
+
+describe('computeRecurringSpendIds', () => {
+  const recurringCategories: Category[] = [
+    ...categories,
+    { id: 'excluded', name: 'Excluded', updatedAt: '', excludeFromSpend: true },
+  ]
+  const recurringDefinitions = definitions
+  const recurring = (id: string, date: string, amount: number, accountId = 'account-a', categoryId = 'food') =>
+    tx({ id, date, amount, accountId, categoryId })
+  const ids = (transactions: BudgetTransaction[]) => computeRecurringSpendIds(transactions, recurringCategories, recurringDefinitions)
+
+  it('flags three equal monthly charges in the same account and category', () => {
+    const transactions = [
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb', '2025-02-15', -100),
+      recurring('mar', '2025-03-15', -100),
+    ]
+
+    expect(ids(transactions)).toEqual(new Set(['jan', 'feb', 'mar']))
+  })
+
+  it('does not flag a two-month run', () => {
+    expect(ids([
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb', '2025-02-15', -100),
+    ])).toEqual(new Set())
+  })
+
+  it('does not bridge a missing month', () => {
+    expect(ids([
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb', '2025-02-15', -100),
+      recurring('apr', '2025-04-15', -100),
+    ])).toEqual(new Set())
+  })
+
+  it('accepts amounts within ten percent of the running average', () => {
+    const transactions = [
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb', '2025-02-15', -108),
+      recurring('mar', '2025-03-15', -96),
+    ]
+
+    expect(ids(transactions)).toEqual(new Set(['jan', 'feb', 'mar']))
+  })
+
+  it('breaks a chain when the third amount exceeds the tolerance', () => {
+    expect(ids([
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb', '2025-02-15', -100),
+      recurring('mar', '2025-03-15', -111),
+    ])).toEqual(new Set())
+  })
+
+  it('does not flag transactions in categories excluded from spend', () => {
+    expect(ids([
+      recurring('jan', '2025-01-15', -100, 'account-a', 'excluded'),
+      recurring('feb', '2025-02-15', -100, 'account-a', 'excluded'),
+      recurring('mar', '2025-03-15', -100, 'account-a', 'excluded'),
+    ])).toEqual(new Set())
+  })
+
+  it('tracks interleaved account and category chains independently', () => {
+    const transactions = [
+      recurring('a-jan', '2025-01-15', -100, 'account-a', 'food'),
+      recurring('b-jan', '2025-01-15', -200, 'account-b', 'other-income'),
+      recurring('a-feb', '2025-02-15', -100, 'account-a', 'food'),
+      recurring('b-feb', '2025-02-15', -200, 'account-b', 'other-income'),
+      recurring('a-mar', '2025-03-15', -100, 'account-a', 'food'),
+      recurring('b-mar', '2025-03-15', -200, 'account-b', 'other-income'),
+    ]
+
+    expect(ids(transactions)).toEqual(new Set(['a-jan', 'a-feb', 'a-mar', 'b-jan', 'b-feb', 'b-mar']))
+  })
+
+  it('chooses the closest same-month candidate instead of the first candidate', () => {
+    const transactions = [
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb-far-first', '2025-02-01', -150),
+      recurring('feb-close', '2025-02-15', -102),
+      recurring('mar', '2025-03-15', -101),
+    ]
+
+    expect(ids(transactions)).toEqual(new Set(['jan', 'feb-close', 'mar']))
+  })
+
+  it('does not reuse a monthly representative across overlapping candidate chains', () => {
+    const transactions = [
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb', '2025-02-15', -100),
+      recurring('mar', '2025-03-15', -100),
+      recurring('apr-far-first', '2025-04-01', -150),
+      recurring('apr-close', '2025-04-15', -100),
+    ]
+
+    const recurringIds = ids(transactions)
+    expect(recurringIds).toEqual(new Set(['jan', 'feb', 'mar', 'apr-close']))
+    expect(recurringIds).not.toContain('apr-far-first')
+    expect(recurringIds.size).toBe(4)
+  })
+
+  it('is independent of UI year scope and requires full history for cross-year runs', () => {
+    const transactions = [
+      recurring('nov', '2024-11-15', -100),
+      recurring('dec', '2024-12-15', -100),
+      recurring('jan', '2025-01-15', -100),
+      recurring('feb', '2025-02-15', -100),
+    ]
+    const fullHistory = ids(transactions)
+    const allYearsScope = ids(transactions)
+    const only2025 = ids(transactions.filter((transaction) => transaction.date.startsWith('2025')))
+
+    expect(allYearsScope).toEqual(fullHistory)
+    expect(fullHistory).toEqual(new Set(['nov', 'dec', 'jan', 'feb']))
+    expect(only2025).toEqual(new Set())
+    expect(only2025).not.toEqual(fullHistory)
   })
 })
