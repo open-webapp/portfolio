@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actualIncomeForYear, budgetedIncomeForYear, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
 import type { BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
@@ -26,8 +26,18 @@ describe('derived budget income', () => {
   })
 
   it('excludes Income from spend totals', () => {
-    const transactions = [tx({ categoryId: 'income', amount: 5000 }), tx({ id: 'food', amount: 100 })]
+    const transactions = [tx({ categoryId: 'income', amount: 5000 }), tx({ id: 'food', amount: -100 })]
     expect(yearTotalSpend(transactions, categories, '2025', definitions)).toBe(100)
+  })
+
+  it('reports debit-signed expenses as positive spend across totals and categories', () => {
+    const transactions = [tx({ id: 'groceries', amount: -527 })]
+    expect(yearTotalSpend(transactions, categories, '2025', definitions)).toBe(527)
+    expect(actualByCategory(transactions, definitions, categories)).toEqual({ food: 527 })
+    expect(spendCardTotals(definitions, { '2025': { groceries: 315 } }, transactions, categories, '2025')).toMatchObject({
+      actualSpend: 527,
+      variance: -212,
+    })
   })
 })
 
@@ -71,10 +81,10 @@ describe('Spend scopes', () => {
     { id: 'ignored-definition', name: 'Ignored', categoryId: 'ignored', frequency: 'monthly' },
   ]
   const transactions = [
-    tx({ id: 'food-2025', date: '2025-01-01', amount: 100 }),
+    tx({ id: 'food-2025', date: '2025-01-01', amount: -100 }),
     tx({ id: 'income-2024', date: '2024-01-01', categoryId: 'income', amount: 1000 }),
-    tx({ id: 'excluded-2023', date: '2023-01-01', categoryId: 'ignored', amount: 50 }),
-    tx({ id: 'food-2024', date: '2024-02-01', amount: 20 }),
+    tx({ id: 'excluded-2023', date: '2023-01-01', categoryId: 'ignored', amount: -50 }),
+    tx({ id: 'food-2024', date: '2024-02-01', amount: -20 }),
   ]
 
   it('uses every transaction category to derive unique descending Spend years', () => {

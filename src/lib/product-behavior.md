@@ -209,7 +209,7 @@ Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup f
 
 - Active categories named exactly `Income` after trim/case normalization define income. Deleted categories and names such as `Other Income` do not.
 - Budgeted income annualizes matching ExpenseDefinition amounts for the selected year; actual income sums signed matching Budget transactions.
-- Spend excludes Income and `excludeFromSpend` categories. Linked expense-definition categories override a transaction's stored category.
+- Spend excludes Income and `excludeFromSpend` categories. Linked expense-definition categories override a transaction's stored category. Debit-signed transaction amounts are negated for actual-spend reporting, so refunds reduce reported spend.
 - Spend scope offers `All` plus concrete years present in Budget transactions only; with no transactions, only `All` is available. It initially selects the newest transaction year, or `All` when none exists.
 - Spend shows five read-only cards: budgeted income, actual income, budgeted spending, actual spend, and variance. `All` sums each transaction year independently, using only that year's exact budget snapshot; a missing snapshot contributes zero, with no nearest-year fallback.
 - Income and excluded rows are hidden by default; Show excluded changes table rows only. Adding or importing records while `All` is selected keeps `All`; removing the last row in, or moving a row out of, a concrete selected year returns scope to `All`.
