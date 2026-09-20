@@ -36,6 +36,7 @@ import {
   renamePortfolio,
   deletePortfolio,
   getPortfolio,
+  unlinkSharedPortfolioFolder,
 } from './lib/portfolioRegistry'
 import { decryptImportEnvelope, getEnvelopeSaltBytes } from './lib/importExport'
 import { deriveKey, generateSalt, type EncryptedEnvelope } from './lib/crypto'
@@ -294,6 +295,14 @@ function App() {
   const handleDeletePortfolio = useCallback(async (id: string) => {
     await deletePortfolio(id)
     setPortfolios(await listPortfolios())
+  }, [])
+
+  const handleUnlinkSharedFolder = useCallback(async (id: string) => {
+    await unlinkSharedPortfolioFolder(id)
+    setPortfolios(await listPortfolios())
+    setActivePortfolio((prev) => (
+      prev?.id === id ? { ...prev, sharedDriveFolderId: undefined } : prev
+    ))
   }, [])
 
   // Transitions straight from the picker's inline unlock step into the
@@ -887,6 +896,7 @@ function App() {
               }}
               onDriveConnected={onDriveConnected}
               onDriveDisconnected={onDriveDisconnected}
+              onUnlinkSharedFolder={handleUnlinkSharedFolder}
               driveConnected={connected}
               settingsSection={settingsSection}
               setSettingsSection={setSettingsSection}
