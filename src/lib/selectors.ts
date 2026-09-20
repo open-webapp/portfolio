@@ -620,7 +620,7 @@ export function yearTotalSpend(
   const excludedIds = excludedCategoryIdSet(categories)
   return transactions
     .filter((t) => t.date.slice(0, 4) === year && !excludedIds.has(effectiveCategoryId(t, definitions)))
-    .reduce((sum, t) => sum + t.amount, 0)
+    .reduce((sum, t) => sum - t.amount, 0)
 }
 
 /**
@@ -641,7 +641,7 @@ export function yearCategoryTotalSpend(
       const effId = effectiveCategoryId(t, definitions)
       return t.date.slice(0, 4) === year && effId === categoryId && !excludedIds.has(effId)
     })
-    .reduce((sum, t) => sum + t.amount, 0)
+    .reduce((sum, t) => sum - t.amount, 0)
 }
 
 /**
@@ -658,7 +658,7 @@ export function monthTotalSpend(
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
   return transactions
     .filter((t) => t.date.slice(0, 7) === monthStr && !excludedIds.has(effectiveCategoryId(t, definitions)))
-    .reduce((sum, t) => sum + t.amount, 0)
+    .reduce((sum, t) => sum - t.amount, 0)
 }
 
 /**
@@ -674,7 +674,7 @@ export function actualByCategory(
   transactions.forEach((t) => {
     const catId = effectiveCategoryId(t, definitions)
     if (excludedIds.has(catId)) return
-    out[catId] = (out[catId] ?? 0) + t.amount
+    out[catId] = (out[catId] ?? 0) - t.amount
   })
   return out
 }
