@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
 import type { BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
@@ -38,6 +38,29 @@ describe('derived budget income', () => {
       actualSpend: 527,
       variance: -212,
     })
+  })
+})
+
+describe('categoryBreakdown', () => {
+  it('scales each category against its own budget and actual totals', () => {
+    const categoryDefs: ExpenseDefinition[] = [
+      { id: 'housing', name: 'Housing', categoryId: 'housing', frequency: 'yearly' },
+      { id: 'utilities', name: 'Utilities', categoryId: 'utilities', frequency: 'yearly' },
+    ]
+    const categoryList: Category[] = [
+      { id: 'housing', name: 'Housing', updatedAt: '' },
+      { id: 'utilities', name: 'Utilities', updatedAt: '' },
+    ]
+
+    expect(categoryBreakdown(
+      categoryDefs,
+      { housing: 1000, utilities: 100 },
+      [tx({ id: 'housing', categoryId: 'housing', amount: -500 }), tx({ id: 'utilities', categoryId: 'utilities', amount: -50 })],
+      categoryList
+    )).toMatchObject([
+      { name: 'Housing', budgetPct: 100, actualPct: 50 },
+      { name: 'Utilities', budgetPct: 100, actualPct: 50 },
+    ])
   })
 })
 

@@ -770,8 +770,8 @@ export function expenseTableYears(
  * Aggregate expenses by category for the given year, alongside actual spend from
  * budget transactions in the same year. Budget amounts are per-frequency
  * snapshots annualized via frequency (monthly × 12) so both sides are yearly totals.
- * `budgetPct`/`actualPct` are relative to the largest category total across both
- * budget and actual (not the sum of all categories).
+ * `budgetPct`/`actualPct` are relative to the larger budget or actual total for
+ * that category.
  * Returns entries sorted by budgeted amount descending.
  */
 export function categoryBreakdown(
@@ -797,20 +797,20 @@ export function categoryBreakdown(
     byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + amount
   })
   const actuals = actualByCategory(transactions, definitions, categories)
-  const maxCat = Math.max(1, ...Object.values(byCategory), ...Object.values(actuals))
   return Object.entries(byCategory)
     .sort((a, b) => b[1] - a[1])
     .map(([categoryId, amount]) => {
       const actual = actuals[categoryId] ?? 0
       const variance = amount - actual
+      const categoryMax = Math.max(1, amount, actual)
       const name = categories.find((c) => c.id === categoryId)?.name ?? categoryId
       return {
         name,
         amount,
         actual,
         variance,
-        budgetPct: (amount / maxCat) * 100,
-        actualPct: (Math.min(actual, maxCat) / maxCat) * 100,
+        budgetPct: (amount / categoryMax) * 100,
+        actualPct: (actual / categoryMax) * 100,
         actualColor: variance >= 0 ? '#3b6ef6' : LOSS_COLOR,
         varianceColor: variance >= 0 ? GAIN_COLOR : LOSS_COLOR
       }
