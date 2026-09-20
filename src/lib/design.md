@@ -4,7 +4,7 @@ Directory structure, API contract, component tree, state management, data model,
 
 ## Component Tree
 
-- `BudgetPage.tsx` owns four local, non-persisted tabs: Expenses, Spend, Analytics, and Category Mapping. Its `period` initializes to `'spend'` on every mount/remount. It passes global category-store props to `CategoryMappingTab`; that child alone defers mapping controls until `categoriesHydrated` is true.
+- `BudgetPage.tsx` owns four local, non-persisted tabs: Expenses, Spend, Analytics, and Category Mapping. Its `period` initializes to `'spend'` on every mount/remount. Spend's local `selectedScope` initializes to the newest transaction-backed year, or the `SPEND_ALL_YEARS` sentinel; the sentinel stays local to Spend and is never a budget-snapshot key. It passes global category-store props to `CategoryMappingTab`; that child alone defers mapping controls until `categoriesHydrated` is true.
 - `CategoryMappingTab.tsx` owns category rename/exclusion, mapping substring CRUD, and category-mapping JSON import/export. Mapping mutations and successful imports immediately dispatch `REAPPLY_CATEGORY_MAPPINGS` against the merged/current mappings; import/export format and merge semantics are unchanged.
 - `Settings.tsx` has exactly Backup, Encryption, and Quotes API Key tabs. Its props contain no categories, mappings, category dispatcher, or category-hydration state.
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
@@ -23,6 +23,8 @@ Directory structure, API contract, component tree, state management, data model,
 ### Budget Income
 
 `Category` active exact normalized `Income` match -> `selectors.ts` income helpers -> BudgetPage income cards and savings-rate selectors. `effectiveCategoryId(transaction, definitions)` resolves a linked definition before all Income/spend classification. `excludedCategoryIdSet` centralizes `excludeFromSpend` and Income exclusion for spend totals and analytics. Budget persistence/export contains definitions, amount snapshots, and transactions only; legacy manual-income keys are dropped during hydration/import.
+
+Spend only: `spendBudgetYears(budgetTransactions)` returns newest-first transaction years, without current-year or snapshot-only additions. `SPEND_ALL_YEARS` is a selector-local symbol sentinel; `spendTransactionsForScope` returns all transactions for it, and `spendCardTotals` aggregates each transaction year with that exact year's snapshot (`{}` when absent), never nearest-year resolution. BudgetPage dispatches `ENSURE_BUDGET_YEAR_SNAPSHOT` only for selected concrete years lacking an expense snapshot, never for All; add/import preserves All, while a concrete scope invalidated by deletion or moving its last transaction resets to All. `availableBudgetYears` remains unchanged for shared non-Spend consumers: transaction years plus the current year.
 
 ### Undo Closed Position
 

@@ -705,6 +705,52 @@ export function availableBudgetYears(transactions: BudgetTransaction[], now: Dat
   return [...set].sort().reverse()
 }
 
+/** Sentinel for the Spend page's transaction-backed all-years scope. */
+export const SPEND_ALL_YEARS = Symbol('spend-all-years')
+export type SpendScope = string | typeof SPEND_ALL_YEARS
+
+/** Distinct transaction years available to the Spend page, newest first. */
+export function spendBudgetYears(transactions: BudgetTransaction[]): string[] {
+  return [...new Set(transactions.map((transaction) => transaction.date.slice(0, 4)))].sort().reverse()
+}
+
+/** Transactions in a Spend scope; all-years deliberately does not use period filtering. */
+export function spendTransactionsForScope(
+  transactions: BudgetTransaction[],
+  scope: SpendScope
+): BudgetTransaction[] {
+  return scope === SPEND_ALL_YEARS
+    ? transactions
+    : transactions.filter((transaction) => transaction.date.slice(0, 4) === scope)
+}
+
+/** Spend-card totals for exact transaction-backed years in the selected scope. */
+export function spendCardTotals(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  scope: SpendScope
+): { budgetedIncome: number; actualIncome: number; budgetedSpend: number; actualSpend: number; variance: number } {
+  const scopedTransactions = spendTransactionsForScope(transactions, scope)
+  const excludedIds = excludedCategoryIdSet(categories)
+  const totals = spendBudgetYears(scopedTransactions).reduce(
+    (sum, year) => {
+      const amounts = amountsByYear[year] ?? {}
+      sum.budgetedIncome += budgetedIncomeForYear(definitions, amountsByYear, categories, year)
+      sum.actualIncome += actualIncomeForYear(scopedTransactions, categories, definitions, year)
+      sum.budgetedSpend += definitions.reduce(
+        (budget, definition) => excludedIds.has(definition.categoryId) ? budget : budget + (amounts[definition.id] ?? 0),
+        0
+      )
+      sum.actualSpend += yearTotalSpend(scopedTransactions, categories, year, definitions)
+      return sum
+    },
+    { budgetedIncome: 0, actualIncome: 0, budgetedSpend: 0, actualSpend: 0 }
+  )
+  return { ...totals, variance: totals.budgetedSpend - totals.actualSpend }
+}
+
 /**
  * Distinct years for the Expenses table: transaction date prefixes, expense
  * amount snapshot keys, and the current local year, sorted ascending.

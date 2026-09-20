@@ -54,6 +54,245 @@ describe('BudgetPage derived income', () => {
   })
 })
 
+describe('BudgetPage Spend scopes', () => {
+  const categories = [
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'income', name: 'Income', updatedAt: '' },
+    { id: 'excluded', name: 'Excluded', updatedAt: '', excludeFromSpend: true },
+  ]
+  const definitions = [
+    { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'monthly' as const },
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' as const },
+    { id: 'ignored', name: 'Ignored', categoryId: 'excluded', frequency: 'monthly' as const },
+  ]
+  const transactions = [
+    { id: 'income-2024', date: '2024-01-01', description: 'Pay 2024', categoryId: 'income', amount: 1000 },
+    { id: 'alpha-2024', date: '2024-03-01', description: 'Alpha spend', categoryId: 'food', amount: 25, accountName: 'Shared account' },
+    { id: 'excluded-2024', date: '2024-04-01', description: 'Excluded 2024', categoryId: 'excluded', amount: 7 },
+    { id: 'income-2025', date: '2025-01-01', description: 'Pay 2025', categoryId: 'income', amount: 2000 },
+    { id: 'zulu-2025', date: '2025-03-01', description: 'Zulu spend', categoryId: 'food', amount: 75, accountName: 'Shared account' },
+    { id: 'excluded-2025', date: '2025-04-01', description: 'Excluded 2025', categoryId: 'excluded', amount: 10 },
+  ]
+
+  const spendState = (extraTransactions = transactions) => ({
+    ...initialState(),
+    budgetExpenseDefinitions: definitions,
+    // 2025 intentionally has transactions but no snapshot; 2023 is snapshot-only.
+    budgetExpenseAmountsByYear: {
+      '2023': { salary: 999, groceries: 999 },
+      '2024': { salary: 100, groceries: 50, ignored: 10 },
+    },
+    budgetTransactions: extraTransactions,
+  })
+
+  const renderSpend = (state = spendState()) => {
+    const dispatch = vi.fn()
+    render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated />)
+    return dispatch
+  }
+
+  const SpendHarness = ({ state = spendState(), actions }: { state?: ReturnType<typeof spendState>; actions: ReturnType<typeof vi.fn> }) => {
+    const [appState, dispatch] = useReducer(appReducer, state)
+    return (
+      <BudgetPage
+        state={appState}
+        dispatch={(action) => {
+          actions(action)
+          dispatch(action)
+        }}
+        categories={categories}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        categoriesHydrated
+      />
+    )
+  }
+
+  const renderSpendHarness = (state = spendState()) => {
+    const actions = vi.fn()
+    render(<SpendHarness state={state} actions={actions} />)
+    return actions
+  }
+
+  it('starts at the newest transaction year and only offers transaction-backed concrete years after All', () => {
+    renderSpend()
+
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(Array.from(yearSelect.options, (option) => option.text)).toEqual(['All', '2025', '2024'])
+    expect(yearSelect.value).toBe('2025')
+    expect(screen.getByText('Actual income (2025)')).toBeTruthy()
+    expect(screen.getByText('Zulu spend')).toBeTruthy()
+    expect(screen.queryByText('Alpha spend')).toBeNull()
+  })
+
+  it('shows an all-years zero state without requesting a snapshot', () => {
+    const dispatch = renderSpend(spendState([]))
+
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(Array.from(yearSelect.options, (option) => option.text)).toEqual(['All'])
+    expect(screen.getByText('Actual income (All years)')).toBeTruthy()
+    expect(screen.getByText('Actual spend (All years)')).toBeTruthy()
+    expect(screen.getByTestId('summary-cards').querySelectorAll('.card')).toHaveLength(5)
+    expect(screen.getAllByText('$0.00')).toHaveLength(5)
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it('aggregates exact transaction years and renders rows from both years under All', () => {
+    renderSpend()
+
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+
+    expect(screen.getByText('Actual income (All years)')).toBeTruthy()
+    expect(screen.getByText('Actual spend (All years)')).toBeTruthy()
+    expect(screen.getByTestId('summary-cards').textContent).toContain('$1,200.00')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('$3,000.00')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('$50.00')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('$100.00')
+    expect(screen.getByText('Alpha spend')).toBeTruthy()
+    expect(screen.getByText('Zulu spend')).toBeTruthy()
+    expect(screen.getByTestId('records-total-row').textContent).toContain('$100.00')
+  })
+
+  it('includes excluded rows and their table total without changing all-years cards', () => {
+    renderSpend()
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+    const cardsBefore = screen.getByTestId('summary-cards').textContent
+
+    fireEvent.click(screen.getByLabelText('Show excluded'))
+
+    expect(screen.getByText('Pay 2024')).toBeTruthy()
+    expect(screen.getByText('Excluded 2025')).toBeTruthy()
+    expect(screen.getByTestId('records-total-row').textContent).toContain('$3,117.00')
+    expect(screen.getByTestId('summary-cards').textContent).toBe(cardsBefore)
+  })
+
+  it('searches, sorts, and paginates the combined all-years records', () => {
+    const pagedTransactions = [
+      ...transactions,
+      ...Array.from({ length: 51 }, (_, index) => ({
+        id: `paged-${index}`,
+        date: `${index % 2 === 0 ? '2024' : '2025'}-06-${String((index % 28) + 1).padStart(2, '0')}`,
+        description: `Paged ${String(index).padStart(2, '0')}`,
+        categoryId: 'food',
+        amount: index + 1,
+      })),
+    ]
+    renderSpend(spendState(pagedTransactions))
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+
+    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'Shared account' } })
+    expect(screen.getByText('Alpha spend')).toBeTruthy()
+    expect(screen.getByText('Zulu spend')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: '' } })
+    fireEvent.click(screen.getByLabelText('Sort by description'))
+    expect(screen.getByText('Alpha spend').compareDocumentPosition(screen.getByText('Paged 00')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByTestId('records-pagination').textContent).toContain('Page 1 of 2')
+    fireEvent.click(screen.getByText('Next'))
+    expect(screen.getByTestId('records-pagination').textContent).toContain('Page 2 of 2')
+    expect(screen.getByText('Paged 49')).toBeTruthy()
+    expect(screen.getByText('Zulu spend')).toBeTruthy()
+  })
+
+  it('restores a concrete year and requests its missing snapshot exactly once', () => {
+    const dispatch = renderSpend()
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
+
+    expect(screen.getByText('Actual income (2025)')).toBeTruthy()
+    expect(screen.getByText('Zulu spend')).toBeTruthy()
+    expect(screen.queryByText('Alpha spend')).toBeNull()
+    expect(screen.getByTestId('summary-cards').textContent).toContain('$2,000.00')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('$75.00')
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2025' })
+  })
+
+  it('keeps All after adding a record without ensuring its year snapshot', () => {
+    const actions = renderSpendHarness()
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+    fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2026-02-01' } })
+    fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'All scope add' } })
+    fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '20' } })
+    fireEvent.click(screen.getByText('Add Record'))
+
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('__spend_all_years__')
+    expect(screen.getByText('All scope add')).toBeTruthy()
+    expect(actions).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' }))
+  })
+
+  it('switches a concrete scope to an added record year and ensures its missing snapshot', () => {
+    const actions = renderSpendHarness()
+    fireEvent.change(screen.getByLabelText('Record date'), { target: { value: '2026-02-01' } })
+    fireEvent.change(screen.getByLabelText('Record description'), { target: { value: 'Concrete scope add' } })
+    fireEvent.change(screen.getByLabelText('Record amount'), { target: { value: '20' } })
+    fireEvent.click(screen.getByText('Add Record'))
+
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2026')
+    expect(screen.getByText('Concrete scope add')).toBeTruthy()
+    expect(actions).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2026' })
+  })
+
+  it('keeps All after importing records without ensuring a snapshot', () => {
+    const actions = renderSpendHarness()
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+    fireEvent.click(screen.getByText('Import transactions…'))
+    fireEvent.change(screen.getByLabelText('Import account name'), { target: { value: 'Imported account' } })
+    fireEvent.change(screen.getByLabelText('Paste CSV text'), {
+      target: { value: 'Date,Description,Amount\n2026-02-01,Imported all scope,30' },
+    })
+    fireEvent.click(screen.getByText('Import'))
+
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('__spend_all_years__')
+    expect(screen.getByText('Imported all scope')).toBeTruthy()
+    expect(actions).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' }))
+  })
+
+  it('moves to All only when deleting the last row in a concrete year', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const lifecycleTransactions = transactions.filter((transaction) => transaction.id === 'alpha-2024' || transaction.id === 'zulu-2025')
+    renderSpendHarness(spendState(lifecycleTransactions))
+    fireEvent.click(screen.getByLabelText('Delete record'))
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('__spend_all_years__')
+    cleanup()
+
+    renderSpendHarness(spendState([...lifecycleTransactions, { id: 'second-2025', date: '2025-06-01', description: 'Second 2025', categoryId: 'food', amount: 5 }]))
+    fireEvent.click(screen.getAllByLabelText('Delete record')[0])
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2025')
+    confirm.mockRestore()
+  })
+
+  it('moves to All only when editing the last row out of a concrete year', () => {
+    const lifecycleTransactions = transactions.filter((transaction) => transaction.id === 'alpha-2024' || transaction.id === 'zulu-2025')
+    renderSpendHarness(spendState(lifecycleTransactions))
+    fireEvent.click(screen.getByText('2025-03-01'))
+    const dateInput = screen.getByLabelText('Edit record date')
+    fireEvent.change(dateInput, { target: { value: '2024-06-01' } })
+    fireEvent.blur(dateInput)
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('__spend_all_years__')
+    cleanup()
+
+    renderSpendHarness(spendState([...lifecycleTransactions, { id: 'second-2025', date: '2025-06-01', description: 'Second 2025', categoryId: 'food', amount: 5 }]))
+    fireEvent.click(screen.getByText('2025-03-01'))
+    const secondDateInput = screen.getByLabelText('Edit record date')
+    fireEvent.change(secondDateInput, { target: { value: '2024-06-01' } })
+    fireEvent.blur(secondDateInput)
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2025')
+  })
+
+  it('leaves scope and snapshot actions unchanged for invalid add and import attempts', () => {
+    const actions = renderSpendHarness()
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+    fireEvent.click(screen.getByText('Add Record'))
+    fireEvent.click(screen.getByText('Import transactions…'))
+    fireEvent.click(screen.getByText('Upload file'))
+    fireEvent.click(screen.getByText('Import'))
+
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('__spend_all_years__')
+    expect(actions).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' }))
+  })
+})
+
 describe('BudgetPage category mapping overlay', () => {
   const year = new Date().getFullYear()
   const categories = [{ id: 'food', name: 'Food', updatedAt: '' }]
