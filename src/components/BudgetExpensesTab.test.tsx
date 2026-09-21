@@ -1,12 +1,11 @@
 import { useReducer } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
 import { initialState, type AppState } from '../lib/state'
 import { appReducer, type AppAction } from '../lib/reducer'
 import type { Category } from '../lib/types'
 import * as importExportModule from '../lib/importExport'
-import { expenseStreamBands } from '../lib/selectors'
 
 vi.mock('../lib/importExport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/importExport')>()),
@@ -225,57 +224,6 @@ describe('BudgetExpensesTab expense summary', () => {
   })
 })
 
-describe('BudgetExpensesTab expense stream chart', () => {
-  const transaction = (id: string, date: string, categoryId: string, amount: number) => ({
-    id,
-    date,
-    description: id,
-    categoryId,
-    amount,
-  })
-
-  it('renders selector bands, year labels, and legend totals', () => {
-    const state = {
-      ...initialState(),
-      budgetTransactions: [
-        transaction('food-2024', '2024-01-01', 'food', -100),
-        transaction('housing-2024', '2024-01-01', 'housing', -300),
-        transaction('food-2025', '2025-01-01', 'food', -150),
-      ],
-    }
-    const expected = expenseStreamBands(state.budgetTransactions, categories, state.budgetExpenseDefinitions)
-    renderTab(state)
-
-    const paths = screen.getAllByTestId('expense-stream-band')
-    expect(paths.map((path) => path.getAttribute('d'))).toEqual(expected.bands.map((band) => band.d))
-    expect(screen.getAllByTestId('expense-stream-year').map((label) => label.textContent)).toEqual(expected.years)
-    expect(screen.getAllByTestId('expense-stream-legend').map((entry) => entry.textContent)).toEqual(
-      expected.legend.map((entry) => `${entry.label}$${entry.total.toFixed(2)}`)
-    )
-    screen.getAllByTestId('expense-stream-swatch').forEach((swatch, index) => {
-      const color = Number.parseInt(expected.legend[index].color.slice(1), 16)
-      expect((swatch as HTMLElement).style.background).toBe(`rgb(${color >> 16}, ${color >> 8 & 255}, ${color & 255})`)
-    })
-  })
-
-  it('renders a single-column stream when only one year has data', () => {
-    renderTab({
-      ...initialState(),
-      budgetTransactions: [transaction('food-2025', '2025-01-01', 'food', -100)],
-    })
-
-    expect(screen.getAllByTestId('expense-stream-band')).toHaveLength(1)
-    expect(screen.getAllByTestId('expense-stream-year').map((label) => label.textContent)).toEqual(['2025'])
-  })
-
-  it('shows an empty state without rendering an SVG when there is no expense activity', () => {
-    renderTab(initialState())
-
-    expect(screen.getByTestId('expense-stream-chart').textContent).toContain('No expense activity to chart.')
-    expect(screen.queryByRole('img', { name: 'Expense by category over time' })).toBeNull()
-  })
-})
-
 describe('BudgetExpensesTab action items', () => {
   const year = String(new Date().getFullYear())
   const transaction = (id: string, categoryId: string, amount: number) => ({
@@ -345,7 +293,7 @@ describe('BudgetExpensesTab category breakdown drilldown', () => {
     amount,
     ...(spendExpenseId ? { spendExpenseId } : {}),
   })
-  const categoryRow = (name: string) => screen.getAllByText(name).at(-1)!
+  const categoryRow = (name: string) => within(screen.getByTestId('category-breakdown')).getByText(name)
 
   it('shows linked expense lines with their budget and actual amounts', () => {
     renderTab({
@@ -444,15 +392,15 @@ describe('BudgetExpensesTab category breakdown drilldown', () => {
     expect(screen.queryByText('Unlinked transactions')).toBeNull()
   })
 
-  it('renders Expenses before Category Breakdown', () => {
+  it('renders Category Breakdown above action items and the Expenses table without the expense stream chart', () => {
     renderTab(initialState())
 
     expect(Array.from(document.querySelectorAll('.card-title')).map((element) => element.textContent)).toEqual([
       'Expense Summary',
-      'Expense by category',
+      'Category Breakdown',
       'Action items',
       'Expenses',
-      'Category Breakdown',
     ])
+    expect(screen.queryByText('Expense by category')).toBeNull()
   })
 })

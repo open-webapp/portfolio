@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, CATEGORY_SHARE_PALETTE, categoryBreakdown, computeRecurringSpendIds, expenseStreamBands, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
 import type { BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
@@ -420,64 +420,6 @@ describe('sankeyFlowData', () => {
 
     expect(result.nodes.filter((node) => node.column === 'actual').every((node) => node.height === 0)).toBe(true)
     expect(() => sankeyFlowData(sankeyDefinitions, {}, [], sankeyCategories, '2025')).not.toThrow()
-  })
-})
-
-describe('expenseStreamBands', () => {
-  const streamCategories: Category[] = [
-    { id: 'food', name: 'Food', updatedAt: '' },
-    { id: 'housing', name: 'Housing', updatedAt: '' },
-  ]
-
-  it('builds one multi-point stacked area per category across years with data', () => {
-    const result = expenseStreamBands([
-      tx({ id: 'food-2024', date: '2024-01-01', amount: -100 }),
-      tx({ id: 'housing-2024', date: '2024-02-01', categoryId: 'housing', amount: -300 }),
-      tx({ id: 'food-2025', date: '2025-01-01', amount: -150 }),
-      tx({ id: 'housing-2025', date: '2025-02-01', categoryId: 'housing', amount: -350 }),
-    ], streamCategories, [])
-
-    expect(result.years).toEqual(['2024', '2025'])
-    expect(result.bands).toHaveLength(2)
-    expect(result.bands.every((band) => /^M .+ L .+ Z$/.test(band.d))).toBe(true)
-  })
-
-  it('reconciles legend totals to actual scoped category spend', () => {
-    const transactions = [
-      tx({ id: 'food-2024', date: '2024-01-01', amount: -100 }),
-      tx({ id: 'housing-2024', date: '2024-02-01', categoryId: 'housing', amount: -300 }),
-      tx({ id: 'food-2025', date: '2025-01-01', amount: -150 }),
-    ]
-    const result = expenseStreamBands(transactions, streamCategories, [])
-
-    expect(result.legend.reduce((sum, entry) => sum + entry.total, 0)).toBe(550)
-  })
-
-  it('excludes years without non-excluded transaction activity', () => {
-    const result = expenseStreamBands([
-      tx({ id: 'food-2024', date: '2024-01-01', amount: -100 }),
-      tx({ id: 'food-2026', date: '2026-01-01', categoryId: 'income', amount: 1000 }),
-    ], [...streamCategories, { id: 'income', name: 'Income', updatedAt: '' }], [])
-
-    expect(result.years).toEqual(['2024'])
-    expect(result.bands).toHaveLength(1)
-  })
-
-  it('clamps colors to the final palette entry for categories beyond six', () => {
-    const manyCategories = Array.from({ length: 7 }, (_, index) => ({ id: `category-${index}`, name: `Category ${index}`, updatedAt: '' }))
-    const result = expenseStreamBands(
-      manyCategories.map((category, index) => tx({ id: category.id, categoryId: category.id, amount: -(index + 1) })),
-      manyCategories,
-      []
-    )
-
-    expect(result.bands).toHaveLength(7)
-    expect(result.bands.every((band) => band.color !== undefined)).toBe(true)
-    expect(result.bands.at(-1)?.color).toBe(CATEGORY_SHARE_PALETTE.at(-1))
-  })
-
-  it('returns empty chart data without transactions', () => {
-    expect(expenseStreamBands([], streamCategories, [])).toEqual({ years: [], bands: [], legend: [] })
   })
 })
 

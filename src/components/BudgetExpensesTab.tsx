@@ -10,7 +10,6 @@ import { parseExpensePaste } from '../lib/expensePasteImport'
 import { planExpensePasteImport } from '../lib/state'
 import { buildExpenseCsv } from '../lib/expenseExport'
 import { downloadCsvAsFile } from '../lib/importExport'
-import { BudgetStreamChart } from './BudgetStreamChart'
 
 export interface BudgetExpensesTabProps {
   state: AppState
@@ -313,11 +312,126 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
           </div>
         </div>
       </div>
-      <BudgetStreamChart
-        transactions={state.budgetTransactions}
-        categories={categories}
-        definitions={state.budgetExpenseDefinitions}
-      />
+      <div className="card blueprint elev-sm" data-testid="category-breakdown" style={{ marginBottom: 'var(--space-4)' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            flexWrap: 'wrap',
+            gap: 'var(--space-3)',
+            marginBottom: 'var(--space-3)',
+          }}
+        >
+          <div className="card-title">Category Breakdown</div>
+          <div className="field" style={{ maxWidth: '160px', margin: 0 }}>
+            <label>Year</label>
+            <select
+              className="input"
+              aria-label="Select breakdown year"
+              value={breakdownYear}
+              onChange={(e) => setBreakdownYear(e.target.value)}
+            >
+              {availableBudgetYears(state.budgetTransactions, new Date()).map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {breakdown.length === 0 ? (
+          <div className="text-muted" style={{ fontSize: '12px' }}>
+            Add expenses to see the breakdown.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            {breakdown.map(({ categoryId, name, amount, actual, variance, budgetPct, actualPct, actualColor, varianceColor, drillLines, unlinkedActual }) => (
+              <div key={categoryId} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                <div
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setExpandedCategoryId((id) => (id === categoryId ? null : categoryId))}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                      <ChevronIcon direction={expandedCategoryId === categoryId ? 'down' : 'right'} />
+                      {name}
+                    </div>
+                    <div style={{ fontSize: '12px', color: varianceColor }}>
+                      {variance < 0
+                        ? `Over by ${fmtUSD(Math.abs(variance))}`
+                        : `Under by ${fmtUSD(Math.abs(variance))}`}
+                    </div>
+                  </div>
+                  <div style={{ position: 'relative', width: '100%', height: '8px' }}>
+                    <div
+                      data-testid="category-bar-budget"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: `${budgetPct}%`,
+                        height: '100%',
+                        borderRadius: '4px',
+                        background: 'var(--color-border, #e5e5e5)',
+                      }}
+                    />
+                    <div
+                      data-testid="category-bar-fill"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: `${actualPct}%`,
+                        height: '100%',
+                        borderRadius: '4px',
+                        background: actualColor,
+                      }}
+                    />
+                  </div>
+                  <div className="text-muted" style={{ fontSize: '12px' }}>
+                    Budget {fmtUSD(amount)} · Actual {fmtUSD(actual)}
+                  </div>
+                </div>
+                {expandedCategoryId === categoryId && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-2) 0 0 var(--space-4)' }}>
+                    {drillLines.map((line) => (
+                      <div key={line.id} data-testid={`category-drill-line-${line.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12px' }}>
+                          <div>{line.name} ({line.frequencyLabel})</div>
+                          <div style={{ fontSize: '11px', color: line.varianceColor }}>
+                            {line.variance < 0
+                              ? `Over by ${fmtUSD(Math.abs(line.variance))}`
+                              : `Under by ${fmtUSD(Math.abs(line.variance))}`}
+                          </div>
+                        </div>
+                        <div style={{ position: 'relative', width: '100%', height: '6px' }}>
+                          <div style={{ position: 'absolute', top: 0, left: 0, width: `${line.budgetPct}%`, height: '100%', borderRadius: '3px', background: 'var(--color-border, #e5e5e5)' }} />
+                          <div style={{ position: 'absolute', top: 0, left: 0, width: `${line.actualPct}%`, height: '100%', borderRadius: '3px', background: line.actualColor }} />
+                        </div>
+                        <div className="text-muted" style={{ fontSize: '11px' }}>
+                          Budget {fmtUSD(line.budget)} · Actual {fmtUSD(line.actual)}
+                        </div>
+                      </div>
+                    ))}
+                    {unlinkedActual !== null && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                        <div>Unlinked transactions</div>
+                        <div>{fmtUSD(unlinkedActual)}</div>
+                      </div>
+                    )}
+                    {drillLines.length === 0 && unlinkedActual === null && (
+                      <div className="text-muted" style={{ fontSize: '12px' }}>
+                        No budget lines in this category.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="card blueprint elev-sm" data-testid="expense-action-items" style={{ marginBottom: 'var(--space-4)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>Action items</div>
         {actionItems.length === 0 ? (
@@ -557,126 +671,6 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
         </div>
       </div>
 
-      <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-4)' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-end',
-            flexWrap: 'wrap',
-            gap: 'var(--space-3)',
-            marginBottom: 'var(--space-3)',
-          }}
-        >
-          <div className="card-title">Category Breakdown</div>
-          <div className="field" style={{ maxWidth: '160px', margin: 0 }}>
-            <label>Year</label>
-            <select
-              className="input"
-              aria-label="Select breakdown year"
-              value={breakdownYear}
-              onChange={(e) => setBreakdownYear(e.target.value)}
-            >
-              {availableBudgetYears(state.budgetTransactions, new Date()).map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        {breakdown.length === 0 ? (
-          <div className="text-muted" style={{ fontSize: '12px' }}>
-            Add expenses to see the breakdown.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            {breakdown.map(({ categoryId, name, amount, actual, variance, budgetPct, actualPct, actualColor, varianceColor, drillLines, unlinkedActual }) => (
-              <div key={categoryId} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <div
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setExpandedCategoryId((id) => (id === categoryId ? null : categoryId))}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-                      <ChevronIcon direction={expandedCategoryId === categoryId ? 'down' : 'right'} />
-                      {name}
-                    </div>
-                    <div style={{ fontSize: '12px', color: varianceColor }}>
-                      {variance < 0
-                        ? `Over by ${fmtUSD(Math.abs(variance))}`
-                        : `Under by ${fmtUSD(Math.abs(variance))}`}
-                    </div>
-                  </div>
-                  <div style={{ position: 'relative', width: '100%', height: '8px' }}>
-                    <div
-                      data-testid="category-bar-budget"
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: `${budgetPct}%`,
-                        height: '100%',
-                        borderRadius: '4px',
-                        background: 'var(--color-border, #e5e5e5)',
-                      }}
-                    />
-                    <div
-                      data-testid="category-bar-fill"
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: `${actualPct}%`,
-                        height: '100%',
-                        borderRadius: '4px',
-                        background: actualColor,
-                      }}
-                    />
-                  </div>
-                  <div className="text-muted" style={{ fontSize: '12px' }}>
-                    Budget {fmtUSD(amount)} · Actual {fmtUSD(actual)}
-                  </div>
-                </div>
-                {expandedCategoryId === categoryId && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-2) 0 0 var(--space-4)' }}>
-                    {drillLines.map((line) => (
-                      <div key={line.id} data-testid={`category-drill-line-${line.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12px' }}>
-                          <div>{line.name} ({line.frequencyLabel})</div>
-                          <div style={{ fontSize: '11px', color: line.varianceColor }}>
-                            {line.variance < 0
-                              ? `Over by ${fmtUSD(Math.abs(line.variance))}`
-                              : `Under by ${fmtUSD(Math.abs(line.variance))}`}
-                          </div>
-                        </div>
-                        <div style={{ position: 'relative', width: '100%', height: '6px' }}>
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: `${line.budgetPct}%`, height: '100%', borderRadius: '3px', background: 'var(--color-border, #e5e5e5)' }} />
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: `${line.actualPct}%`, height: '100%', borderRadius: '3px', background: line.actualColor }} />
-                        </div>
-                        <div className="text-muted" style={{ fontSize: '11px' }}>
-                          Budget {fmtUSD(line.budget)} · Actual {fmtUSD(line.actual)}
-                        </div>
-                      </div>
-                    ))}
-                    {unlinkedActual !== null && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                        <div>Unlinked transactions</div>
-                        <div>{fmtUSD(unlinkedActual)}</div>
-                      </div>
-                    )}
-                    {drillLines.length === 0 && unlinkedActual === null && (
-                      <div className="text-muted" style={{ fontSize: '12px' }}>
-                        No budget lines in this category.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {showImportExpensesDialog && (
         <div className="dialog-backdrop" onClick={closeImportExpensesDialog}>

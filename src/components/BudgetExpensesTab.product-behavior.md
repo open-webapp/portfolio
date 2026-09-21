@@ -4,14 +4,13 @@ Component behavior reference. Sibling: `BudgetExpensesTab.design.md`.
 
 ## Actual-Spend Overview
 
-- Above the existing Expenses table and Category Breakdown, the tab shows four summary cards, an expense-by-category stream graph, and action items. The table and drilldown retain their existing behavior.
-- Summary cards and action items use the Category Breakdown's selected year. It initially selects the first available budget year; changing its Year control refreshes those sections and the breakdown. The stream graph spans all active-spend years.
+- Above the existing Expenses table, the tab shows four summary cards, Category Breakdown, and action items. The table and drilldown retain their existing behavior.
+- Summary cards and action items use the Category Breakdown's selected year. It initially selects the first available budget year; changing its Year control refreshes those sections and the breakdown.
 - **Spend** is the sum of absolute transaction amounts for that year, shown against the sum of configured expense amounts for that year.
 - **Average transaction** is spend divided by transaction count, shown against the largest absolute transaction.
 - **Largest transaction** shows its absolute amount, category, and description; with no transactions it shows `$0` and `No transactions`.
 - **Top category by spend** shows the largest summed absolute transaction amount by category; with no transactions it shows `$0` and `No transactions`.
 - Progress bars never exceed 100%; zero denominators render an empty bar.
-- **Expense by category** is a stacked annual actual-spend area graph from all active-spend years, with year labels and a category legend showing all-time displayed totals. It omits excluded/deleted categories and categories without positive spend. If no graphable data exists, it shows `No expense activity to chart.`
 - **Action items** lists each category whose selected-year actual exceeds its budget, highest dollar overage first. Each item shows category, dollar overage, percentage over budget, and review guidance. A category with actual spend and no budget shows `∞%`; no overages shows `No categories over budget`.
 
 ## Expense CSV Download
