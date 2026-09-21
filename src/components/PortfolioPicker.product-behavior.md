@@ -4,13 +4,13 @@ Sibling doc: `PortfolioPicker.design.md` (props, state, data flow).
 
 ## Overview
 
-Landing page at the `picker` route. Lists existing local portfolios (open/rename/delete) and offers three ways to get a new one: Create, Load from Google Drive, Import from file. All three flows are inline on the page — no modal, no route change.
+Landing page at the `picker` route. A centered Ledger heading precedes an always-visible `Open` / `Create` / `Google Drive` segmented control; only the selected panel renders. Local-file import is an action within Create. Mode switches preserve all in-progress panel state. Global Mapping remains a separate, unchanged section below this picker.
 
 ## Existing portfolios list
 
 | Condition | Behavior |
 |---|---|
-| `portfolios` empty | Shows italic "No portfolios yet. Create one below to get started." |
+| `portfolios` empty | Open panel shows italic "No portfolios yet. Create one to get started." |
 | Portfolio row | Name (click to rename inline), "Created {date}" (localized `createdAt`), "Delete" text link, "Open" button |
 | Click name | Turns into a text input, autofocus |
 | Rename: Enter | Commits if trimmed name is non-empty and differs (case-insensitive) from current name; calls `onRename(id, trimmed)` |
@@ -22,7 +22,7 @@ Landing page at the `picker` route. Lists existing local portfolios (open/rename
 
 ## Flow 1 — Create
 
-1. Enter a name in "Enter a portfolio name", click "Create" (or press Enter in the name field).
+1. Select `Create`, enter a name in the `e.g. Retirement` field, then click "Create" (or press Enter in the name field).
 2. Blank/whitespace-only name: no-op, panel does not open.
 3. Opens inline password + confirm panel below (name field becomes disabled).
 4. Validation on "Set password & create":
@@ -36,7 +36,7 @@ Landing page at the `picker` route. Lists existing local portfolios (open/rename
 
 ## Flow 2 — Import from Google Drive folder
 
-1. "Load from Google Drive" button under the portfolios list.
+1. Select `Google Drive`, then its default `My portfolios` submode; the "Load from Google Drive" button opens that panel.
    - **Offline** (`isOnline === false`): button disabled, `title="Connect to the internet to import from Google Drive"`.
    - **Loading**: label becomes "Loading Google Drive...", button disabled during the list fetch.
 2. On click, calls `onListDriveFolders()`, then filters out any folder whose name matches (case-insensitive, trimmed) an existing local portfolio's name.
@@ -56,7 +56,7 @@ Landing page at the `picker` route. Lists existing local portfolios (open/rename
 
 ## Flow 3 — Import from file
 
-1. "Import from file" text link (under the name field) triggers a hidden `<input type="file" accept=".json,application/json">`.
+1. In the `Create` panel, "Import from file" triggers a hidden `<input type="file" accept=".json,application/json">`.
 2. Picking a file that fails to parse as an encrypted envelope (`ImportMalformedFileError`) → shows **"This is not a valid backup file."**; no name/password panel opens; any previous file-import state is reset.
 3. Any other parse failure while reading the file → shows the error's message, or **"Could not read the selected file."** as fallback.
 4. Picking a valid envelope:
@@ -70,6 +70,7 @@ Landing page at the `picker` route. Lists existing local portfolios (open/rename
 
 ## Cross-flow notes
 
-- While the Create password panel is open, the name field and "Import from file" link are disabled (mutually exclusive with editing the create name); the Drive panel and its own rows are independent and usable at the same time.
-- Each of the three panels tracks its own error/loading state — an error in one flow never affects the others.
+- While the Create password panel is open, the name field and "Import from file" action are disabled (mutually exclusive with editing the create name).
+- Google Drive has `My portfolios` and `Shared portfolio` submodes. Shared uses the unscoped folder Picker, then the existing password form.
+- Each panel tracks its own error/loading state; switching away and back preserves it.
 - No flow shows a global spinner/overlay; all pending states are local button-label changes ("Creating...", "Importing...", "Loading Google Drive...").

@@ -22,7 +22,9 @@ Sibling doc: `PortfolioPicker.product-behavior.md` (user-visible behavior, edge 
 
 ## Local state
 
-**List / rename** (top-level):
+**Mode controls / list / rename** (top-level):
+- `pickerMode: 'open' | 'create' | 'drive'` — defaults to `open`; controls the only rendered top-level panel
+- `driveMode: 'mine' | 'shared'` — defaults to `mine`; controls the Drive subpanel
 - `renamingId: string | null`, `renameDraft: string`
 - `createDraft: string`, `error: string | null` (unused by current create-error path; create errors go through `createError`)
 
@@ -40,7 +42,7 @@ Sibling doc: `PortfolioPicker.product-behavior.md` (user-visible behavior, edge 
 - `fileImportError: string | null`
 - `fileImporting: boolean`
 
-**Drive-folder panel:**
+**Drive-folder panel (`pickerMode === 'drive' && driveMode === 'mine'`):**
 - `driveFoldersOpen: boolean` — whether the panel (rows or error) is shown
 - `driveFolders: {name: string; id: string}[] | null` — post-filter list, `null` on connect error
 - `driveListError: string | null` — "Couldn't connect to Google Drive."
@@ -58,6 +60,7 @@ Sibling doc: `PortfolioPicker.product-behavior.md` (user-visible behavior, edge 
 
 ## Panel state machines
 
+- **Top-level modes**: `Open`, `Create`, and `Google Drive` are radio-backed `.seg` options, always rendered below the centered `Ledger` / `Your portfolios` heading. Changing a mode only changes which panel is rendered; it does not reset the inactive panel state. Google Drive nests another `.seg` for `My portfolios` and `Shared portfolio`; the latter retains the existing unscoped Picker plus password-submit flow.
 - **Create**: `closed` (name field enabled, "Create" button) → `open` (password+confirm shown, name field disabled) on Create click with non-blank name → `submitting` (`creating=true`, button "Creating...") on valid submit → **success**: unmounts via route change in `App.tsx`, no local reset needed → **error**: `createError` set, `newPassword`/`newConfirm` cleared, stays `open`. "Cancel" from `open` → `closed`, clearing password state.
 - **File import**: `idle` (no envelope) → on file pick, either `error` (`fileImportError` set, envelope stays `null`, stays effectively `idle`) or `open` (envelope set, name prefilled, password field shown) → `submitting` (`fileImporting=true`) on submit → **success**: `resetFileImport()` + clears file input value, then route change → **error**: `fileImportError` set, `fileImportPassword` cleared, envelope/name preserved, stays `open`. "Cancel" from `open` → `idle` via `resetFileImport()` + clears file input value.
 - **Drive folders**: `closed` → `loading` (`driveListLoading=true`) on trigger click → either `error` (`driveListError` set, `driveFolders=null`, `driveFoldersOpen=true`) or `listed` (`driveFolders` = filtered array, `driveEmptyMessage` set if applicable, `driveFoldersOpen=true`). "Dismiss" on `error` → `closed` (`driveFoldersOpen=false`). Each row within `listed` has its **own independent** sub-machine keyed by folder id in `driveRowState`: `collapsed` (`passwordOpen=false`) → `open` (`passwordOpen=true`) on that row's Import click → `submitting` (`importing=true`) on submit → **success**: route change (no local row reset needed, component unmounts) → **error**: that row's `error` set, `password` cleared, `passwordOpen` stays `true`. Toggling one row's `passwordOpen` never touches any other row's entry in the map.
@@ -83,6 +86,6 @@ Sibling doc: `PortfolioPicker.product-behavior.md` (user-visible behavior, edge 
 ## Design patterns
 
 - Controlled inputs throughout; no uncontrolled form state beyond the file `<input>` itself (cleared imperatively via `fileInputRef.current.value = ''` on cancel/success so re-picking the same filename re-fires `onChange`).
-- Uses existing design-system classes only (`card blueprint elev-sm`, `field`/`input`, `btn`/`btn-primary`/`btn-ghost`, `tag tag-outline`); layout/spacing via inline `style` on wrapper `div`s.
+- Uses existing design-system classes only (`card blueprint elev-sm`, `seg`/`seg-opt`, `field`/`input`, `btn`/`btn-primary`/`btn-secondary`/`btn-ghost`, `tag tag-outline`); layout/spacing via inline `style` on wrapper `div`s. Picker column max width is 520px. Global Mapping is structurally unchanged below the picker modes.
 - Drive-folder name-collision filtering (`nameKey` from `lib/portfolioRegistry.ts`) happens client-side in the picker after `onListDriveFolders()` resolves — the callback itself returns the unfiltered Drive listing.
 - Per-row keyed state (`Record<folderId, DriveRowState>`) is the pattern for any future list-of-independent-inline-forms UI in this component.

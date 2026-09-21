@@ -101,6 +101,15 @@ function getFileInput(container: HTMLElement): HTMLInputElement {
   return input as HTMLInputElement
 }
 
+function selectPickerMode(name: 'Open' | 'Create' | 'Google Drive') {
+  fireEvent.click(screen.getByRole('radio', { name }))
+}
+
+function selectSharedDriveMode() {
+  selectPickerMode('Google Drive')
+  fireEvent.click(screen.getByRole('radio', { name: 'Shared portfolio' }))
+}
+
 describe('PortfolioPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -121,6 +130,19 @@ describe('PortfolioPicker', () => {
   })
 
   describe('existing portfolios list (regression)', () => {
+    it('renders the reference mode controls and only the selected panel', () => {
+      renderPicker()
+
+      expect((screen.getByRole('radio', { name: 'Open' }) as HTMLInputElement).checked).toBe(true)
+      expect(screen.getByRole('radio', { name: 'Create' })).toBeTruthy()
+      expect(screen.getByRole('radio', { name: 'Google Drive' })).toBeTruthy()
+      expect(screen.queryByPlaceholderText('e.g. Retirement')).toBeFalsy()
+
+      selectPickerMode('Create')
+      expect(screen.getByPlaceholderText('e.g. Retirement')).toBeTruthy()
+      expect(screen.queryByText('No portfolios yet. Create one to get started.')).toBeFalsy()
+    })
+
     it('renders existing portfolios and open/delete/rename still work', async () => {
       const portfolio = makePortfolio({ name: 'Retirement' })
       const { props } = renderPicker({ portfolios: [portfolio] })
@@ -163,7 +185,7 @@ describe('PortfolioPicker', () => {
         expect(loadGlobalCategoryState).toHaveBeenCalledWith([])
       })
 
-      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[1] as HTMLInputElement
+      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[0] as HTMLInputElement
       fireEvent.change(mappingInput, {
         target: { files: [new File(['{}'], 'mapping.json', { type: 'application/json' })] },
       })
@@ -197,7 +219,7 @@ describe('PortfolioPicker', () => {
       await waitFor(() => {
         expect((screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement).disabled).toBe(false)
       })
-      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[1] as HTMLInputElement
+      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[0] as HTMLInputElement
       fireEvent.change(mappingInput, { target: { files: [new File(['{}'], 'mapping.json')] } })
 
       await waitFor(() => {
@@ -212,7 +234,7 @@ describe('PortfolioPicker', () => {
       })
       const { container } = renderPicker()
       const download = screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement
-      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[1] as HTMLInputElement
+      const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[0] as HTMLInputElement
 
       fireEvent.change(mappingInput, { target: { files: [new File(['not json'], 'mapping.json')] } })
 
@@ -349,6 +371,7 @@ describe('PortfolioPicker', () => {
   describe('file-import panel', () => {
     it('clicking the "Import from file" button triggers the hidden file input', () => {
       const { container } = renderPicker()
+      selectPickerMode('Create')
       const fileInput = getFileInput(container)
       const clickSpy = vi.spyOn(fileInput, 'click')
 
@@ -362,6 +385,7 @@ describe('PortfolioPicker', () => {
         throw new ImportMalformedFileError('bad file')
       })
       const { container } = renderPicker()
+      selectPickerMode('Create')
       const fileInput = getFileInput(container)
       const file = new File(['not json'], 'garbage.txt', { type: 'text/plain' })
 
@@ -374,6 +398,7 @@ describe('PortfolioPicker', () => {
     it('picking a valid envelope file prefills the name and shows a password field', async () => {
       vi.mocked(parseImportFile).mockReturnValue(fakeEnvelope)
       const { container } = renderPicker()
+      selectPickerMode('Create')
       const fileInput = getFileInput(container)
       const file = new File(['{}'], 'MyBackup.json', { type: 'application/json' })
 
@@ -387,6 +412,7 @@ describe('PortfolioPicker', () => {
       vi.mocked(parseImportFile).mockReturnValue(fakeEnvelope)
       const onImportFromFile = vi.fn().mockRejectedValue(new ImportDecryptError('nope'))
       const { container } = renderPicker({ onImportFromFile })
+      selectPickerMode('Create')
       const fileInput = getFileInput(container)
       const file = new File(['{}'], 'MyBackup.json', { type: 'application/json' })
       fireEvent.change(fileInput, { target: { files: [file] } })
@@ -404,6 +430,7 @@ describe('PortfolioPicker', () => {
       vi.mocked(parseImportFile).mockReturnValue(fakeEnvelope)
       const onImportFromFile = vi.fn().mockResolvedValue(undefined)
       const { container } = renderPicker({ onImportFromFile })
+      selectPickerMode('Create')
       const fileInput = getFileInput(container)
       const file = new File(['{}'], 'MyBackup.json', { type: 'application/json' })
       fireEvent.change(fileInput, { target: { files: [file] } })
@@ -422,6 +449,7 @@ describe('PortfolioPicker', () => {
   describe('Drive-folder panel', () => {
     it('disables the trigger button and shows offline tooltip when isOnline is false', () => {
       renderPicker({ isOnline: false })
+      selectPickerMode('Google Drive')
       const button = screen.getByRole('button', { name: 'Load from Google Drive' }) as HTMLButtonElement
 
       expect(button.disabled).toBe(true)
@@ -439,6 +467,7 @@ describe('PortfolioPicker', () => {
         portfolios: [makePortfolio({ name: 'Retirement' })],
         onListDriveFolders,
       })
+      selectPickerMode('Google Drive')
 
       fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
 
@@ -449,6 +478,7 @@ describe('PortfolioPicker', () => {
 
     it('shows "No portfolios found in Google Drive." when the list is empty', async () => {
       renderPicker({ onListDriveFolders: vi.fn().mockResolvedValue([]) })
+      selectPickerMode('Google Drive')
 
       fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
 
@@ -460,6 +490,7 @@ describe('PortfolioPicker', () => {
         portfolios: [makePortfolio({ name: 'Retirement' })],
         onListDriveFolders: vi.fn().mockResolvedValue([{ name: 'retirement', id: 'd1' }]),
       })
+      selectPickerMode('Google Drive')
 
       fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
 
@@ -470,6 +501,7 @@ describe('PortfolioPicker', () => {
 
     it("shows \"Couldn't connect to Google Drive.\" and no rows when onListDriveFolders rejects", async () => {
       renderPicker({ onListDriveFolders: vi.fn().mockRejectedValue(new Error('network')) })
+      selectPickerMode('Google Drive')
 
       fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
 
@@ -488,6 +520,7 @@ describe('PortfolioPicker', () => {
         ]),
         onImportFromDriveFolder,
       })
+      selectPickerMode('Google Drive')
 
       fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
       await screen.findByText('Alpha')
@@ -503,13 +536,13 @@ describe('PortfolioPicker', () => {
       expect(screen.getAllByRole('button', { name: 'Import' })).toHaveLength(2)
 
       const passwordInput = screen.getByPlaceholderText("Enter the portfolio's password")
-      const alphaRow = passwordInput.closest('.card') as HTMLElement
+      const alphaRow = passwordInput.closest('div[style*="padding"]') as HTMLElement
       fireEvent.change(passwordInput, { target: { value: 'wrong' } })
       fireEvent.click(within(alphaRow).getByRole('button', { name: 'Import' }))
 
       expect(await screen.findByText('Incorrect password.')).toBeTruthy()
       // Second row unaffected: still just its trigger button, no error text near it.
-      const betaRow = screen.getByText('Beta').closest('.card') as HTMLElement
+      const betaRow = screen.getByText('Beta').closest('div[style*="padding"]') as HTMLElement
       expect(betaRow.querySelector('input[type="password"]')).toBeFalsy()
       expect(betaRow.textContent).not.toContain('Incorrect password.')
     })
@@ -520,6 +553,7 @@ describe('PortfolioPicker', () => {
         onListDriveFolders: vi.fn().mockResolvedValue([{ name: 'Alpha', id: 'd1' }]),
         onImportFromDriveFolder,
       })
+      selectPickerMode('Google Drive')
 
       fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
       await screen.findByText('Alpha')
@@ -540,6 +574,7 @@ describe('PortfolioPicker', () => {
       const onImportSharedPortfolio = vi.fn().mockResolvedValue(undefined)
       vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
       renderPicker({ onImportSharedPortfolio })
+      selectSharedDriveMode()
 
       fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
 
@@ -557,6 +592,7 @@ describe('PortfolioPicker', () => {
       const pickFile = vi.fn().mockResolvedValue(null)
       vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
       renderPicker()
+      selectSharedDriveMode()
 
       fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
 
@@ -571,6 +607,7 @@ describe('PortfolioPicker', () => {
         .mockRejectedValue(new DriveDecryptError('nope', new Uint8Array(), fakeEnvelope))
       vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
       renderPicker({ onImportSharedPortfolio })
+      selectSharedDriveMode()
 
       fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
       const passwordInput = await screen.findByPlaceholderText("Enter the portfolio's password")
@@ -587,6 +624,7 @@ describe('PortfolioPicker', () => {
         .mockRejectedValue(new DriveMalformedBackupError('missing portfolio-state.json'))
       vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
       renderPicker({ onImportSharedPortfolio })
+      selectSharedDriveMode()
 
       fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
       const passwordInput = await screen.findByPlaceholderText("Enter the portfolio's password")
@@ -605,16 +643,17 @@ describe('PortfolioPicker', () => {
       ],
     })
 
-    expect(within(screen.getByText('Shared portfolio').closest('.card') as HTMLElement).getByText('Shared')).toBeTruthy()
-    expect(within(screen.getByText('Local portfolio').closest('.card') as HTMLElement).queryByText('Shared')).toBeFalsy()
+    expect(within(screen.getByText('Shared portfolio').parentElement as HTMLElement).getByText('Shared')).toBeTruthy()
+    expect(within(screen.getByText('Local portfolio').parentElement as HTMLElement).queryByText('Shared')).toBeFalsy()
   })
 
   describe('Create panel', () => {
     it('clicking Create with a name entered opens the password+confirm panel', () => {
       renderPicker()
+      selectPickerMode('Create')
 
       expect(screen.queryByText('New password')).toBeFalsy()
-      fireEvent.change(screen.getByPlaceholderText('Enter a portfolio name'), {
+      fireEvent.change(screen.getByPlaceholderText('e.g. Retirement'), {
         target: { value: 'New Portfolio' },
       })
       fireEvent.click(screen.getByRole('button', { name: 'Create' }))
@@ -626,8 +665,9 @@ describe('PortfolioPicker', () => {
     it('short password shows a validation error and does not call onCreateNew; mismatched confirm shows a different error', async () => {
       const onCreateNew = vi.fn()
       renderPicker({ onCreateNew })
+      selectPickerMode('Create')
 
-      fireEvent.change(screen.getByPlaceholderText('Enter a portfolio name'), {
+      fireEvent.change(screen.getByPlaceholderText('e.g. Retirement'), {
         target: { value: 'New Portfolio' },
       })
       fireEvent.click(screen.getByRole('button', { name: 'Create' }))
@@ -654,8 +694,9 @@ describe('PortfolioPicker', () => {
     it('happy path calls onCreateNew once with (name, password)', async () => {
       const onCreateNew = vi.fn().mockResolvedValue(undefined)
       renderPicker({ onCreateNew })
+      selectPickerMode('Create')
 
-      fireEvent.change(screen.getByPlaceholderText('Enter a portfolio name'), {
+      fireEvent.change(screen.getByPlaceholderText('e.g. Retirement'), {
         target: { value: 'New Portfolio' },
       })
       fireEvent.click(screen.getByRole('button', { name: 'Create' }))
@@ -677,8 +718,9 @@ describe('PortfolioPicker', () => {
     it('onCreateNew rejecting shows an inline error and keeps the panel open', async () => {
       const onCreateNew = vi.fn().mockRejectedValue(new Error('A portfolio with this name already exists.'))
       renderPicker({ onCreateNew })
+      selectPickerMode('Create')
 
-      fireEvent.change(screen.getByPlaceholderText('Enter a portfolio name'), {
+      fireEvent.change(screen.getByPlaceholderText('e.g. Retirement'), {
         target: { value: 'Dup' },
       })
       fireEvent.click(screen.getByRole('button', { name: 'Create' }))

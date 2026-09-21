@@ -225,7 +225,7 @@ Dialog chrome: `.dialog.blueprint` + four corner marks; width `min(96vw, 1400px)
 
 ## Portfolio picker
 
-Available without opening a portfolio. Local portfolio rows show a **Shared** badge when linked to a shared Google Drive folder.
+Available without opening a portfolio. A centered `Ledger` / `Your portfolios` heading and `Open` / `Create` / `Google Drive` segmented control organize the picker; only the selected panel renders, and switching panels preserves its local state. Google Drive has `My portfolios` and `Shared portfolio` submodes. Local backup-file import remains in Create. Local portfolio rows show a **Shared** badge when linked to a shared Google Drive folder. Global Mapping below the picker is unchanged.
 
 - **Import a shared portfolio**: opens an unscoped Google Picker for one folder, then prompts for that portfolio's password. A successful decrypt creates and opens a new local portfolio linked to the selected folder.
 - **Shared portfolio unlink**: Settings > Backup's Google Drive Sync card also shows **Shared** and **Unlink** for a linked portfolio. Unlink clears only the shared-folder link; local data is unchanged. This intentionally returns future syncs to that portfolio's own name-based Drive folder, which the next sync creates or reuses.

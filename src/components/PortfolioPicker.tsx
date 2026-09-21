@@ -45,6 +45,9 @@ interface DriveRowState {
   passwordOpen: boolean
 }
 
+type PickerMode = 'open' | 'create' | 'drive'
+type DriveMode = 'mine' | 'shared'
+
 function driveImportErrorMessage(err: unknown): string {
   if (err instanceof DriveDecryptError) return 'Incorrect password.'
   if (err instanceof DriveMalformedBackupError) return 'Could not import this portfolio.'
@@ -82,6 +85,8 @@ export function PortfolioPicker({
   const [fileImporting, setFileImporting] = useState(false)
 
   const [driveFoldersOpen, setDriveFoldersOpen] = useState(false)
+  const [pickerMode, setPickerMode] = useState<PickerMode>('open')
+  const [driveMode, setDriveMode] = useState<DriveMode>('mine')
   const [driveFolders, setDriveFolders] = useState<{ name: string; id: string }[] | null>(null)
   const [driveListError, setDriveListError] = useState<string | null>(null)
   const [driveListLoading, setDriveListLoading] = useState(false)
@@ -399,24 +404,40 @@ export function PortfolioPicker({
         flexDirection: 'column',
         alignItems: 'center',
         minHeight: '100%',
-        padding: 'var(--space-8) var(--space-6) var(--space-6)',
-        gap: 'var(--space-8)',
+        padding: '64px var(--space-4)',
+        gap: 'var(--space-6)',
       }}
     >
-      <div style={{ width: '100%', maxWidth: 480, minWidth: 0 }}>
-        <h2 className="card-title" style={{ fontSize: 24, marginBottom: 'var(--space-4)' }}>
-          Your Portfolios
-        </h2>
+      <div style={{ width: '100%', maxWidth: 520, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div className="eyebrow">Ledger</div>
+          <h1 className="card-title" style={{ fontSize: 24, margin: 'var(--space-2) 0 0' }}>
+            Your portfolios
+          </h1>
+        </div>
 
-        {portfolios.length === 0 ? (
-          <p className="card-body" style={{ fontStyle: 'italic' }}>
-            No portfolios yet. Create one below to get started.
-          </p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            {portfolios.map((portfolio) => (
-              <div key={portfolio.id} className="card blueprint elev-sm">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+        <div className="seg" style={{ display: 'flex', width: '100%' }}>
+          {([
+            ['open', 'Open'],
+            ['create', 'Create'],
+            ['drive', 'Google Drive'],
+          ] as const).map(([mode, label]) => (
+            <label key={mode} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}>
+              <input type="radio" name="portfolioPickerMode" checked={pickerMode === mode} onChange={() => setPickerMode(mode)} />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+
+        {pickerMode === 'open' && (
+          <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column' }}>
+            {portfolios.length === 0 ? (
+              <p className="card-body" style={{ fontStyle: 'italic', margin: 'var(--space-2) 0' }}>
+                No portfolios yet. Create one to get started.
+              </p>
+            ) : (
+              portfolios.map((portfolio, index) => (
+                <div key={portfolio.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) 0', borderTop: index === 0 ? 'none' : '1px solid var(--color-divider)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {renamingId === portfolio.id ? (
                       <input
@@ -461,103 +482,92 @@ export function PortfolioPicker({
                       Delete
                     </button>
                   </div>
-
-                  <div style={{ flexShrink: 0 }}>
-                    <button type="button" className="btn btn-primary" onClick={() => onOpen(portfolio.id)}>
-                      Open
-                    </button>
-                  </div>
+                  <button type="button" className="btn btn-primary" onClick={() => onOpen(portfolio.id)}>
+                    Open
+                  </button>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
-        <div style={{ marginTop: 'var(--space-4)' }}>
-          <button
-            type="button"
-            className="btn-ghost"
-            style={{ border: 'none', background: 'none', cursor: isOnline ? 'pointer' : 'not-allowed' }}
-            disabled={!isOnline || driveListLoading}
-            title={isOnline ? undefined : 'Connect to the internet to import from Google Drive'}
-            onClick={() => void handleOpenDriveFolders()}
-          >
-            {driveListLoading ? 'Loading Google Drive...' : 'Load from Google Drive'}
-          </button>
-          <button
-            type="button"
-            className="btn-ghost"
-            style={{ border: 'none', background: 'none', cursor: 'pointer', marginLeft: 'var(--space-3)' }}
-            onClick={() => void handlePickSharedPortfolio()}
-          >
-            Import a shared portfolio
-          </button>
+        {pickerMode === 'create' && (
+          <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div className="field">
+              <label>Portfolio name</label>
+              <input
+                className="input"
+                placeholder="e.g. Retirement"
+                value={createDraft}
+                disabled={creatingPasswordOpen}
+                onChange={(e) => {
+                  setCreateDraft(e.target.value)
+                  setError(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !creatingPasswordOpen) {
+                    e.preventDefault()
+                    handleCreate()
+                  }
+                }}
+              />
+              </div>
 
-          {sharedImportFolder && sharedImportState && (
-            <div className="card blueprint elev-sm" style={{ marginTop: 'var(--space-3)' }}>
-              <div className="card-title">{sharedImportFolder.name}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+            {error && <div className="tag tag-outline">{error}</div>}
+
+            {!creatingPasswordOpen ? (
+              <button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-end' }} onClick={handleCreate}>
+                Create
+              </button>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                 <div className="field">
-                  <label>Password</label>
-                  <input
-                    className="input"
-                    type="password"
-                    placeholder="Enter the portfolio's password"
-                    value={sharedImportState.password}
-                    autoFocus
-                    autoComplete="current-password"
-                    disabled={sharedImportState.importing}
-                    onChange={(e) => setSharedImportState({ ...sharedImportState, password: e.target.value, error: null })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        void handleSubmitSharedImport()
-                      }
-                    }}
-                  />
+                  <label>New password</label>
+                  <input className="input" type="password" placeholder="Enter a new password" value={newPassword} autoFocus autoComplete="new-password" onChange={(e) => { setNewPassword(e.target.value); setCreateError(null) }} />
                 </div>
-                {sharedImportState.error && (
-                  <div className="tag tag-outline" style={{ marginBottom: 0 }}>
-                    {sharedImportState.error}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                  <button type="button" className="btn btn-primary" disabled={sharedImportState.importing} onClick={() => void handleSubmitSharedImport()}>
-                    {sharedImportState.importing ? 'Importing...' : 'Import'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    style={{ border: 'none', background: 'none', cursor: 'pointer' }}
-                    disabled={sharedImportState.importing}
-                    onClick={() => {
-                      setSharedImportFolder(null)
-                      setSharedImportState(null)
-                    }}
-                  >
-                    Cancel
-                  </button>
+                <div className="field">
+                  <label>Confirm password</label>
+                  <input className="input" type="password" placeholder="Re-enter your password" value={newConfirm} autoComplete="new-password" onChange={(e) => { setNewConfirm(e.target.value); setCreateError(null) }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSubmitCreate() } }} />
+                </div>
+                {createError && <div className="tag tag-outline" style={{ marginBottom: 0 }}>{createError}</div>}
+                <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} disabled={creating} onClick={cancelCreatePassword}>Cancel</button>
+                  <button type="button" className="btn btn-primary" disabled={creating} onClick={() => void handleSubmitCreate()}>{creating ? 'Creating...' : 'Set password & create'}</button>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {driveListError && (
-            <div className="tag tag-outline" style={{ marginTop: 'var(--space-2)' }}>
-              {driveListError}{' '}
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                onClick={dismissDriveListError}
-              >
-                Dismiss
-              </button>
+            <div className="hr" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div className="card-body">Already have a backup file?</div>
+              <input ref={fileInputRef} type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={(e) => void handleFileInputChange(e)} />
+              <button type="button" className="btn btn-secondary" style={{ alignSelf: 'flex-start' }} disabled={creatingPasswordOpen} onClick={triggerFileInput}>Import from file</button>
+              {fileImportError && !fileImportEnvelope && <div className="tag tag-outline">{fileImportError}</div>}
+              {fileImportEnvelope && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  <div className="field"><label>Portfolio name</label><input className="input" value={fileImportName} disabled={fileImporting} onChange={(e) => { setFileImportName(e.target.value); setFileImportError(null) }} /></div>
+                  <div className="field"><label>Password</label><input className="input" type="password" placeholder="Enter the backup's password" value={fileImportPassword} autoFocus autoComplete="current-password" disabled={fileImporting} onChange={(e) => { setFileImportPassword(e.target.value); setFileImportError(null) }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSubmitFileImport() } }} /></div>
+                  {fileImportError && <div className="tag tag-outline" style={{ marginBottom: 0 }}>{fileImportError}</div>}
+                  <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}><button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} disabled={fileImporting} onClick={cancelFileImport}>Cancel</button><button type="button" className="btn btn-primary" disabled={fileImporting} onClick={() => void handleSubmitFileImport()}>{fileImporting ? 'Importing...' : 'Import'}</button></div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
+        )}
 
-          {driveFoldersOpen && !driveListError && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+        {pickerMode === 'drive' && (
+          <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div className="seg" style={{ display: 'flex', width: '100%' }}>
+              {([['mine', 'My portfolios'], ['shared', 'Shared portfolio']] as const).map(([mode, label]) => (
+                <label key={mode} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="portfolioDriveMode" checked={driveMode === mode} onChange={() => setDriveMode(mode)} /><span>{label}</span></label>
+              ))}
+            </div>
+
+            {driveMode === 'mine' && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {!driveFoldersOpen && <><div className="card-body">Restore a portfolio you've backed up to Google Drive.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={!isOnline || driveListLoading} title={isOnline ? undefined : 'Connect to the internet to import from Google Drive'} onClick={() => void handleOpenDriveFolders()}>{driveListLoading ? 'Loading Google Drive...' : 'Load from Google Drive'}</button></>}
+              {driveListError && <div className="tag tag-outline">{driveListError} <button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} onClick={dismissDriveListError}>Dismiss</button></div>}
+              {driveFoldersOpen && !driveListError && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
               {driveEmptyMessage && (
                 <p className="card-body" style={{ fontStyle: 'italic' }}>
                   {driveEmptyMessage}
@@ -567,7 +577,7 @@ export function PortfolioPicker({
               {driveFolders?.map((folder) => {
                 const row = driveRowState[folder.id]
                 return (
-                  <div key={folder.id} className="card blueprint elev-sm">
+                  <div key={folder.id} style={{ padding: 'var(--space-3) 0', borderTop: '1px solid var(--color-divider)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
                       <div className="card-title" style={{ flex: 1, minWidth: 0 }}>
                         {folder.name}
@@ -635,203 +645,17 @@ export function PortfolioPicker({
                   </div>
                 )
               })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={{ width: '100%', maxWidth: 480, paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-divider)' }}>
-        <h2 className="card-title" style={{ fontSize: 18, marginBottom: 'var(--space-4)' }}>
-          Create New Portfolio
-        </h2>
-
-        <div className="field">
-          <input
-            className="input"
-            placeholder="Enter a portfolio name"
-            value={createDraft}
-            disabled={creatingPasswordOpen}
-            onChange={(e) => {
-              setCreateDraft(e.target.value)
-              setError(null)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !creatingPasswordOpen) {
-                e.preventDefault()
-                handleCreate()
-              }
-            }}
-          />
-        </div>
-
-        <div style={{ marginBottom: 'var(--space-3)' }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            style={{ display: 'none' }}
-            onChange={(e) => void handleFileInputChange(e)}
-          />
-          <button
-            type="button"
-            className="btn-ghost"
-            style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-            disabled={creatingPasswordOpen}
-            onClick={triggerFileInput}
-          >
-            Import from file
-          </button>
-
-          {fileImportError && !fileImportEnvelope && (
-            <div className="tag tag-outline" style={{ marginTop: 'var(--space-2)' }}>
-              {fileImportError}
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <div className="tag tag-outline" style={{ marginBottom: 'var(--space-2)' }}>
-            {error}
+                </div>
+              )}
+            </div>}
+            {driveMode === 'shared' && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {!sharedImportFolder && <><div className="card-body">Open a portfolio someone else shared with you on Google Drive.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => void handlePickSharedPortfolio()}>Import a shared portfolio</button></>}
+              {sharedImportFolder && sharedImportState && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}><div className="card-title">{sharedImportFolder.name}</div><div className="field"><label>Password</label><input className="input" type="password" placeholder="Enter the portfolio's password" value={sharedImportState.password} autoFocus autoComplete="current-password" disabled={sharedImportState.importing} onChange={(e) => setSharedImportState({ ...sharedImportState, password: e.target.value, error: null })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSubmitSharedImport() } }} /></div>{sharedImportState.error && <div className="tag tag-outline" style={{ marginBottom: 0 }}>{sharedImportState.error}</div>}<div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}><button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} disabled={sharedImportState.importing} onClick={() => { setSharedImportFolder(null); setSharedImportState(null) }}>Cancel</button><button type="button" className="btn btn-primary" disabled={sharedImportState.importing} onClick={() => void handleSubmitSharedImport()}>{sharedImportState.importing ? 'Importing...' : 'Import'}</button></div></div>}
+            </div>}
           </div>
         )}
 
-        {!creatingPasswordOpen ? (
-          <button type="button" className="btn btn-primary" onClick={handleCreate}>
-            Create
-          </button>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
-            <div className="field">
-              <label>New password</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Enter a new password"
-                value={newPassword}
-                autoFocus
-                autoComplete="new-password"
-                onChange={(e) => {
-                  setNewPassword(e.target.value)
-                  setCreateError(null)
-                }}
-              />
-            </div>
-            <div className="field">
-              <label>Confirm password</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Re-enter your password"
-                value={newConfirm}
-                autoComplete="new-password"
-                onChange={(e) => {
-                  setNewConfirm(e.target.value)
-                  setCreateError(null)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void handleSubmitCreate()
-                  }
-                }}
-              />
-            </div>
-
-            {createError && (
-              <div className="tag tag-outline" style={{ marginBottom: 0 }}>
-                {createError}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={creating}
-                onClick={() => void handleSubmitCreate()}
-              >
-                {creating ? 'Creating...' : 'Set password & create'}
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ border: 'none', background: 'none', cursor: 'pointer' }}
-                disabled={creating}
-                onClick={cancelCreatePassword}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {fileImportEnvelope && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-            <div className="field">
-              <label>Portfolio name</label>
-              <input
-                className="input"
-                value={fileImportName}
-                disabled={fileImporting}
-                onChange={(e) => {
-                  setFileImportName(e.target.value)
-                  setFileImportError(null)
-                }}
-              />
-            </div>
-            <div className="field">
-              <label>Password</label>
-              <input
-                className="input"
-                type="password"
-                placeholder="Enter the backup's password"
-                value={fileImportPassword}
-                autoFocus
-                autoComplete="current-password"
-                disabled={fileImporting}
-                onChange={(e) => {
-                  setFileImportPassword(e.target.value)
-                  setFileImportError(null)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void handleSubmitFileImport()
-                  }
-                }}
-              />
-            </div>
-
-            {fileImportError && (
-              <div className="tag tag-outline" style={{ marginBottom: 0 }}>
-                {fileImportError}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={fileImporting}
-                onClick={() => void handleSubmitFileImport()}
-              >
-                {fileImporting ? 'Importing...' : 'Import'}
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ border: 'none', background: 'none', cursor: 'pointer' }}
-                disabled={fileImporting}
-                onClick={cancelFileImport}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div style={{ width: '100%', maxWidth: 480, paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-divider)' }}>
+      <div style={{ width: '100%', maxWidth: 520 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
           <h2 className="card-title" style={{ fontSize: 18, margin: 0 }}>
             Global Mapping
@@ -877,6 +701,7 @@ export function PortfolioPicker({
             {categoryMappingImportError}
           </div>
         )}
+      </div>
       </div>
     </div>
   )
