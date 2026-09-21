@@ -346,7 +346,7 @@ describe('navigation shell title and controls', () => {
   it('uses the active portfolio title only after unlock and keeps the top bar across unlocked views', async () => {
     await renderUnlockedApp()
 
-    expect(document.title).toBe('Ledger | Test Portfolio')
+    await waitFor(() => expect(document.title).toBe('Ledger | Test Portfolio'))
     expect(document.querySelector('header.top-bar')).toBeTruthy()
 
     for (const view of ['Budget', 'Positions', 'Register', 'Quotes'] as const) {
