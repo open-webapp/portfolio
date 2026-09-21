@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import 'fake-indexeddb/auto'
 import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react'
 import { initialState } from './lib/state'
@@ -313,6 +314,14 @@ async function renderUnlockedApp() {
 function navTab(label: string): HTMLElement {
   return screen.getByRole('button', { name: label })
 }
+
+describe('app shell layout', () => {
+  it('reserves space for the fixed desktop navigation rail', () => {
+    const appCss = readFileSync('src/App.css', 'utf8')
+
+    expect(appCss).toMatch(/\.app-shell\s*\{[^}]*margin-left:\s*76px/)
+  })
+})
 
 describe('pending import processing', () => {
   it('should import positions when pendingImport is processed', () => {

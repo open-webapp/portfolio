@@ -1,3 +1,13 @@
 #root {
   padding: 0;
 }
+
+.app-shell {
+  margin-left: 76px;
+}
+
+@media (max-width: 480px) {
+  .app-shell {
+    margin-left: 0;
+  }
+}

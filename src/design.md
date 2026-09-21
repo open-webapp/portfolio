@@ -110,6 +110,7 @@ App.tsx
    │    └─ shape === 'absent' → SetPasswordScreen (defends against a portfolio db that's genuinely empty; new portfolios never reach this since they skip the gate entirely)
    └─ unlocked + hydrated → app shell
         ├─ Nav (view tabs: Budget/Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
+        ├─ desktop content shell offsets 76px for the fixed left rail; at <=480px the rail moves to the bottom and the offset is removed
         ├─ state.view === 'budget'    → BudgetPage (local Expenses/Spend/Analytics/Category Mapping/Accounts tabs; receives hydrated global categories, mappings, and account rules)
         ├─ state.view === 'accounts'  → AccountsPage
         ├─ state.view === 'register'  → RegisterPage

@@ -22,6 +22,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 ### Switch Portfolio (in-app)
 
 - Nav bar (visible once inside an unlocked portfolio) shows the active portfolio's name, top-left, in place of a static brand label. Clicking the name navigates back to `#/` (the picker) — it does not lock/reset the current portfolio's saved data, it only leaves that portfolio's screen.
+- On desktop, application content begins to the right of the fixed 76px navigation rail. At viewport widths of 480px or less, the rail moves to the bottom and content uses the full width.
 
 ### First-time / empty registry
 

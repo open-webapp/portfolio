@@ -871,7 +871,7 @@ function App() {
           dispatch({ type: 'SET_VIEW', view: 'settings' })
         }}
       />
-      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0 }}>
+      <div className="app-shell" style={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0 }}>
         <TopBar
           connected={connected}
           syncing={syncing}
