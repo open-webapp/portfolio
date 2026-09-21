@@ -794,6 +794,25 @@ export function availableBudgetYears(transactions: BudgetTransaction[], now: Dat
 export const SPEND_ALL_YEARS = Symbol('spend-all-years')
 export type SpendScope = string | typeof SPEND_ALL_YEARS
 
+export type SankeyNode = {
+  id: string
+  label: string
+  column: 'income' | 'budget' | 'actual'
+  x: number
+  y: number
+  width: number
+  height: number
+  value: number
+}
+
+export type SankeyLink = {
+  sourceId: string
+  targetId: string
+  d: string
+  opacity: number
+  title: string
+}
+
 /** Distinct transaction years available to the Spend page, newest first. */
 export function spendBudgetYears(transactions: BudgetTransaction[]): string[] {
   return [...new Set(transactions.map((transaction) => transaction.date.slice(0, 4)))].sort().reverse()
@@ -807,6 +826,179 @@ export function spendTransactionsForScope(
   return scope === SPEND_ALL_YEARS
     ? transactions
     : transactions.filter((transaction) => transaction.date.slice(0, 4) === scope)
+}
+
+type PerCategoryBudgetActual = {
+  categoryId: string
+  label: string
+  budget: number
+  actual: number
+}
+
+/** Shared scope-aware category totals used by Spend budget-versus-actual views. */
+function perCategoryBudgetActual(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  scope: SpendScope
+): PerCategoryBudgetActual[] {
+  const scopedTransactions = spendTransactionsForScope(transactions, scope)
+  const years = spendBudgetYears(scopedTransactions)
+  const excludedIds = excludedCategoryIdSet(categories)
+  const categoryIds = new Set<string>()
+
+  categories.forEach((category) => {
+    if (!excludedIds.has(category.id)) categoryIds.add(category.id)
+  })
+  definitions.forEach((definition) => {
+    if (!excludedIds.has(definition.categoryId)) categoryIds.add(definition.categoryId)
+  })
+  scopedTransactions.forEach((transaction) => {
+    const categoryId = effectiveCategoryId(transaction, definitions)
+    if (!excludedIds.has(categoryId)) categoryIds.add(categoryId)
+  })
+
+  const budgetByCategory: Record<string, number> = {}
+  definitions.forEach((definition) => {
+    if (excludedIds.has(definition.categoryId)) return
+    const budget = years.reduce((sum, year) =>
+      sum + toPeriod((amountsByYear[year] ?? {})[definition.id] ?? 0, definition.frequency, 'yearly'), 0)
+    budgetByCategory[definition.categoryId] = (budgetByCategory[definition.categoryId] ?? 0) + budget
+  })
+  const actualByCategoryForScope = actualByCategory(scopedTransactions, definitions, categories)
+
+  return [...categoryIds].map((categoryId) => ({
+    categoryId,
+    label: categories.find((category) => category.id === categoryId)?.name ?? categoryId,
+    budget: Math.max(0, budgetByCategory[categoryId] ?? 0),
+    actual: Math.max(0, actualByCategoryForScope[categoryId] ?? 0)
+  }))
+}
+
+/**
+ * Budget-to-actual Sankey geometry for the Spend page's 1200 x 460 viewBox.
+ * Budget definitions and actual transactions are aggregated by category within
+ * the selected scope; unused budget flows to the actual-column Unspent node.
+ */
+export function sankeyFlowData(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  scope: SpendScope
+): { nodes: SankeyNode[]; links: SankeyLink[] } {
+  const rows = perCategoryBudgetActual(definitions, amountsByYear, transactions, categories, scope)
+    .map((row) => ({ ...row, id: row.categoryId }))
+    .sort((a, b) => b.budget - a.budget || b.actual - a.actual || a.label.localeCompare(b.label))
+
+  if (rows.length === 0) return { nodes: [], links: [] }
+
+  const totalBudget = rows.reduce((sum, row) => sum + row.budget, 0)
+  const totalActual = rows.reduce((sum, row) => sum + row.actual, 0)
+  const unspent = rows.reduce((sum, row) => sum + Math.max(0, row.budget - row.actual), 0)
+  const scale = 360 / Math.max(totalBudget, totalActual, 1)
+  const nodeWidth = 18
+  const incomeX = 70
+  const budgetX = 545
+  const actualX = 1010
+  const top = 40
+  const gap = 8
+  const nodes: SankeyNode[] = []
+  const links: SankeyLink[] = []
+  const budgetOffsets = new Map<string, number>()
+  const actualOffsets = new Map<string, number>()
+  let budgetY = top
+  let actualY = top
+
+  rows.forEach((row) => {
+    const height = row.budget * scale
+    budgetOffsets.set(row.id, budgetY)
+    nodes.push({ id: `budget:${row.id}`, label: row.label, column: 'budget', x: budgetX, y: budgetY, width: nodeWidth, height, value: row.budget })
+    budgetY += height + gap
+  })
+  rows.forEach((row) => {
+    const height = row.actual * scale
+    actualOffsets.set(row.id, actualY)
+    nodes.push({ id: `actual:${row.id}`, label: row.label, column: 'actual', x: actualX, y: actualY, width: nodeWidth, height, value: row.actual })
+    actualY += height + gap
+  })
+  if (unspent > 0) {
+    nodes.push({ id: 'actual:unspent', label: 'Unspent', column: 'actual', x: actualX, y: actualY, width: nodeWidth, height: unspent * scale, value: unspent })
+  }
+  nodes.unshift({ id: 'income', label: 'Income', column: 'income', x: incomeX, y: top, width: nodeWidth, height: totalBudget * scale, value: totalBudget })
+
+  const path = (sourceX: number, sourceY: number, sourceHeight: number, targetX: number, targetY: number, targetHeight: number): string => {
+    const control = (targetX - sourceX) * 0.45
+    return `M ${sourceX} ${sourceY} C ${sourceX + control} ${sourceY}, ${targetX - control} ${targetY}, ${targetX} ${targetY} L ${targetX} ${targetY + targetHeight} C ${targetX - control} ${targetY + targetHeight}, ${sourceX + control} ${sourceY + sourceHeight}, ${sourceX} ${sourceY + sourceHeight} Z`
+  }
+
+  let incomeOffset = top
+  let unspentOffset = nodes.find((node) => node.id === 'actual:unspent')?.y ?? 0
+  rows.forEach((row) => {
+    const budgetHeight = row.budget * scale
+    const budgetNodeY = budgetOffsets.get(row.id)!
+    const actualNodeY = actualOffsets.get(row.id)!
+    if (row.budget > 0) {
+      links.push({
+        sourceId: 'income', targetId: `budget:${row.id}`,
+        d: path(incomeX + nodeWidth, incomeOffset, budgetHeight, budgetX, budgetNodeY, budgetHeight),
+        opacity: 0.35,
+        title: `${row.label}: budget ${fmtUSD(row.budget)}`
+      })
+      incomeOffset += budgetHeight
+    }
+
+    if (row.actual > 0) {
+      const renderedActual = row.budget > 0 ? Math.min(row.actual, row.budget * 1.15) : row.actual
+      const overage = row.budget > 0 ? (row.actual / row.budget - 1) * 100 : null
+      links.push({
+        sourceId: `budget:${row.id}`, targetId: `actual:${row.id}`,
+        d: path(budgetX + nodeWidth, budgetNodeY, renderedActual * scale, actualX, actualNodeY, row.actual * scale),
+        opacity: 0.65,
+        title: overage !== null && overage > 0
+          ? `${row.label}: ${fmtUSD(row.actual)} actual, ${overage.toFixed(1)}% over budget`
+          : `${row.label}: ${fmtUSD(row.actual)} actual`
+      })
+    }
+
+    const shortfall = Math.max(0, row.budget - row.actual)
+    if (shortfall > 0) {
+      const shortfallHeight = shortfall * scale
+      links.push({
+        sourceId: `budget:${row.id}`, targetId: 'actual:unspent',
+        d: path(budgetX + nodeWidth, budgetNodeY + row.actual * scale, shortfallHeight, actualX, unspentOffset, shortfallHeight),
+        opacity: 0.3,
+        title: `${row.label}: ${fmtUSD(shortfall)} unspent`
+      })
+      unspentOffset += shortfallHeight
+    }
+  })
+
+  return { nodes, links }
+}
+
+/**
+ * Categories whose actual scoped spend exceeds their scoped budget, largest
+ * overage first. A positive actual against a zero budget reports `Infinity`
+ * for pctOver so callers can display it as an uncapped overage.
+ */
+export function overBudgetCategories(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  scope: SpendScope
+): Array<{ categoryId: string; label: string; overageAmount: number; pctOver: number }> {
+  return perCategoryBudgetActual(definitions, amountsByYear, transactions, categories, scope)
+    .filter((row) => row.actual > row.budget)
+    .map((row) => ({
+      categoryId: row.categoryId,
+      label: row.label,
+      overageAmount: row.actual - row.budget,
+      pctOver: row.budget === 0 ? Infinity : (row.actual / row.budget - 1) * 100
+    }))
+    .sort((a, b) => b.overageAmount - a.overageAmount || a.label.localeCompare(b.label))
 }
 
 /** Spend-card totals for exact transaction-backed years in the selected scope. */
@@ -834,6 +1026,37 @@ export function spendCardTotals(
     { budgetedIncome: 0, actualIncome: 0, budgetedSpend: 0, actualSpend: 0 }
   )
   return { ...totals, variance: totals.budgetedSpend - totals.actualSpend }
+}
+
+/**
+ * Project selected-year spend from its actual spend rate through `asOfDate`.
+ * All-years has no bounded period and therefore cannot be projected.
+ */
+export function projectedSpendForScope(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  scope: SpendScope,
+  asOfDate: Date
+): { projectedTotal: number; budgetTotal: number; pctOver: number; isOverBudget: boolean } | null {
+  if (scope === SPEND_ALL_YEARS) return null
+
+  const totals = spendCardTotals(definitions, amountsByYear, transactions, categories, scope)
+  const periodStart = Date.UTC(Number(scope), 0, 1)
+  const periodEnd = Date.UTC(Number(scope) + 1, 0, 1)
+  const periodDays = (periodEnd - periodStart) / 86_400_000
+  const asOfDay = Date.UTC(asOfDate.getFullYear(), asOfDate.getMonth(), asOfDate.getDate())
+  const elapsedDays = Math.max(0, Math.min(periodDays, (asOfDay - periodStart) / 86_400_000))
+  const projectedTotal = elapsedDays === 0 ? 0 : totals.actualSpend * periodDays / elapsedDays
+  const pctOver = totals.budgetedSpend === 0 ? 0 : (projectedTotal / totals.budgetedSpend - 1) * 100
+
+  return {
+    projectedTotal,
+    budgetTotal: totals.budgetedSpend,
+    pctOver,
+    isOverBudget: projectedTotal > totals.budgetedSpend
+  }
 }
 
 /**
@@ -1130,6 +1353,83 @@ export function savingsRateByYear(
  * Categories ranked beyond the 6th share this array's last color.
  */
 export const CATEGORY_SHARE_PALETTE = ['#3b6ef6', '#1fa971', '#e2574c', '#f2b134', '#8b5cf6', '#06b6d4']
+
+export type StreamBand = {
+  categoryId: string
+  label: string
+  color: string
+  d: string
+}
+
+export type LegendEntry = {
+  categoryId: string
+  label: string
+  color: string
+  total: number
+}
+
+/**
+ * Stacked annual actual-spend areas for the Expense Stream chart's
+ * 1120 x 220 viewBox. Only years with non-excluded spend activity render.
+ */
+export function expenseStreamBands(
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  definitions: ExpenseDefinition[]
+): { years: string[]; bands: StreamBand[]; legend: LegendEntry[] } {
+  const years = [...new Set(transactions.map((transaction) => transaction.date.slice(0, 4)))]
+    .filter((year) => monthsPresentInYear(transactions, categories, year, definitions).length > 0)
+    .sort()
+  if (years.length === 0) return { years: [], bands: [], legend: [] }
+
+  const excludedIds = excludedCategoryIdSet(categories)
+  const ranked = categories
+    .filter((category) => !excludedIds.has(category.id) && !category.deletedAt)
+    .map((category) => ({
+      category,
+      total: years.reduce(
+        (sum, year) => sum + Math.max(0, yearCategoryTotalSpend(transactions, categories, year, category.id, definitions)),
+        0
+      )
+    }))
+    .filter(({ total }) => total > 0)
+    .sort((a, b) => b.total - a.total || a.category.name.localeCompare(b.category.name))
+  if (ranked.length === 0) return { years, bands: [], legend: [] }
+
+  const values = ranked.map(({ category }) =>
+    years.map((year) => Math.max(0, yearCategoryTotalSpend(transactions, categories, year, category.id, definitions)))
+  )
+  const maxTotal = Math.max(...years.map((_, yearIndex) => values.reduce((sum, categoryValues) => sum + categoryValues[yearIndex], 0)), 1)
+  const xFor = (index: number) => 60 + (1000 * index) / Math.max(years.length - 1, 1)
+  const yFor = (amount: number) => 200 - (amount / maxTotal) * 180
+  const lower = years.map(() => 0)
+
+  const bands = ranked.map(({ category }, categoryIndex) => {
+    const upper = lower.map((value, yearIndex) => value + values[categoryIndex][yearIndex])
+    const topPath = upper.map((value, yearIndex) => `${yearIndex === 0 ? 'M' : 'L'} ${xFor(yearIndex)} ${yFor(value)}`).join(' ')
+    const bottomPath = lower
+      .map((_, yearIndex) => `L ${xFor(years.length - 1 - yearIndex)} ${yFor(lower[years.length - 1 - yearIndex])}`)
+      .join(' ')
+    lower.splice(0, lower.length, ...upper)
+    return {
+      categoryId: category.id,
+      label: category.name,
+      color: CATEGORY_SHARE_PALETTE[Math.min(categoryIndex, CATEGORY_SHARE_PALETTE.length - 1)],
+      d: `${topPath} ${bottomPath} Z`
+    }
+  })
+
+  return {
+    years,
+    bands,
+    legend: ranked.map(({ category, total }, index) => ({
+      categoryId: category.id,
+      label: category.name,
+      color: CATEGORY_SHARE_PALETTE[Math.min(index, CATEGORY_SHARE_PALETTE.length - 1)],
+      total
+    }))
+  }
+}
 
 /**
  * Per-year category share-of-spend breakdown, for a stacked/area chart.

@@ -4,9 +4,8 @@ Sibling: `BudgetPage.design.md`.
 
 ## Tabs
 
-- Four local tabs: Expenses, Spend, Analytics, Category Mapping.
-- Spend is the default on every mount/remount.
-- Tab selection is not persisted.
+- Four App-owned tabs: Expenses, Spend, Analytics, Category Mapping. The selector appears in the Budget top bar, not in BudgetPage.
+- Spend is the App-session default. Tab selection remains when navigating away from and back to Budget, but is not persisted across app reloads.
 - Category Mapping renders `Loading category mappings...` until global categories hydrate; mapping controls are unavailable before then.
 
 ## Category Mapping
@@ -16,6 +15,9 @@ Sibling: `BudgetPage.design.md`.
 
 ## Spend Records
 
+- The Spend view has a local year/`All` scope selector, three summary cards, then a Budget flow Sankey chart before the records card.
+- Spend vs budget shows scoped actual spending against scoped budget. Projected spend uses the current-date projection and marks over/under budget. Savings rate is available for a selected year; its edit control updates the aggregate annual income budget. A fourth summary card is out of scope.
+- Budget flow is derived by `sankeyFlowData` from scoped budget definitions/annual amounts and transactions, aggregated by category. It shows Income -> category budgets -> category actuals, with unused budget flowing to Unspent; no data shows `No budget flow for this period.`
 - Search matches description, account, and the displayed Spend Category label, including `Uncategorized (<category>)` for unlinked records.
 - Recurring spend is one representative per month in a chain of >=3 consecutive calendar months with the same account name and effective category; absolute amounts must be within +/-10% of the running chain average. Income and categories with `excludeFromSpend` are never flagged.
 - Recurring classification always considers all `budgetTransactions`, independent of the Spend year/`All years` scope selector.

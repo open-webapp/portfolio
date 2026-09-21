@@ -16,6 +16,7 @@ import {
   desiredBudgetAccountConvention,
 } from '../lib/budgetAccountRules'
 import { BudgetAnalytics } from './BudgetAnalytics'
+import { BudgetSankey } from './BudgetSankey'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
 import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
@@ -29,6 +30,10 @@ import {
   spendBudgetYears,
   spendTransactionsForScope,
   spendCardTotals,
+  projectedSpendForScope,
+  savingsRateByYear,
+  sankeyFlowData,
+  incomeCategoryIdSet,
   type SpendScope,
 } from '../lib/selectors'
 
@@ -40,6 +45,8 @@ export interface BudgetPageProps {
   categoryDispatch: (action: CategoryAction) => void
   categoriesHydrated: boolean
   budgetAccountRules?: BudgetAccountRule[]
+  period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping'
+  setPeriod: (period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping') => void
 }
 
 const textBtnAccent: CSSProperties = {
@@ -86,6 +93,14 @@ function RepeatIcon() {
   )
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+    </svg>
+  )
+}
+
 function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="11" height="11">
@@ -110,8 +125,7 @@ function MappingIcon() {
  * - Spend tab: scope selector, summary cards, and the Spend records table.
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  */
-export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [] }: BudgetPageProps) {
-  const [period, setPeriod] = useState<'expenses' | 'spend' | 'analytics' | 'categoryMapping'>('spend')
+export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [], period }: BudgetPageProps) {
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -155,8 +169,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [importFileKind, setImportFileKind] = useState<'csv' | 'ofx' | null>(null)
   const [importResult, setImportResult] = useState<{ detected: number; converted: number; failed: number; imported: number; duplicates: number } | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
+  const [isEditingIncome, setIsEditingIncome] = useState(false)
+  const [incomeDraft, setIncomeDraft] = useState('')
 
-  const { budgetedIncome: totalBudgetedIncome, actualIncome: totalActualIncome, budgetedSpend: totalExpense, actualSpend: totalActual, variance } = spendCardTotals(
+  const { budgetedSpend: totalExpense, actualSpend: totalActual } = spendCardTotals(
     state.budgetExpenseDefinitions,
     state.budgetExpenseAmountsByYear,
     state.budgetTransactions,
@@ -165,6 +181,21 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   )
 
   const availableYears = spendBudgetYears(state.budgetTransactions)
+  const incomeCategoryIds = incomeCategoryIdSet(categories)
+  const incomeDefinition = state.budgetExpenseDefinitions.find((definition) => incomeCategoryIds.has(definition.categoryId))
+  const incomeCategoryId = categories.find((category) => incomeCategoryIds.has(category.id))?.id
+  const projectedSpend = projectedSpendForScope(
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear,
+    state.budgetTransactions,
+    categories,
+    selectedScope,
+    new Date()
+  )
+  const savingsRate = selectedScope === SPEND_ALL_YEARS
+    ? null
+    : savingsRateByYear([selectedScope], state.budgetTransactions, categories, state.budgetExpenseDefinitions)[0]
+  const spendPct = totalExpense > 0 ? (totalActual / totalExpense) * 100 : 0
   const importAccounts = budgetAccountViewRows(budgetAccountRules, state.budgetTransactions)
   const selectedImportAccountName = importAccountSelection === '__new__'
     ? importAccountName.trim()
@@ -178,6 +209,13 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
 
   const periodFilteredTransactions = spendTransactionsForScope(state.budgetTransactions, selectedScope)
   const rangeLabel = selectedScope === SPEND_ALL_YEARS ? 'All years' : selectedScope
+  const sankey = sankeyFlowData(
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear,
+    state.budgetTransactions,
+    categories,
+    selectedScope
+  )
 
   const recordSourceTransactions = showExcludedRecords
     ? periodFilteredTransactions
@@ -531,58 +569,48 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setImportResult(null)
   }
 
+  const commitIncome = () => {
+    if (selectedScope === SPEND_ALL_YEARS || !incomeCategoryId) return
+    const parsed = Number(incomeDraft)
+    const amount = Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+    if (incomeDefinition) {
+      dispatch({ type: 'SET_EXPENSE_AMOUNT', year: selectedScope, expenseId: incomeDefinition.id, amount })
+    } else {
+      dispatch({
+        type: 'ADD_EXPENSE_DEFINITION',
+        definition: { name: 'Income', categoryId: incomeCategoryId, frequency: 'yearly' },
+        amount,
+      })
+    }
+    setIsEditingIncome(false)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 'var(--space-3)',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div className="seg">
-          {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((opt) => (
-            <label
-              key={opt}
-              className="seg-opt"
-              onClick={() => {
-                setPeriod(opt)
-                setRecPage(0)
-              }}
-            >
-              <input type="radio" name="budgetPeriod" checked={period === opt} readOnly />
-              <span>{opt === 'expenses' ? 'Expenses' : opt === 'spend' ? 'Spend' : opt === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
-            </label>
-          ))}
+      {period === 'spend' && (
+        <div className="field" style={{ maxWidth: '220px' }}>
+          <select
+            className="input"
+            aria-label="Select year"
+            value={selectedScope === SPEND_ALL_YEARS ? SPEND_ALL_OPTION_VALUE : selectedScope}
+            onChange={(e) => {
+              const scope = e.target.value === SPEND_ALL_OPTION_VALUE ? SPEND_ALL_YEARS : e.target.value
+              setSelectedScope(scope)
+              if (scope !== SPEND_ALL_YEARS && !state.budgetExpenseAmountsByYear[scope]) {
+                dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: scope })
+              }
+              setRecPage(0)
+            }}
+          >
+            <option value={SPEND_ALL_OPTION_VALUE}>All</option>
+            {availableYears.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
         </div>
-
-        {period === 'spend' && (
-          <div className="field" style={{ maxWidth: '220px' }}>
-            <select
-              className="input"
-              aria-label="Select year"
-              value={selectedScope === SPEND_ALL_YEARS ? SPEND_ALL_OPTION_VALUE : selectedScope}
-              onChange={(e) => {
-                const scope = e.target.value === SPEND_ALL_OPTION_VALUE ? SPEND_ALL_YEARS : e.target.value
-                setSelectedScope(scope)
-                if (scope !== SPEND_ALL_YEARS && !state.budgetExpenseAmountsByYear[scope]) {
-                  dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: scope })
-                }
-                setRecPage(0)
-              }}
-            >
-              <option value={SPEND_ALL_OPTION_VALUE}>All</option>
-              {availableYears.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+      )}
 
       {period === 'categoryMapping' ? (
         <CategoryMappingTab
@@ -609,30 +637,70 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         }}
       >
         <div className="card blueprint elev-sm">
-          <div className="text-muted">Budgeted income</div>
-          <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalBudgetedIncome)}</div>
-        </div>
-        <div className="card blueprint elev-sm">
-          <div className="text-muted">Actual income ({rangeLabel})</div>
-          <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalActualIncome)}</div>
-        </div>
-        <div className="card blueprint elev-sm">
-          <div className="text-muted">Budgeted spending</div>
-          <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalExpense)}</div>
-        </div>
-        <div className="card blueprint elev-sm">
-          <div className="text-muted">Actual spend ({rangeLabel})</div>
-          <div style={{ fontSize: '1.5rem' }}>{fmtUSD(totalActual)}</div>
-        </div>
-        <div className="card blueprint elev-sm">
-          <div className="text-muted">Variance</div>
-          <div style={{ fontSize: '1.5rem', color: totalExpense >= totalActual ? GAIN_COLOR : LOSS_COLOR }}>
-            {fmtUSD(variance)}
+          <div className="text-muted">Spend vs budget ({rangeLabel})</div>
+          <div style={{ fontSize: '1.5rem' }}>{spendPct.toFixed(1)}%</div>
+          <div style={{ height: '6px', background: 'var(--color-divider)', marginTop: 'var(--space-2)' }}>
+            <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, spendPct))}%`, background: totalActual <= totalExpense ? GAIN_COLOR : LOSS_COLOR }} />
+          </div>
+          <div className="text-muted" style={{ fontSize: '12px', marginTop: 'var(--space-2)' }}>
+            Spent {fmtUSD(totalActual)} of {fmtUSD(totalExpense)} budget
           </div>
         </div>
-      </div>
+        <div className="card blueprint elev-sm">
+          <div className="text-muted">Projected spend</div>
+          {projectedSpend ? (
+            <>
+              <div style={{ fontSize: '1.5rem' }}>{fmtUSD(projectedSpend.projectedTotal)}</div>
+              <div style={{ color: projectedSpend.isOverBudget ? LOSS_COLOR : GAIN_COLOR, fontSize: '12px', marginTop: 'var(--space-2)' }}>
+                {Math.abs(projectedSpend.pctOver).toFixed(1)}% {projectedSpend.isOverBudget ? 'over' : 'under'} budget
+              </div>
+            </>
+          ) : (
+            <div className="text-muted" style={{ fontSize: '1.5rem' }}>N/A</div>
+          )}
+        </div>
+        <div className="card blueprint elev-sm">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="text-muted">Savings rate</div>
+            {selectedScope !== SPEND_ALL_YEARS && incomeCategoryId && !isEditingIncome && (
+              <button
+                type="button"
+                style={iconBtn}
+                aria-label="Edit income"
+                onClick={() => {
+                  setIncomeDraft(String(state.budgetExpenseAmountsByYear[selectedScope]?.[incomeDefinition?.id ?? ''] ?? 0))
+                  setIsEditingIncome(true)
+                }}
+              >
+                <PencilIcon />
+              </button>
+            )}
+          </div>
+          {isEditingIncome ? (
+            <input
+              type="number"
+              className="input"
+              aria-label="Income amount"
+              autoFocus
+              value={incomeDraft}
+              onChange={(e) => setIncomeDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') setIsEditingIncome(false)
+              }}
+              onBlur={commitIncome}
+            />
+          ) : (
+            <div style={{ fontSize: '1.5rem', color: savingsRate?.isPositive ? GAIN_COLOR : LOSS_COLOR }}>
+              {savingsRate ? `${savingsRate.pct.toFixed(1)}%` : 'N/A'}
+            </div>
+          )}
+        </div>
+       </div>
 
-      <div className="card blueprint elev-sm">
+       <BudgetSankey nodes={sankey.nodes} links={sankey.links} />
+
+       <div className="card blueprint elev-sm">
         <div
           style={{
             display: 'flex',

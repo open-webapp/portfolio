@@ -3,7 +3,7 @@ import { initialState, reconcileBudgetAccountConventions, type AppState } from '
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb, loadRawPersistedBlob } from './lib/persist'
 import { useGlobalCategories } from './hooks/useGlobalCategories'
-import { Nav } from './components/Nav'
+import { RailNav, TopBar } from './components/Nav'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
 import { RegisterPage } from './components/RegisterPage'
@@ -49,6 +49,21 @@ const LOCK_ABSOLUTE_MS = 2 * 60 * 60 * 1000 // 2h
 const LOCK_IDLE_MS = 5 * 60 * 1000 // 5min
 const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
 
+type BudgetPeriod = 'expenses' | 'spend' | 'analytics' | 'categoryMapping'
+
+function PeriodSegControl({ period, setPeriod }: { period: BudgetPeriod; setPeriod: (period: BudgetPeriod) => void }) {
+  return (
+    <div className="seg">
+      {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((option) => (
+        <label key={option} className="seg-opt">
+          <input type="radio" name="budgetPeriod" checked={period === option} onChange={() => setPeriod(option)} />
+          <span>{option === 'expenses' ? 'Expenses' : option === 'spend' ? 'Spend' : option === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
+        </label>
+      ))}
+    </div>
+  )
+}
+
 // Placeholder portfolio passed to useDriveConnection before a real portfolio
 // is active (picker route, or portfolio not yet resolved). useDriveConnection
 // requires a non-null DriveAuthHandle on every render (React hooks can't be
@@ -75,6 +90,7 @@ function App() {
   const [isHydrated, setIsHydrated] = useState(false)
   const [hydrationError, setHydrationError] = useState<string | null>(null)
   const [state, dispatch] = useReducer(appReducer, initialState())
+  const [period, setPeriod] = useState<BudgetPeriod>('spend')
 
   // Password-gate session state: null sessionKey/sessionSalt means the gate hasn't
   // been passed yet. gateShape is null while peekEnvelopeShape() is still resolving.
@@ -846,34 +862,40 @@ function App() {
   }
 
   return (
-    <div>
-      <div>
-        {/* Navigation: Accounts tab, sync + settings buttons */}
-        <Nav
-          state={state}
-          dispatch={dispatch}
-          portfolioName={activePortfolio!.name}
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <RailNav
+        state={state}
+        dispatch={dispatch}
+        onOpenSettings={() => {
+          setSettingsSection('backup')
+          dispatch({ type: 'SET_VIEW', view: 'settings' })
+        }}
+      />
+      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0 }}>
+        <TopBar
           connected={connected}
           syncing={syncing}
           handleSync={handleSync}
-          onOpenSettings={() => {
-            setSettingsSection('backup')
-            dispatch({ type: 'SET_VIEW', view: 'settings' })
-          }}
           onSwitchPortfolio={() => navigateToPicker()}
+          portfolioName={activePortfolio!.name}
+          periodControl={state.view === 'budget' ? <PeriodSegControl period={period} setPeriod={setPeriod} /> : undefined}
         />
 
         {state.view === 'budget' ? (
           /* Budget page view */
           <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
             <BudgetPage
-              state={state}
-              dispatch={dispatch}
-              categories={globalCategories.categories}
-              categoryMappings={globalCategories.categoryMappings}
-              categoryDispatch={globalCategories.dispatch}
-              categoriesHydrated={globalCategories.hydrated}
-              budgetAccountRules={globalCategories.budgetAccountRules}
+              {...{
+                state,
+                dispatch,
+                categories: globalCategories.categories,
+                categoryMappings: globalCategories.categoryMappings,
+                categoryDispatch: globalCategories.dispatch,
+                categoriesHydrated: globalCategories.hydrated,
+                budgetAccountRules: globalCategories.budgetAccountRules,
+                period,
+                setPeriod,
+              }}
             />
           </div>
         ) : state.view === 'accounts' ? (

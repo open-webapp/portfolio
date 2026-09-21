@@ -5,11 +5,81 @@ import { BudgetPage } from './BudgetPage'
 import { initialState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
 import { categoryStoreReducer } from '../lib/categoryStore'
+import { sankeyFlowData } from '../lib/selectors'
 
 afterEach(() => cleanup())
 
+const periodProps = { period: 'spend' as const, setPeriod: vi.fn() }
+
 describe('BudgetPage derived income', () => {
-  it('renders five read-only cards from Income definitions and transactions', () => {
+  it('renders the scoped budget flow between the summary cards and records', () => {
+    const year = String(new Date().getFullYear())
+    const categories = [
+      { id: 'income', name: 'Income', updatedAt: '' },
+      { id: 'food', name: 'Food', updatedAt: '' },
+    ]
+    const definitions = [
+      { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'yearly' as const },
+      { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' as const },
+    ]
+    const amounts = { [year]: { salary: 1000, groceries: 400 } }
+    const transactions = [
+      { id: 'pay', date: `${year}-01-01`, description: 'Pay', categoryId: 'income', amount: 1000 },
+      { id: 'market', date: `${year}-01-02`, description: 'Market', categoryId: 'food', amount: -250 },
+    ]
+    const expected = sankeyFlowData(definitions, amounts, transactions, categories, year)
+    const { container } = render(
+      <BudgetPage
+        state={{ ...initialState(), budgetExpenseDefinitions: definitions, budgetExpenseAmountsByYear: amounts, budgetTransactions: transactions }}
+        dispatch={vi.fn()}
+        categories={categories}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        {...periodProps}
+      />
+    )
+
+    const chart = screen.getByTestId('budget-sankey')
+    expect(chart.querySelectorAll('path')).toHaveLength(expected.links.length)
+    expect(chart.querySelectorAll('rect')).toHaveLength(expected.nodes.length)
+    expect(chart.textContent).toContain('Food: $400.00')
+    expect(chart.textContent).toContain('Food: $250.00 actual')
+    expect(container.querySelector('[data-testid="summary-cards"]')!.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(chart.compareDocumentPosition(screen.getByText(`Spend records (${year})`)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows an empty budget-flow state with no scoped categories', () => {
+    render(<BudgetPage state={initialState()} dispatch={vi.fn()} categories={[]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+
+    expect(screen.getByTestId('budget-sankey').textContent).toContain('No budget flow for this period.')
+    expect(screen.getByTestId('budget-sankey').querySelector('svg')).toBeNull()
+  })
+
+  it('renders a valid budget flow for a single category', () => {
+    const year = String(new Date().getFullYear())
+    render(
+      <BudgetPage
+        state={{
+          ...initialState(),
+          budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'yearly' }],
+          budgetExpenseAmountsByYear: { [year]: { rent: 1000 } },
+          budgetTransactions: [{ id: 'rent', date: `${year}-01-01`, description: 'Rent', categoryId: 'housing', amount: -500 }],
+        }}
+        dispatch={vi.fn()}
+        categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        {...periodProps}
+      />
+    )
+
+    const chart = screen.getByTestId('budget-sankey')
+    expect(chart.querySelector('svg')).toBeTruthy()
+    expect(chart.querySelectorAll('rect')).toHaveLength(4)
+    expect(chart.querySelectorAll('path')).toHaveLength(3)
+  })
+
+  it('renders three summary cards with spend progress and a savings-rate income editor', () => {
     const state = {
       ...initialState(),
       budgetExpenseDefinitions: [
@@ -22,11 +92,75 @@ describe('BudgetPage derived income', () => {
         { id: 'rent', date: `${new Date().getFullYear()}-01-02`, description: 'Rent', categoryId: 'housing', amount: 500 },
       ],
     }
-    render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'income', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} />)
-    expect(screen.getByText('Budgeted income')).toBeTruthy()
-    expect(screen.getByText(`Actual income (${new Date().getFullYear()})`)).toBeTruthy()
-    expect(screen.getAllByText('$12,000.00')).toHaveLength(1)
-    expect(screen.queryByLabelText('Edit income')).toBeNull()
+    render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'income', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    const cards = screen.getByTestId('summary-cards')
+    expect(cards.querySelectorAll('.card')).toHaveLength(3)
+    expect(screen.getByText(`Spend vs budget (${new Date().getFullYear()})`)).toBeTruthy()
+    expect(cards.textContent).toContain('-100.0%')
+    expect(cards.textContent).toContain('Spent -$500.00 of $500.00 budget')
+    expect(screen.getByText('Savings rate')).toBeTruthy()
+    expect(screen.getByLabelText('Edit income')).toBeTruthy()
+  })
+
+  it('uses the projected-spend over-budget color and the configured gain color when under budget', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-12-31T12:00:00'))
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'yearly' as const }],
+      budgetExpenseAmountsByYear: { '2026': { rent: 200 } },
+      budgetTransactions: [{ id: 'rent', date: '2026-01-02', description: 'Rent', categoryId: 'housing', amount: -100 }],
+    }
+    const { rerender } = render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+
+    expect((screen.getByText('49.9% under budget') as HTMLElement).style.color).toBe('rgb(31, 169, 113)')
+
+    vi.setSystemTime(new Date('2026-01-02T12:00:00'))
+    rerender(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    expect((screen.getByText('18150.0% over budget') as HTMLElement).style.color).toBe('rgb(226, 87, 76)')
+    vi.useRealTimers()
+  })
+
+  it('updates an existing Income definition and clamps a negative income amount to zero', () => {
+    const dispatch = vi.fn()
+    const year = new Date().getFullYear()
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: [{ id: 'income', name: 'Income', categoryId: 'income-category', frequency: 'yearly' as const }],
+      budgetExpenseAmountsByYear: { [year]: { income: 1000 } },
+      budgetTransactions: [{ id: 'spend', date: `${year}-01-01`, description: 'Rent', categoryId: 'housing', amount: -50 }],
+    }
+    render(<BudgetPage state={state} dispatch={dispatch} categories={[{ id: 'income-category', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+
+    fireEvent.click(screen.getByLabelText('Edit income'))
+    fireEvent.change(screen.getByLabelText('Income amount'), { target: { value: '1500' } })
+    fireEvent.blur(screen.getByLabelText('Income amount'))
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_EXPENSE_AMOUNT', year: String(year), expenseId: 'income', amount: 1500 })
+
+    fireEvent.click(screen.getByLabelText('Edit income'))
+    fireEvent.change(screen.getByLabelText('Income amount'), { target: { value: '-10' } })
+    fireEvent.blur(screen.getByLabelText('Income amount'))
+    expect(dispatch).toHaveBeenLastCalledWith({ type: 'SET_EXPENSE_AMOUNT', year: String(year), expenseId: 'income', amount: 0 })
+  })
+
+  it('creates an Income definition when none exists', () => {
+    const dispatch = vi.fn()
+    const year = new Date().getFullYear()
+    const state = {
+      ...initialState(),
+      budgetTransactions: [{ id: 'spend', date: `${year}-01-01`, description: 'Rent', categoryId: 'housing', amount: -50 }],
+    }
+    render(<BudgetPage state={state} dispatch={dispatch} categories={[{ id: 'income-category', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+
+    fireEvent.click(screen.getByLabelText('Edit income'))
+    fireEvent.change(screen.getByLabelText('Income amount'), { target: { value: '2000' } })
+    fireEvent.blur(screen.getByLabelText('Income amount'))
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'ADD_EXPENSE_DEFINITION',
+      definition: { name: 'Income', categoryId: 'income-category', frequency: 'yearly' },
+      amount: 2000,
+    })
   })
 
   it('finds unlinked spend records by their displayed Uncategorized category label', () => {
@@ -44,6 +178,7 @@ describe('BudgetPage derived income', () => {
         categories={[{ id: 'food', name: 'Food', updatedAt: '' }]}
         categoryMappings={[]}
         categoryDispatch={vi.fn()}
+        {...periodProps}
       />
     )
 
@@ -51,6 +186,43 @@ describe('BudgetPage derived income', () => {
 
     expect(screen.getByText('Market run')).toBeTruthy()
     expect(screen.getByText('Uncategorized (Food)')).toBeTruthy()
+  })
+})
+
+describe('BudgetPage period props', () => {
+  const props = {
+    state: initialState(),
+    dispatch: vi.fn(),
+    categories: [],
+    categoryMappings: [],
+    categoryDispatch: vi.fn(),
+    categoriesHydrated: true,
+    setPeriod: vi.fn(),
+  }
+
+  it('renders sub-tab content from the period prop and updates it on rerender', () => {
+    const { container, rerender } = render(<BudgetPage {...props} period="spend" />)
+    const contents = new Set<string>()
+    contents.add(container.textContent ?? '')
+    expect(screen.getByTestId('summary-cards')).toBeTruthy()
+
+    for (const period of ['expenses', 'analytics', 'categoryMapping'] as const) {
+      rerender(<BudgetPage {...props} period={period} />)
+      expect(screen.queryByTestId('summary-cards')).toBeNull()
+      contents.add(container.textContent ?? '')
+    }
+
+    expect(contents.size).toBe(4)
+  })
+
+  it('renders the year scope selector only for the spend period', () => {
+    const { rerender } = render(<BudgetPage {...props} period="spend" />)
+    expect(screen.getByLabelText('Select year')).toBeTruthy()
+
+    for (const period of ['expenses', 'analytics', 'categoryMapping'] as const) {
+      rerender(<BudgetPage {...props} period={period} />)
+      expect(screen.queryByLabelText('Select year')).toBeNull()
+    }
   })
 })
 
@@ -87,7 +259,7 @@ describe('BudgetPage Spend scopes', () => {
 
   const renderSpend = (state = spendState()) => {
     const dispatch = vi.fn()
-    render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated />)
+    render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated {...periodProps} />)
     return dispatch
   }
 
@@ -104,6 +276,7 @@ describe('BudgetPage Spend scopes', () => {
         categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
+        {...periodProps}
       />
     )
   }
@@ -120,7 +293,7 @@ describe('BudgetPage Spend scopes', () => {
     const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
     expect(Array.from(yearSelect.options, (option) => option.text)).toEqual(['All', '2025', '2024'])
     expect(yearSelect.value).toBe('2025')
-    expect(screen.getByText('Actual income (2025)')).toBeTruthy()
+    expect(screen.getByText('Spend vs budget (2025)')).toBeTruthy()
     expect(screen.getByText('Zulu spend')).toBeTruthy()
     expect(screen.queryByText('Alpha spend')).toBeNull()
   })
@@ -130,10 +303,9 @@ describe('BudgetPage Spend scopes', () => {
 
     const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
     expect(Array.from(yearSelect.options, (option) => option.text)).toEqual(['All'])
-    expect(screen.getByText('Actual income (All years)')).toBeTruthy()
-    expect(screen.getByText('Actual spend (All years)')).toBeTruthy()
-    expect(screen.getByTestId('summary-cards').querySelectorAll('.card')).toHaveLength(5)
-    expect(screen.getAllByText('$0.00')).toHaveLength(5)
+    expect(screen.getByText('Spend vs budget (All years)')).toBeTruthy()
+    expect(screen.getByTestId('summary-cards').querySelectorAll('.card')).toHaveLength(3)
+    expect(screen.getAllByText('N/A')).toHaveLength(2)
     expect(dispatch).not.toHaveBeenCalled()
   })
 
@@ -142,12 +314,9 @@ describe('BudgetPage Spend scopes', () => {
 
     fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
 
-    expect(screen.getByText('Actual income (All years)')).toBeTruthy()
-    expect(screen.getByText('Actual spend (All years)')).toBeTruthy()
-    expect(screen.getByTestId('summary-cards').textContent).toContain('$1,200.00')
-    expect(screen.getByTestId('summary-cards').textContent).toContain('$3,000.00')
-    expect(screen.getByTestId('summary-cards').textContent).toContain('$50.00')
-    expect(screen.getByTestId('summary-cards').textContent).toContain('$100.00')
+    expect(screen.getByText('Spend vs budget (All years)')).toBeTruthy()
+    expect(screen.getByTestId('summary-cards').textContent).toContain('Spent -$100.00 of $50.00 budget')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('N/A')
     expect(screen.getByText('Alpha spend')).toBeTruthy()
     expect(screen.getByText('Zulu spend')).toBeTruthy()
     expect(screen.getByTestId('records-total-row').textContent).toContain('$100.00')
@@ -199,11 +368,10 @@ describe('BudgetPage Spend scopes', () => {
     fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
     fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2025' } })
 
-    expect(screen.getByText('Actual income (2025)')).toBeTruthy()
+    expect(screen.getByText('Spend vs budget (2025)')).toBeTruthy()
     expect(screen.getByText('Zulu spend')).toBeTruthy()
     expect(screen.queryByText('Alpha spend')).toBeNull()
-    expect(screen.getByTestId('summary-cards').textContent).toContain('$2,000.00')
-    expect(screen.getByTestId('summary-cards').textContent).toContain('$75.00')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('Spent -$75.00 of $0.00 budget')
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2025' })
   })
@@ -313,6 +481,7 @@ describe('BudgetPage budget account imports and signed amounts', () => {
         categoryDispatch={vi.fn()}
         categoriesHydrated
         budgetAccountRules={rules}
+        {...periodProps}
       />
     )
     return dispatch
@@ -422,7 +591,7 @@ describe('BudgetPage budget account imports and signed amounts', () => {
     const state = initialState()
     const Harness = () => {
       const [appState, dispatch] = useReducer(appReducer, state)
-      return <BudgetPage state={appState} dispatch={(action) => { actions(action); dispatch(action) }} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated budgetAccountRules={[positiveRule]} />
+      return <BudgetPage state={appState} dispatch={(action) => { actions(action); dispatch(action) }} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated budgetAccountRules={[positiveRule]} {...periodProps} />
     }
     render(<Harness />)
 
@@ -443,8 +612,8 @@ describe('BudgetPage budget account imports and signed amounts', () => {
   })
 })
 
-describe('BudgetPage Accounts tab removed', () => {
-  it('renders exactly four tabs with no Accounts tab', () => {
+describe('BudgetPage period control', () => {
+  it('does not render the App-owned period control', () => {
     render(
       <BudgetPage
         state={initialState()}
@@ -453,12 +622,11 @@ describe('BudgetPage Accounts tab removed', () => {
         categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
+        {...periodProps}
       />,
     )
 
-    expect(Array.from(document.querySelectorAll('input[name="budgetPeriod"] + span'), (tab) => tab.textContent)).toEqual([
-      'Expenses', 'Spend', 'Analytics', 'Category Mapping',
-    ])
+    expect(document.querySelector('input[name="budgetPeriod"]')).toBeNull()
     expect(screen.queryByText('Accounts')).toBeNull()
   })
 })
@@ -476,7 +644,7 @@ describe('BudgetPage category mapping overlay', () => {
   const renderOverlay = () => {
     const dispatch = vi.fn()
     const categoryDispatch = vi.fn()
-    const view = render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={mappings} categoryDispatch={categoryDispatch} categoriesHydrated />)
+    const view = render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={mappings} categoryDispatch={categoryDispatch} categoriesHydrated {...periodProps} />)
     fireEvent.click(screen.getByLabelText('Edit category mappings for Market run'))
     return { ...view, dispatch, categoryDispatch }
   }
@@ -501,7 +669,7 @@ describe('BudgetPage category mapping overlay', () => {
       categoryMappings: initialMappings,
     })
 
-    return <BudgetPage state={appState} dispatch={dispatch} categories={categoryState.categories} categoryMappings={categoryState.categoryMappings} categoryDispatch={categoryDispatch} categoriesHydrated />
+    return <BudgetPage state={appState} dispatch={dispatch} categories={categoryState.categories} categoryMappings={categoryState.categoryMappings} categoryDispatch={categoryDispatch} categoriesHydrated {...periodProps} />
   }
 
   it('edits a mapping substring on Enter and reapplies the updated mappings', () => {
@@ -560,7 +728,7 @@ describe('BudgetPage category mapping overlay', () => {
       type: 'REAPPLY_CATEGORY_MAPPINGS',
       categoryMappings: [expect.objectContaining({ id: 'market', deletedAt: expect.any(String) })],
     }))
-    rerender(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={categoryDispatch} categoriesHydrated />)
+    rerender(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={categoryDispatch} categoriesHydrated {...periodProps} />)
     expect(screen.getByRole('dialog', { name: 'Category mappings' })).toBeTruthy()
     expect(screen.getByText('No category mappings.')).toBeTruthy()
     confirm.mockRestore()

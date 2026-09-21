@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, CATEGORY_SHARE_PALETTE, categoryBreakdown, computeRecurringSpendIds, expenseStreamBands, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
 import type { BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
@@ -240,6 +240,244 @@ describe('Spend scopes', () => {
     expect(totals.actualSpend).toBe(yearTotalSpend(transactions, spendCategories, '2025', spendDefinitions))
     expect(totals.budgetedSpend).toBe(340)
     expect(totals.variance).toBe(240)
+  })
+})
+
+describe('projectedSpendForScope', () => {
+  const foodCategory: Category[] = [{ id: 'food', name: 'Food', updatedAt: '' }]
+  const foodDefinition: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'yearly' }]
+
+  it('extrapolates mid-year actual spend and flags projected overages', () => {
+    const result = projectedSpendForScope(
+      foodDefinition,
+      { '2025': { 'food-budget': 700 } },
+      [tx({ amount: -728, date: '2025-06-30' })],
+      foodCategory,
+      '2025',
+      new Date(2025, 6, 2)
+    )
+
+    expect(result).toEqual({ projectedTotal: 1460, budgetTotal: 700, pctOver: 108.57142857142858, isOverBudget: true })
+  })
+
+  it('does not flag projections at or below budget', () => {
+    expect(projectedSpendForScope(
+      foodDefinition,
+      { '2025': { 'food-budget': 1500 } },
+      [tx({ amount: -728, date: '2025-06-30' })],
+      foodCategory,
+      '2025',
+      new Date(2025, 6, 2)
+    )?.isOverBudget).toBe(false)
+  })
+
+  it('returns null for the unbounded all-years scope', () => {
+    expect(projectedSpendForScope(foodDefinition, {}, [], foodCategory, SPEND_ALL_YEARS, new Date(2025, 6, 2))).toBeNull()
+  })
+
+  it('returns zero projection on the first day of the period', () => {
+    expect(projectedSpendForScope(
+      foodDefinition,
+      { '2025': { 'food-budget': 700 } },
+      [tx({ amount: -100 })],
+      foodCategory,
+      '2025',
+      new Date(2025, 0, 1)
+    )).toMatchObject({ projectedTotal: 0, budgetTotal: 700, pctOver: -100, isOverBudget: false })
+  })
+
+  it('clamps stale as-of dates to the period end', () => {
+    expect(projectedSpendForScope(
+      foodDefinition,
+      { '2025': { 'food-budget': 700 } },
+      [tx({ amount: -800, date: '2025-12-31' })],
+      foodCategory,
+      '2025',
+      new Date(2026, 2, 1)
+    )).toMatchObject({ projectedTotal: 800, budgetTotal: 700, isOverBudget: true })
+  })
+
+  it('handles empty transactions and definitions', () => {
+    expect(projectedSpendForScope([], {}, [], foodCategory, '2025', new Date(2025, 6, 2))).toEqual({
+      projectedTotal: 0,
+      budgetTotal: 0,
+      pctOver: 0,
+      isOverBudget: false
+    })
+  })
+})
+
+describe('overBudgetCategories', () => {
+  const overBudgetCategoriesList: Category[] = [
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'rent', name: 'Rent', updatedAt: '' },
+    { id: 'travel', name: 'Travel', updatedAt: '' },
+  ]
+  const overBudgetDefinitions: ExpenseDefinition[] = [
+    { id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'yearly' },
+    { id: 'rent-budget', name: 'Rent', categoryId: 'rent', frequency: 'yearly' },
+    { id: 'travel-budget', name: 'Travel', categoryId: 'travel', frequency: 'yearly' },
+  ]
+
+  it('returns an over-budget category with its overage amount and percentage', () => {
+    expect(overBudgetCategories(
+      overBudgetDefinitions,
+      { '2025': { 'food-budget': 100 } },
+      [tx({ amount: -150 })],
+      overBudgetCategoriesList,
+      '2025'
+    )).toEqual([{ categoryId: 'food', label: 'Food', overageAmount: 50, pctOver: 50 }])
+  })
+
+  it('sorts multiple overages from largest to smallest', () => {
+    expect(overBudgetCategories(
+      overBudgetDefinitions,
+      { '2025': { 'food-budget': 100, 'rent-budget': 300 } },
+      [tx({ amount: -150 }), tx({ id: 'rent', categoryId: 'rent', amount: -500 })],
+      overBudgetCategoriesList,
+      '2025'
+    ).map((item) => item.categoryId)).toEqual(['rent', 'food'])
+  })
+
+  it('excludes categories exactly at budget', () => {
+    expect(overBudgetCategories(
+      overBudgetDefinitions,
+      { '2025': { 'food-budget': 100 } },
+      [tx({ amount: -100 })],
+      overBudgetCategoriesList,
+      '2025'
+    )).toEqual([])
+  })
+
+  it('uses Infinity pctOver for unbudgeted actual spend', () => {
+    expect(overBudgetCategories(
+      overBudgetDefinitions,
+      { '2025': { 'travel-budget': 0 } },
+      [tx({ id: 'travel', categoryId: 'travel', amount: -25 })],
+      overBudgetCategoriesList,
+      '2025'
+    )).toEqual([{ categoryId: 'travel', label: 'Travel', overageAmount: 25, pctOver: Infinity }])
+  })
+
+  it('returns no action items for an empty scope', () => {
+    expect(overBudgetCategories(overBudgetDefinitions, { '2025': { 'food-budget': 100 } }, [], overBudgetCategoriesList, '2025')).toEqual([])
+  })
+})
+
+describe('sankeyFlowData', () => {
+  const sankeyCategories: Category[] = [
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'rent', name: 'Rent', updatedAt: '' },
+  ]
+  const sankeyDefinitions: ExpenseDefinition[] = [
+    { id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'yearly' },
+    { id: 'rent-budget', name: 'Rent', categoryId: 'rent', frequency: 'yearly' },
+  ]
+
+  it('matches budget and actual category heights with no Unspent flow when on budget', () => {
+    const result = sankeyFlowData(
+      sankeyDefinitions,
+      { '2025': { 'food-budget': 100, 'rent-budget': 300 } },
+      [tx({ id: 'food', amount: -100 }), tx({ id: 'rent', categoryId: 'rent', amount: -300 })],
+      sankeyCategories,
+      '2025'
+    )
+
+    expect(result.nodes.find((node) => node.id === 'budget:food')?.height).toBe(result.nodes.find((node) => node.id === 'actual:food')?.height)
+    expect(result.nodes.find((node) => node.id === 'budget:rent')?.height).toBe(result.nodes.find((node) => node.id === 'actual:rent')?.height)
+    expect(result.links.some((link) => link.targetId === 'actual:unspent')).toBe(false)
+  })
+
+  it('routes category shortfalls to a proportionally-sized Unspent node', () => {
+    const result = sankeyFlowData(sankeyDefinitions, { '2025': { 'food-budget': 100, 'rent-budget': 300 } }, [tx({ amount: -50 }), tx({ id: 'rent', categoryId: 'rent', amount: -300 })], sankeyCategories, '2025')
+
+    expect(result.nodes.find((node) => node.id === 'actual:unspent')).toMatchObject({ value: 50 })
+    expect(result.links.find((link) => link.sourceId === 'budget:food' && link.targetId === 'actual:unspent')?.title).toContain('$50')
+  })
+
+  it('caps overflow geometry while reporting the real overage percentage', () => {
+    const result = sankeyFlowData(sankeyDefinitions, { '2025': { 'food-budget': 100, 'rent-budget': 0 } }, [tx({ amount: -150 })], sankeyCategories, '2025')
+
+    expect(result.links.find((link) => link.targetId === 'actual:food')?.title).toContain('50.0% over budget')
+  })
+
+  it('returns finite geometry without budget definitions', () => {
+    const result = sankeyFlowData([], {}, [], [], '2025')
+
+    expect(result.nodes.length).toBeLessThanOrEqual(1)
+    expect([...result.nodes, ...result.links].every((item) => !JSON.stringify(item).includes('NaN') && !JSON.stringify(item).includes('Infinity'))).toBe(true)
+  })
+
+  it('renders untracked spend with a zero-height budget node and finite width', () => {
+    const result = sankeyFlowData([], {}, [tx({ amount: -25 })], sankeyCategories.slice(0, 1), '2025')
+
+    expect(result.nodes.find((node) => node.id === 'budget:food')).toMatchObject({ height: 0, width: expect.any(Number) })
+    expect(result.nodes.find((node) => node.id === 'actual:food')?.height).toBeGreaterThan(0)
+  })
+
+  it('returns zero-height actual nodes when the scope has no transactions', () => {
+    const result = sankeyFlowData(sankeyDefinitions, { '2025': { 'food-budget': 100, 'rent-budget': 300 } }, [tx({ date: '2024-01-01', amount: -10 })], sankeyCategories, '2025')
+
+    expect(result.nodes.filter((node) => node.column === 'actual').every((node) => node.height === 0)).toBe(true)
+    expect(() => sankeyFlowData(sankeyDefinitions, {}, [], sankeyCategories, '2025')).not.toThrow()
+  })
+})
+
+describe('expenseStreamBands', () => {
+  const streamCategories: Category[] = [
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'housing', name: 'Housing', updatedAt: '' },
+  ]
+
+  it('builds one multi-point stacked area per category across years with data', () => {
+    const result = expenseStreamBands([
+      tx({ id: 'food-2024', date: '2024-01-01', amount: -100 }),
+      tx({ id: 'housing-2024', date: '2024-02-01', categoryId: 'housing', amount: -300 }),
+      tx({ id: 'food-2025', date: '2025-01-01', amount: -150 }),
+      tx({ id: 'housing-2025', date: '2025-02-01', categoryId: 'housing', amount: -350 }),
+    ], streamCategories, [])
+
+    expect(result.years).toEqual(['2024', '2025'])
+    expect(result.bands).toHaveLength(2)
+    expect(result.bands.every((band) => /^M .+ L .+ Z$/.test(band.d))).toBe(true)
+  })
+
+  it('reconciles legend totals to actual scoped category spend', () => {
+    const transactions = [
+      tx({ id: 'food-2024', date: '2024-01-01', amount: -100 }),
+      tx({ id: 'housing-2024', date: '2024-02-01', categoryId: 'housing', amount: -300 }),
+      tx({ id: 'food-2025', date: '2025-01-01', amount: -150 }),
+    ]
+    const result = expenseStreamBands(transactions, streamCategories, [])
+
+    expect(result.legend.reduce((sum, entry) => sum + entry.total, 0)).toBe(550)
+  })
+
+  it('excludes years without non-excluded transaction activity', () => {
+    const result = expenseStreamBands([
+      tx({ id: 'food-2024', date: '2024-01-01', amount: -100 }),
+      tx({ id: 'food-2026', date: '2026-01-01', categoryId: 'income', amount: 1000 }),
+    ], [...streamCategories, { id: 'income', name: 'Income', updatedAt: '' }], [])
+
+    expect(result.years).toEqual(['2024'])
+    expect(result.bands).toHaveLength(1)
+  })
+
+  it('clamps colors to the final palette entry for categories beyond six', () => {
+    const manyCategories = Array.from({ length: 7 }, (_, index) => ({ id: `category-${index}`, name: `Category ${index}`, updatedAt: '' }))
+    const result = expenseStreamBands(
+      manyCategories.map((category, index) => tx({ id: category.id, categoryId: category.id, amount: -(index + 1) })),
+      manyCategories,
+      []
+    )
+
+    expect(result.bands).toHaveLength(7)
+    expect(result.bands.every((band) => band.color !== undefined)).toBe(true)
+    expect(result.bands.at(-1)?.color).toBe(CATEGORY_SHARE_PALETTE.at(-1))
+  })
+
+  it('returns empty chart data without transactions', () => {
+    expect(expenseStreamBands([], streamCategories, [])).toEqual({ years: [], bands: [], legend: [] })
   })
 })
 

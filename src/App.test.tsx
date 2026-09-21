@@ -301,20 +301,17 @@ async function renderUnlockedApp() {
   await waitFor(() => {
     expect(screen.queryByText('Loading...')).toBeFalsy()
     // The Nav's Positions tab is present on every post-unlock view.
-    expect(screen.getByText('Positions')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy()
   })
 
   return utils
 }
 
 /**
- * Returns the clickable pill <div> for a main nav tab, given its visible label text
- * (e.g. 'Positions', 'Register', 'Quotes'). The Nav renders each tab as a plain
- * `<div onClick>` wrapping an icon + a `<span>{label}</span>` — no ARIA role or label
- * association, so tests locate the tab by its label text and walk up to the div.
+ * Returns an accessible main-navigation button by its label.
  */
 function navTab(label: string): HTMLElement {
-  return screen.getByText(label).closest('div') as HTMLElement
+  return screen.getByRole('button', { name: label })
 }
 
 describe('pending import processing', () => {
@@ -418,8 +415,8 @@ describe('view switching (accounts vs settings)', () => {
     expect(screen.getByText('Non-Taxable')).toBeTruthy()
     expect(screen.getByText('Tax-Deferred')).toBeTruthy()
 
-    // The Positions nav tab is the active (highlighted) one.
-    expect(navTab('Positions').style.background).toBe('var(--color-accent-100)')
+    // The Positions nav tab is active.
+    expect(navTab('Positions').getAttribute('aria-pressed')).toBe('true')
 
     // Settings content is not rendered.
     expect(screen.queryByText('Google Drive Sync')).toBeFalsy()
@@ -430,11 +427,11 @@ describe('view switching (accounts vs settings)', () => {
 
     // The Nav renders exactly the expected main tabs (Budget, Positions, Register, Quotes)
     // and nothing else (no Dashboard tab).
-    expect(screen.getByText('Budget')).toBeTruthy()
-    expect(screen.getByText('Positions')).toBeTruthy()
-    expect(screen.getByText('Register')).toBeTruthy()
-    expect(screen.getByText('Quotes')).toBeTruthy()
-    expect(screen.queryByText('Dashboard')).toBeFalsy()
+    expect(screen.getByRole('button', { name: 'Budget' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Register' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Quotes' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Dashboard' })).toBeFalsy()
   })
 
   it('should switch to register page when the Register tab is clicked', async () => {
@@ -478,7 +475,7 @@ describe('view switching (accounts vs settings)', () => {
 
     // Positions content is gone, and the Positions tab is no longer active.
     expect(screen.queryByText('Tax-Deferred')).toBeFalsy()
-    expect(navTab('Positions').style.background).toBe('transparent')
+    expect(navTab('Positions').getAttribute('aria-pressed')).toBe('false')
   })
 
   it('should return to the Positions page when the Positions tab is clicked from settings', async () => {
@@ -512,7 +509,7 @@ describe('password gate', () => {
     })
 
     // The main app tree must not be rendered underneath/alongside the gate.
-    expect(screen.queryByText('Positions')).toBeFalsy()
+    expect(screen.queryByRole('button', { name: 'Positions' })).toBeFalsy()
     expect(screen.queryByText('Tax-Deferred')).toBeFalsy()
   })
 
@@ -642,7 +639,7 @@ describe('Drive-sync activation + connect/disconnect wiring', () => {
 
     fireEvent.click(screen.getByText('MockUnlock'))
     await waitFor(() => {
-      expect(screen.getByText('Positions')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy()
     })
 
     expect(activateMock).toHaveBeenCalledTimes(1)
@@ -921,7 +918,7 @@ describe('global categories wiring', () => {
     await waitFor(() => expect(screen.getByText('MockUnlock')).toBeTruthy())
     fireEvent.click(screen.getByText('MockUnlock'))
 
-    await waitFor(() => expect(screen.getByText('Positions')).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy())
     const [savedState] = vi.mocked(savePersistedApp).mock.calls[0]
     expect(savedState.budgetTransactions[0]).toMatchObject({ accountName: 'Checking', amount: -75 })
     expect(savedState.budgetAccountAppliedConventions).toEqual({ checking: 'positiveSpend' })
@@ -956,13 +953,13 @@ describe('global categories wiring', () => {
     fireEvent.click(screen.getByText('MockUnlock'))
 
     await waitFor(() => expect(screen.getByText('Loading...')).toBeTruthy())
-    expect(screen.queryByText('Positions')).toBeFalsy()
+    expect(screen.queryByRole('button', { name: 'Positions' })).toBeFalsy()
     expect(savePersistedApp).not.toHaveBeenCalled()
 
     mockGlobalCategoriesFixture.current.hydrated = true
     rerender(<App />)
 
-    await waitFor(() => expect(screen.getByText('Positions')).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy())
     expect(vi.mocked(savePersistedApp).mock.calls[0][0].budgetTransactions[0]).toMatchObject({
       accountName: 'Checking',
       amount: -75,
@@ -1081,7 +1078,7 @@ describe('auto-lock on inactivity', () => {
 
   /** True while the unlocked dashboard/Nav is showing. */
   function isUnlocked() {
-    return !!screen.queryByText('Positions')
+    return !!screen.queryByRole('button', { name: 'Positions' })
   }
 
   it('stays unlocked after almost 2h with zero activity', async () => {
@@ -1227,7 +1224,7 @@ describe('auto-lock on inactivity', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('Loading...')).toBeFalsy()
-      expect(screen.getByText('Positions')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy()
     })
 
     expect(screen.queryByText(/Auto Lock Test Acct/)).toBeFalsy()
@@ -1527,7 +1524,7 @@ describe('multi-portfolio routing', () => {
       expect(screen.getByText('Create')).toBeTruthy()
     })
     expect(screen.queryByText('MockUnlock')).toBeFalsy()
-    expect(screen.queryByText('Positions')).toBeFalsy()
+    expect(screen.queryByRole('button', { name: 'Positions' })).toBeFalsy()
   })
 
   it('navigating to #/portfolio/<valid-id> calls setActivePortfolioDb with that portfolio\'s dbName and renders the gate/app shell', async () => {
@@ -1573,7 +1570,7 @@ describe('multi-portfolio routing', () => {
     await waitFor(() => {
       expect(screen.getByText('Create')).toBeTruthy()
     })
-    expect(screen.queryByText('Positions')).toBeFalsy()
+    expect(screen.queryByRole('button', { name: 'Positions' })).toBeFalsy()
   })
 })
 
@@ -1612,7 +1609,7 @@ describe('shared Drive portfolio import', () => {
     expect(portfolio).toMatchObject({ name: 'Shared household', sharedDriveFolderId: 'shared-folder-1' })
     expect(await getPortfolio(portfolio.id)).toMatchObject({ sharedDriveFolderId: 'shared-folder-1' })
     expect(setActivePortfolioDb).toHaveBeenCalledWith(portfolio.dbName)
-    await waitFor(() => expect(screen.getByText('Positions')).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy())
   })
 
   it('propagates a local name collision without special-casing it', async () => {

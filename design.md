@@ -10,12 +10,18 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 ## Budget
 
-- `BudgetPage` has four non-persisted local tabs: `expenses`, `spend`, `analytics`, `categoryMapping`; default: `spend`.
+- `App.tsx` owns the non-persisted Budget period (`expenses`, `spend`, `analytics`, `categoryMapping`; default: `spend`) and renders its control in `TopBar`; `BudgetPage` receives it as props.
 - `BudgetAccountsTab` mounts from Settings' Spend Accounts tab. It receives current-portfolio transactions and visible global `budgetAccountRules`. It confirms configure/remove actions and then dispatches `RECONCILE_BUDGET_ACCOUNT_CONVENTIONS` for the active portfolio.
 - Budget imports require an existing canonical account or a new account name. `convertBudgetAccountImportRows` canonicalizes the selected account name and converts a `positiveSpend` statement to canonical negative spend before `IMPORT_BUDGET_TRANSACTIONS` deduplication.
 - `negativeSpend` is the permanent default when no rule exists. Import persists an applied-convention marker even if all rows are duplicates.
 - CSV/OFX/QFX parsers are unchanged; they return raw parsed rows only.
 - `categoryBreakdown()` returns additive, non-breaking drilldown fields for existing callers: `categoryId`, `drillLines`, and `unlinkedActual`.
+
+## Shell Navigation
+
+- `App.tsx` renders `RailNav` and `TopBar` for every hydrated, unlocked portfolio view.
+- `RailNav` is a fixed left icon rail: Ledger mark; Budget, Positions, Register, Quotes; flexible spacer; Settings. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the mark/spacer.
+- `TopBar` contains the portfolio-switch button, optional Budget period control, and Sync button. Sync is disabled while disconnected or syncing.
 
 ## Global Categories
 

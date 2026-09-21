@@ -18,6 +18,16 @@ type BudgetExpensesTabProps = {
 - `categories` supplies category labels and locates `Uncategorized`.
 - `categoryDispatch` creates `Uncategorized` when absent.
 
+## Actual-Spend Overview
+
+- Render order: `Expense Summary`, `BudgetStreamChart`, `Action items`, unchanged `Expenses` table, unchanged `Category Breakdown` drilldown.
+- `breakdownYear` is initialized from the first `availableBudgetYears(...)` result and drives the summary, action items, and breakdown; only the breakdown selector changes it.
+- Summary transactions are all transactions dated in `breakdownYear`, with `magnitude: Math.abs(amount)`.
+- `Expense Summary` renders four cards: total spend / selected-year configured amount total; average transaction / largest transaction; largest transaction with category label and description; highest-spend category / total spend.
+- Cards use guarded, capped-at-100 percentage bars. Empty transactions yield zero totals and `No transactions` for the largest/top-category detail.
+- `BudgetStreamChart` receives all transactions, categories, and definitions. `expenseStreamBands(...)` returns chronologically sorted active-spend years, stacked annual actual-spend SVG paths, and a total-ranked category legend; excluded/deleted categories and nonpositive totals are omitted.
+- `Action items` consumes `overBudgetCategories(...)` for `breakdownYear`: categories with actual above budget, sorted by overage descending then label. Zero-budget overages expose `Infinity` for the UI's infinity percentage label.
+
 ## Expense CSV Download
 
 - The table action group is ordered: `Download Expenses`, `Import expenses`, `Add Expense`.

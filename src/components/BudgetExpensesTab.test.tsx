@@ -6,6 +6,7 @@ import { initialState, type AppState } from '../lib/state'
 import { appReducer, type AppAction } from '../lib/reducer'
 import type { Category } from '../lib/types'
 import * as importExportModule from '../lib/importExport'
+import { expenseStreamBands } from '../lib/selectors'
 
 vi.mock('../lib/importExport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/importExport')>()),
@@ -161,6 +162,179 @@ describe('BudgetExpensesTab expense downloads', () => {
   })
 })
 
+describe('BudgetExpensesTab expense summary', () => {
+  const year = String(new Date().getFullYear())
+  const transaction = (id: string, categoryId: string, amount: number, description = id) => ({
+    id,
+    date: `${year}-01-01`,
+    description,
+    categoryId,
+    amount,
+  })
+
+  it('shows spend, average, largest transaction, and top category for the selected period', () => {
+    renderTab({
+      ...initialState(),
+      budgetExpenseAmountsByYear: { [year]: { rent: 500 } },
+      budgetTransactions: [
+        transaction('rent', 'housing', -300, 'September rent'),
+        transaction('groceries', 'food', -100, 'Market'),
+        transaction('dining', 'food', -50, 'Lunch'),
+      ],
+    })
+
+    expect(screen.getByTestId('expense-summary-spend').textContent).toContain('$450.00')
+    expect(screen.getByTestId('expense-summary-average').textContent).toContain('$150.00')
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain('$300.00')
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain('Housing')
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain('September rent')
+    expect(screen.getByTestId('expense-summary-top-category').textContent).toContain('Housing · $300.00')
+    expect(screen.getByTestId('expense-summary-spend-bar').style.width).toBe('90%')
+    expect(screen.getByTestId('expense-summary-average-bar').style.width).toBe('50%')
+    expect(screen.getByTestId('expense-summary-top-category-bar').style.width).toBe('66.66666666666666%')
+  })
+
+  it('shows zero values and empty details when the selected period has no transactions', () => {
+    renderTab(initialState())
+
+    expect(screen.getByTestId('expense-summary-spend').textContent).toContain('$0.00')
+    expect(screen.getByTestId('expense-summary-average').textContent).toContain('$0.00')
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain('$0.00')
+    expect(screen.getAllByText('No transactions')).toHaveLength(2)
+    expect(screen.getByTestId('expense-summary-average-bar').style.width).toBe('0%')
+  })
+
+  it('uses the single transaction as both the average and largest transaction', () => {
+    renderTab({ ...initialState(), budgetTransactions: [transaction('coffee', 'food', -12, 'Coffee')] })
+
+    expect(screen.getByTestId('expense-summary-average').textContent).toContain('$12.00')
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain('$12.00')
+    expect(screen.getByTestId('expense-summary-average-bar').style.width).toBe('100%')
+  })
+
+  it('uses absolute transaction magnitude for refunds and expenses', () => {
+    renderTab({
+      ...initialState(),
+      budgetTransactions: [transaction('refund', 'food', 75, 'Refund'), transaction('meal', 'food', -50, 'Meal')],
+    })
+
+    expect(screen.getByTestId('expense-summary-spend').textContent).toContain('$125.00')
+    expect(screen.getByTestId('expense-summary-average').textContent).toContain('$62.50')
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain('$75.00')
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain('Refund')
+  })
+})
+
+describe('BudgetExpensesTab expense stream chart', () => {
+  const transaction = (id: string, date: string, categoryId: string, amount: number) => ({
+    id,
+    date,
+    description: id,
+    categoryId,
+    amount,
+  })
+
+  it('renders selector bands, year labels, and legend totals', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        transaction('food-2024', '2024-01-01', 'food', -100),
+        transaction('housing-2024', '2024-01-01', 'housing', -300),
+        transaction('food-2025', '2025-01-01', 'food', -150),
+      ],
+    }
+    const expected = expenseStreamBands(state.budgetTransactions, categories, state.budgetExpenseDefinitions)
+    renderTab(state)
+
+    const paths = screen.getAllByTestId('expense-stream-band')
+    expect(paths.map((path) => path.getAttribute('d'))).toEqual(expected.bands.map((band) => band.d))
+    expect(screen.getAllByTestId('expense-stream-year').map((label) => label.textContent)).toEqual(expected.years)
+    expect(screen.getAllByTestId('expense-stream-legend').map((entry) => entry.textContent)).toEqual(
+      expected.legend.map((entry) => `${entry.label}$${entry.total.toFixed(2)}`)
+    )
+    screen.getAllByTestId('expense-stream-swatch').forEach((swatch, index) => {
+      const color = Number.parseInt(expected.legend[index].color.slice(1), 16)
+      expect((swatch as HTMLElement).style.background).toBe(`rgb(${color >> 16}, ${color >> 8 & 255}, ${color & 255})`)
+    })
+  })
+
+  it('renders a single-column stream when only one year has data', () => {
+    renderTab({
+      ...initialState(),
+      budgetTransactions: [transaction('food-2025', '2025-01-01', 'food', -100)],
+    })
+
+    expect(screen.getAllByTestId('expense-stream-band')).toHaveLength(1)
+    expect(screen.getAllByTestId('expense-stream-year').map((label) => label.textContent)).toEqual(['2025'])
+  })
+
+  it('shows an empty state without rendering an SVG when there is no expense activity', () => {
+    renderTab(initialState())
+
+    expect(screen.getByTestId('expense-stream-chart').textContent).toContain('No expense activity to chart.')
+    expect(screen.queryByRole('img', { name: 'Expense by category over time' })).toBeNull()
+  })
+})
+
+describe('BudgetExpensesTab action items', () => {
+  const year = String(new Date().getFullYear())
+  const transaction = (id: string, categoryId: string, amount: number) => ({
+    id,
+    date: `${year}-01-01`,
+    description: id,
+    categoryId,
+    amount,
+  })
+
+  it('shows one warning row per over-budget category with its overage and percentage', () => {
+    renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [
+        { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' },
+        { id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'yearly' },
+      ],
+      budgetExpenseAmountsByYear: { [year]: { groceries: 100, rent: 200 } },
+      budgetTransactions: [
+        transaction('groceries-actual', 'food', -125),
+        transaction('rent-actual', 'housing', -250),
+      ],
+    })
+
+    const rows = screen.getAllByTestId('expense-action-item')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('Housing is $50.00 over budget (25.0%)')
+    expect(rows[0].textContent).toContain('Review recent transactions in this category')
+    expect(rows[1].textContent).toContain('Food is $25.00 over budget (25.0%)')
+  })
+
+  it('orders rows by overage descending', () => {
+    renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [
+        { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' },
+        { id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'yearly' },
+      ],
+      budgetExpenseAmountsByYear: { [year]: { groceries: 100, rent: 200 } },
+      budgetTransactions: [
+        transaction('groceries-actual', 'food', -125),
+        transaction('rent-actual', 'housing', -275),
+      ],
+    })
+
+    expect(screen.getAllByTestId('expense-action-item').map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Housing is $75.00 over budget'),
+      expect.stringContaining('Food is $25.00 over budget'),
+    ])
+  })
+
+  it('shows an empty state when no category is over budget', () => {
+    renderTab(initialState())
+
+    expect(screen.getByTestId('expense-action-items').textContent).toContain('No categories over budget')
+    expect(screen.queryByTestId('expense-action-item')).toBeNull()
+  })
+})
+
 describe('BudgetExpensesTab category breakdown drilldown', () => {
   const year = String(new Date().getFullYear())
   const transaction = (id: string, categoryId: string, amount: number, spendExpenseId?: string) => ({
@@ -257,7 +431,7 @@ describe('BudgetExpensesTab category breakdown drilldown', () => {
     fireEvent.click(categoryRow('Food'))
 
     expect(screen.getByText('Unlinked transactions')).toBeTruthy()
-    expect(screen.getByText('$45.00')).toBeTruthy()
+    expect(screen.getByText('Unlinked transactions').parentElement!.textContent).toContain('$45.00')
     expect(screen.queryByText('No budget lines in this category.')).toBeNull()
   })
 
@@ -274,6 +448,9 @@ describe('BudgetExpensesTab category breakdown drilldown', () => {
     renderTab(initialState())
 
     expect(Array.from(document.querySelectorAll('.card-title')).map((element) => element.textContent)).toEqual([
+      'Expense Summary',
+      'Expense by category',
+      'Action items',
       'Expenses',
       'Category Breakdown',
     ])
