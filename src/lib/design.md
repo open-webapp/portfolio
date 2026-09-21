@@ -28,6 +28,8 @@ Directory structure, API contract, component tree, state management, data model,
 
 Spend only: `spendBudgetYears(budgetTransactions)` returns newest-first transaction years, without current-year or snapshot-only additions. `SPEND_ALL_YEARS` is a selector-local symbol sentinel; `spendTransactionsForScope` returns all transactions for it, and `spendCardTotals` aggregates each transaction year with that exact year's snapshot (`{}` when absent), never nearest-year resolution. BudgetPage dispatches `ENSURE_BUDGET_YEAR_SNAPSHOT` only for selected concrete years lacking an expense snapshot, never for All; add/import preserves All, while a concrete scope invalidated by deletion or moving its last transaction resets to All. `availableBudgetYears` remains unchanged for shared non-Spend consumers: transaction years plus the current year.
 
+`sankeyFlowData` spaces category nodes by a 32px minimum gap so two-line labels do not overlap. `BudgetSankey` derives its canvas height from the lowest node (460px minimum) and scrolls both axes within a 720px-tall viewport.
+
 ### Undo Closed Position
 
 ClosedPosition → ClosedPositionsTable Undo click → findMatchingOpenPosition/isExactLotMatch dedup check (state.ts) → [window.confirm if exact-lot match] → RESTORE_CLOSED_POSITION dispatch → restoreClosedPosition (state.ts)

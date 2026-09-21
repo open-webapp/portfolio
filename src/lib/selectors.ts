@@ -877,7 +877,7 @@ function perCategoryBudgetActual(
 }
 
 /**
- * Budget-to-actual Sankey geometry for the Spend page's 1200 x 460 viewBox.
+ * Budget-to-actual Sankey geometry for the Spend page's 1200px-wide viewBox.
  * Budget definitions and actual transactions are aggregated by category within
  * the selected scope; unused budget flows to the actual-column Unspent node.
  */
@@ -903,7 +903,7 @@ export function sankeyFlowData(
   const budgetX = 545
   const actualX = 1010
   const top = 40
-  const gap = 8
+  const gap = 32
   const nodes: SankeyNode[] = []
   const links: SankeyLink[] = []
   const budgetOffsets = new Map<string, number>()

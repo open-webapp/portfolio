@@ -7,7 +7,8 @@ export interface BudgetSankeyProps {
 }
 
 const chartWidth = 1200
-const chartHeight = 460
+const minChartHeight = 460
+const chartBottomPadding = 40
 
 export function BudgetSankey({ nodes, links }: BudgetSankeyProps) {
   if (nodes.length === 0) {
@@ -21,10 +22,12 @@ export function BudgetSankey({ nodes, links }: BudgetSankeyProps) {
     )
   }
 
+  const chartHeight = Math.max(minChartHeight, ...nodes.map((node) => node.y + node.height + chartBottomPadding))
+
   return (
     <div className="card blueprint elev-sm" data-testid="budget-sankey">
       <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>Budget flow</div>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ maxHeight: '720px', overflow: 'auto' }}>
         <div style={{ position: 'relative', width: `${chartWidth}px`, height: `${chartHeight}px` }}>
           <svg
             aria-label="Budget flow chart"

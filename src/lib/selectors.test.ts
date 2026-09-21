@@ -388,6 +388,19 @@ describe('sankeyFlowData', () => {
     expect(result.links.some((link) => link.targetId === 'actual:unspent')).toBe(false)
   })
 
+  it('keeps adjacent Sankey node label centers at least one label height apart', () => {
+    const categories = [
+      { id: 'large', name: 'Large', updatedAt: '' },
+      { id: 'small-a', name: 'Small A', updatedAt: '' },
+      { id: 'small-b', name: 'Small B', updatedAt: '' },
+    ]
+    const definitions = categories.map((category) => ({ id: `${category.id}-budget`, name: category.name, categoryId: category.id, frequency: 'yearly' as const }))
+    const result = sankeyFlowData(definitions, { '2025': { 'large-budget': 1000, 'small-a-budget': 1, 'small-b-budget': 1 } }, [], categories, '2025')
+    const smallNodes = result.nodes.filter((node) => node.id.startsWith('budget:small'))
+
+    expect(smallNodes[1].y + smallNodes[1].height / 2 - (smallNodes[0].y + smallNodes[0].height / 2)).toBeGreaterThanOrEqual(32)
+  })
+
   it('routes category shortfalls to a proportionally-sized Unspent node', () => {
     const result = sankeyFlowData(sankeyDefinitions, { '2025': { 'food-budget': 100, 'rent-budget': 300 } }, [tx({ amount: -50 }), tx({ id: 'rent', categoryId: 'rent', amount: -300 })], sankeyCategories, '2025')
 
