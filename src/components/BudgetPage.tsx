@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent, type MouseEvent, type SetStateAction } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetImportRows } from '../lib/state'
 import {
@@ -47,6 +47,8 @@ export interface BudgetPageProps {
   budgetAccountRules?: BudgetAccountRule[]
   period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping'
   setPeriod: (period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping') => void
+  selectedScope: SpendScope
+  setSelectedScope: Dispatch<SetStateAction<SpendScope>>
 }
 
 const textBtnAccent: CSSProperties = {
@@ -58,8 +60,6 @@ const textBtnAccent: CSSProperties = {
   fontWeight: 600,
   padding: 0,
 }
-
-const SPEND_ALL_OPTION_VALUE = '__spend_all_years__'
 
 const iconBtn: CSSProperties = {
   border: 'none',
@@ -125,7 +125,7 @@ function MappingIcon() {
  * - Spend tab: scope selector, summary cards, and the Spend records table.
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  */
-export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [], period }: BudgetPageProps) {
+export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [], period, selectedScope, setSelectedScope }: BudgetPageProps) {
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -139,9 +139,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [bulkExpenseId, setBulkExpenseId] = useState('')
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
   const recurringIds = computeRecurringSpendIds(state.budgetTransactions, categories, state.budgetExpenseDefinitions)
-  const [selectedScope, setSelectedScope] = useState<SpendScope>(
-    () => spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
-  )
   const [editingCell, setEditingCell] = useState<{
     rowId: string
     field: 'date' | 'description' | 'category' | 'account' | 'amount'
@@ -206,6 +203,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       setSelectedScope(SPEND_ALL_YEARS)
     }
   }, [availableYears, selectedScope])
+
+  useEffect(() => {
+    setRecPage(0)
+  }, [selectedScope])
 
   const periodFilteredTransactions = spendTransactionsForScope(state.budgetTransactions, selectedScope)
   const rangeLabel = selectedScope === SPEND_ALL_YEARS ? 'All years' : selectedScope
@@ -587,31 +588,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      {period === 'spend' && (
-        <div className="field" style={{ maxWidth: '220px' }}>
-          <select
-            className="input"
-            aria-label="Select year"
-            value={selectedScope === SPEND_ALL_YEARS ? SPEND_ALL_OPTION_VALUE : selectedScope}
-            onChange={(e) => {
-              const scope = e.target.value === SPEND_ALL_OPTION_VALUE ? SPEND_ALL_YEARS : e.target.value
-              setSelectedScope(scope)
-              if (scope !== SPEND_ALL_YEARS && !state.budgetExpenseAmountsByYear[scope]) {
-                dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: scope })
-              }
-              setRecPage(0)
-            }}
-          >
-            <option value={SPEND_ALL_OPTION_VALUE}>All</option>
-            {availableYears.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {period === 'categoryMapping' ? (
         <CategoryMappingTab
           state={state}

@@ -9,21 +9,19 @@ export interface NavProps {
   handleSync: () => void
   onOpenSettings: () => void
   onSwitchPortfolio: () => void
-  portfolioName: string
 }
 
 export interface RailNavProps {
   state: NavProps['state']
   dispatch: NavProps['dispatch']
-  onOpenSettings: NavProps['onOpenSettings']
-}
-
-export interface TopBarProps {
   connected: NavProps['connected']
   syncing: NavProps['syncing']
   handleSync: NavProps['handleSync']
+  onOpenSettings: NavProps['onOpenSettings']
   onSwitchPortfolio: NavProps['onSwitchPortfolio']
-  portfolioName: NavProps['portfolioName']
+}
+
+export interface TopBarProps {
   periodControl?: ReactNode
 }
 
@@ -50,10 +48,17 @@ const mainNavTabs = [
   },
 ] as const
 
-export function RailNav({ state, dispatch, onOpenSettings }: RailNavProps) {
+export function RailNav({ state, dispatch, connected, syncing, handleSync, onOpenSettings, onSwitchPortfolio }: RailNavProps) {
   return (
     <nav className="rail" aria-label="Main navigation">
-      <div className="rail-mark" aria-label="Ledger">L</div>
+      <button type="button" className="accent-square rail-item" onClick={onSwitchPortfolio} aria-label="Switch portfolio" title="Switch portfolio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="20" height="20" aria-hidden="true">
+          <path d="M21 2v6h-6" />
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+          <path d="M3 22v-6h6" />
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+        </svg>
+      </button>
       <div className="rail-items">
         {mainNavTabs.map((tab) => {
           const active = state.view === tab.value
@@ -75,6 +80,16 @@ export function RailNav({ state, dispatch, onOpenSettings }: RailNavProps) {
         })}
       </div>
       <div className="rail-spacer" />
+      {(connected || syncing) && (
+        <button type="button" className="rail-item" onClick={handleSync} disabled={syncing} aria-label={syncing ? 'Syncing' : 'Sync now'} title={syncing ? 'Syncing' : 'Sync now'}>
+          <svg className={syncing ? 'syncing' : undefined} viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 2v6h-6" />
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+            <path d="M3 22v-6h6" />
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+          </svg>
+        </button>
+      )}
       <button type="button" className="rail-item" onClick={onOpenSettings} aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="20" height="20" aria-hidden="true">
           <circle cx="12" cy="12" r="3" />
@@ -85,21 +100,10 @@ export function RailNav({ state, dispatch, onOpenSettings }: RailNavProps) {
   )
 }
 
-export function TopBar({ connected, syncing, handleSync, onSwitchPortfolio, portfolioName, periodControl }: TopBarProps) {
+export function TopBar({ periodControl }: TopBarProps) {
   return (
     <header className="top-bar">
-      <button type="button" className="top-bar-portfolio" onClick={onSwitchPortfolio} title="Switch portfolio">
-        {portfolioName}
-      </button>
       {periodControl}
-      <button type="button" className="top-bar-sync" onClick={handleSync} disabled={!connected || syncing} title="Sync now" aria-label="Sync now">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M21 2v6h-6" />
-          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-          <path d="M3 22v-6h6" />
-          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-        </svg>
-      </button>
     </header>
   )
 }
@@ -108,14 +112,16 @@ export function TopBar({ connected, syncing, handleSync, onSwitchPortfolio, port
 export function Nav(props: NavProps) {
   return (
     <>
-      <RailNav state={props.state} dispatch={props.dispatch} onOpenSettings={props.onOpenSettings} />
-      <TopBar
+      <RailNav
+        state={props.state}
+        dispatch={props.dispatch}
         connected={props.connected}
         syncing={props.syncing}
         handleSync={props.handleSync}
+        onOpenSettings={props.onOpenSettings}
         onSwitchPortfolio={props.onSwitchPortfolio}
-        portfolioName={props.portfolioName}
       />
+      <TopBar />
     </>
   )
 }

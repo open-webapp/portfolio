@@ -4,8 +4,9 @@ Sibling: `BudgetPage.design.md`.
 
 ## Tabs
 
-- Four App-owned tabs: Expenses, Spend, Analytics, Category Mapping. The selector appears in the Budget top bar, not in BudgetPage.
-- Spend is the App-session default. Tab selection remains when navigating away from and back to Budget, but is not persisted across app reloads.
+- Four App-owned tabs: Expenses, Spend, Analytics, Category Mapping. The selector appears in the Budget top bar, not in BudgetPage; the tab strip scrolls horizontally where needed.
+- Spend is the App-session default. Tab and All/year scope selection remain when navigating away from and back to Budget, but are not persisted across app reloads.
+- When Spend is selected, the top-bar `Year` selector is on a second row and offers `All` plus transaction years. Selecting a concrete year without an expense snapshot creates that year's snapshot; `All` does not.
 - Category Mapping renders `Loading category mappings...` until global categories hydrate; mapping controls are unavailable before then.
 
 ## Category Mapping
@@ -15,7 +16,7 @@ Sibling: `BudgetPage.design.md`.
 
 ## Spend Records
 
-- The Spend view has a local year/`All` scope selector, three summary cards, then a Budget flow Sankey chart before the records card.
+- The Spend view uses the shell-controlled All/year scope, then shows three summary cards and a Budget flow Sankey chart before the records card.
 - Spend vs budget shows scoped actual spending against scoped budget. Projected spend uses the current-date projection and marks over/under budget. Savings rate is available for a selected year; its edit control updates the aggregate annual income budget. A fourth summary card is out of scope.
 - Budget flow is derived by `sankeyFlowData` from scoped budget definitions/annual amounts and transactions, aggregated by category. It shows Income -> category budgets -> category actuals, with unused budget flowing to Unspent; no data shows `No budget flow for this period.`
 - Search matches description, account, and the displayed Spend Category label, including `Uncategorized (<category>)` for unlinked records.

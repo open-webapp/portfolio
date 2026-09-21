@@ -1,15 +1,46 @@
-import { useReducer } from 'react'
+import { useReducer, useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BudgetPage } from './BudgetPage'
+import { BudgetPage as BudgetPageUnderTest, type BudgetPageProps } from './BudgetPage'
 import { initialState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
 import { categoryStoreReducer } from '../lib/categoryStore'
-import { sankeyFlowData } from '../lib/selectors'
+import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, type SpendScope } from '../lib/selectors'
 
 afterEach(() => cleanup())
 
 const periodProps = { period: 'spend' as const, setPeriod: vi.fn() }
+
+// BudgetPage's production owner is App. This host supplies the controlled
+// scope and retains the legacy test suite's direct-page interaction coverage.
+function BudgetPage(props: Omit<BudgetPageProps, 'selectedScope' | 'setSelectedScope'>) {
+  const [selectedScope, setSelectedScope] = useState<SpendScope>(
+    () => spendBudgetYears(props.state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
+  )
+  const availableYears = spendBudgetYears(props.state.budgetTransactions)
+  const onScopeChange = (scope: SpendScope) => {
+    setSelectedScope(scope)
+    if (scope !== SPEND_ALL_YEARS && !props.state.budgetExpenseAmountsByYear[scope]) {
+      props.dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: scope })
+    }
+  }
+
+  return (
+    <>
+      {props.period === 'spend' && (
+        <select
+          aria-label="Select year"
+          value={selectedScope === SPEND_ALL_YEARS ? '__spend_all_years__' : selectedScope}
+          onChange={(event) => onScopeChange(event.target.value === '__spend_all_years__' ? SPEND_ALL_YEARS : event.target.value)}
+        >
+          <option value="__spend_all_years__">All</option>
+          {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+        </select>
+      )}
+      <BudgetPageUnderTest {...props} selectedScope={selectedScope} setSelectedScope={setSelectedScope} />
+    </>
+  )
+}
 
 describe('BudgetPage derived income', () => {
   it('renders the scoped budget flow between the summary cards and records', () => {
@@ -215,14 +246,10 @@ describe('BudgetPage period props', () => {
     expect(contents.size).toBe(4)
   })
 
-  it('renders the year scope selector only for the spend period', () => {
-    const { rerender } = render(<BudgetPage {...props} period="spend" />)
-    expect(screen.getByLabelText('Select year')).toBeTruthy()
+  it('does not render the App-owned year scope selector', () => {
+    render(<BudgetPageUnderTest {...props} period="spend" selectedScope="2025" setSelectedScope={vi.fn()} />)
 
-    for (const period of ['expenses', 'analytics', 'categoryMapping'] as const) {
-      rerender(<BudgetPage {...props} period={period} />)
-      expect(screen.queryByLabelText('Select year')).toBeNull()
-    }
+    expect(screen.queryByLabelText('Select year')).toBeNull()
   })
 })
 
@@ -320,6 +347,30 @@ describe('BudgetPage Spend scopes', () => {
     expect(screen.getByText('Alpha spend')).toBeTruthy()
     expect(screen.getByText('Zulu spend')).toBeTruthy()
     expect(screen.getByTestId('records-total-row').textContent).toContain('$100.00')
+  })
+
+  it('uses parent-supplied All and concrete scopes on rerender', () => {
+    const props = {
+      state: spendState(),
+      dispatch: vi.fn(),
+      categories,
+      categoryMappings: [],
+      categoryDispatch: vi.fn(),
+      categoriesHydrated: true,
+      ...periodProps,
+      setSelectedScope: vi.fn(),
+    }
+    const { rerender } = render(<BudgetPageUnderTest {...props} selectedScope={SPEND_ALL_YEARS} />)
+
+    expect(screen.getByText('Spend vs budget (All years)')).toBeTruthy()
+    expect(screen.getByText('Alpha spend')).toBeTruthy()
+    expect(screen.getByText('Zulu spend')).toBeTruthy()
+
+    rerender(<BudgetPageUnderTest {...props} selectedScope="2024" />)
+
+    expect(screen.getByText('Spend vs budget (2024)')).toBeTruthy()
+    expect(screen.getByText('Alpha spend')).toBeTruthy()
+    expect(screen.queryByText('Zulu spend')).toBeNull()
   })
 
   it('includes excluded rows and their table total without changing all-years cards', () => {

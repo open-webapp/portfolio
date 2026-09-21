@@ -118,11 +118,6 @@ textarea.input { min-height: 90px; resize: vertical; }
 .seg-opt:not(:has(input:checked)):hover { background: var(--color-neutral-100); }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
-@media (max-width: 480px) {
-  .seg:has(input[name="budgetPeriod"]) { display: flex; width: 100%; }
-  .seg:has(input[name="budgetPeriod"]) .seg-opt { flex: 1 1 0; min-width: 0; justify-content: center; padding-inline: 5px; text-align: center; line-height: 1.2; }
-}
-
 /* — cards — */
 .card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-divider); }
 .card-kicker { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-accent); font-weight: 600; }
@@ -157,12 +152,35 @@ textarea.input { min-height: 90px; resize: vertical; }
 .rail-item { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: inherit; cursor: pointer; }
 .rail-item:hover { background: color-mix(in srgb, #fff 10%, transparent); color: #fff; }
 .rail-item.active { background: var(--color-accent); color: #fff; }
+.rail-switch { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-top: var(--space-2); padding: 0; border: 0; border-radius: var(--radius-md); background: var(--color-accent); color: #fff; cursor: pointer; }
+.rail-switch:hover { background: var(--color-accent-700); color: #fff; }
+.syncing { animation: sync-spin 0.8s linear infinite; }
+
+@keyframes sync-spin {
+  to { transform: rotate(360deg); }
+}
 
 @media (max-width: 480px) {
   .rail { inset: auto 0 0; flex-direction: row; justify-content: space-between; width: auto; height: 64px; padding: var(--space-2) var(--space-3); }
   .rail-mark, .rail-spacer { display: none; }
   .rail-items { flex: 1; flex-direction: row; justify-content: space-around; gap: 0; }
   .rail-item { width: 40px; height: 40px; }
+}
+
+/* — Budget controls — */
+.budget-controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-3); }
+.budget-tabs { grid-column: 2; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.budget-tabs::-webkit-scrollbar { display: none; }
+.budget-tabs .seg { white-space: nowrap; }
+.budget-tabs .seg-opt { flex: 0 0 auto; }
+.budget-year { grid-column: 3; justify-self: end; display: inline-flex; align-items: center; gap: var(--space-2); }
+.budget-year-label { font-size: 12px; font-weight: 500; color: color-mix(in srgb, var(--color-text) 65%, transparent); }
+
+@media (max-width: 480px) {
+  .budget-controls { grid-template-columns: minmax(0, 1fr); }
+  .budget-tabs { grid-column: 1; width: 100%; }
+  .budget-year { grid-column: 1; justify-self: start; }
+  .rail-switch { margin-top: 0; }
 }
 
 /* — tables — */

@@ -19,10 +19,13 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 - **Delete**: requires a native `window.confirm` ("Delete portfolio "X"? This cannot be undone.") before proceeding. Confirmed delete is immediate, irreversible, and local-only — it deletes the portfolio's IndexedDB database and its registry row, but never touches any Google Drive backup (an orphaned Drive folder, if one existed, is left in place intentionally). Works on a locked/encrypted portfolio without unlocking it — only the registry id is needed, never that portfolio's password.
 - **Open**: navigates to `#/portfolio/<id>`.
 
-### Switch Portfolio (in-app)
+### Shell navigation
 
-- Nav bar (visible once inside an unlocked portfolio) shows the active portfolio's name, top-left, in place of a static brand label. Clicking the name navigates back to `#/` (the picker) — it does not lock/reset the current portfolio's saved data, it only leaves that portfolio's screen.
+- The desktop left rail starts with `Switch portfolio`, followed by Budget, Positions, Register, Quotes, then (when connected or syncing) Sync above Settings. Switch portfolio returns to `#/` without changing saved data.
 - On desktop, application content begins to the right of the fixed 76px navigation rail. At viewport widths of 480px or less, the rail moves to the bottom and content uses the full width.
+- The mobile bottom rail preserves this order: Switch portfolio, main views, Sync when shown, Settings.
+- The top-bar strip is period-control-only. Budget shows the four-tab control and, for Spend, a second-row `Year` All/year selector; non-Budget views retain an intentionally blank strip.
+- Browser title is `Ledger` until an active portfolio is unlocked and hydrated, then `Ledger | {portfolio name}`. It returns to `Ledger` when leaving that ready portfolio state.
 
 ### First-time / empty registry
 
@@ -56,7 +59,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 
 ### Views
 
-- **Budget**: five local tabs — Expenses, Spend, Analytics, Category Mapping, and Accounts. Spend is selected whenever the page mounts or remounts. Category Mapping and Accounts wait for global-store hydration. Accounts configures shared statement-sign rules; imports require an account and canonicalize imported signs before dedup. CSV/OFX/QFX parsers do not change. Spend-row Category mappings dialogs keep their header visible and scroll long mapping lists within the viewport.
+- **Budget**: four App-owned tabs — Expenses, Spend, Analytics, Category Mapping. Spend is the session default; period and All/year scope remain while navigating away and back, but reset on reload. Category Mapping waits for global-store hydration. Selecting a concrete Spend year without a snapshot creates it; All does not. Imports require an account and canonicalize imported signs before dedup. CSV/OFX/QFX parsers do not change. Spend-row Category mappings dialogs keep their header visible and scroll long mapping lists within the viewport.
 - **Positions (Accounts)**: account/category drill-down, position tables, allocation chart, closed-positions table with undo.
 - **Register**: per-account chronological activity/balance ledger; balance-entry dialog supports multiple activities per entry (contribution/withdrawal/transfer/dividend/fee).
 - **Quotes**: read-only table of every held Equity/ETF/Mutual Fund symbol, current price/status/last-updated, with a search box; shows a failure banner when a Polygon name lookup fails for any symbol.
@@ -65,7 +68,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 
 ### Drive backup / restore / conflict
 
-- Manual-only sync (a "Sync" button in Nav and Settings) — no automatic background sync.
+- Manual-only sync (a rail `Sync` button and Settings) — no automatic background sync. The rail button appears when connected, and stays visible only for the duration of an already-running sync if connection state becomes false; that in-flight button spins, is disabled, and reads `Syncing`.
 - Successful sync uploads the current encrypted state as `portfolio-state.json` under the portfolio's Drive folder.
 - If the remote file changed since the last known baseline, a spurious-drift check first tries a silent re-adopt-and-repush when the remote's actual content time is no newer than the last restore; only a genuinely newer remote triggers the **Sync Conflict** dialog, letting the user choose "keep remote" or "push local" (remote-wins is not automatic — user decides).
 - Restoring a backup encrypted with a different password surfaces a specific "different password" message rather than a generic failure.

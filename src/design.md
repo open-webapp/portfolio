@@ -32,7 +32,7 @@ src/
     design.md                        — drive.ts-focused module doc (see header note)
   components/
     PortfolioPicker.tsx              — portfolio create/rename/delete/open UI
-    Nav.tsx                          — top nav: view tabs, sync button, portfolio-name button (switch portfolio), settings button
+    Nav.tsx                          — left rail: portfolio picker, view, sync, settings controls; period-only top-bar strip
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
     AccountsPage.tsx, BudgetPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
     BudgetExpensesTab.tsx            — budget expense definitions, per-year amounts, direct CSV download, and paste import dialog
@@ -109,9 +109,10 @@ App.tsx
    │    ├─ shape === 'encrypted' → EnterPasswordScreen
    │    └─ shape === 'absent' → SetPasswordScreen (defends against a portfolio db that's genuinely empty; new portfolios never reach this since they skip the gate entirely)
    └─ unlocked + hydrated → app shell
-        ├─ Nav (view tabs: Budget/Positions/Register/Quotes; sync button; portfolio-name button, onSwitchPortfolio=navigateToPicker; settings button)
+        ├─ RailNav (Switch portfolio first; view items Budget/Positions/Register/Quotes; Sync above Settings when connected or syncing; Settings last)
+        ├─ TopBar (period-control-only strip; blank outside Budget)
         ├─ desktop content shell offsets 76px for the fixed left rail; at <=480px the rail moves to the bottom and the offset is removed
-        ├─ state.view === 'budget'    → BudgetPage (local Expenses/Spend/Analytics/Category Mapping/Accounts tabs; receives hydrated global categories, mappings, and account rules)
+        ├─ state.view === 'budget'    → BudgetPage (App-owned Expenses/Spend/Analytics/Category Mapping period and Spend scope; receives hydrated global categories, mappings, and account rules)
         ├─ state.view === 'accounts'  → AccountsPage
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage
@@ -120,6 +121,9 @@ App.tsx
         ├─ budget category mapping → CategoryMappingTab (Budget-local tab; hydrated global categories/mappings and category-store dispatch)
         └─ syncConflict → SyncConflictDialog (overlay)
 ```
+
+- `App` owns `period` (default `spend`) and `selectedScope` (hydration initializes it to the newest transaction year or All). It passes both to `PeriodSegControl` in `TopBar` and to `BudgetPage`; a concrete scope selection creates a missing year snapshot. The top-bar control uses a scrollable tab row and a second-row `Year` All/year selector for Spend.
+- `App` owns `syncing`; RailNav receives `connected`, `syncing`, and `handleSync`, so an in-flight Sync remains rendered and disabled if connection state changes false.
 
 `ImportDialog` (under `components/import/`) is invoked from `AccountsPage`/`Settings` for CSV import, independent of the routing branch above.
 

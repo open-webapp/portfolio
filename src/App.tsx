@@ -26,6 +26,7 @@ import {
 import { useDriveConnection } from '@open-webapp/drive-connect'
 import { runPriceSync } from './lib/priceSync'
 import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync } from './lib/selectors'
+import { SPEND_ALL_YEARS, spendBudgetYears, type SpendScope } from './lib/selectors'
 import { syncTickerOverviews } from './lib/tickerOverview'
 import { runMutualFundSync } from './lib/mutualFundSync'
 import { useHashRoute } from './hooks/useHashRoute'
@@ -51,15 +52,43 @@ const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
 
 type BudgetPeriod = 'expenses' | 'spend' | 'analytics' | 'categoryMapping'
 
-function PeriodSegControl({ period, setPeriod }: { period: BudgetPeriod; setPeriod: (period: BudgetPeriod) => void }) {
+function PeriodSegControl({
+  period,
+  setPeriod,
+  selectedScope,
+  onScopeChange,
+  availableYears,
+}: {
+  period: BudgetPeriod
+  setPeriod: (period: BudgetPeriod) => void
+  selectedScope: SpendScope
+  onScopeChange: (scope: SpendScope) => void
+  availableYears: string[]
+}) {
   return (
-    <div className="seg">
-      {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((option) => (
-        <label key={option} className="seg-opt">
-          <input type="radio" name="budgetPeriod" checked={period === option} onChange={() => setPeriod(option)} />
-          <span>{option === 'expenses' ? 'Expenses' : option === 'spend' ? 'Spend' : option === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-2)', width: '100%' }}>
+      <div className="seg">
+        {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((option) => (
+          <label key={option} className="seg-opt">
+            <input type="radio" name="budgetPeriod" checked={period === option} onChange={() => setPeriod(option)} />
+            <span>{option === 'expenses' ? 'Expenses' : option === 'spend' ? 'Spend' : option === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
+          </label>
+        ))}
+      </div>
+      {period === 'spend' && (
+        <label className="field" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <span>Year</span>
+          <select
+            className="input"
+            aria-label="Select year"
+            value={selectedScope === SPEND_ALL_YEARS ? '__spend_all_years__' : selectedScope}
+            onChange={(event) => onScopeChange(event.target.value === '__spend_all_years__' ? SPEND_ALL_YEARS : event.target.value)}
+          >
+            <option value="__spend_all_years__">All</option>
+            {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+          </select>
         </label>
-      ))}
+      )}
     </div>
   )
 }
@@ -91,6 +120,9 @@ function App() {
   const [hydrationError, setHydrationError] = useState<string | null>(null)
   const [state, dispatch] = useReducer(appReducer, initialState())
   const [period, setPeriod] = useState<BudgetPeriod>('spend')
+  const [selectedScope, setSelectedScope] = useState<SpendScope>(
+    () => spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
+  )
 
   // Password-gate session state: null sessionKey/sessionSalt means the gate hasn't
   // been passed yet. gateShape is null while peekEnvelopeShape() is still resolving.
@@ -453,6 +485,12 @@ function App() {
     }
   }, [isHydrated])
 
+  useEffect(() => {
+    document.title = route.name === 'portfolio' && activePortfolio && sessionKey !== null && isHydrated
+      ? `Ledger | ${activePortfolio.name}`
+      : 'Ledger'
+  }, [route.name, activePortfolio, sessionKey, isHydrated])
+
   // Price-sync trigger: fetches held Equity/ETF prices on mount + on tab focus.
   // Reads state via latestStateRef (kept current above) rather than closing over
   // `state` directly, since this effect's dependency array intentionally omits
@@ -786,6 +824,20 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey, isHydrated, activePortfolio?.id])
 
+  useEffect(() => {
+    if (!isHydrated) return
+    setSelectedScope(spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS)
+  // A hydrated portfolio starts with the same newest-year scope BudgetPage previously chose on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHydrated, activePortfolio?.id])
+
+  const handleScopeChange = (scope: SpendScope) => {
+    setSelectedScope(scope)
+    if (scope !== SPEND_ALL_YEARS && !state.budgetExpenseAmountsByYear[scope]) {
+      dispatch({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: scope })
+    }
+  }
+
   // One-shot budget year-rollover trigger: once a portfolio is unlocked and
   // hydrated, ensure the current budget year has an expense snapshot
   // seeded from the nearest prior year, same gating/ref-guard
@@ -866,19 +918,26 @@ function App() {
       <RailNav
         state={state}
         dispatch={dispatch}
+        connected={connected}
+        syncing={syncing}
+        handleSync={handleSync}
         onOpenSettings={() => {
           setSettingsSection('backup')
           dispatch({ type: 'SET_VIEW', view: 'settings' })
         }}
+        onSwitchPortfolio={handleBackToPicker}
       />
       <div className="app-shell" style={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0 }}>
         <TopBar
-          connected={connected}
-          syncing={syncing}
-          handleSync={handleSync}
-          onSwitchPortfolio={() => navigateToPicker()}
-          portfolioName={activePortfolio!.name}
-          periodControl={state.view === 'budget' ? <PeriodSegControl period={period} setPeriod={setPeriod} /> : undefined}
+          periodControl={state.view === 'budget' ? (
+            <PeriodSegControl
+              period={period}
+              setPeriod={setPeriod}
+              selectedScope={selectedScope}
+              onScopeChange={handleScopeChange}
+              availableYears={spendBudgetYears(state.budgetTransactions)}
+            />
+          ) : undefined}
         />
 
         {state.view === 'budget' ? (
@@ -895,6 +954,8 @@ function App() {
                 budgetAccountRules: globalCategories.budgetAccountRules,
                 period,
                 setPeriod,
+                selectedScope,
+                setSelectedScope,
               }}
             />
           </div>

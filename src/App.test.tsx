@@ -323,6 +323,108 @@ describe('app shell layout', () => {
   })
 })
 
+describe('navigation shell title and controls', () => {
+  beforeEach(async () => {
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    vi.mocked(useDriveConnection).mockReturnValue({
+      connected: false,
+      email: null,
+      connecting: false,
+      error: null,
+      needsReauth: false,
+      refresh: vi.fn(),
+    })
+    const driveModule = await import('./lib/drive')
+    vi.mocked(driveModule.syncBackup).mockReset()
+    vi.mocked(driveModule.syncBackup).mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    document.title = 'Ledger'
+  })
+
+  it('uses the active portfolio title only after unlock and keeps the top bar across unlocked views', async () => {
+    await renderUnlockedApp()
+
+    expect(document.title).toBe('Ledger | Test Portfolio')
+    expect(document.querySelector('header.top-bar')).toBeTruthy()
+
+    for (const view of ['Budget', 'Positions', 'Register', 'Quotes'] as const) {
+      fireEvent.click(navTab(view))
+      expect(document.querySelector('header.top-bar')).toBeTruthy()
+    }
+
+    fireEvent.click(screen.getByTitle('Settings'))
+    expect(document.querySelector('header.top-bar')).toBeTruthy()
+  })
+
+  it('renders four Budget tabs and exposes Year only for Spend', async () => {
+    await renderUnlockedApp()
+    fireEvent.click(navTab('Budget'))
+
+    for (const tab of ['Expenses', 'Spend', 'Analytics', 'Category Mapping']) {
+      expect(screen.getByText(tab)).toBeTruthy()
+    }
+    expect(screen.getByLabelText('Select year')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Expenses'))
+    expect(screen.queryByLabelText('Select year')).toBeNull()
+  })
+
+  it('uses Ledger without a portfolio title for the gate and picker', async () => {
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('MockUnlock')).toBeTruthy())
+    expect(document.title).toBe('Ledger')
+    cleanup()
+
+    await clearRegistryStore()
+    _resetRegistryForTests()
+    window.location.hash = '#/'
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('Create')).toBeTruthy())
+    expect(document.title).toBe('Ledger')
+  })
+
+  it('hides an idle Sync control when Drive is disconnected', async () => {
+    await renderUnlockedApp()
+
+    expect(screen.queryByTitle('Sync now')).toBeNull()
+  })
+
+  it('keeps Sync disabled while an in-flight sync outlives a disconnect', async () => {
+    let resolveSync: (() => void) | undefined
+    const driveModule = await import('./lib/drive')
+    vi.mocked(useDriveConnection).mockReturnValue({
+      connected: true,
+      email: 'test@example.com',
+      connecting: false,
+      error: null,
+      needsReauth: false,
+      refresh: vi.fn(),
+    })
+    vi.mocked(driveModule.syncBackup).mockImplementation(() => new Promise<void>((resolve) => {
+      resolveSync = resolve
+    }))
+
+    const { rerender } = await renderUnlockedApp()
+    fireEvent.click(screen.getByTitle('Sync now'))
+    await waitFor(() => expect(screen.getByTitle('Syncing')).toBeTruthy())
+
+    vi.mocked(useDriveConnection).mockReturnValue({
+      connected: false,
+      email: null,
+      connecting: false,
+      error: null,
+      needsReauth: false,
+      refresh: vi.fn(),
+    })
+    rerender(<App />)
+
+    expect(screen.getByTitle('Syncing')).toHaveProperty('disabled', true)
+    await act(async () => resolveSync?.())
+  })
+})
+
 describe('pending import processing', () => {
   it('should import positions when pendingImport is processed', () => {
     let state = initialState()

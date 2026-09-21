@@ -8,31 +8,30 @@ Sibling: `Nav.product-behavior.md`.
 RailNavProps = {
   state: AppState
   dispatch: (action: any) => void
-  onOpenSettings: () => void
-}
-
-TopBarProps = {
   connected: boolean
   syncing: boolean
   handleSync: () => void
+  onOpenSettings: () => void
   onSwitchPortfolio: () => void
-  portfolioName: string
+}
+
+TopBarProps = {
   periodControl?: ReactNode
 }
 ```
 
 ## Rail
 
-- Fixed left `nav[aria-label="Main navigation"]` with Ledger `L` mark, item stack, flexible spacer, and Settings control.
+- Fixed left `nav[aria-label="Main navigation"]`: Switch portfolio control first, main-item stack, flexible spacer, optional Sync, then Settings.
 - Main items: Budget (dashboard grid icon), Positions (vertical bars), Register (document), Quotes (trend line).
 - Main controls are icon-only `button.rail-item` elements with accessible label and tooltip title.
 - Active item: `state.view === item.value`; adds `.active` and `aria-pressed`.
-- Settings uses the gear SVG and calls `onOpenSettings`; it is outside the main item stack and has no active state.
-- At `max-width: 480px`: rail becomes a fixed 64px bottom row; mark and spacer are hidden; main items distribute horizontally; controls shrink to 40px square.
+- Switch portfolio is an icon-only `button.accent-square.rail-item`; it calls `onSwitchPortfolio`.
+- Sync renders when `connected || syncing`, calls `handleSync`, and precedes Settings. While syncing, it is disabled, labeled/titled `Syncing`, and its icon has `.syncing`; otherwise its label/title is `Sync now`.
+- Settings uses the gear SVG and calls `onOpenSettings`; it is last, outside the main-item stack, and has no active state.
+- At `max-width: 480px`, the rail becomes a fixed 64px bottom row. DOM order remains Switch portfolio, main items, Sync when rendered, Settings; main items distribute horizontally and controls are 40px square.
 
 ## Top Bar
 
-- `header.top-bar` contains portfolio switch, optional period-control slot, and sync control.
-- Portfolio switch: `button.top-bar-portfolio`; renders `portfolioName`.
-- Period slot renders `periodControl` directly when supplied.
-- Sync: icon-only `button.top-bar-sync` with circular-arrow SVG.
+- `header.top-bar` is a period-control-only strip and always renders.
+- It renders `periodControl` directly when supplied; otherwise it is intentionally blank.
