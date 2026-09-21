@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
 import { RailNav, TopBar } from './Nav'
 import { initialState } from '../lib/state'
+
+const styles = readFileSync('src/styles/styles.css', 'utf8')
 
 afterEach(() => {
   cleanup()
@@ -59,6 +62,12 @@ describe('RailNav', () => {
 })
 
 describe('TopBar', () => {
+  it('styles the portfolio and sync controls with the accent color and aligns sync right', () => {
+    expect(styles).toMatch(/\.top-bar\s*\{[^}]*display:\s*flex[^}]*\}/s)
+    expect(styles).toMatch(/\.top-bar-portfolio, \.top-bar-sync\s*\{[^}]*color:\s*var\(--color-accent\)[^}]*\}/s)
+    expect(styles).toMatch(/\.top-bar-sync\s*\{[^}]*margin-left:\s*auto[^}]*\}/s)
+  })
+
   it('renders the period control inside the top bar', () => {
     render(<TopBar {...makeTopBarProps()} periodControl={<div data-testid="period-control">This month</div>} />)
 

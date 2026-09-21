@@ -21,7 +21,7 @@ Five views: **Budget**, **Accounts** (rail label "Positions"), **Register**, **Q
 
 Each main control is an icon-only button with an accessible label and tooltip. Clicking dispatches `SET_VIEW`; the selected control is accent-filled and exposes `aria-pressed="true"`. Settings is a separate gear button outside the main item stack.
 
-`TopBar` contains the portfolio-switch button, the Budget-only period `.seg` control, and the **Sync Now** icon button (`title`/accessible label `Sync now`). Sync is disabled whenever Drive is disconnected or syncing. The Settings gear opens Settings and resets `settingsSection` to "Backup".
+`TopBar` contains an accent-colored portfolio-switch button, the Budget-only period `.seg` control, and a right-aligned accent **Sync Now** icon button (`title`/accessible label `Sync now`). Sync is disabled whenever Drive is disconnected or syncing. The Settings gear opens Settings and resets `settingsSection` to "Backup".
 
 ## Allocation chart
 

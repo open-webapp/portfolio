@@ -145,6 +145,11 @@ textarea.input { min-height: 90px; resize: vertical; }
 .nav-brand { font-family: var(--font-heading); font-weight: 700; font-size: 18px; margin-right: auto; }
 .nav a { color: inherit; text-decoration: none; font-size: 14px; }
 .nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
+.top-bar { display: flex; align-items: center; gap: var(--space-3); }
+.top-bar-portfolio, .top-bar-sync { display: inline-flex; align-items: center; border: 0; background: transparent; color: var(--color-accent); cursor: pointer; }
+.top-bar-portfolio { padding: 0; font-family: var(--font-heading); font-size: 18px; font-weight: 700; }
+.top-bar-sync { margin-left: auto; padding: var(--space-2); }
+.top-bar-portfolio:hover, .top-bar-sync:hover { color: var(--color-accent-700); }
 .rail { position: fixed; inset: 0 auto 0 0; z-index: 100; display: flex; flex-direction: column; align-items: center; width: 76px; padding: var(--space-4) var(--space-2); background: var(--color-sidebar); color: var(--color-sidebar-text); }
 .rail-mark { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: var(--space-6); border-radius: var(--radius-md); background: var(--color-accent); color: #fff; font-family: var(--font-heading); font-weight: 700; }
 .rail-items { display: flex; flex-direction: column; gap: var(--space-2); }

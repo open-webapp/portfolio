@@ -21,7 +21,7 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 - `App.tsx` renders `RailNav` and `TopBar` for every hydrated, unlocked portfolio view.
 - `RailNav` is a fixed left icon rail: Ledger mark; Budget, Positions, Register, Quotes; flexible spacer; Settings. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the mark/spacer.
-- `TopBar` contains the portfolio-switch button, optional Budget period control, and Sync button. Sync is disabled while disconnected or syncing.
+- `TopBar` is a flex row containing the accent-colored portfolio-switch button, optional Budget period control, and right-aligned accent Sync button. Sync is disabled while disconnected or syncing.
 
 ## Global Categories
 
