@@ -122,7 +122,7 @@ App.tsx
         └─ syncConflict → SyncConflictDialog (overlay)
 ```
 
-- `App` owns `period` (default `spend`) and `selectedScope` (hydration initializes it to the newest transaction year or All). It passes both to `PeriodSegControl` in `TopBar` and to `BudgetPage`; a concrete scope selection creates a missing year snapshot. The top-bar control uses a scrollable tab row and a second-row `Year` All/year selector for Spend.
+- `App` owns `period` (default `spend`) and `selectedScope` (hydration initializes it to the newest transaction year or All). It passes both to `PeriodSegControl` in `TopBar` and to `BudgetPage`; a concrete scope selection creates a missing year snapshot. The top-bar control uses a single-row grid with centered scrollable tabs and a right-aligned All/year selector for Spend.
 - `App` owns `syncing`; RailNav receives `connected`, `syncing`, and `handleSync`, so an in-flight Sync remains rendered and disabled if connection state changes false.
 
 `ImportDialog` (under `components/import/`) is invoked from `AccountsPage`/`Settings` for CSV import, independent of the routing branch above.

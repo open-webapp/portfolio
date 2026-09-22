@@ -6,7 +6,7 @@ Sibling: `BudgetPage.design.md`.
 
 - Four App-owned tabs: Expenses, Spend, Analytics, Category Mapping. The selector appears in the Budget top bar, not in BudgetPage; the tab strip scrolls horizontally where needed.
 - Spend is the App-session default. Tab and All/year scope selection remain when navigating away from and back to Budget, but are not persisted across app reloads.
-- When Spend is selected, the top-bar `Year` selector is on a second row and offers `All` plus transaction years. Selecting a concrete year without an expense snapshot creates that year's snapshot; `All` does not.
+- When Spend is selected, the top-bar year selector shares the tab row, right-aligned, and offers `All` plus transaction years. Selecting a concrete year without an expense snapshot creates that year's snapshot; `All` does not.
 - Category Mapping renders `Loading category mappings...` until global categories hydrate; mapping controls are unavailable before then.
 
 ## Category Mapping

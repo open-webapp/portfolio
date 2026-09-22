@@ -66,18 +66,19 @@ function PeriodSegControl({
   availableYears: string[]
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-2)', width: '100%' }}>
-      <div className="seg">
-        {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((option) => (
-          <label key={option} className="seg-opt">
-            <input type="radio" name="budgetPeriod" checked={period === option} onChange={() => setPeriod(option)} />
-            <span>{option === 'expenses' ? 'Expenses' : option === 'spend' ? 'Spend' : option === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
-          </label>
-        ))}
+    <div className="budget-controls" style={{ width: '100%' }}>
+      <div className="budget-tabs">
+        <div className="seg">
+          {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((option) => (
+            <label key={option} className="seg-opt">
+              <input type="radio" name="budgetPeriod" checked={period === option} onChange={() => setPeriod(option)} />
+              <span>{option === 'expenses' ? 'Expenses' : option === 'spend' ? 'Spend' : option === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
+            </label>
+          ))}
+        </div>
       </div>
-      {period === 'spend' && (
-        <label className="field" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <span>Year</span>
+      <div className="budget-year">
+        {period === 'spend' && (
           <select
             className="input"
             aria-label="Select year"
@@ -87,8 +88,8 @@ function PeriodSegControl({
             <option value="__spend_all_years__">All</option>
             {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
           </select>
-        </label>
-      )}
+        )}
+      </div>
     </div>
   )
 }

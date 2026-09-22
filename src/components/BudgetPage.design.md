@@ -23,7 +23,7 @@ BudgetPageProps = {
 ## Structure
 
 - `period`/`setPeriod` and `selectedScope`/`setSelectedScope` are App-owned props. `PeriodSegControl` is in App's Budget top bar, not BudgetPage; its four tabs are Expenses, Spend, Analytics, and Category Mapping. Period and scope survive cross-view navigation during the app session, but are not persisted.
-- The shell control keeps the tab strip on its first row (horizontally scrollable where needed); when Spend is selected, its `Year` All/year selector is on a second row. BudgetPage consumes the controlled scope for Spend calculations and requests `ENSURE_BUDGET_YEAR_SNAPSHOT` through App's scope handler when a concrete year lacks a snapshot.
+- The shell control keeps tabs and the Spend All/year selector on a single row (tabs centered and horizontally scrollable where needed; selector right-aligned, Spend-only, no visible label, empty cell on other tabs so tabs never shift). BudgetPage consumes the controlled scope for Spend calculations and requests `ENSURE_BUDGET_YEAR_SNAPSHOT` through App's scope handler when a concrete year lacks a snapshot.
 - Local `showRecurringOnly` controls the Spend records recurring-only filter; initialized `false`, never persisted.
 - `computeRecurringSpendIds` from `selectors.ts` runs each render against full `state.budgetTransactions`, not `periodFilteredTransactions`; its result drives the recurring-only filter and row icon.
 - Expenses -> `BudgetExpensesTab`.
