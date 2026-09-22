@@ -10,6 +10,9 @@ import type {
   PortfolioSnapshot,
   SavedCsvMapping,
   BalanceEntry,
+  BudgetAccountRule,
+  Category,
+  CategoryMapping,
   PriceSyncLastRun,
   ExpenseDefinition,
   BudgetTransaction,
@@ -74,6 +77,55 @@ export function buildExportableState(state: AppState): ExportableState {
 }
 
 /**
+ * Unencrypted portfolio export shape: everything in ExportableState plus
+ * the per-user category mappings, with API keys blanked (lastRun kept).
+ */
+export type UnencryptedPortfolioExport = ExportableState & {
+  categoryMappings: CategoryMapping[]
+}
+
+/**
+ * Pure builder for the unencrypted portfolio download. Spreads
+ * buildExportableState, adds categoryMappings, and blanks both sync API
+ * keys while keeping lastRun. Never mutates the input state.
+ */
+export function buildUnencryptedPortfolioExport(state: AppState): UnencryptedPortfolioExport {
+  const base = buildExportableState(state)
+  return {
+    ...base,
+    categoryMappings: state.categoryMappings,
+    priceSync: {
+      apiKey: '',
+      lastRun: state.priceSync.lastRun,
+    },
+    mutualFundSync: {
+      apiKey: '',
+      lastRun: state.mutualFundSync.lastRun,
+    },
+  }
+}
+
+/**
+ * Pure builder for the unencrypted categories download.
+ */
+export function buildUnencryptedCategoriesExport(
+  categories: Category[],
+  budgetAccountRules: BudgetAccountRule[]
+): GlobalCategoryState {
+  return { categories, budgetAccountRules }
+}
+
+/**
+ * Local-calendar YYYY-MM-DD stamp (mirrors the Settings download naming).
+ */
+export function localDateStamp(d: Date = new Date()): string {
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+/**
  * Builds the exportable subset of state and encrypts it into an envelope
  * suitable for writing to a backup file.
  */
@@ -114,6 +166,14 @@ export function downloadEnvelopeAsFile(envelope: EncryptedEnvelope, filename: st
  */
 export function downloadJsonAsFile(data: unknown, filename: string): void {
   downloadAsJsonFile(data, filename)
+}
+
+/**
+ * Triggers a browser download of arbitrary data as pretty-printed JSON
+ * (2-space indent) — for human-readable unencrypted exports.
+ */
+export function downloadPrettyJsonAsFile(data: unknown, filename: string): void {
+  downloadAsFile(JSON.stringify(data, null, 2), filename, 'application/json')
 }
 
 /**

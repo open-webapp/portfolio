@@ -1114,7 +1114,7 @@ describe('global categories wiring', () => {
     })
 
     const props = settingsPagePropsCapture.current as Record<string, unknown>
-    expect(props).not.toHaveProperty('categories')
+    expect(props.categories).toBe(mockGlobalCategoriesFixture.current.categories)
     expect(props).not.toHaveProperty('categoryMappings')
     expect(props).toHaveProperty('budgetTransactions')
     expect(props.budgetAccountRules).toBe(mockGlobalCategoriesFixture.current.budgetAccountRules)

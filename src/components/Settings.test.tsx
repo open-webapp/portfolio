@@ -26,7 +26,7 @@ configure({ asyncUtilTimeout: 5000 })
 // touches browser download APIs (Blob/URL/anchor click) not needed here.
 vi.mock('../lib/importExport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/importExport')>()
-  return { ...actual, downloadEnvelopeAsFile: vi.fn(), downloadJsonAsFile: vi.fn() }
+  return { ...actual, downloadEnvelopeAsFile: vi.fn(), downloadJsonAsFile: vi.fn(), downloadPrettyJsonAsFile: vi.fn() }
 })
 
 // Mock functions for drive.project('app').pickFile(), referenced by the
@@ -187,6 +187,7 @@ describe('SettingsPage', () => {
       driveConnected: false,
       budgetTransactions: [],
       budgetAccountRules: [],
+      categories: [],
       categoriesHydrated: true,
       categoryDispatch: mockCategoryDispatch,
     }
@@ -257,6 +258,11 @@ describe('SettingsPage', () => {
         tickerOverviewErrors: {},
         mutualFundSyncErrors: {},
         driveConnected: false,
+        budgetTransactions: [],
+        budgetAccountRules: [],
+        categories: [],
+        categoriesHydrated: true,
+        categoryDispatch: mockCategoryDispatch,
       }} />)
 
       expect(screen.queryByText('Shared')).toBeNull()
@@ -349,6 +355,7 @@ describe('SettingsPage', () => {
         driveConnected: true,
         budgetTransactions: [],
         budgetAccountRules: [],
+        categories: [],
         categoriesHydrated: true,
         categoryDispatch: mockCategoryDispatch,
       }
@@ -1058,6 +1065,73 @@ describe('SettingsPage', () => {
         ciphertext: expect.any(String),
       })
       expect(filename).toMatch(/^ledger-backup-\d{4}-\d{2}-\d{2}\.json$/)
+    })
+
+    it('renders both unencrypted download buttons with the readability warning', () => {
+      renderSettings({ settingsSection: 'backup' })
+
+      expect(screen.getByRole('button', { name: 'Download Portfolio (Unencrypted)' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Download Categories (Unencrypted)' })).toBeTruthy()
+      expect(screen.getByText(/anyone with this file can read/)).toBeTruthy()
+    })
+
+    it('clicking Download Portfolio (Unencrypted) downloads the portfolio export with a dated filename and blanked apiKey', () => {
+      const state = {
+        ...initialState(),
+        accounts: [{ id: 'a1', name: 'Checking', institution: 'Bank', accountNumber: '123', type: 'checking' as const }],
+        categoryMappings: [{ id: 'm1', pattern: 'STORE', categoryId: 'c1', spendExpenseId: 'groceries' }],
+        priceSync: { ...initialState().priceSync, apiKey: 'secret-poly' },
+      }
+      renderSettings({ state, settingsSection: 'backup' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download Portfolio (Unencrypted)' }))
+
+      expect(importExportModule.downloadPrettyJsonAsFile).toHaveBeenCalledTimes(1)
+      const [data, filename] = vi.mocked(importExportModule.downloadPrettyJsonAsFile).mock.calls[0] as [any, string]
+      expect(data).toMatchObject({ accounts: expect.any(Array), categoryMappings: expect.any(Array) })
+      expect(data.priceSync.apiKey).toBe('')
+      expect(filename).toMatch(/^ledger-portfolio-\d{4}-\d{2}-\d{2}\.json$/)
+    })
+
+    it('clicking Download Categories (Unencrypted) downloads {categories, budgetAccountRules} with a dated filename', () => {
+      const categories = [{ id: 'c1', name: 'Groceries' }]
+      const budgetAccountRules = [
+        { normalizedName: 'primary checking', displayName: 'Primary Checking', statementConvention: 'positiveSpend' as const, updatedAt: '' },
+      ]
+      renderSettings({ settingsSection: 'backup', categories, budgetAccountRules })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download Categories (Unencrypted)' }))
+
+      expect(importExportModule.downloadPrettyJsonAsFile).toHaveBeenCalledTimes(1)
+      const [data, filename] = vi.mocked(importExportModule.downloadPrettyJsonAsFile).mock.calls[0] as [any, string]
+      expect(data).toEqual({ categories, budgetAccountRules })
+      expect(filename).toMatch(/^ledger-categories-\d{4}-\d{2}-\d{2}\.json$/)
+    })
+
+    it('unencrypted downloads do not call downloadEnvelopeAsFile', () => {
+      renderSettings({ settingsSection: 'backup' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download Portfolio (Unencrypted)' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Download Categories (Unencrypted)' }))
+
+      expect(importExportModule.downloadPrettyJsonAsFile).toHaveBeenCalledTimes(2)
+      expect(importExportModule.downloadEnvelopeAsFile).not.toHaveBeenCalled()
+    })
+
+    it('unencrypted download buttons are absent when settingsSection="encryption"', () => {
+      renderSettings({ settingsSection: 'encryption' })
+
+      expect(screen.queryByRole('button', { name: 'Download Portfolio (Unencrypted)' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Download Categories (Unencrypted)' })).toBeNull()
+    })
+
+    it('export-only: no file input is added alongside the unencrypted download buttons', () => {
+      const { container } = renderSettings({ settingsSection: 'backup' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download Portfolio (Unencrypted)' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Download Categories (Unencrypted)' }))
+
+      expect(container.querySelector('input[type="file"]')).toBeFalsy()
     })
 
     it('no longer renders an encrypted-backup upload file input', () => {
