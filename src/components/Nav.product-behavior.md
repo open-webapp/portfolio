@@ -6,7 +6,7 @@ Sibling: `Nav.design.md`.
 
 - Budget, Positions, Register, and Quotes select their corresponding app view through `SET_VIEW`.
 - The selected view is visually active and exposes `aria-pressed="true"`; other main items expose `false`.
-- Switch portfolio is the first rail control. It has the accessible label and tooltip `Switch portfolio` and returns to the portfolio picker.
+- Switch portfolio is the first rail control, shown as an exit door+arrow glyph. It has the accessible label and tooltip `Switch portfolio` and returns to the portfolio picker.
 - Each main item and Settings has an accessible label and hover tooltip.
 - Settings calls the shell-provided settings handler.
 - Sync appears above Settings on desktop only while Drive is connected or an existing sync is in flight. It is `Sync now` when available; while in flight it remains visible even if connection state becomes false, spins, is disabled, and is labeled/titled `Syncing`.

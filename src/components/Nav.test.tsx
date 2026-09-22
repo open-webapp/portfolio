@@ -43,6 +43,19 @@ describe('RailNav', () => {
     expect(props.onSwitchPortfolio).toHaveBeenCalledOnce()
   })
 
+  it('renders switch portfolio as an exit door+arrow glyph distinct from sync', () => {
+    const props = makeRailProps()
+    render(<RailNav {...props} />)
+
+    const switchButton = screen.getByRole('button', { name: 'Switch portfolio' })
+    const paths = Array.from(switchButton.querySelectorAll('path')).map((p) => p.getAttribute('d'))
+    expect(paths).toContain('M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4')
+    expect(paths).toContain('m16 17 5-5-5-5')
+    expect(paths).toContain('M21 12H9')
+    // Circular sync arrows must not leak into the switch glyph.
+    expect(paths.some((d) => d?.includes('M21 2v6h-6'))).toBe(false)
+  })
+
   it.each([
     ['Budget', 'budget'],
     ['Positions', 'accounts'],

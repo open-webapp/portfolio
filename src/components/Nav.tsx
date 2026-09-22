@@ -53,10 +53,9 @@ export function RailNav({ state, dispatch, connected, syncing, handleSync, onOpe
     <nav className="rail" aria-label="Main navigation">
       <button type="button" className="accent-square rail-item" onClick={onSwitchPortfolio} aria-label="Switch portfolio" title="Switch portfolio">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="20" height="20" aria-hidden="true">
-          <path d="M21 2v6h-6" />
-          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-          <path d="M3 22v-6h6" />
-          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <path d="m16 17 5-5-5-5" />
+          <path d="M21 12H9" />
         </svg>
       </button>
       <div className="rail-items">
