@@ -4,7 +4,7 @@ Sibling doc: `PortfolioPicker.design.md` (props, state, data flow).
 
 ## Overview
 
-Landing page at the `picker` route. A centered Ledger heading precedes an always-visible full-width `Open` / `Create` / `Google Drive` segmented control with a non-constraining, clickable Settings gear above the selected tab. Only the selected panel renders. Local-file import is an action within Create. Mode switches preserve all in-progress panel state.
+Landing page at the `picker` route. A centered Ledger heading precedes an always-visible full-width `Open` / `Create` / `Google Drive` / gear segmented control — the first three tabs share width and center their labels, the gear is a narrow icon-only fourth tab right-aligned in its cell. Only the selected panel renders. Local-file import is an action within Create. Mode switches preserve all in-progress panel state.
 
 ## Existing portfolios list
 
@@ -72,6 +72,6 @@ Landing page at the `picker` route. A centered Ledger heading precedes an always
 
 - While the Create password panel is open, the name field and "Import from file" action are disabled (mutually exclusive with editing the create name).
 - The Drive card shows labeled **My portfolios** and **Shared portfolio** sections together; Shared portfolio uses the unscoped folder Picker, then the existing password form.
-- Settings has Close, a heading, and local-file import/download icon buttons (download is disabled with no mapping data). It explains device-wide mapping, shows a summary plus Manage action, then offers the separate Google Drive shared-mapping import/link/unlink flow. Manage opens the category-mappings dialog in place; it never navigates to category CRUD. The dialog edits trimmed, non-empty mapping substrings on Enter and confirms deletions; both persist global state.
+- Settings is a fourth seg tab (gear icon, `aria-label="Settings"`); selecting it shows the panel below the always-visible tab bar. It has a heading and local-file import/download icon buttons (download is disabled with no mapping data). It explains device-wide mapping, shows a summary plus Manage action, then offers the separate Google Drive shared-mapping import/link/unlink flow. Manage opens the category-mappings dialog in place; it never navigates to category CRUD. The dialog edits trimmed, non-empty mapping substrings on Enter and confirms deletions; both persist global state.
 - Each panel tracks its own error/loading state; switching away and back preserves it.
 - No flow shows a global spinner/overlay; all pending states are local button-label changes ("Creating...", "Importing...", "Loading Google Drive...").

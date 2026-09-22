@@ -101,12 +101,12 @@ function getFileInput(container: HTMLElement): HTMLInputElement {
   return input as HTMLInputElement
 }
 
-function selectPickerMode(name: 'Open' | 'Create' | 'Google Drive') {
+function selectPickerMode(name: 'Open' | 'Create' | 'Google Drive' | 'Settings') {
   fireEvent.click(screen.getByRole('radio', { name }))
 }
 
 function openSettings() {
-  fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  fireEvent.click(screen.getByRole('radio', { name: 'Settings' }))
 }
 
 function selectSharedDriveMode() {
@@ -138,6 +138,7 @@ describe('PortfolioPicker', () => {
       expect((screen.getByRole('radio', { name: 'Open' }) as HTMLInputElement).checked).toBe(true)
       expect(screen.getByRole('radio', { name: 'Create' })).toBeTruthy()
       expect(screen.getByRole('radio', { name: 'Google Drive' })).toBeTruthy()
+      expect(screen.getByRole('radio', { name: 'Settings' })).toBeTruthy()
       expect(screen.queryByPlaceholderText('e.g. Retirement')).toBeFalsy()
 
       selectPickerMode('Create')
@@ -145,14 +146,21 @@ describe('PortfolioPicker', () => {
       expect(screen.queryByText('No portfolios yet. Create one to get started.')).toBeFalsy()
     })
 
-    it('keeps the full-width mode segment independent from the settings gear', () => {
+    it('renders the settings gear as a narrow right-aligned fourth tab', () => {
       const { container } = renderPicker()
 
       const segment = container.querySelector('.seg') as HTMLElement
-      expect(segment.parentElement?.style.position).toBe('relative')
-      expect(segment.parentElement?.style.display).not.toBe('flex')
       expect(segment.style.width).toBe('100%')
-      expect(screen.getByRole('button', { name: 'Settings' }).style.position).toBe('absolute')
+      const opts = Array.from(segment.querySelectorAll('.seg-opt')) as HTMLElement[]
+      expect(opts).toHaveLength(4)
+      for (const opt of opts.slice(0, 3)) {
+        expect(opt.style.flexGrow).toBe('1')
+        expect(opt.style.justifyContent).toBe('center')
+      }
+      const gear = opts[3]
+      expect(gear.style.flex).toBe('0 0 48px')
+      expect(gear.style.justifyContent).toBe('flex-end')
+      expect(screen.getByRole('radio', { name: 'Settings' })).toBeTruthy()
     })
 
     it('renders existing portfolios and open/delete/rename still work', async () => {
@@ -180,40 +188,46 @@ describe('PortfolioPicker', () => {
   })
 
   describe('global mapping', () => {
-    it('shows the Settings gear by default and hides category mapping controls until opened', () => {
+    it('shows the Settings gear tab by default and hides category mapping controls until opened', () => {
       renderPicker()
 
-      expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy()
+      expect(screen.getByRole('radio', { name: 'Settings' })).toBeTruthy()
       expect(screen.queryByRole('button', { name: 'Download Category Mapping' })).toBeFalsy()
       expect(screen.queryByRole('button', { name: 'Import a shared mapping from Google Drive' })).toBeFalsy()
     })
 
-    it('keeps the Settings gear above the selected Google Drive tab', () => {
+    it('keeps the Settings gear tab visible and clickable when Google Drive is selected', () => {
       renderPicker()
       selectPickerMode('Google Drive')
 
-      expect(screen.getByRole('button', { name: 'Settings' }).style.zIndex).toBe('1')
+      const gear = screen.getByRole('radio', { name: 'Settings' }) as HTMLInputElement
+      expect(gear).toBeTruthy()
+      expect((screen.getByRole('radio', { name: 'Google Drive' }) as HTMLInputElement).checked).toBe(true)
+      expect(gear.checked).toBe(false)
+      fireEvent.click(gear)
+      expect(gear.checked).toBe(true)
+      expect(screen.getByRole('heading', { name: 'Settings — Category mapping' })).toBeTruthy()
     })
 
-    it('opens the category mapping settings panel and hides the picker modes', () => {
+    it('opens the category mapping settings panel while keeping the picker modes visible', () => {
       renderPicker()
       openSettings()
 
       expect(screen.getByRole('heading', { name: 'Settings — Category mapping' })).toBeTruthy()
-      expect(screen.queryByRole('radio', { name: 'Open' })).toBeFalsy()
-      expect(screen.queryByRole('radio', { name: 'Create' })).toBeFalsy()
-      expect(screen.queryByRole('radio', { name: 'Google Drive' })).toBeFalsy()
+      expect(screen.getByRole('radio', { name: 'Open' })).toBeTruthy()
+      expect(screen.getByRole('radio', { name: 'Create' })).toBeTruthy()
+      expect(screen.getByRole('radio', { name: 'Google Drive' })).toBeTruthy()
+      expect((screen.getByRole('radio', { name: 'Settings' }) as HTMLInputElement).checked).toBe(true)
     })
 
-    it('uses a compact settings header with two local-file icon actions', () => {
+    it('uses a compact settings header with two local-file icon actions and no close button', () => {
       renderPicker()
       openSettings()
 
-      const close = screen.getByRole('button', { name: 'Close settings' })
       const heading = screen.getByRole('heading', { name: 'Settings — Category mapping' })
       const importMapping = screen.getByRole('button', { name: 'Import mapping file' })
       const downloadMapping = screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement
-      expect(close.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Close settings' })).toBeFalsy()
       expect(heading.compareDocumentPosition(importMapping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(importMapping.className).toContain('btn-icon')
       expect(downloadMapping.className).toContain('btn-icon')
@@ -222,12 +236,12 @@ describe('PortfolioPicker', () => {
       expect(screen.queryByRole('button', { name: 'Download Category Mapping' })).toBeFalsy()
     })
 
-    it('closes settings and returns to the selected picker mode', () => {
+    it('switches away from settings back to the selected picker mode via its tab', () => {
       renderPicker()
       selectPickerMode('Create')
       openSettings()
 
-      fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+      selectPickerMode('Create')
 
       expect(screen.queryByRole('heading', { name: 'Settings — Category mapping' })).toBeFalsy()
       expect((screen.getByRole('radio', { name: 'Create' }) as HTMLInputElement).checked).toBe(true)

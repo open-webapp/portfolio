@@ -46,7 +46,7 @@ interface DriveRowState {
   passwordOpen: boolean
 }
 
-type PickerMode = 'open' | 'create' | 'drive'
+type PickerMode = 'open' | 'create' | 'drive' | 'settings'
 
 function driveImportErrorMessage(err: unknown): string {
   if (err instanceof DriveDecryptError) return 'Incorrect password.'
@@ -86,7 +86,6 @@ export function PortfolioPicker({
 
   const [driveFoldersOpen, setDriveFoldersOpen] = useState(false)
   const [pickerMode, setPickerMode] = useState<PickerMode>('open')
-  const [showSettings, setShowSettings] = useState(false)
   const [driveFolders, setDriveFolders] = useState<{ name: string; id: string }[] | null>(null)
   const [driveListError, setDriveListError] = useState<string | null>(null)
   const [driveListLoading, setDriveListLoading] = useState(false)
@@ -414,28 +413,25 @@ export function PortfolioPicker({
           </h1>
         </div>
 
-        {!showSettings && (
-          <>
-            <div style={{ position: 'relative' }}>
-              <div className="seg" style={{ display: 'flex', width: '100%' }}>
-                {([
-                  ['open', 'Open'],
-                  ['create', 'Create'],
-                  ['drive', 'Google Drive'],
-                ] as const).map(([mode, label]) => (
-                  <label key={mode} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}>
-                    <input type="radio" name="portfolioPickerMode" checked={pickerMode === mode} onChange={() => setPickerMode(mode)} />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
-              <button type="button" className="btn-ghost" aria-label="Settings" style={{ position: 'absolute', zIndex: 1, right: 'var(--space-1)', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-2)' }} onClick={() => setShowSettings(true)}>
-                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.3h-3v-.08A1.7 1.7 0 0 0 10.66 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04h-.08v-3h.08A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7v-.08h3v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.08v3h-.08A1.7 1.7 0 0 0 19.4 15Z" />
-                </svg>
-              </button>
-            </div>
+        <div className="seg" style={{ display: 'flex', width: '100%' }}>
+          {([
+            ['open', 'Open'],
+            ['create', 'Create'],
+            ['drive', 'Google Drive'],
+          ] as const).map(([mode, label]) => (
+            <label key={mode} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}>
+              <input type="radio" name="portfolioPickerMode" checked={pickerMode === mode} onChange={() => setPickerMode(mode)} />
+              <span>{label}</span>
+            </label>
+          ))}
+          <label className="seg-opt" style={{ flex: '0 0 48px', justifyContent: 'flex-end' }} title="Settings">
+            <input type="radio" name="portfolioPickerMode" aria-label="Settings" checked={pickerMode === 'settings'} onChange={() => setPickerMode('settings')} />
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.3h-3v-.08A1.7 1.7 0 0 0 10.66 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04h-.08v-3h.08A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7v-.08h3v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.08v3h-.08A1.7 1.7 0 0 0 19.4 15Z" />
+            </svg>
+          </label>
+        </div>
 
         {pickerMode === 'open' && (
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -659,15 +655,10 @@ export function PortfolioPicker({
             </div>
           </div>
         )}
-          </>
-        )}
 
-        {showSettings && (
+        {pickerMode === 'settings' && (
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <button type="button" className="btn-ghost" aria-label="Close settings" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-1)' }} onClick={() => setShowSettings(false)}>
-                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg>
-              </button>
               <h2 className="card-title" style={{ fontSize: 18, margin: 0 }}>
                 Settings — Category mapping
               </h2>
