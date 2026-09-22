@@ -31,7 +31,8 @@ src/
     *.test.ts                        — one colocated test file per module
     design.md                        — drive.ts-focused module doc (see header note)
   components/
-    PortfolioPicker.tsx              — portfolio create/rename/delete/open UI
+    PortfolioPicker.tsx              — portfolio create/rename/delete/open UI and category-mapping settings
+    ManageCategoriesPage.tsx         — standalone global category management page
     Nav.tsx                          — left rail: view, sync, settings, portfolio-exit controls; period-only top-bar strip
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
     AccountsPage.tsx, BudgetPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
@@ -39,9 +40,6 @@ src/
     BudgetAccountsTab.tsx            — global statement-convention rule controls
     BudgetExpensesTab.design.md,
     BudgetExpensesTab.product-behavior.md — component API/data flow and user-visible expense import/download behavior
-    CategoryMappingTab.tsx            — Budget-local category/mapping management tab
-    CategoryMappingTab.design.md,
-    CategoryMappingTab.product-behavior.md — component API/data flow and user-visible behavior
     PositionGroupOverlay.tsx, ClosedPositionsTable.tsx, TransactionsTable.tsx,
     AllocationChart.tsx, AssetClassOverrideSelect.tsx, InstitutionSelect.tsx,
     RegisterBalanceDialog.tsx        — view-local widgets
@@ -73,7 +71,7 @@ Each portfolio is an isolated IndexedDB database; navigation is driven entirely 
   - `createPortfolio` generates `id = 'port-' + crypto.randomUUID()`, `dbName = `portfolio_app_state_v1-${id}``.
   - `deletePortfolio` removes the registry row then calls `indexedDB.deleteDatabase(portfolio.dbName)` — irreversible, local-only, never touches Drive.
   - `isMigratedPortfolio(portfolio)`: `true` iff `portfolio.dbName === 'portfolio_app_state_v1'` — drives the Drive `projectId`/folder-path special case in `drive.ts`. (No code seeds a registry row with this dbName anymore — it only still matters for the pre-existing registry row of whoever's local browser was upgraded through that transition in the past.)
-- **`src/lib/router.ts`**: `Route = { name: 'picker' } | { name: 'portfolio', portfolioId: string }`. `parseHash(hash)` maps `#/portfolio/<id>` → the portfolio route, everything else (`''`, `'#/'`, `'#/portfolio/'`) → picker. `navigateToPicker()` sets `location.hash = '#/'`; `navigateToPortfolio(id)` sets `#/portfolio/<encodeURIComponent(id)>`.
+- **`src/lib/router.ts`**: `Route = { name: 'picker' } | { name: 'categories' } | { name: 'portfolio', portfolioId: string }`. `parseHash(hash)` maps `#/categories` → category management and `#/portfolio/<id>` → the portfolio route; everything else (`''`, `'#/'`, `'#/portfolio/'`) → picker. `navigateToPicker()` sets `location.hash = '#/'`; `navigateToCategories()` sets `#/categories`; `navigateToPortfolio(id)` sets `#/portfolio/<encodeURIComponent(id)>`.
 - **`src/hooks/useHashRoute.ts`**: `useHashRoute()` returns the current `Route`, re-parsed on `window` `hashchange`.
 
 ## Persistence (`src/lib/persist.ts`)
@@ -102,6 +100,7 @@ App.tsx
 │    (portfolios, onRename, onDelete, onOpen=navigateToPortfolio, onCreateNew,
 │    onImportFromDriveFolder, onImportFromFile, onListDriveFolders=listPortfolioFoldersOnDrive)
 │    — inline create/import flows; see `src/components/PortfolioPicker.design.md`
+├─ route.name === 'categories' → ManageCategoriesPage (global categories; no portfolio session required)
 └─ route.name === 'portfolio' → resolves Portfolio (from loaded list, or getPortfolio() fallback;
    unknown id → navigateToPicker()) → activatePortfolio() → setActivePortfolioDb + setActivePortfolio
    ├─ not yet resolved / gate shape unknown → "Loading..." placeholder
@@ -112,13 +111,12 @@ App.tsx
          ├─ RailNav (view items Budget/Positions/Register/Quotes; Sync above Settings when connected or syncing; Settings second-to-last; Switch portfolio last with amber exit fill)
         ├─ TopBar (period-control-only strip; blank outside Budget)
         ├─ desktop content shell offsets 76px for the fixed left rail; at <=480px the rail moves to the bottom and the offset is removed
-        ├─ state.view === 'budget'    → BudgetPage (App-owned Expenses/Spend/Analytics/Category Mapping period and Spend scope; receives hydrated global categories, mappings, and account rules)
+         ├─ state.view === 'budget'    → BudgetPage (App-owned Expenses/Spend/Analytics period and Spend scope; receives hydrated global categories, mappings, and account rules)
         ├─ state.view === 'accounts'  → AccountsPage
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage
         ├─ state.view === 'settings'  → SettingsPage (activePortfolio, driveAuth=getDriveAuthFor(activePortfolio), sessionKey/salt, sync/price-sync props; Backup/Encryption/Quotes API Key only, no category-mapping props)
         ├─ budget expenses → BudgetExpensesTab (direct local `Download Expenses` builds full-state definition CSV via `expenseExport.ts` + `downloadCsvAsFile`; local add/import dialogs; paste import parses valid rows, ensures an Uncategorized category, then dispatches `IMPORT_EXPENSE_PASTE` for the selected year)
-        ├─ budget category mapping → CategoryMappingTab (Budget-local tab; hydrated global categories/mappings and category-store dispatch)
         └─ syncConflict → SyncConflictDialog (overlay)
 ```
 

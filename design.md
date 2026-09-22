@@ -10,7 +10,7 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 ## Budget
 
-- `App.tsx` owns the non-persisted Budget period (`expenses`, `spend`, `analytics`, `categoryMapping`; default: `spend`) and renders its control in `TopBar`; `BudgetPage` receives it as props.
+- `App.tsx` owns the non-persisted Budget period (`expenses`, `spend`, `analytics`; default: `spend`) and renders its control in `TopBar`; `BudgetPage` receives it as props.
 - `BudgetAccountsTab` mounts from Settings' Spend Accounts tab. It receives current-portfolio transactions and visible global `budgetAccountRules`. It confirms configure/remove actions and then dispatches `RECONCILE_BUDGET_ACCOUNT_CONVENTIONS` for the active portfolio.
 - Budget imports require an existing canonical account or a new account name. `convertBudgetAccountImportRows` canonicalizes the selected account name and converts a `positiveSpend` statement to canonical negative spend before `IMPORT_BUDGET_TRANSACTIONS` deduplication.
 - `negativeSpend` is the permanent default when no rule exists. Import persists an applied-convention marker even if all rows are duplicates.
@@ -40,7 +40,8 @@ interface GlobalCategoryState {
 - `categoryDrive.ts` reads/writes unencrypted shared Drive `OpenWebApp/Portfolio/category-mappings.json`. `pullGlobalCategoriesFromDrive`, `pushGlobalCategoriesToDrive`, and `getGlobalCategoriesModifiedTime` each accept optional `fileId?: string`; when supplied, they read/write/status that file instead of resolving it by name in the shared root.
 - `useGlobalCategories(driveAuth, driveConnected, driveProjectId, budgetExpenseDefinitions?)` hydrates once, returns visible `{ categories, categoryMappings, budgetAccountRules, dispatch, hydrated, seedGlobalCategoriesIfNeeded, syncNow }`, debounce-saves locally (500ms), merges Drive initial/manual/polled pulls, immediately pushes connected local edits, and polls every 60 seconds.
 - `PortfolioPicker` has a separate one-shot global-mapping path: it loads/saves the global category document locally, can merge a picker-selected shared Drive mapping, and stores/unlinks its `sharedFileId`. It is distinct from the `useGlobalCategories` lifecycle and starts no interval.
-- `PortfolioPicker` uses a centered 520px segmented landing layout: `Open` (default), `Create`, and `Google Drive`; only the selected panel mounts. Google Drive nests `My portfolios` and `Shared portfolio`. Local file import remains inside Create; switching modes preserves component-local state. Global Mapping remains structurally separate and unchanged below these panels.
+- `PortfolioPicker` uses a centered 520px segmented landing layout: `Open` (default), `Create`, and `Google Drive`; only the selected panel mounts. Google Drive nests `My portfolios` and `Shared portfolio`. Local file import remains inside Create; switching modes preserves component-local state. Its gear button toggles a component-local `showSettings` panel for global category-mapping settings.
+- `ManageCategoriesPage` is rendered at `#/categories` for global category management. `router.ts` adds the `categories` `Route` variant and `navigateToCategories()` helper.
 - `App.tsx` prop-drills global categories, mappings, rules, hydration state, and `categoryDispatch` into `BudgetPage`; no context.
 
 ## Account Sign Reconciliation

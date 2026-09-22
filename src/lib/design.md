@@ -4,8 +4,8 @@ Directory structure, API contract, component tree, state management, data model,
 
 ## Component Tree
 
-- `App.tsx` owns the non-persisted Budget `period` and Spend `selectedScope`; `BudgetPage.tsx` receives both. `period` initializes to `'spend'`; `selectedScope` initializes to the newest transaction-backed year or `SPEND_ALL_YEARS`. The top-bar control has four tabs: Expenses, Spend, Analytics, Category Mapping; Spend's All/year selector is a second row. Category Mapping defers controls until `categoriesHydrated`; shared account-rule controls are in Settings.
-- `CategoryMappingTab.tsx` owns category rename/exclusion, mapping substring CRUD, and category-mapping JSON import/export. Mapping mutations and successful imports immediately dispatch `REAPPLY_CATEGORY_MAPPINGS` against the merged/current mappings; import/export format and merge semantics are unchanged.
+- `App.tsx` owns the non-persisted Budget `period` and Spend `selectedScope`; `BudgetPage.tsx` receives both. `period` initializes to `'spend'`; `selectedScope` initializes to the newest transaction-backed year or `SPEND_ALL_YEARS`. The top-bar control has three tabs: Expenses, Spend, Analytics; Spend's All/year selector is a second row. Shared account-rule controls are in Settings.
+- `router.ts` recognizes `#/categories`; `App.tsx` renders `ManageCategoriesPage` there without requiring a portfolio session. `PortfolioPicker`'s gear-gated category-mapping settings panel navigates there through `navigateToCategories()`.
 - `Settings.tsx` has exactly Backup, Encryption, and Quotes API Key tabs. Its props contain no categories, mappings, category dispatcher, or category-hydration state.
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
   - Used by `PositionsTable.tsx` (passes `state.closedPositions`)

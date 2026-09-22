@@ -12,6 +12,7 @@ import { BudgetPage } from './components/BudgetPage'
 import { PasswordGate } from './components/PasswordGate'
 import { SyncConflictDialog } from './components/SyncConflictDialog'
 import { PortfolioPicker } from './components/PortfolioPicker'
+import { ManageCategoriesPage } from './components/ManageCategoriesPage'
 import {
   getDriveAuthFor,
   driveAuthProjectIdFor,
@@ -50,7 +51,7 @@ const LOCK_ABSOLUTE_MS = 2 * 60 * 60 * 1000 // 2h
 const LOCK_IDLE_MS = 5 * 60 * 1000 // 5min
 const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
 
-type BudgetPeriod = 'expenses' | 'spend' | 'analytics' | 'categoryMapping'
+type BudgetPeriod = 'spend' | 'expenses' | 'analytics'
 
 function PeriodSegControl({
   period,
@@ -69,10 +70,10 @@ function PeriodSegControl({
     <div className="budget-controls" style={{ width: '100%' }}>
       <div className="budget-tabs">
         <div className="seg">
-          {(['expenses', 'spend', 'analytics', 'categoryMapping'] as const).map((option) => (
+          {(['spend', 'expenses', 'analytics'] as const).map((option) => (
             <label key={option} className="seg-opt">
               <input type="radio" name="budgetPeriod" checked={period === option} onChange={() => setPeriod(option)} />
-              <span>{option === 'expenses' ? 'Expenses' : option === 'spend' ? 'Spend' : option === 'analytics' ? 'Analytics' : 'Category Mapping'}</span>
+              <span>{option === 'spend' ? 'Spend' : option === 'expenses' ? 'Expenses' : 'Analytics'}</span>
             </label>
           ))}
         </div>
@@ -807,7 +808,7 @@ function App() {
 
   // One-shot global-categories seed trigger: once a portfolio is unlocked and
   // hydrated, re-decrypt the raw (pre-coalesceWithDefaults) persisted blob —
-  // coalesceWithDefaults strips any legacy `categories`/`categoryMappings`
+  // coalesceWithDefaults strips legacy category data.
   // fields that no longer belong on AppState, so the migration needs the raw
   // shape — and hand it to the global store's own migration entry point.
   // Gated the same way as the other post-unlock effects above (sessionKey +
@@ -870,6 +871,16 @@ function App() {
     )
   }
 
+  if (route.name === 'categories') {
+    return (
+      <ManageCategoriesPage
+        categories={globalCategories.categories}
+        categoryDispatch={globalCategories.dispatch}
+        categoriesHydrated={globalCategories.hydrated}
+      />
+    )
+  }
+
   // Portfolio route, but the portfolio hasn't resolved yet (registry still
   // loading, or the `getPortfolio` fallback lookup is in flight).
   if (!activePortfolio) {
@@ -916,10 +927,10 @@ function App() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <RailNav
-        state={state}
-        dispatch={dispatch}
-        connected={connected}
+        <RailNav
+          state={state}
+          dispatch={dispatch}
+          connected={connected}
         syncing={syncing}
         handleSync={handleSync}
         onOpenSettings={() => {
@@ -946,10 +957,10 @@ function App() {
           <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
             <BudgetPage
               {...{
+                ...globalCategories,
                 state,
                 dispatch,
                 categories: globalCategories.categories,
-                categoryMappings: globalCategories.categoryMappings,
                 categoryDispatch: globalCategories.dispatch,
                 categoriesHydrated: globalCategories.hydrated,
                 budgetAccountRules: globalCategories.budgetAccountRules,
