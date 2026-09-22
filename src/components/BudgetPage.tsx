@@ -15,6 +15,7 @@ import {
 import { BudgetAnalytics } from './BudgetAnalytics'
 import { BudgetSankey } from './BudgetSankey'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
+import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
 import {
@@ -39,9 +40,10 @@ export interface BudgetPageProps {
   categories: Category[]
   categoryMappings: CategoryMapping[]
   categoryDispatch: (action: CategoryAction) => void
+  categoriesHydrated: boolean
   budgetAccountRules?: BudgetAccountRule[]
-  period: 'expenses' | 'spend' | 'analytics'
-  setPeriod: (period: 'expenses' | 'spend' | 'analytics') => void
+  period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping'
+  setPeriod: (period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping') => void
   selectedScope: SpendScope
   setSelectedScope: Dispatch<SetStateAction<SpendScope>>
 }
@@ -190,13 +192,16 @@ function MappingIcon() {
 }
 
 /**
- * Budget page: Expenses/Spend/Analytics tab toggle.
+ * Budget page: Expenses/Spend/Analytics/Category Mapping tab toggle.
  * - Expenses tab (BudgetExpensesTab): Category Breakdown (own independent
  *   year selector) + a multi-year Expense table of global ExpenseDefinitions.
  * - Spend tab: scope selector, summary cards, and the Spend records table.
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
+ * - Category Mapping tab (CategoryMappingTab): category CRUD plus every
+ *   portfolio-scoped expense-name + category -> substring mapping,
+ *   grouped by category and expense definition.
  */
-export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, budgetAccountRules = [], period, selectedScope, setSelectedScope }: BudgetPageProps) {
+export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [], period, selectedScope, setSelectedScope }: BudgetPageProps) {
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -621,7 +626,16 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      {period === 'analytics' ? (
+      {period === 'categoryMapping' ? (
+        <CategoryMappingTab
+          state={state}
+          dispatch={dispatch}
+          categories={categories}
+          categoryMappings={categoryMappings}
+          categoryDispatch={categoryDispatch}
+          categoriesHydrated={categoriesHydrated}
+        />
+      ) : period === 'analytics' ? (
         <BudgetAnalytics state={state} categories={categories} />
       ) : period === 'expenses' ? (
         <BudgetExpensesTab state={state} dispatch={dispatch} categories={categories} categoryDispatch={categoryDispatch} />

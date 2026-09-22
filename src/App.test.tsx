@@ -381,10 +381,16 @@ describe('navigation shell title and controls', () => {
     const [spendTab, expensesTab, analyticsTab] = ['Spend', 'Expenses', 'Analytics'].map((tab) => screen.getByText(tab))
     expect(spendTab.compareDocumentPosition(expensesTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(expensesTab.compareDocumentPosition(analyticsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const categoriesTab = screen.getByText('Category Mapping')
+    expect(analyticsTab.compareDocumentPosition(categoriesTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByLabelText('Select year')).toBeTruthy()
 
     fireEvent.click(screen.getByText('Expenses'))
     expect(screen.queryByLabelText('Select year')).toBeNull()
+
+    fireEvent.click(screen.getByText('Category Mapping'))
+    expect(screen.queryByLabelText('Select year')).toBeNull()
+    expect(screen.getAllByText('Category Mapping').length).toBeGreaterThanOrEqual(2)
   })
 
   it('uses Ledger Dashboard without a portfolio title for the gate and picker', async () => {

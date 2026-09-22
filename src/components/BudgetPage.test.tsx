@@ -236,13 +236,34 @@ describe('BudgetPage period props', () => {
     contents.add(container.textContent ?? '')
     expect(screen.getByTestId('summary-cards')).toBeTruthy()
 
-    for (const period of ['expenses', 'analytics'] as const) {
+    for (const period of ['expenses', 'analytics', 'categoryMapping'] as const) {
       rerender(<BudgetPage {...props} period={period} />)
       expect(screen.queryByTestId('summary-cards')).toBeNull()
       contents.add(container.textContent ?? '')
     }
 
-    expect(contents.size).toBe(3)
+    expect(contents.size).toBe(4)
+  })
+
+  it('renders the category-plus-substring mapping table on the categoryMapping tab', () => {
+    render(
+      <BudgetPage
+        {...props}
+        period="categoryMapping"
+        state={{
+          ...initialState(),
+          budgetExpenseDefinitions: [{ id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' as const }],
+          budgetTransactions: [],
+        }}
+        dispatch={vi.fn()}
+        categories={[{ id: 'food', name: 'Food', updatedAt: '' }]}
+        categoryMappings={[{ id: 'm1', substring: 'WHOLEFDS', spendExpenseId: 'groceries', updatedAt: '' }]}
+      />
+    )
+
+    expect(screen.getByText('Groceries (Food)')).toBeTruthy()
+    expect(screen.getByText('WHOLEFDS')).toBeTruthy()
+    expect(screen.getByLabelText('Add substring to Groceries (Food)')).toBeTruthy()
   })
 
   it('does not render the App-owned year scope selector', () => {

@@ -51,7 +51,7 @@ const LOCK_ABSOLUTE_MS = 2 * 60 * 60 * 1000 // 2h
 const LOCK_IDLE_MS = 5 * 60 * 1000 // 5min
 const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
 
-type BudgetPeriod = 'spend' | 'expenses' | 'analytics'
+type BudgetPeriod = 'spend' | 'expenses' | 'analytics' | 'categoryMapping'
 
 function PeriodSegControl({
   period,
@@ -70,10 +70,22 @@ function PeriodSegControl({
     <div className="budget-controls" style={{ width: '100%' }}>
       <div className="budget-tabs">
         <div className="seg">
-          {(['spend', 'expenses', 'analytics'] as const).map((option) => (
-            <label key={option} className="seg-opt">
+          {(['spend', 'expenses', 'analytics', 'categoryMapping'] as const).map((option) => (
+            <label key={option} className="seg-opt" title={option === 'categoryMapping' ? 'Category mappings' : undefined}>
               <input type="radio" name="budgetPeriod" checked={period === option} onChange={() => setPeriod(option)} />
-              <span>{option === 'spend' ? 'Spend' : option === 'expenses' ? 'Expenses' : 'Analytics'}</span>
+              {option === 'categoryMapping' ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14" aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                    <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                    <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                    <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                  </svg>
+                  Category Mapping
+                </span>
+              ) : (
+                <span>{option === 'spend' ? 'Spend' : option === 'expenses' ? 'Expenses' : 'Analytics'}</span>
+              )}
             </label>
           ))}
         </div>
