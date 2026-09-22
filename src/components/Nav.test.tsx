@@ -31,15 +31,16 @@ function makeTopBarProps(overrides: Partial<React.ComponentProps<typeof TopBar>>
 }
 
 describe('RailNav', () => {
-  it('places switch portfolio first and settings last', () => {
+  it('places switch portfolio last, directly below settings', () => {
     const props = makeRailProps()
     render(<RailNav {...props} />)
 
     const buttons = screen.getAllByRole('button')
-    expect(buttons[0].getAttribute('aria-label')).toBe('Switch portfolio')
-    expect(buttons.at(-1)?.getAttribute('aria-label')).toBe('Settings')
+    expect(buttons[0].getAttribute('aria-label')).toBe('Budget')
+    expect(buttons.at(-2)?.getAttribute('aria-label')).toBe('Settings')
+    expect(buttons.at(-1)?.getAttribute('aria-label')).toBe('Switch portfolio')
 
-    fireEvent.click(buttons[0])
+    fireEvent.click(buttons.at(-1)!)
     expect(props.onSwitchPortfolio).toHaveBeenCalledOnce()
   })
 
@@ -48,6 +49,7 @@ describe('RailNav', () => {
     render(<RailNav {...props} />)
 
     const switchButton = screen.getByRole('button', { name: 'Switch portfolio' })
+    expect(switchButton.classList.contains('rail-exit')).toBe(true)
     const paths = Array.from(switchButton.querySelectorAll('path')).map((p) => p.getAttribute('d'))
     expect(paths).toContain('M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4')
     expect(paths).toContain('m16 17 5-5-5-5')
@@ -107,6 +109,8 @@ describe('RailNav', () => {
   it('keeps mobile rail ordering and spinner animation scoped to their hooks', () => {
     expect(styles).toMatch(/@media\s*\(max-width:\s*480px\)\s*\{[\s\S]*?\.rail\s*\{[^}]*flex-direction:\s*row/s)
     expect(styles).toMatch(/\.rail-items\s*\{[^}]*flex-direction:\s*row[^}]*\}/s)
+    expect(styles).toMatch(/\.rail-exit\s*\{[^}]*background:\s*#f59e0b[^}]*\}/s)
+    expect(styles).toMatch(/\.rail-exit:hover\s*\{[^}]*background:\s*#d97706[^}]*\}/s)
     expect(styles).toMatch(/\.syncing\s*\{[^}]*animation:\s*sync-spin\s+0\.8s\s+linear\s+infinite[^}]*\}/s)
     expect(styles).toMatch(/@keyframes\s+sync-spin\s*\{[^}]*transform:\s*rotate\(360deg\)/s)
   })

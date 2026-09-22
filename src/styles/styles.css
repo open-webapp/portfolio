@@ -154,6 +154,8 @@ textarea.input { min-height: 90px; resize: vertical; }
 .rail-item.active { background: var(--color-accent); color: #fff; }
 .rail-switch { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-top: var(--space-2); padding: 0; border: 0; border-radius: var(--radius-md); background: var(--color-accent); color: #fff; cursor: pointer; }
 .rail-switch:hover { background: var(--color-accent-700); color: #fff; }
+.rail-exit { background: #f59e0b; color: #fff; }
+.rail-exit:hover { background: #d97706; color: #fff; }
 .syncing { animation: sync-spin 0.8s linear infinite; }
 
 @keyframes sync-spin {
@@ -181,6 +183,7 @@ textarea.input { min-height: 90px; resize: vertical; }
   .budget-tabs { grid-column: 1; width: 100%; }
   .budget-year { grid-column: 1; justify-self: start; }
   .rail-switch { margin-top: 0; }
+  .rail-exit { margin-top: 0; }
 }
 
 /* — tables — */

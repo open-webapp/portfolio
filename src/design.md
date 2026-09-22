@@ -32,7 +32,7 @@ src/
     design.md                        — drive.ts-focused module doc (see header note)
   components/
     PortfolioPicker.tsx              — portfolio create/rename/delete/open UI
-    Nav.tsx                          — left rail: portfolio picker, view, sync, settings controls; period-only top-bar strip
+    Nav.tsx                          — left rail: view, sync, settings, portfolio-exit controls; period-only top-bar strip
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
     AccountsPage.tsx, BudgetPage.tsx, RegisterPage.tsx, QuotesPage.tsx, Settings.tsx — main views
     BudgetExpensesTab.tsx            — budget expense definitions, per-year amounts, direct CSV download, and paste import dialog
@@ -109,7 +109,7 @@ App.tsx
    │    ├─ shape === 'encrypted' → EnterPasswordScreen
    │    └─ shape === 'absent' → SetPasswordScreen (defends against a portfolio db that's genuinely empty; new portfolios never reach this since they skip the gate entirely)
    └─ unlocked + hydrated → app shell
-        ├─ RailNav (Switch portfolio first; view items Budget/Positions/Register/Quotes; Sync above Settings when connected or syncing; Settings last)
+         ├─ RailNav (view items Budget/Positions/Register/Quotes; Sync above Settings when connected or syncing; Settings second-to-last; Switch portfolio last with amber exit fill)
         ├─ TopBar (period-control-only strip; blank outside Budget)
         ├─ desktop content shell offsets 76px for the fixed left rail; at <=480px the rail moves to the bottom and the offset is removed
         ├─ state.view === 'budget'    → BudgetPage (App-owned Expenses/Spend/Analytics/Category Mapping period and Spend scope; receives hydrated global categories, mappings, and account rules)
