@@ -102,6 +102,7 @@ export interface BudgetTransaction {
   categoryId: string
   spendExpenseId?: string
   accountName?: string // Source account name; canonical matching is trimmed and case-insensitive.
+  tags?: string[]
   amount: number
 }
 

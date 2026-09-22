@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addBudgetTransaction,
   addExpenseDefinition,
   addCategoryMapping,
   deleteCategoryMapping,
@@ -8,8 +9,11 @@ import {
   importBudgetTransactions,
   initialState,
   reconcileBudgetAccountConventions,
+  resolveBudgetImportRows,
   rolloverBudgetExpenseAmountsIfNeeded,
   stripEmptyBudgetSnapshots,
+  updateBudgetTransaction,
+  updateBudgetTransactionsBulk,
   updateCategoryMapping,
   updateExpenseDefinition,
   upsertCategoryMapping,
@@ -215,5 +219,121 @@ describe('budget account conventions', () => {
   it('keeps the same state reference when reconciliation has nothing to apply', () => {
     const state = initialState()
     expect(reconcileBudgetAccountConventions(state, [positiveRule])).toBe(state)
+  })
+})
+
+describe('budget import tags passthrough', () => {
+  const categories = [{ id: 'other', name: 'Other', updatedAt: '' }]
+
+  it('resolveBudgetImportRows carries tags into toAdd unchanged', () => {
+    const { toAdd, duplicateCount } = resolveBudgetImportRows(
+      [],
+      [{ date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['food', 'weekly'] }],
+      categories,
+      [],
+      []
+    )
+    expect(duplicateCount).toBe(0)
+    expect(toAdd).toHaveLength(1)
+    expect(toAdd[0].tags).toEqual(['food', 'weekly'])
+  })
+
+  it('tags do not participate in the dedup key: a row differing only by tags is a duplicate', () => {
+    const { toAdd, duplicateCount } = resolveBudgetImportRows(
+      [],
+      [
+        { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['food'] },
+        { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['weekly'] },
+      ],
+      categories,
+      [],
+      []
+    )
+    expect(toAdd).toHaveLength(1)
+    expect(duplicateCount).toBe(1)
+    // First row wins; the duplicate row (with different tags) is dropped entirely.
+    expect(toAdd[0].tags).toEqual(['food'])
+  })
+})
+
+describe('updateBudgetTransactionsBulk tagsToAdd', () => {
+  const tx = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    date: '2026-01-01',
+    description: `Tx ${id}`,
+    categoryId: 'other',
+    amount: -10,
+    ...extra,
+  })
+
+  it('bulk-applies tagsToAdd to rows with no existing tags', () => {
+    const state = { ...initialState(), budgetTransactions: [tx('a'), tx('b')] }
+    const result = updateBudgetTransactionsBulk(state, ['a', 'b'], { categoryId: 'other', tagsToAdd: ['work'] })
+    expect(result.budgetTransactions).toMatchObject([
+      { id: 'a', tags: ['work'] },
+      { id: 'b', tags: ['work'] },
+    ])
+  })
+
+  it('keeps existing casing on case-insensitive collision', () => {
+    const state = { ...initialState(), budgetTransactions: [tx('a', { tags: ['Work'] })] }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'other', tagsToAdd: ['work'] })
+    expect(result.budgetTransactions[0].tags).toEqual(['Work'])
+  })
+
+  it('caps merged tags at 5, appending in order given', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [tx('a', { tags: ['t1', 't2', 't3', 't4'] })],
+    }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'other', tagsToAdd: ['a', 'b'] })
+    expect(result.budgetTransactions[0].tags).toEqual(['t1', 't2', 't3', 't4', 'a'])
+  })
+
+  it('leaves a 5-tag row unchanged when applying new tags', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [tx('a', { tags: ['t1', 't2', 't3', 't4', 't5'] })],
+    }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'other', tagsToAdd: ['new'] })
+    expect(result.budgetTransactions[0].tags).toEqual(['t1', 't2', 't3', 't4', 't5'])
+  })
+
+  it('categoryId/spendExpenseId-only bulk edit still works when tagsToAdd is omitted', () => {
+    const state = { ...initialState(), budgetTransactions: [tx('a'), tx('b', { tags: ['keep'] })] }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'food', spendExpenseId: 'exp1' })
+    expect(result.budgetTransactions[0]).toMatchObject({ categoryId: 'food', spendExpenseId: 'exp1' })
+    expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
+    expect(result.budgetTransactions[1]).toMatchObject({ categoryId: 'other', tags: ['keep'] })
+  })
+})
+
+describe('budget transaction tags passthrough', () => {
+  const base = { date: '2026-01-01', description: 'Groceries', categoryId: 'other', amount: -50 }
+
+  it('addBudgetTransaction stores tags when provided', () => {
+    const result = addBudgetTransaction(initialState(), { ...base, tags: ['foo', 'bar'] })
+    expect(result.budgetTransactions).toHaveLength(1)
+    expect(result.budgetTransactions[0].tags).toEqual(['foo', 'bar'])
+  })
+
+  it('addBudgetTransaction omits the tags key when tags are not provided', () => {
+    const result = addBudgetTransaction(initialState(), { ...base })
+    expect(result.budgetTransactions).toHaveLength(1)
+    expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
+  })
+
+  it('updateBudgetTransaction patches tags', () => {
+    const added = addBudgetTransaction(initialState(), { ...base })
+    const id = added.budgetTransactions[0].id
+    const result = updateBudgetTransaction(added, id, { tags: ['x'] })
+    expect(result.budgetTransactions[0].tags).toEqual(['x'])
+  })
+
+  it('updateBudgetTransaction clears tags when patch has tags: undefined', () => {
+    const added = addBudgetTransaction(initialState(), { ...base, tags: ['x'] })
+    const id = added.budgetTransactions[0].id
+    const result = updateBudgetTransaction(added, id, { tags: undefined })
+    expect(result.budgetTransactions[0].tags).toBeUndefined()
   })
 })
