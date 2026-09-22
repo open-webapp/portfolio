@@ -42,7 +42,7 @@ export function ManageCategoriesPage({
     )
   }
 
-  const visible = visibleCategories({ categories, categoryMappings: [], budgetAccountRules: [] })
+  const visible = visibleCategories({ categories, budgetAccountRules: [] })
 
   return (
     <main className="page">

@@ -158,29 +158,22 @@ vi.mock('./lib/persist', () => ({
   peekEnvelopeShape: vi.fn(),
   savePersistedApp: vi.fn().mockResolvedValue(undefined),
   setActivePortfolioDb: vi.fn(),
-  loadRawPersistedBlob: vi.fn().mockResolvedValue({}),
 }))
 
 // Controllable fixture for the global-categories hook: tests can mutate
 // mockGlobalCategoriesFixture.current's fields per-test (e.g. hydrated:
 // false) without changing the default the other tests rely on.
-const { mockGlobalCategoriesFixture, seedGlobalCategoriesIfNeededMock } = vi.hoisted(() => {
-  const seedGlobalCategoriesIfNeededMock = vi.fn().mockResolvedValue(undefined)
-  return {
-    seedGlobalCategoriesIfNeededMock,
-    mockGlobalCategoriesFixture: {
-      current: {
-        categories: [] as unknown[],
-        categoryMappings: [] as unknown[],
-        budgetAccountRules: [] as { normalizedName: string; displayName: string; statementConvention: 'negativeSpend' | 'positiveSpend'; updatedAt: string }[],
-        dispatch: vi.fn(),
-        hydrated: true,
-        seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
-        syncNow: vi.fn().mockResolvedValue(undefined),
-      },
+const { mockGlobalCategoriesFixture } = vi.hoisted(() => ({
+  mockGlobalCategoriesFixture: {
+    current: {
+      categories: [] as unknown[],
+      budgetAccountRules: [] as { normalizedName: string; displayName: string; statementConvention: 'negativeSpend' | 'positiveSpend'; updatedAt: string }[],
+      dispatch: vi.fn(),
+      hydrated: true,
+      syncNow: vi.fn().mockResolvedValue(undefined),
     },
-  }
-})
+  },
+}))
 
 vi.mock('./hooks/useGlobalCategories', () => ({
   useGlobalCategories: () => mockGlobalCategoriesFixture.current,
@@ -991,14 +984,11 @@ describe('global categories wiring', () => {
   beforeEach(() => {
     vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
     mockUnlockLoadedState.current = undefined
-    seedGlobalCategoriesIfNeededMock.mockClear()
     mockGlobalCategoriesFixture.current = {
       categories: [{ id: 'cat-1', name: 'Groceries' }],
-      categoryMappings: [{ id: 'map-1', substring: 'trader joes', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }],
       budgetAccountRules: [],
       dispatch: vi.fn(),
       hydrated: true,
-      seedGlobalCategoriesIfNeeded: seedGlobalCategoriesIfNeededMock,
       syncNow: vi.fn().mockResolvedValue(undefined),
     }
   })
@@ -1007,12 +997,21 @@ describe('global categories wiring', () => {
     mockUnlockLoadedState.current = undefined
   })
 
-  it('passes categories/categoryMappings/categoryDispatch/categoriesHydrated to BudgetPage', async () => {
+  it('passes global categories and portfolio category mappings to BudgetPage', async () => {
     // BudgetPage itself hasn't been migrated off `state.categories` yet (T13,
     // not this task) so it currently throws on render — a pre-existing,
     // already-red intermediate state per plan T9's own acceptance note.
     // SwallowRenderErrors above keeps that from failing this test, which only
     // cares about what App.tsx handed it as props, not what it renders.
+    const state = initialState()
+    state.categoryMappings = [{
+      id: 'portfolio-map-1',
+      substring: 'trader joes',
+      spendExpenseId: 'exp-1',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }]
+    mockUnlockLoadedState.current = state
+
     await renderUnlockedApp()
 
     fireEvent.click(navTab('Budget'))
@@ -1022,7 +1021,7 @@ describe('global categories wiring', () => {
 
     const props = budgetPagePropsCapture.current as Record<string, unknown>
     expect(props.categories).toBe(mockGlobalCategoriesFixture.current.categories)
-    expect(props.categoryMappings).toBe(mockGlobalCategoriesFixture.current.categoryMappings)
+    expect(props.categoryMappings).toBe(state.categoryMappings)
     expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
     expect(props.categoriesHydrated).toBe(true)
     expect(props.budgetAccountRules).toBe(mockGlobalCategoriesFixture.current.budgetAccountRules)
@@ -1159,28 +1158,6 @@ describe('global categories wiring', () => {
     expect(props.driveConnected).toBe(false)
   })
 
-  it('calls seedGlobalCategoriesIfNeeded exactly once per portfolio activation with (activePortfolio, rawBlob)', async () => {
-    const persistModule = await import('./lib/persist')
-    vi.mocked(persistModule.loadRawPersistedBlob).mockResolvedValue({ categories: [{ id: 'legacy-1', name: 'Legacy' }] })
-
-    const portfolio = await resetRegistryAndOpenDefaultPortfolio()
-    await renderUnlockedApp()
-
-    await waitFor(() => {
-      expect(seedGlobalCategoriesIfNeededMock).toHaveBeenCalledTimes(1)
-    })
-    expect(seedGlobalCategoriesIfNeededMock).toHaveBeenCalledWith(
-      expect.objectContaining({ id: portfolio.id }),
-      { categories: [{ id: 'legacy-1', name: 'Legacy' }] }
-    )
-
-    // Further state changes / re-renders must not re-trigger the seed.
-    fireEvent.click(navTab('Register'))
-    await waitFor(() => {
-      expect(screen.getByText('Record Balances')).toBeTruthy()
-    })
-    expect(seedGlobalCategoriesIfNeededMock).toHaveBeenCalledTimes(1)
-  })
 })
 
 describe('auto-lock on inactivity', () => {

@@ -192,6 +192,7 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
           : []
       return { ...rest, activities } as typeof entry
     }),
+    categoryMappings: loaded.categoryMappings ?? defaults.categoryMappings,
 
     // UI state with existing values or defaults.
     // `view` is whitelisted rather than defaulted: blobs written before the

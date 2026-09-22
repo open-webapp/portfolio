@@ -28,7 +28,7 @@ export function BudgetAccountsTab({ transactions, budgetAccountRules, hydrated, 
     if (!window.confirm(`Change statement convention for "${accountName}"? ${transactionCount} local transaction${transactionCount === 1 ? '' : 's'} will reconcile now; this change may affect other portfolios when they are opened.`)) return
 
     const nextRules = configureBudgetAccountRule(
-      { categories: [], categoryMappings: [], budgetAccountRules },
+      { categories: [], budgetAccountRules },
       accountName,
       convention,
     ).budgetAccountRules
@@ -41,7 +41,7 @@ export function BudgetAccountsTab({ transactions, budgetAccountRules, hydrated, 
     if (!window.confirm(`Remove the account rule for "${accountName}"? This can change its statement convention for future imports and other portfolios when they are opened.`)) return
 
     const nextRules = deleteBudgetAccountRule(
-      { categories: [], categoryMappings: [], budgetAccountRules },
+      { categories: [], budgetAccountRules },
       normalizedName,
     ).budgetAccountRules
     dispatch({ type: 'DELETE_BUDGET_ACCOUNT_RULE', normalizedName })

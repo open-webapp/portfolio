@@ -36,6 +36,7 @@ export interface AppState {
   mutualFundSync: MutualFundSyncState
   balanceEntries: BalanceEntry[]
   budgetExpenseDefinitions: ExpenseDefinition[]
+  categoryMappings: CategoryMapping[]
   budgetExpenseAmountsByYear: Record<string, Record<string, number>>
   budgetTransactions: BudgetTransaction[]
   budgetAccountAppliedConventions: Record<string, StatementConvention>
@@ -84,6 +85,7 @@ export function initialState(): AppState {
     mutualFundSync: { apiKey: '', heldPrices: {}, lastRun: null, callBudget: { date: '', callsUsed: 0 } },
     balanceEntries: [],
     budgetExpenseDefinitions: [],
+    categoryMappings: [],
     budgetExpenseAmountsByYear: {},
     budgetTransactions: [],
     budgetAccountAppliedConventions: {},
@@ -852,6 +854,85 @@ export function updateExpenseDefinition(
 }
 
 /**
+ * Create or update a category mapping by description substring,
+ * case-insensitively. Blank descriptions are ignored.
+ */
+export function upsertCategoryMapping(
+  state: AppState,
+  description: string,
+  spendExpenseId: string
+): AppState {
+  const substring = description.trim()
+  if (!substring) return state
+  const existing = state.categoryMappings.find(
+    (mapping) => mapping.substring.toLowerCase() === substring.toLowerCase()
+  )
+  const updatedAt = new Date().toISOString()
+  if (existing) {
+    const nextState = {
+      ...state,
+      categoryMappings: state.categoryMappings.map((mapping) =>
+        mapping.id === existing.id ? { ...mapping, spendExpenseId, updatedAt } : mapping
+      ),
+    }
+    return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
+  }
+  const nextState = {
+    ...state,
+    categoryMappings: [
+      ...state.categoryMappings,
+      { id: uid('catmap'), substring, spendExpenseId, updatedAt },
+    ],
+  }
+  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
+}
+
+/** Patch an existing category mapping by ID, stamping updatedAt. */
+export function updateCategoryMapping(
+  state: AppState,
+  id: string,
+  patch: Partial<Pick<CategoryMapping, 'substring' | 'spendExpenseId'>>
+): AppState {
+  if (!state.categoryMappings.some((mapping) => mapping.id === id)) return state
+  const updatedAt = new Date().toISOString()
+  const nextState = {
+    ...state,
+    categoryMappings: state.categoryMappings.map((mapping) =>
+      mapping.id === id ? { ...mapping, ...patch, updatedAt } : mapping
+    ),
+  }
+  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
+}
+
+/** Add a category mapping. Blank or whitespace-only substrings are ignored. */
+export function addCategoryMapping(
+  state: AppState,
+  spendExpenseId: string,
+  substring: string
+): AppState {
+  const trimmed = substring.trim()
+  if (!trimmed) return state
+  const nextState = {
+    ...state,
+    categoryMappings: [
+      ...state.categoryMappings,
+      { id: uid('catmap'), substring: trimmed, spendExpenseId, updatedAt: new Date().toISOString() },
+    ],
+  }
+  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
+}
+
+/** Hard-delete a category mapping by ID. */
+export function deleteCategoryMapping(state: AppState, id: string): AppState {
+  if (!state.categoryMappings.some((mapping) => mapping.id === id)) return state
+  const nextState = {
+    ...state,
+    categoryMappings: state.categoryMappings.filter((mapping) => mapping.id !== id),
+  }
+  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
+}
+
+/**
  * Pure predicate: true if any budget transaction, in any year, references
  * this expense definition id as its `spendExpenseId`.
  */
@@ -877,6 +958,9 @@ export function deleteExpenseDefinition(state: AppState, id: string): AppState {
   return {
     ...state,
     budgetExpenseDefinitions: state.budgetExpenseDefinitions.filter((d) => d.id !== id),
+    categoryMappings: state.categoryMappings.some((mapping) => mapping.spendExpenseId === id)
+      ? state.categoryMappings.filter((mapping) => mapping.spendExpenseId !== id)
+      : state.categoryMappings,
     budgetExpenseAmountsByYear,
   }
 }
@@ -1037,4 +1121,3 @@ export function reapplyCategoryMappingsToState(state: AppState, categoryMappings
     budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpenseDefinitions),
   }
 }
-

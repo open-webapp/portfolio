@@ -38,14 +38,13 @@ function mergeById<T extends { updatedAt: string; deletedAt?: string }>(
 }
 
 /**
- * Merge two GlobalCategoryState snapshots. Categories and mappings merge by id; budget
- * account rules merge by normalized name. Conflicts keep the record with the larger
+ * Merge two GlobalCategoryState snapshots. Categories merge by id; budget account rules
+ * merge by normalized name. Conflicts keep the record with the larger
  * `deletedAt ?? updatedAt` timestamp; ties keep `a`'s copy. Pure; no IO.
  */
 export function mergeCategoryState(a: GlobalCategoryState, b: GlobalCategoryState): GlobalCategoryState {
   return {
     categories: mergeById(a.categories, b.categories),
-    categoryMappings: mergeById(a.categoryMappings, b.categoryMappings),
     budgetAccountRules: mergeById(
       Array.isArray(a.budgetAccountRules) ? a.budgetAccountRules : [],
       Array.isArray(b.budgetAccountRules) ? b.budgetAccountRules : [],

@@ -2,10 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type Ke
 import type { AppState } from '../lib/state'
 import { resolveBudgetImportRows } from '../lib/state'
 import {
-  deleteCategoryMapping,
   resolveSpendExpenseIdForDescription,
-  updateCategoryMapping,
-  upsertCategoryMapping,
   type CategoryAction,
 } from '../lib/categoryStore'
 import type { BudgetAccountRule, Category, CategoryMapping } from '../lib/types'
@@ -277,14 +274,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const recPageCount = Math.ceil(searchedRecords.length / RECORDS_PAGE_SIZE)
   const pagedRecords = searchedRecords.slice(recPage * RECORDS_PAGE_SIZE, recPage * RECORDS_PAGE_SIZE + RECORDS_PAGE_SIZE)
   const mappingsForExpense = (expenseId: string) =>
-    categoryMappings.filter((mapping) => {
-      const mappingStatus = mapping as CategoryMapping & {
-        tombstoned?: boolean
-        deleted?: boolean
-        deletedAt?: string | null
-      }
-      return mapping.spendExpenseId === expenseId && !mappingStatus.tombstoned && !mappingStatus.deleted && !mappingStatus.deletedAt
-    })
+    categoryMappings.filter((mapping) => mapping.spendExpenseId === expenseId)
   const editingMappingRow = editingMappingId
     ? state.budgetTransactions.find((transaction) => transaction.id === editingMappingId)
     : undefined
@@ -315,18 +305,14 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const saveMappingSubstring = (mapping: CategoryMapping) => {
     const substring = mappingSubstringDraft.trim()
     if (!substring || substring === mapping.substring) return
-    categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id: mapping.id, patch: { substring } })
-    const nextMappings = updateCategoryMapping({ categories, categoryMappings, budgetAccountRules }, mapping.id, { substring }).categoryMappings
-    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+    dispatch({ type: 'UPDATE_CATEGORY_MAPPING', id: mapping.id, patch: { substring } })
     setEditingMappingSubstringId(null)
     setMappingSubstringDraft('')
   }
 
   const deleteMapping = (mapping: CategoryMapping) => {
     if (!window.confirm('Delete this mapping? This cannot be undone.')) return
-    categoryDispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
-    const nextMappings = deleteCategoryMapping({ categories, categoryMappings, budgetAccountRules }, mapping.id).categoryMappings
-    dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
+    dispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
   }
 
   // Clears row selection whenever the visible set/order of Spend records can
@@ -469,11 +455,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         spendExpenseId: recExpenseId || undefined,
       },
     })
-    categoryDispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, spendExpenseId: recExpenseId })
-    {
-      const nextMappings = upsertCategoryMapping({ categories, categoryMappings, budgetAccountRules }, description, recExpenseId).categoryMappings
-      dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
-    }
+    dispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, spendExpenseId: recExpenseId })
     const recordYear = recDate.slice(0, 4)
     if (selectedScope !== SPEND_ALL_YEARS) {
       setSelectedScope(recordYear)
@@ -908,19 +890,11 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                               id: row.id,
                               patch: { spendExpenseId: expenseId || undefined, categoryId },
                             })
-                            categoryDispatch({
+                            dispatch({
                               type: 'UPSERT_CATEGORY_MAPPING',
                               description: row.description,
                               spendExpenseId: expenseId,
                             })
-                            {
-                              const nextMappings = upsertCategoryMapping(
-                                { categories, categoryMappings, budgetAccountRules },
-                                row.description,
-                                expenseId
-                              ).categoryMappings
-                              dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
-                            }
                             setEditingCell(null)
                             setCellDraft('')
                           }}

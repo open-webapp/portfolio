@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
 import { initialState, reconcileBudgetAccountConventions, type AppState } from './lib/state'
 import { appReducer } from './lib/reducer'
-import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb, loadRawPersistedBlob } from './lib/persist'
+import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb } from './lib/persist'
 import { useGlobalCategories } from './hooks/useGlobalCategories'
 import { RailNav, TopBar } from './components/Nav'
 import { SettingsPage } from './components/Settings'
@@ -153,10 +153,7 @@ function App() {
   const globalCategories = useGlobalCategories(
     activePortfolio ? getDriveAuthFor(activePortfolio) : null,
     connected,
-    activePortfolio ? driveAuthProjectIdFor(activePortfolio) : null,
-    // Undefined until the decrypted portfolio state is installed. The shell
-    // remains gated separately while the hook hydrates and rules reconcile.
-    sessionKey ? state.budgetExpenseDefinitions : undefined
+    activePortfolio ? driveAuthProjectIdFor(activePortfolio) : null
   )
   const [syncConflict, setSyncConflict] = useState<{
     fileId: string
@@ -198,10 +195,6 @@ function App() {
   // portfolios" (needs a full unlock-state reset) from "resolving the first
   // portfolio after mount" (nothing was unlocked yet, nothing to reset).
   const prevActivePortfolioIdRef = useRef<string | null>(null)
-  // Tracks the id of the portfolio the one-shot global-categories seed has
-  // already run for, so the hydrate-triggered seed effect below fires at most
-  // once per portfolio activation rather than on every re-render.
-  const categoriesSeededPortfolioIdRef = useRef<string | null>(null)
   const budgetRolloverPortfolioIdRef = useRef<string | null>(null)
   const activePortfolioIdRef = useRef<string | null>(null)
   const hydrationGenerationRef = useRef(0)
@@ -806,26 +799,6 @@ function App() {
     }
   }, [state, isHydrated, sessionKey, sessionSalt, activePortfolio?.id])
 
-  // One-shot global-categories seed trigger: once a portfolio is unlocked and
-  // hydrated, re-decrypt the raw (pre-coalesceWithDefaults) persisted blob —
-  // coalesceWithDefaults strips legacy category data.
-  // fields that no longer belong on AppState, so the migration needs the raw
-  // shape — and hand it to the global store's own migration entry point.
-  // Gated the same way as the other post-unlock effects above (sessionKey +
-  // isHydrated + activePortfolio), with an additional ref guard keyed on the
-  // portfolio id so this doesn't re-run on every re-render/state change.
-  useEffect(() => {
-    if (sessionKey === null || !isHydrated || !activePortfolio) return
-    if (categoriesSeededPortfolioIdRef.current === activePortfolio.id) return
-    categoriesSeededPortfolioIdRef.current = activePortfolio.id
-    loadRawPersistedBlob(sessionKey)
-      .then((rawBlob) => globalCategories.seedGlobalCategoriesIfNeeded(activePortfolio, rawBlob ?? {}))
-      .catch((error) => {
-        console.error('Failed to seed global categories:', error)
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionKey, isHydrated, activePortfolio?.id])
-
   useEffect(() => {
     if (!isHydrated) return
     setSelectedScope(spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS)
@@ -842,8 +815,7 @@ function App() {
 
   // One-shot budget year-rollover trigger: once a portfolio is unlocked and
   // hydrated, ensure the current budget year has an expense snapshot
-  // seeded from the nearest prior year, same gating/ref-guard
-  // pattern as the global-categories seed effect above.
+  // seeded from the nearest prior year.
   useEffect(() => {
     if (sessionKey === null || !isHydrated || !activePortfolio) return
     if (budgetRolloverPortfolioIdRef.current === activePortfolio.id) return
@@ -961,6 +933,7 @@ function App() {
                 state,
                 dispatch,
                 categories: globalCategories.categories,
+                categoryMappings: state.categoryMappings,
                 categoryDispatch: globalCategories.dispatch,
                 categoriesHydrated: globalCategories.hydrated,
                 budgetAccountRules: globalCategories.budgetAccountRules,

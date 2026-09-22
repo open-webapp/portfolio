@@ -128,7 +128,6 @@ export interface CategoryMapping {
   substring: string
   spendExpenseId: string
   updatedAt: string  // ISO
-  deletedAt?: string  // ISO
 }
 
 export const POSITIONS_REQUIRED_FIELDS = [

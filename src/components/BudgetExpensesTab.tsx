@@ -625,7 +625,6 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
                         }
                         if (window.confirm('Delete this expense? This cannot be undone.')) {
                           dispatch({ type: 'DELETE_EXPENSE_DEFINITION', id: row.id })
-                          categoryDispatch({ type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE', spendExpenseId: row.id })
                         }
                       }}
                     >

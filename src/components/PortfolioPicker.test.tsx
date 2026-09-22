@@ -119,7 +119,6 @@ describe('PortfolioPicker', () => {
     window.confirm = vi.fn().mockReturnValue(true)
     vi.mocked(loadGlobalCategoryState).mockResolvedValue({
       categories: [],
-      categoryMappings: [],
       budgetAccountRules: [],
     } as never)
     vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue(undefined)
@@ -227,16 +226,15 @@ describe('PortfolioPicker', () => {
       expect((screen.getByRole('radio', { name: 'Create' }) as HTMLInputElement).checked).toBe(true)
     })
 
-    it('renders category and mapping counts from the loaded global state', async () => {
+    it('renders category and budget account rule counts from the loaded global state', async () => {
       vi.mocked(loadGlobalCategoryState).mockResolvedValue({
         categories: [{ id: 'food', name: 'Food' }, { id: 'travel', name: 'Travel' }],
-        categoryMappings: [{ id: 'food-mapping' }, { id: 'travel-mapping' }, { id: 'other-mapping' }],
-        budgetAccountRules: [],
+        budgetAccountRules: [{ normalizedName: 'checking', displayName: 'Checking', statementConvention: 'negativeSpend', updatedAt: '' }],
       } as never)
       renderPicker()
       openSettings()
 
-      expect(await screen.findByText('2 categories · 3 category mappings')).toBeTruthy()
+      expect(await screen.findByText('2 categories · 1 budget account rules')).toBeTruthy()
     })
 
     it('navigates to category management from settings', () => {
@@ -252,7 +250,6 @@ describe('PortfolioPicker', () => {
     it('loads empty global state and enables Download after importing a valid mapping', async () => {
       const imported = {
         categories: [{ id: 'food', name: 'Food' }],
-        categoryMappings: [],
         budgetAccountRules: [],
       }
       vi.mocked(parseCategoryMappingImportFile).mockReturnValue(imported as never)
@@ -264,7 +261,7 @@ describe('PortfolioPicker', () => {
       const download = screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement
       expect(download.disabled).toBe(true)
       await waitFor(() => {
-        expect(loadGlobalCategoryState).toHaveBeenCalledWith([])
+        expect(loadGlobalCategoryState).toHaveBeenCalledWith()
       })
 
       const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[0] as HTMLInputElement
@@ -283,13 +280,11 @@ describe('PortfolioPicker', () => {
     it('merges imported mappings with the loaded state instead of replacing it', async () => {
       const existing = {
         categories: [{ id: 'existing', name: 'Existing' }],
-        categoryMappings: [{ id: 'existing-mapping' }],
         budgetAccountRules: [],
       }
-      const imported = { categories: [{ id: 'new', name: 'New' }], categoryMappings: [], budgetAccountRules: [] }
+      const imported = { categories: [{ id: 'new', name: 'New' }], budgetAccountRules: [] }
       const merged = {
         categories: [...existing.categories, ...imported.categories],
-        categoryMappings: existing.categoryMappings,
         budgetAccountRules: [],
       }
       vi.mocked(loadGlobalCategoryState).mockResolvedValue(existing as never)
@@ -330,17 +325,14 @@ describe('PortfolioPicker', () => {
     it('imports a picked shared mapping from Drive, merges it, and saves its file ID', async () => {
       const existing = {
         categories: [{ id: 'existing', name: 'Existing' }],
-        categoryMappings: [],
         budgetAccountRules: [],
       }
       const remote = {
         categories: [{ id: 'shared', name: 'Shared' }],
-        categoryMappings: [],
         budgetAccountRules: [],
       }
       const merged = {
         categories: [...existing.categories, ...remote.categories],
-        categoryMappings: [],
         budgetAccountRules: [],
       }
       const pickFile = vi.fn().mockResolvedValue({ id: 'shared-file' })
@@ -403,7 +395,6 @@ describe('PortfolioPicker', () => {
     it('unlinks the shared mapping without changing local category data', async () => {
       const localState = {
         categories: [{ id: 'food', name: 'Food' }],
-        categoryMappings: [{ id: 'food-mapping' }],
         budgetAccountRules: [{ id: 'food-rule' }],
       }
       vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue('shared-file')

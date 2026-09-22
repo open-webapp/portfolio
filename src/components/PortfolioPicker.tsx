@@ -97,7 +97,6 @@ export function PortfolioPicker({
 
   const [globalCategoryState, setGlobalCategoryState] = useState<Awaited<ReturnType<typeof loadGlobalCategoryState>>>({
     categories: [],
-    categoryMappings: [],
     budgetAccountRules: [],
   })
   const [categoryMappingImportError, setCategoryMappingImportError] = useState<string | null>(null)
@@ -105,7 +104,7 @@ export function PortfolioPicker({
   const [sharedCategoryDriveFileId, setSharedCategoryDriveFileIdState] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    void loadGlobalCategoryState([]).then(setGlobalCategoryState)
+    void loadGlobalCategoryState().then(setGlobalCategoryState)
     void getSharedCategoryDriveFileId().then(setSharedCategoryDriveFileIdState)
   }, [])
 
@@ -132,7 +131,6 @@ export function PortfolioPicker({
     downloadJsonAsFile(
       {
         categories: globalCategoryState.categories,
-        categoryMappings: globalCategoryState.categoryMappings,
         budgetAccountRules: globalCategoryState.budgetAccountRules,
       },
       'category-mapping.json',
@@ -677,7 +675,7 @@ export function PortfolioPicker({
                 <button type="button" className="btn btn-secondary btn-icon" aria-label="Import mapping file" title="Import mapping file" onClick={() => categoryMappingInputRef.current?.click()}>
                   <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5M12 3v12" /></svg>
                 </button>
-                <button type="button" className="btn btn-secondary btn-icon" aria-label="Download mapping file" title="Download mapping file" disabled={globalCategoryState.categories.length === 0 && globalCategoryState.categoryMappings.length === 0} onClick={handleDownloadCategoryMapping}>
+                <button type="button" className="btn btn-secondary btn-icon" aria-label="Download mapping file" title="Download mapping file" disabled={globalCategoryState.categories.length === 0 && globalCategoryState.budgetAccountRules.length === 0} onClick={handleDownloadCategoryMapping}>
                   <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></svg>
                 </button>
               </div>
@@ -691,7 +689,7 @@ export function PortfolioPicker({
               onChange={(e) => void handleCategoryMappingImport(e)}
             />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-              <div className="card-body">{globalCategoryState.categories.length} categories · {globalCategoryState.categoryMappings.length} category mappings</div>
+              <div className="card-body">{globalCategoryState.categories.length} categories · {globalCategoryState.budgetAccountRules.length} budget account rules</div>
               <button type="button" className="btn btn-primary" onClick={navigateToCategories}>Manage</button>
             </div>
             <div className="hr" />

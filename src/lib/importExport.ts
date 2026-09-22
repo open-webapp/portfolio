@@ -16,7 +16,6 @@ import type {
 } from './types'
 import { encryptState, decryptState, deriveKey, detectEnvelopeShape, type EncryptedEnvelope } from './crypto'
 import type { GlobalCategoryState } from './categoryStore'
-import { resolveSpendExpenseForCategory } from './categoryStore'
 
 /**
  * The subset of AppState that gets exported to a backup file: data
@@ -229,7 +228,7 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
 
 /**
  * Thrown when a category-mapping import file isn't valid JSON, or is valid
- * JSON that doesn't have the expected { categories, categoryMappings } shape.
+ * JSON that doesn't have the expected global-category-state shape.
  */
 export class CategoryMappingImportError extends Error {}
 
@@ -246,48 +245,12 @@ function isValidCategoryShape(value: unknown): boolean {
 }
 
 /**
- * Legacy (pre-spendkey) mapping row shape: keyed by `categoryId` instead of
- * `spendExpenseId`. Import files written before the rekey hold this shape.
- * `categoryId` must NOT be re-added to `CategoryMapping` — access it only
- * through this local cast, mirroring categoryPersist.ts's T6 migration idiom.
- */
-type LegacyCategoryMappingRow = {
-  id: string
-  substring: string
-  spendExpenseId?: string
-  categoryId?: string
-  updatedAt?: string
-  deletedAt?: string
-}
-
-function isValidCategoryMappingShape(value: unknown): boolean {
-  return (
-    isPlainObject(value) &&
-    typeof value.id === 'string' &&
-    typeof value.substring === 'string' &&
-    (typeof value.spendExpenseId === 'string' || typeof value.categoryId === 'string')
-  )
-}
-
 /**
  * Parses raw file text into a GlobalCategoryState. Throws
  * CategoryMappingImportError if the text isn't valid JSON, or if it doesn't
- * have the { categories: Category[], categoryMappings: CategoryMapping[] }
- * shape (including malformed items within either array).
- *
- * Rekeyed to `spendExpenseId`: rows already on the new shape pass through
- * (a stale `categoryId` residue alongside `spendExpenseId` is stripped —
- * `spendExpenseId` is authoritative). Legacy `categoryId`-only rows are
- * migrated at parse time via `resolveSpendExpenseForCategory` against the
- * given definitions — first array-order match wins — and rows with no match
- * are dropped entirely. With no definitions in scope (the default), every
- * legacy-only row is unresolvable and dropped. This mirrors the T6
- * categoryPersist.ts load-time migration semantics.
+ * have a categories array.
  */
-export function parseCategoryMappingImportFile(
-  text: string,
-  budgetExpenseDefinitions: ExpenseDefinition[] = []
-): GlobalCategoryState {
+export function parseCategoryMappingImportFile(text: string): GlobalCategoryState {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -295,35 +258,15 @@ export function parseCategoryMappingImportFile(
     throw new CategoryMappingImportError('Import file is not valid JSON.')
   }
 
-  if (!isPlainObject(parsed) || !Array.isArray(parsed.categories) || !Array.isArray(parsed.categoryMappings)) {
+  if (!isPlainObject(parsed) || !Array.isArray(parsed.categories)) {
     throw new CategoryMappingImportError('Import file is not a recognized category-mapping export.')
   }
 
   if (!parsed.categories.every(isValidCategoryShape)) {
     throw new CategoryMappingImportError('Import file contains a malformed category entry.')
   }
-  if (!parsed.categoryMappings.every(isValidCategoryMappingShape)) {
-    throw new CategoryMappingImportError('Import file contains a malformed category mapping entry.')
-  }
-
-  const categoryMappings: GlobalCategoryState['categoryMappings'] = []
-  for (const row of parsed.categoryMappings as LegacyCategoryMappingRow[]) {
-    if (typeof row.spendExpenseId === 'string') {
-      const { categoryId: _legacyCategoryId, ...rest } = row
-      void _legacyCategoryId
-      categoryMappings.push({ ...rest, spendExpenseId: row.spendExpenseId } as GlobalCategoryState['categoryMappings'][number])
-      continue
-    }
-    const match = resolveSpendExpenseForCategory(budgetExpenseDefinitions, row.categoryId as string)
-    if (!match) continue
-    const { categoryId: _legacyCategoryId, ...rest } = row
-    void _legacyCategoryId
-    categoryMappings.push({ ...rest, spendExpenseId: match.id } as GlobalCategoryState['categoryMappings'][number])
-  }
-
   return {
     categories: parsed.categories as unknown as GlobalCategoryState['categories'],
-    categoryMappings,
     budgetAccountRules: Array.isArray(parsed.budgetAccountRules)
       ? parsed.budgetAccountRules as GlobalCategoryState['budgetAccountRules']
       : [],
