@@ -211,6 +211,26 @@ describe('CategoryMappingTab', () => {
     expect(categoryDispatch).toHaveBeenCalledWith({ type: 'SET_CATEGORY_EXCLUDE_FROM_SPEND', id: 'grocery', exclude: false })
   })
 
+  it('shows substrings for expenses whose categoryId matches no global category', () => {
+    const data = fixture()
+    data.categories = [{ id: 'other-global', name: 'Other Global', updatedAt: '2026-01-01T00:00:00.000Z' }]
+    renderTab({ ...data })
+    expect(screen.getByText('WHOLE FOODS')).toBeTruthy()
+  })
+
+  it('shows orphaned mappings whose spendExpenseId matches no expense definition', () => {
+    const data = fixture()
+    data.categories = [{ id: 'grocery', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }]
+    data.state.budgetExpenseDefinitions = [
+      { id: 'fresh', name: 'Fresh Groceries', categoryId: 'grocery', frequency: 'monthly' },
+    ]
+    data.categoryMappings = [
+      { id: 'orphan', substring: 'ORPHAN SUBSTRING', spendExpenseId: 'deleted-expense', updatedAt: '2026-01-01T00:00:00.000Z' },
+    ]
+    renderTab({ ...data })
+    expect(screen.getByText('ORPHAN SUBSTRING')).toBeTruthy()
+  })
+
 })
 
 describe('CategoryMappingTab automatic reapply', () => {

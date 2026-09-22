@@ -78,6 +78,63 @@ export function CategoryMappingTab({
     return <section className="card blueprint elev-sm">Loading category mappings...</section>
   }
 
+  const categoryIds = new Set(categories.map((c) => c.id))
+  const expenseIds = new Set(state.budgetExpenseDefinitions.map((e) => e.id))
+  // Expenses whose categoryId matches no global category (legacy slugs,
+  // stale renames) — hidden by the per-category filter below without this.
+  const unmatchedExpenses = state.budgetExpenseDefinitions.filter((e) => !categoryIds.has(e.categoryId))
+  // Mappings whose spendExpenseId matches no expense definition (deleted
+  // expense) — hidden by the per-expense lookup without this.
+  const orphanedMappings = categoryMappings.filter((m) => !expenseIds.has(m.spendExpenseId))
+
+  const renderExpense = (expense: (typeof state.budgetExpenseDefinitions)[number], categoryName: string) => {
+    const mappings = mappingsForExpense(categoryMappings, expense.id)
+    const newSubstringDraft = newSubstringDraftByExpense[expense.id] ?? ''
+    const expenseLabel = `${expense.name} (${categoryName})`
+    return (
+      <div key={expense.id} style={{ marginBottom: 'var(--space-2)' }}>
+        <div style={{ fontWeight: 600 }}>{expenseLabel}</div>
+        {mappings.map((mapping) => {
+          const isEditingMapping = editingMappingId === mapping.id
+          return (
+            <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+              {isEditingMapping ? (
+                <>
+                  <input className="input" aria-label="Edit mapping substring" value={mappingSubstringDraft} onChange={(e) => setMappingSubstringDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveMapping(mapping.id) }} autoFocus />
+                  <button type="button" style={textBtnAccent} onClick={() => saveMapping(mapping.id)}>Done</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" style={{ ...iconBtn, color: 'var(--color-accent)' }} aria-label={`Edit substring ${mapping.substring}`} title="Edit substring" onClick={() => {
+                    setEditingMappingId(mapping.id)
+                    setMappingSubstringDraft(mapping.substring)
+                  }}><PencilIcon /></button>
+                  <span>{mapping.substring}</span>
+                  <button type="button" style={{ ...iconBtn, color: LOSS_COLOR }} aria-label={`Delete substring ${mapping.substring}`} title="Delete substring" onClick={() => {
+                    if (!window.confirm('Delete this mapping? This cannot be undone.')) return
+                    dispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
+                  }}><TrashIcon /></button>
+                </>
+              )}
+            </div>
+          )
+        })}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+          <input className="input" placeholder="+ add substring" aria-label={`Add substring to ${expenseLabel}`} value={newSubstringDraft} onChange={(e) => setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: e.target.value }))} onKeyDown={(e) => {
+            if (e.key === 'Enter' && newSubstringDraft.trim()) {
+              dispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring: newSubstringDraft.trim() })
+              setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
+            }
+          }} />
+          <button type="button" style={textBtnAccent} aria-label={`Add substring button ${expenseLabel}`} disabled={!newSubstringDraft.trim()} onClick={() => {
+            dispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring: newSubstringDraft.trim() })
+            setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
+          }}>Add</button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
       <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Category Mapping</div>
@@ -132,57 +189,42 @@ export function CategoryMappingTab({
               )}
             </div>
             <div style={{ marginLeft: 'var(--space-5)', marginTop: 'var(--space-2)' }}>
-              {expenses.map((expense) => {
-                const mappings = mappingsForExpense(categoryMappings, expense.id)
-                const newSubstringDraft = newSubstringDraftByExpense[expense.id] ?? ''
-                const expenseLabel = `${expense.name} (${category.name})`
-                return (
-                  <div key={expense.id} style={{ marginBottom: 'var(--space-2)' }}>
-                    <div style={{ fontWeight: 600 }}>{expenseLabel}</div>
-                    {mappings.map((mapping) => {
-                      const isEditingMapping = editingMappingId === mapping.id
-                      return (
-                        <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
-                          {isEditingMapping ? (
-                            <>
-                              <input className="input" aria-label="Edit mapping substring" value={mappingSubstringDraft} onChange={(e) => setMappingSubstringDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveMapping(mapping.id) }} autoFocus />
-                              <button type="button" style={textBtnAccent} onClick={() => saveMapping(mapping.id)}>Done</button>
-                            </>
-                          ) : (
-                            <>
-                              <button type="button" style={{ ...iconBtn, color: 'var(--color-accent)' }} aria-label={`Edit substring ${mapping.substring}`} title="Edit substring" onClick={() => {
-                                setEditingMappingId(mapping.id)
-                                setMappingSubstringDraft(mapping.substring)
-                              }}><PencilIcon /></button>
-                              <span>{mapping.substring}</span>
-                              <button type="button" style={{ ...iconBtn, color: LOSS_COLOR }} aria-label={`Delete substring ${mapping.substring}`} title="Delete substring" onClick={() => {
-                                if (!window.confirm('Delete this mapping? This cannot be undone.')) return
-                                dispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
-                              }}><TrashIcon /></button>
-                            </>
-                          )}
-                        </div>
-                      )
-                    })}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-                      <input className="input" placeholder="+ add substring" aria-label={`Add substring to ${expenseLabel}`} value={newSubstringDraft} onChange={(e) => setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: e.target.value }))} onKeyDown={(e) => {
-                        if (e.key === 'Enter' && newSubstringDraft.trim()) {
-                          dispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring: newSubstringDraft.trim() })
-                          setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
-                        }
-                      }} />
-                      <button type="button" style={textBtnAccent} aria-label={`Add substring button ${expenseLabel}`} disabled={!newSubstringDraft.trim()} onClick={() => {
-                        dispatch({ type: 'ADD_CATEGORY_MAPPING', spendExpenseId: expense.id, substring: newSubstringDraft.trim() })
-                        setNewSubstringDraftByExpense((prev) => ({ ...prev, [expense.id]: '' }))
-                      }}>Add</button>
-                    </div>
-                  </div>
-                )
-              })}
+              {expenses.map((expense) => renderExpense(expense, category.name))}
             </div>
           </div>
         )
       })}
+      {unmatchedExpenses.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-3)', borderBottom: '1px solid var(--border-color, #ddd)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span style={{ fontWeight: 600 }}>Unmatched expenses</span>
+            <span>{unmatchedExpenses.length} expense definition{unmatchedExpenses.length === 1 ? '' : 's'} without a matching category</span>
+          </div>
+          <div style={{ marginLeft: 'var(--space-5)', marginTop: 'var(--space-2)' }}>
+            {unmatchedExpenses.map((expense) => renderExpense(expense, expense.categoryId))}
+          </div>
+        </div>
+      )}
+      {orphanedMappings.length > 0 && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span style={{ fontWeight: 600 }}>Orphaned substrings</span>
+            <span>{orphanedMappings.length} mapping{orphanedMappings.length === 1 ? '' : 's'} without a matching expense</span>
+          </div>
+          <div style={{ marginLeft: 'var(--space-5)', marginTop: 'var(--space-2)' }}>
+            {orphanedMappings.map((mapping) => (
+              <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                <span>{mapping.substring}</span>
+                <span className="text-muted" style={{ fontSize: '12px' }}>→ {mapping.spendExpenseId}</span>
+                <button type="button" style={{ ...iconBtn, color: LOSS_COLOR }} aria-label={`Delete substring ${mapping.substring}`} title="Delete substring" onClick={() => {
+                  if (!window.confirm('Delete this mapping? This cannot be undone.')) return
+                  dispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
+                }}><TrashIcon /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   )
 }
