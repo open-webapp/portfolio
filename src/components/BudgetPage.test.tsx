@@ -237,13 +237,13 @@ describe('BudgetPage period props', () => {
     contents.add(container.textContent ?? '')
     expect(screen.getByTestId('summary-cards')).toBeTruthy()
 
-    for (const period of ['expenses', 'analytics', 'categoryMapping'] as const) {
+    for (const period of ['expenses', 'analytics'] as const) {
       rerender(<BudgetPage {...props} period={period} />)
       expect(screen.queryByTestId('summary-cards')).toBeNull()
       contents.add(container.textContent ?? '')
     }
 
-    expect(contents.size).toBe(4)
+    expect(contents.size).toBe(3)
   })
 
   it('does not render the App-owned year scope selector', () => {

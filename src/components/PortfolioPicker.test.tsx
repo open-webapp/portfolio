@@ -105,6 +105,10 @@ function selectPickerMode(name: 'Open' | 'Create' | 'Google Drive') {
   fireEvent.click(screen.getByRole('radio', { name }))
 }
 
+function openSettings() {
+  fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+}
+
 function selectSharedDriveMode() {
   selectPickerMode('Google Drive')
   fireEvent.click(screen.getByRole('radio', { name: 'Shared portfolio' }))
@@ -168,6 +172,57 @@ describe('PortfolioPicker', () => {
   })
 
   describe('global mapping', () => {
+    it('shows the Settings gear by default and hides category mapping controls until opened', () => {
+      renderPicker()
+
+      expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Download Category Mapping' })).toBeFalsy()
+      expect(screen.queryByRole('button', { name: 'Import a shared mapping from Google Drive' })).toBeFalsy()
+    })
+
+    it('opens the category mapping settings panel and hides the picker modes', () => {
+      renderPicker()
+      openSettings()
+
+      expect(screen.getByRole('heading', { name: 'Settings — Category mapping' })).toBeTruthy()
+      expect(screen.queryByRole('radio', { name: 'Open' })).toBeFalsy()
+      expect(screen.queryByRole('radio', { name: 'Create' })).toBeFalsy()
+      expect(screen.queryByRole('radio', { name: 'Google Drive' })).toBeFalsy()
+    })
+
+    it('closes settings and returns to the selected picker mode', () => {
+      renderPicker()
+      selectPickerMode('Create')
+      openSettings()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+
+      expect(screen.queryByRole('heading', { name: 'Settings — Category mapping' })).toBeFalsy()
+      expect((screen.getByRole('radio', { name: 'Create' }) as HTMLInputElement).checked).toBe(true)
+    })
+
+    it('renders category and mapping counts from the loaded global state', async () => {
+      vi.mocked(loadGlobalCategoryState).mockResolvedValue({
+        categories: [{ id: 'food', name: 'Food' }, { id: 'travel', name: 'Travel' }],
+        categoryMappings: [{ id: 'food-mapping' }, { id: 'travel-mapping' }, { id: 'other-mapping' }],
+        budgetAccountRules: [],
+      } as never)
+      renderPicker()
+      openSettings()
+
+      expect(await screen.findByText('2 categories · 3 category mappings')).toBeTruthy()
+    })
+
+    it('navigates to category management from settings', () => {
+      window.location.hash = ''
+      renderPicker()
+      openSettings()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Manage' }))
+
+      expect(window.location.hash).toBe('#/categories')
+    })
+
     it('loads empty global state and enables Download after importing a valid mapping', async () => {
       const imported = {
         categories: [{ id: 'food', name: 'Food' }],
@@ -178,6 +233,7 @@ describe('PortfolioPicker', () => {
       vi.mocked(mergeCategoryState).mockReturnValue(imported as never)
       vi.mocked(saveGlobalCategoryState).mockResolvedValue(undefined)
       const { container } = renderPicker()
+      openSettings()
 
       const download = screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement
       expect(download.disabled).toBe(true)
@@ -215,6 +271,7 @@ describe('PortfolioPicker', () => {
       vi.mocked(mergeCategoryState).mockReturnValue(merged as never)
       vi.mocked(saveGlobalCategoryState).mockResolvedValue(undefined)
       const { container } = renderPicker()
+      openSettings()
 
       await waitFor(() => {
         expect((screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement).disabled).toBe(false)
@@ -233,6 +290,7 @@ describe('PortfolioPicker', () => {
         throw new Error('bad file')
       })
       const { container } = renderPicker()
+      openSettings()
       const download = screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement
       const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[0] as HTMLInputElement
 
@@ -269,6 +327,7 @@ describe('PortfolioPicker', () => {
       vi.mocked(saveGlobalCategoryState).mockResolvedValue(undefined)
       vi.mocked(setSharedCategoryDriveFileId).mockResolvedValue(undefined)
       renderPicker()
+      openSettings()
 
       await waitFor(() => {
         expect((screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement).disabled).toBe(false)
@@ -294,6 +353,7 @@ describe('PortfolioPicker', () => {
       const pickFile = vi.fn().mockResolvedValue(null)
       vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
       renderPicker()
+      openSettings()
 
       fireEvent.click(screen.getByRole('button', { name: 'Import a shared mapping from Google Drive' }))
 
@@ -307,9 +367,12 @@ describe('PortfolioPicker', () => {
     it('shows the Shared badge only when a shared mapping file ID is persisted', async () => {
       vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue('shared-file')
       renderPicker()
+      openSettings()
 
       await waitFor(() => {
-        expect(within(screen.getByText('Global Mapping').parentElement as HTMLElement).getByText('Shared')).toBeTruthy()
+        expect(
+          within(screen.getByRole('heading', { name: 'Settings — Category mapping' }).parentElement as HTMLElement).getByText('Shared')
+        ).toBeTruthy()
       })
     })
 
@@ -322,8 +385,9 @@ describe('PortfolioPicker', () => {
       vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue('shared-file')
       vi.mocked(loadGlobalCategoryState).mockResolvedValue(localState as never)
       renderPicker()
+      openSettings()
 
-      const header = screen.getByText('Global Mapping').parentElement as HTMLElement
+      const header = screen.getByRole('heading', { name: 'Settings — Category mapping' }).parentElement as HTMLElement
       await waitFor(() => expect(within(header).getByText('Shared')).toBeTruthy())
       fireEvent.click(within(header).getByRole('button', { name: 'Unlink' }))
 
@@ -337,8 +401,9 @@ describe('PortfolioPicker', () => {
 
     it('does not render an unlink control when no shared mapping override is set', () => {
       renderPicker()
+      openSettings()
 
-      const header = screen.getByText('Global Mapping').parentElement as HTMLElement
+      const header = screen.getByRole('heading', { name: 'Settings — Category mapping' }).parentElement as HTMLElement
       expect(within(header).queryByRole('button', { name: 'Unlink' })).toBeFalsy()
       expect(setSharedCategoryDriveFileId).not.toHaveBeenCalled()
     })
@@ -346,6 +411,7 @@ describe('PortfolioPicker', () => {
     it('does not start a polling interval while rendering the Global Mapping section', async () => {
       const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
       renderPicker()
+      openSettings()
 
       await Promise.resolve()
 
@@ -358,6 +424,7 @@ describe('PortfolioPicker', () => {
       vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
       vi.mocked(pullGlobalCategoriesFromDrive).mockResolvedValue(null)
       renderPicker()
+      openSettings()
 
       fireEvent.click(screen.getByRole('button', { name: 'Import a shared mapping from Google Drive' }))
 

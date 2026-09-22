@@ -18,6 +18,7 @@ import {
   setSharedCategoryDriveFileId,
 } from '../lib/categoryPersist'
 import { mergeCategoryState } from '../lib/categoryMerge'
+import { navigateToCategories } from '../lib/router'
 import { SharedSourceBadge, UnlinkButton } from './SharedSource'
 
 export interface PortfolioPickerProps {
@@ -86,6 +87,7 @@ export function PortfolioPicker({
 
   const [driveFoldersOpen, setDriveFoldersOpen] = useState(false)
   const [pickerMode, setPickerMode] = useState<PickerMode>('open')
+  const [showSettings, setShowSettings] = useState(false)
   const [driveMode, setDriveMode] = useState<DriveMode>('mine')
   const [driveFolders, setDriveFolders] = useState<{ name: string; id: string }[] | null>(null)
   const [driveListError, setDriveListError] = useState<string | null>(null)
@@ -416,18 +418,28 @@ export function PortfolioPicker({
           </h1>
         </div>
 
-        <div className="seg" style={{ display: 'flex', width: '100%' }}>
-          {([
-            ['open', 'Open'],
-            ['create', 'Create'],
-            ['drive', 'Google Drive'],
-          ] as const).map(([mode, label]) => (
-            <label key={mode} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}>
-              <input type="radio" name="portfolioPickerMode" checked={pickerMode === mode} onChange={() => setPickerMode(mode)} />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
+        {!showSettings && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <div className="seg" style={{ display: 'flex', flex: 1, minWidth: 0 }}>
+                {([
+                  ['open', 'Open'],
+                  ['create', 'Create'],
+                  ['drive', 'Google Drive'],
+                ] as const).map(([mode, label]) => (
+                  <label key={mode} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}>
+                    <input type="radio" name="portfolioPickerMode" checked={pickerMode === mode} onChange={() => setPickerMode(mode)} />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" className="btn-ghost" aria-label="Settings" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-2)', flex: 'none' }} onClick={() => setShowSettings(true)}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.3h-3v-.08A1.7 1.7 0 0 0 10.66 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04h-.08v-3h.08A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7v-.08h3v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.08v3h-.08A1.7 1.7 0 0 0 19.4 15Z" />
+                </svg>
+              </button>
+            </div>
 
         {pickerMode === 'open' && (
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -654,54 +666,40 @@ export function PortfolioPicker({
             </div>}
           </div>
         )}
+          </>
+        )}
 
-      <div style={{ width: '100%', maxWidth: 520 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-          <h2 className="card-title" style={{ fontSize: 18, margin: 0 }}>
-            Global Mapping
-          </h2>
-          {sharedCategoryDriveFileId && <SharedSourceBadge />}
-          {sharedCategoryDriveFileId && <UnlinkButton confirmText="Unlink this shared category mapping?" onUnlink={handleUnlinkSharedCategoryMapping} />}
-        </div>
-        <input
-          ref={categoryMappingInputRef}
-          type="file"
-          accept=".json,application/json"
-          style={{ display: 'none' }}
-          onChange={(e) => void handleCategoryMappingImport(e)}
-        />
-        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={globalCategoryState.categories.length === 0 && globalCategoryState.categoryMappings.length === 0}
-            onClick={handleDownloadCategoryMapping}
-          >
-            Download Category Mapping
-          </button>
-          <button
-            type="button"
-            className="btn-ghost"
-            style={{ border: 'none', background: 'none', cursor: 'pointer' }}
-            onClick={() => categoryMappingInputRef.current?.click()}
-          >
-            Import Category Mapping
-          </button>
-          <button
-            type="button"
-            className="btn-ghost"
-            style={{ border: 'none', background: 'none', cursor: 'pointer' }}
-            onClick={() => void handleSharedCategoryMappingDriveImport()}
-          >
-            Import a shared mapping from Google Drive
-          </button>
-        </div>
-        {categoryMappingImportError && (
-          <div className="tag tag-outline" style={{ marginTop: 'var(--space-2)' }}>
-            {categoryMappingImportError}
+        {showSettings && (
+          <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <h2 className="card-title" style={{ fontSize: 18, margin: 0, flex: 1 }}>
+                Settings — Category mapping
+              </h2>
+              {sharedCategoryDriveFileId && <SharedSourceBadge />}
+              {sharedCategoryDriveFileId && <UnlinkButton confirmText="Unlink this shared category mapping?" onUnlink={handleUnlinkSharedCategoryMapping} />}
+              <button type="button" className="btn-ghost" aria-label="Close settings" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-1)' }} onClick={() => setShowSettings(false)}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg>
+              </button>
+            </div>
+            <div className="card-body">
+              {globalCategoryState.categories.length} categories · {globalCategoryState.categoryMappings.length} category mappings
+            </div>
+            <input
+              ref={categoryMappingInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={(e) => void handleCategoryMappingImport(e)}
+            />
+            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-primary" disabled={globalCategoryState.categories.length === 0 && globalCategoryState.categoryMappings.length === 0} onClick={handleDownloadCategoryMapping}>Download Category Mapping</button>
+              <button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => categoryMappingInputRef.current?.click()}>Import Category Mapping</button>
+              <button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => void handleSharedCategoryMappingDriveImport()}>Import a shared mapping from Google Drive</button>
+              <button type="button" className="btn btn-primary" onClick={navigateToCategories}>Manage</button>
+            </div>
+            {categoryMappingImportError && <div className="tag tag-outline">{categoryMappingImportError}</div>}
           </div>
         )}
-      </div>
       </div>
     </div>
   )

@@ -381,13 +381,13 @@ describe('navigation shell title and controls', () => {
     expect(document.querySelector('header.top-bar')).toBeTruthy()
   })
 
-  it('renders four Budget tabs and exposes Year only for Spend', async () => {
+  it('renders Budget tabs in Spend, Expenses, Analytics order and exposes Year only for Spend', async () => {
     await renderUnlockedApp()
     fireEvent.click(navTab('Budget'))
 
-    for (const tab of ['Expenses', 'Spend', 'Analytics', 'Category Mapping']) {
-      expect(screen.getByText(tab)).toBeTruthy()
-    }
+    const [spendTab, expensesTab, analyticsTab] = ['Spend', 'Expenses', 'Analytics'].map((tab) => screen.getByText(tab))
+    expect(spendTab.compareDocumentPosition(expensesTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(expensesTab.compareDocumentPosition(analyticsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByLabelText('Select year')).toBeTruthy()
 
     fireEvent.click(screen.getByText('Expenses'))
@@ -1659,6 +1659,20 @@ describe('multi-portfolio routing', () => {
     })
     expect(screen.queryByText('MockUnlock')).toBeFalsy()
     expect(screen.queryByRole('button', { name: 'Positions' })).toBeFalsy()
+  })
+
+  it('renders ManageCategoriesPage without a portfolio session when navigating to #/categories', async () => {
+    await clearRegistryStore()
+    _resetRegistryForTests()
+    window.location.hash = '#/categories'
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Manage categories' })).toBeTruthy()
+    })
+    expect(screen.queryByText('MockUnlock')).toBeFalsy()
+    expect(screen.queryByText('Loading...')).toBeFalsy()
   })
 
   it('navigating to #/portfolio/<valid-id> calls setActivePortfolioDb with that portfolio\'s dbName and renders the gate/app shell', async () => {
