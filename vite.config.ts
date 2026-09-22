@@ -12,7 +12,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
       manifest: {
-        name: 'Ledger — Portfolio Dashboard',
+        name: 'Ledger Dashboard',
         short_name: 'Ledger',
         display: 'standalone',
         start_url: '/portfolio/',
