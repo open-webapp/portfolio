@@ -1661,6 +1661,20 @@ describe('multi-portfolio routing', () => {
     expect(screen.queryByRole('button', { name: 'Positions' })).toBeFalsy()
   })
 
+  it('renders ManageCategoriesPage without a portfolio session when navigating to #/categories', async () => {
+    await clearRegistryStore()
+    _resetRegistryForTests()
+    window.location.hash = '#/categories'
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Manage categories' })).toBeTruthy()
+    })
+    expect(screen.queryByText('MockUnlock')).toBeFalsy()
+    expect(screen.queryByText('Loading...')).toBeFalsy()
+  })
+
   it('navigating to #/portfolio/<valid-id> calls setActivePortfolioDb with that portfolio\'s dbName and renders the gate/app shell', async () => {
     const portfolio = await createPortfolio('Second Portfolio')
     window.location.hash = `#/portfolio/${portfolio.id}`
