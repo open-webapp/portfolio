@@ -191,10 +191,34 @@ function normalizeBudgetDate(raw: string): string | null {
  * Crude, deliberately non-RFC4180 parser (no quoting/escaping support) per spec.
  * Delimiter is auto-detected per line: tab if the line contains one (pasting a
  * table from a spreadsheet/browser always copies as TSV), comma otherwise.
- * Header-detection heuristic: drop the first line only if its last split
- * field does NOT parse as a float (this is a known quirk, not a bug — a data row
+ * Header-detection heuristic: drop the first line only if its amount-position
+ * field (index 2, fixed column order `date, description, amount, [tags]`) does
+ * NOT parse as a float (this is a known quirk, not a bug — a data row
  * whose amount field happens to be non-numeric will also be dropped).
  */
+/**
+ * Parse a raw tags cell (optional 4th CSV column) into validated tags.
+ * Splits on `;`, trims each token, strips non-`[a-zA-Z0-9]` chars per token,
+ * drops tokens that become empty after stripping, dedupes case-insensitively
+ * (first-seen casing wins), truncates to 5. Returns undefined when nothing
+ * survives (callers must omit the `tags` key, never store `[]`).
+ */
+function parseBudgetTagsCell(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined
+  const seen = new Set<string>()
+  const tags: string[] = []
+  for (const token of raw.split(';')) {
+    const stripped = token.trim().replace(/[^a-zA-Z0-9]/g, '')
+    if (!stripped) continue
+    const lower = stripped.toLowerCase()
+    if (seen.has(lower)) continue
+    seen.add(lower)
+    tags.push(stripped)
+    if (tags.length >= 5) break
+  }
+  return tags.length ? tags : undefined
+}
+
 const splitBudgetCsvRow = (line: string): string[] => line.split(line.includes('\t') ? '\t' : ',').map((p) => p.trim())
 
 /**
@@ -204,16 +228,16 @@ const splitBudgetCsvRow = (line: string): string[] => line.split(line.includes('
  */
 export function countBudgetCsvDataRows(text: string): number {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
-  if (lines.length && isNaN(parseFloat(splitBudgetCsvRow(lines[0]).pop() ?? ''))) return lines.length - 1
+  if (lines.length && isNaN(parseFloat(splitBudgetCsvRow(lines[0])[2] ?? ''))) return lines.length - 1
   return lines.length
 }
 
-export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; description: string; amount: number }> {
+export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; description: string; amount: number; tags?: string[] }> {
   const splitRow = splitBudgetCsvRow
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
   let rows = lines
-  if (rows.length && isNaN(parseFloat(splitRow(rows[0]).pop() ?? ''))) rows = rows.slice(1)
-  const parsed: Array<{ date: string; description: string; amount: number }> = []
+  if (rows.length && isNaN(parseFloat(splitRow(rows[0])[2] ?? ''))) rows = rows.slice(1)
+  const parsed: Array<{ date: string; description: string; amount: number; tags?: string[] }> = []
   rows.forEach((line) => {
     const parts = splitRow(line)
     if (parts.length < 3) return
@@ -221,7 +245,9 @@ export function parseBudgetTransactionsCsv(text: string): Array<{ date: string; 
     const amount = parseFloat(amountStr)
     const normalizedDate = normalizeBudgetDate(date)
     if (!normalizedDate || isNaN(amount)) return
-    parsed.push({ date: normalizedDate, description, amount })
+    const tags = parseBudgetTagsCell(parts[3])
+    if (tags) parsed.push({ date: normalizedDate, description, amount, tags })
+    else parsed.push({ date: normalizedDate, description, amount })
   })
   return parsed
 }

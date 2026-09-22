@@ -997,13 +997,31 @@ export function updateBudgetTransaction(state: AppState, id: string, patch: Part
   return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) }
 }
 
-/** Patch categoryId (and optionally spendExpenseId) on multiple budget transactions by ID in one pass. IDs not found are ignored. */
+/** Patch categoryId (and optionally spendExpenseId) on multiple budget transactions by ID in one pass. IDs not found are ignored. `tagsToAdd` (if non-empty) unions case-insensitively into each row's existing tags (existing casing wins), appended in order given, capped at 5 total. */
 export function updateBudgetTransactionsBulk(
   state: AppState,
   ids: string[],
-  patch: { categoryId: string; spendExpenseId?: string }
+  patch: { categoryId: string; spendExpenseId?: string; tagsToAdd?: string[] }
 ): AppState {
-  return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (ids.includes(t.id) ? { ...t, ...patch } : t)) }
+  const { tagsToAdd, ...rest } = patch
+  const hasTagsToAdd = !!tagsToAdd && tagsToAdd.length > 0
+  return {
+    ...state,
+    budgetTransactions: state.budgetTransactions.map((t) => {
+      if (!ids.includes(t.id)) return t
+      if (!hasTagsToAdd) return { ...t, ...rest }
+      const merged = [...(t.tags ?? [])]
+      const seen = new Set(merged.map((tag) => tag.toLowerCase()))
+      for (const tag of tagsToAdd!) {
+        if (merged.length >= 5) break
+        if (seen.has(tag.toLowerCase())) continue
+        seen.add(tag.toLowerCase())
+        merged.push(tag)
+      }
+      if (merged.length === 0) return { ...t, ...rest }
+      return { ...t, ...rest, tags: merged }
+    }),
+  }
 }
 
 /** Delete a budget transaction by ID. No-op if the ID isn't found. */
@@ -1026,7 +1044,7 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
  */
 export function resolveBudgetImportRows(
   existing: BudgetTransaction[],
-  rows: Array<{ date: string; description: string; amount: number; accountName?: string }>,
+  rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[] }>,
   categories: Category[],
   categoryMappings: CategoryMapping[],
   budgetExpenseDefinitions: ExpenseDefinition[]
@@ -1066,7 +1084,7 @@ export function resolveBudgetImportRows(
 
 export function importBudgetTransactions(
   state: AppState,
-  rows: Array<{ date: string; description: string; amount: number; accountName?: string }>,
+  rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[] }>,
   categories: Category[],
   categoryMappings: CategoryMapping[],
   budgetExpenseDefinitions: ExpenseDefinition[],

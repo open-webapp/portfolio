@@ -424,6 +424,72 @@ describe('computations', () => {
         { date: '2026-08-17', description: 'SOUTHWES 5262192116227800-435-9792 TX', amount: 215.2 },
       ])
     })
+
+    it('parses an optional 4th tags column (`;`-delimited)', () => {
+      const csv = '2026-01-01,Groceries,-50,food;weekly'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['food', 'weekly'] },
+      ])
+    })
+
+    it('strips non-alphanumeric chars from tag tokens', () => {
+      const csv = '2026-01-01,Groceries,-50,foo!bar'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['foobar'] },
+      ])
+    })
+
+    it('truncates more than 5 tags in a cell to the first 5', () => {
+      const csv = '2026-01-01,Groceries,-50,a;b;c;d;e;f;g'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['a', 'b', 'c', 'd', 'e'] },
+      ])
+    })
+
+    it('leaves tags unset when the cell is empty or the column is missing', () => {
+      const csv = [
+        '2026-01-01,Groceries,-50,',
+        '2026-01-02,Coffee,-4.50',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Groceries', amount: -50 },
+        { date: '2026-01-02', description: 'Coffee', amount: -4.5 },
+      ])
+      expect(result[0]).not.toHaveProperty('tags')
+      expect(result[1]).not.toHaveProperty('tags')
+    })
+
+    it('dedupes tags differing only by case, first-seen casing wins', () => {
+      const csv = '2026-01-01,Groceries,-50,Food;food'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['Food'] },
+      ])
+    })
+
+    it('drops all-invalid-char tag tokens but still imports the row without tags', () => {
+      const csv = '2026-01-01,Groceries,-50,!!!;###'
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Groceries', amount: -50 },
+      ])
+      expect(result[0]).not.toHaveProperty('tags')
+    })
+
+    it('drops a header row that includes the tags column (heuristic checks the amount column, not the last column)', () => {
+      const csv = [
+        'Date,Description,Amount,Tags',
+        '2026-01-01,Groceries,-50,food;weekly',
+      ].join('\n')
+      const result = parseBudgetTransactionsCsv(csv)
+      expect(result).toEqual([
+        { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['food', 'weekly'] },
+      ])
+    })
   })
 
   describe('parseOfxTransactions', () => {
@@ -629,6 +695,21 @@ describe('computations', () => {
       expect(parseOfxTransactions(malformed)).toEqual([])
       expect(parseOfxTransactions('')).toEqual([])
       expect(parseOfxTransactions('not even xml at all, just random text')).toEqual([])
+    })
+
+    it('output objects have no tags field', () => {
+      const ofx = [
+        '<STMTTRN>',
+        '<DTPOSTED>20260101',
+        '<TRNAMT>-5.00',
+        '<NAME>Grocery Store',
+        '</STMTTRN>',
+      ].join('\n')
+      const result = parseOfxTransactions(ofx)
+      expect(result).toHaveLength(1)
+      for (const row of result) {
+        expect(row).not.toHaveProperty('tags')
+      }
     })
   })
 })

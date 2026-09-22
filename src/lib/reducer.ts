@@ -53,7 +53,7 @@ export type AppAction =
   | { type: 'ENSURE_BUDGET_YEAR_SNAPSHOT'; year: string }
   | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
   | { type: 'UPDATE_BUDGET_TRANSACTION'; id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }
-  | { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK'; ids: string[]; categoryId: string; spendExpenseId?: string }
+  | { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK'; ids: string[]; categoryId: string; spendExpenseId?: string; tagsToAdd?: string[] }
   | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
   | {
       type: 'IMPORT_BUDGET_TRANSACTIONS'
@@ -232,6 +232,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return StateActions.updateBudgetTransactionsBulk(state, action.ids, {
         categoryId: action.categoryId,
         spendExpenseId: action.spendExpenseId,
+        tagsToAdd: action.tagsToAdd,
       })
 
     case 'DELETE_BUDGET_TRANSACTION':

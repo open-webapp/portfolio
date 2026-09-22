@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent, type MouseEvent, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent, type MouseEvent, type SetStateAction } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetImportRows } from '../lib/state'
 import {
@@ -17,6 +17,7 @@ import { BudgetSankey } from './BudgetSankey'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
 import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
+import { TagInput } from './TagInput'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
 import {
   isIncomeOrExcludedTransaction,
@@ -208,25 +209,30 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [recPage, setRecPage] = useState(0)
   const [showExcludedRecords, setShowExcludedRecords] = useState(false)
   const [showRecurringOnly, setShowRecurringOnly] = useState(false)
+  const [tagFilter, setTagFilter] = useState<string[]>([])
+  const [tagFilterQuery, setTagFilterQuery] = useState('')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null)
   const selectionCellRefs = useRef<Record<string, HTMLTableCellElement | null>>({})
   const [bulkCategoryId, setBulkCategoryId] = useState('')
   const [bulkExpenseId, setBulkExpenseId] = useState('')
+  const [bulkTags, setBulkTags] = useState<string[]>([])
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
   const recurringIds = computeRecurringSpendIds(state.budgetTransactions, categories, state.budgetExpenseDefinitions)
   const [editingCell, setEditingCell] = useState<{
     rowId: string
-    field: 'date' | 'description' | 'category' | 'account' | 'amount'
+    field: 'date' | 'description' | 'category' | 'account' | 'amount' | 'tags'
   } | null>(null)
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
   const [cellDraft, setCellDraft] = useState('')
+  const [cellTagsDraft, setCellTagsDraft] = useState<string[]>([])
   const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
   const [recDescription, setRecDescription] = useState('')
   const [recCategoryId, setRecCategoryId] = useState(categories[0]?.id ?? '')
   const [recCategoryTouchedManually, setRecCategoryTouchedManually] = useState(false)
   const [recExpenseId, setRecExpenseId] = useState('')
+  const [recTags, setRecTags] = useState<string[]>([])
   const [recAmount, setRecAmount] = useState('')
   const [recError, setRecError] = useState('')
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -297,6 +303,38 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     : periodFilteredTransactions.filter(
         (t) => !isIncomeOrExcludedTransaction(t, categories, state.budgetExpenseDefinitions)
       )
+  // Distinct tags in the show-excluded-scoped set (before search), for the
+  // tag filter. Case-insensitive dedupe, first-seen casing kept, alpha-sorted.
+  const distinctRecordTags = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const t of recordSourceTransactions) {
+      for (const tag of t.tags ?? []) {
+        const lower = tag.toLowerCase()
+        if (!seen.has(lower)) seen.set(lower, tag)
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b))
+  }, [recordSourceTransactions])
+  // Suggestions for the tag-filter combobox: the T6 distinct-tags-in-scope
+  // list filtered as-you-type (case-insensitive substring), excluding
+  // already-selected tags. Typing alone never creates tags — tagFilter only
+  // changes by picking a suggestion (click/Enter) or removing a chip.
+  const tagFilterSuggestions = distinctRecordTags.filter(
+    (tag) =>
+      tag.toLowerCase().includes(tagFilterQuery.trim().toLowerCase()) &&
+      !tagFilter.some((selected) => selected.toLowerCase() === tag.toLowerCase())
+  )
+  const selectTagFilter = (tag: string) => {
+    setTagFilter((prev) =>
+      prev.some((selected) => selected.toLowerCase() === tag.toLowerCase()) ? prev : [...prev, tag]
+    )
+    setTagFilterQuery('')
+    setRecPage(0)
+  }
+  const removeTagFilter = (tag: string) => {
+    setTagFilter((prev) => prev.filter((selected) => selected.toLowerCase() !== tag.toLowerCase()))
+    setRecPage(0)
+  }
   const filteredRecords = recordSearch.trim()
     ? recordSourceTransactions.filter((t) => {
         const searchLower = recordSearch.toLowerCase()
@@ -313,7 +351,15 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         )
       })
     : recordSourceTransactions
-  const recurringFilteredRecords = showRecurringOnly ? filteredRecords.filter((t) => recurringIds.has(t.id)) : filteredRecords
+  // Tag-AND-filter: every selected tag must be present on the row
+  // (case-insensitive). Empty selection narrows nothing.
+  const tagFilteredRecords = tagFilter.length === 0
+    ? filteredRecords
+    : filteredRecords.filter((t) => {
+        const rowTagsLower = new Set((t.tags ?? []).map((tag) => tag.toLowerCase()))
+        return tagFilter.every((selected) => rowTagsLower.has(selected.toLowerCase()))
+      })
+  const recurringFilteredRecords = showRecurringOnly ? tagFilteredRecords.filter((t) => recurringIds.has(t.id)) : tagFilteredRecords
   const toggleRecSort = (field: 'date' | 'description' | 'category' | 'account' | 'amount') => {
     if (recSortBy === field) {
       setRecSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -376,12 +422,45 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   // Clears row selection whenever the visible set/order of Spend records can
   // change out from under it (paging, sorting, searching, or switching
   // period/year) so stale selections never point at rows no longer shown.
+  // The tag-filter selection shares this same trigger set: changing page,
+  // sort, search text, or year clears it. A tag-filter change itself only
+  // resets page/selection (via setRecPage(0) at the select/remove sites) —
+  // when tagFilter changed in the same commit the clear is skipped so the
+  // just-made selection survives its own page reset.
+  const prevSpendResetKeys = useRef<{
+    recPage: number
+    recSortBy: string
+    recSortDir: string
+    recordSearch: string
+    showRecurringOnly: boolean
+    period: string
+    selectedScope: SpendScope
+    tagFilter: string[]
+  } | null>(null)
   useEffect(() => {
     setSelectedRowIds(new Set())
     setSelectionAnchorId(null)
     setBulkCategoryId('')
+    const prev = prevSpendResetKeys.current
+    prevSpendResetKeys.current = { recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope, tagFilter }
+    if (!prev) return
+    const tagFilterChanged =
+      prev.tagFilter.length !== tagFilter.length ||
+      prev.tagFilter.some((tag, i) => tag.toLowerCase() !== (tagFilter[i] ?? '').toLowerCase())
+    const otherChanged =
+      prev.recPage !== recPage ||
+      prev.recSortBy !== recSortBy ||
+      prev.recSortDir !== recSortDir ||
+      prev.recordSearch !== recordSearch ||
+      prev.showRecurringOnly !== showRecurringOnly ||
+      prev.period !== period ||
+      prev.selectedScope !== selectedScope
+    if (otherChanged && !tagFilterChanged) {
+      setTagFilter((current) => (current.length ? [] : current))
+      setTagFilterQuery((current) => (current ? '' : current))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope])
+  }, [recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope, tagFilter])
 
   const selectionRangeIds = (anchorId: string, targetIdx: number): Set<string> => {
     const anchorIdx = pagedRecords.findIndex((r) => r.id === anchorId)
@@ -426,17 +505,21 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     if (targetId) selectionCellRefs.current[targetId]?.focus()
   }
 
-  const isEditingCell = (rowId: string, field: 'date' | 'description' | 'category' | 'account' | 'amount') =>
+  const isEditingCell = (rowId: string, field: 'date' | 'description' | 'category' | 'account' | 'amount' | 'tags') =>
     editingCell?.rowId === rowId && editingCell.field === field
 
   const startCellEdit = (
     rowId: string,
-    field: 'date' | 'description' | 'category' | 'account' | 'amount',
-    currentValue: string
+    field: 'date' | 'description' | 'category' | 'account' | 'amount' | 'tags',
+    currentValue: string | string[]
   ) => {
     if (isEditingCell(rowId, field)) return
     setEditingCell({ rowId, field })
-    setCellDraft(currentValue)
+    if (field === 'tags') {
+      setCellTagsDraft(Array.isArray(currentValue) ? [...currentValue] : [])
+    } else {
+      setCellDraft(currentValue as string)
+    }
   }
 
   const commitCellEdit = (
@@ -492,6 +575,33 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     commitCellEdit(rowId, field, cellDraft)
   }
 
+  const commitTagsEdit = (rowId: string, tags: string[]) => {
+    dispatch({ type: 'UPDATE_BUDGET_TRANSACTION', id: rowId, patch: { tags: tags.length ? tags : undefined } })
+    setEditingCell(null)
+    setCellTagsDraft([])
+  }
+
+  const handleTagsCellBlur = (rowId: string) => {
+    if (!editingCell) {
+      if (skipBlurCommitRef.current) skipBlurCommitRef.current = false
+      return
+    }
+    if (skipBlurCommitRef.current) {
+      skipBlurCommitRef.current = false
+      setEditingCell(null)
+      setCellTagsDraft([])
+      return
+    }
+    commitTagsEdit(rowId, cellTagsDraft)
+  }
+
+  const handleTagsCellKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'Escape') return
+    skipBlurCommitRef.current = true
+    setEditingCell(null)
+    setCellTagsDraft([])
+  }
+
   const handleAddRecord = () => {
     const amount = Number(recAmount)
     if (!recDate) {
@@ -511,6 +621,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         categoryId: recCategoryId,
         amount,
         spendExpenseId: recExpenseId || undefined,
+        tags: recTags.length ? recTags : undefined,
       },
     })
     dispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, spendExpenseId: recExpenseId })
@@ -527,6 +638,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setRecAmount('')
     setRecCategoryTouchedManually(false)
     setRecExpenseId('')
+    setRecTags([])
   }
 
   // csvText holds raw text for parsing — CSV or OFX/QFX depending on importTab.
@@ -763,6 +875,68 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 }}
               />
             </div>
+            <div className="field" style={{ margin: 0, width: '220px' }}>
+              <input
+                className="input"
+                aria-label="Filter tags"
+                placeholder="Filter tags"
+                role="combobox"
+                aria-expanded="true"
+                aria-controls="tag-filter-suggestions"
+                aria-autocomplete="list"
+                value={tagFilterQuery}
+                onChange={(e) => setTagFilterQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const firstMatch = tagFilterSuggestions[0]
+                    if (firstMatch) {
+                      e.preventDefault()
+                      selectTagFilter(firstMatch)
+                    }
+                  } else if (e.key === 'Escape') {
+                    setTagFilterQuery('')
+                  }
+                }}
+              />
+              {tagFilter.length > 0 && (
+                <div data-testid="tag-filter-selected" style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', marginTop: 'var(--space-1)' }}>
+                  {tagFilter.map((tag) => (
+                    <span key={tag.toLowerCase()} className="tag tag-outline">
+                      {tag}
+                      <button
+                        type="button"
+                        aria-label={`Remove tag filter ${tag}`}
+                        onClick={() => removeTagFilter(tag)}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, marginLeft: '2px' }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div data-testid="tag-filter-suggestions" role="listbox" aria-label="Tag suggestions" id="tag-filter-suggestions" style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: 'var(--space-1)' }}>
+                {tagFilterSuggestions.length === 0 ? (
+                  <div data-testid="tag-filter-no-match" className="text-muted" style={{ fontSize: '12px' }}>
+                    No matching tags
+                  </div>
+                ) : (
+                  tagFilterSuggestions.map((tag) => (
+                    <button
+                      key={tag.toLowerCase()}
+                      type="button"
+                      role="option"
+                      aria-selected="false"
+                      data-testid={`tag-filter-suggestion-${tag.toLowerCase()}`}
+                      onClick={() => selectTagFilter(tag)}
+                      style={{ ...textBtnAccent, color: 'inherit', fontWeight: 400, textAlign: 'left' }}
+                    >
+                      {tag}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -788,6 +962,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 setBulkCategoryId(categoryId)
               }}
             />
+            <TagInput value={bulkTags} onChange={setBulkTags} ariaLabel="Bulk edit tags" />
             <button
               type="button"
               className="btn btn-primary"
@@ -798,11 +973,13 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   ids: Array.from(selectedRowIds),
                   categoryId: bulkCategoryId,
                   spendExpenseId: bulkExpenseId,
+                  tagsToAdd: bulkTags.length ? bulkTags : undefined,
                 })
                 setSelectedRowIds(new Set())
                 setSelectionAnchorId(null)
                 setBulkCategoryId('')
                 setBulkExpenseId('')
+                setBulkTags([])
               }}
             >
               Apply
@@ -859,6 +1036,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                     {recSortBy === 'account' && <SortIcon dir={recSortDir} />}
                   </span>
                 </th>
+                <th>Tags</th>
                 <th
                   aria-label="Sort by amount"
                   style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
@@ -991,6 +1169,25 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                         row.accountName || '—'
                       )}
                     </td>
+                    <td onClick={() => startCellEdit(row.id, 'tags', row.tags ?? [])} onBlur={() => handleTagsCellBlur(row.id)} onKeyDown={handleTagsCellKeyDown}>
+                      {isEditingCell(row.id, 'tags') ? (
+                        <TagInput
+                          value={cellTagsDraft}
+                          onChange={setCellTagsDraft}
+                          ariaLabel="Edit record tags"
+                        />
+                      ) : (row.tags ?? []).length === 0 ? (
+                        '—'
+                      ) : (
+                        <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '2px' }}>
+                          {(row.tags ?? []).map((tag, i) => (
+                            <span key={`${tag.toLowerCase()}-${i}`} className="tag tag-outline">
+                              {tag}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'right' }} onClick={() => startCellEdit(row.id, 'amount', String(row.amount))}>
                       {isEditingCell(row.id, 'amount') ? (
                         <input
@@ -1033,7 +1230,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                 )
               })}
               <tr data-testid="records-total-row">
-                <td colSpan={5} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
+                <td colSpan={6} style={{ borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
                   Total
                 </td>
                 <td style={{ textAlign: 'right', borderTop: '2px solid var(--color-divider)', fontWeight: 600 }}>
@@ -1145,6 +1342,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               value={recAmount}
               onChange={(e) => setRecAmount(e.target.value)}
             />
+          </div>
+          <div className="field">
+            <label>Tags</label>
+            <TagInput value={recTags} onChange={setRecTags} ariaLabel="Record tags" />
           </div>
           <button type="button" className="btn btn-primary" onClick={handleAddRecord}>
             Add Record
