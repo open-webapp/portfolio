@@ -18,7 +18,7 @@ Sibling: `BudgetPage.design.md`.
 - Flagged rows show a non-interactive repeat icon titled `Recurring spend` before the delete button.
 - The records-card header's `Show recurring only` checkbox filters to flagged rows and resets pagination, like the other header controls.
 - Rows whose linked live expense has >=1 live mapping expose a mapping overlay from the description cell.
-- The overlay is scoped by selected row ID to that row's linked expense's live mappings only. It cannot add mappings; X closes it and it remains open when empty.
+- The reusable category-mappings dialog is scoped by selected row ID to that row's linked expense's live mappings only. It cannot add mappings; X closes it and it remains open when empty.
 - In the overlay, click a mapping substring to edit it inline. Enter saves a trimmed, non-empty changed value and reapplies mappings to the current portfolio; blur, invalid input, and unchanged input keep editing open. Escape first cancels inline editing, then closes the overlay.
 - Deleting a mapping requires native confirmation, immediately reapplies mappings to the current portfolio, and leaves the overlay open when no mappings remain.
 - Import requires an existing account selection or a new account name; that name applies to the entire batch. Imported rows are canonicalized before dedup, and the applied convention marker persists even for a duplicate-only import. CSV/OFX/QFX parsers are unchanged.

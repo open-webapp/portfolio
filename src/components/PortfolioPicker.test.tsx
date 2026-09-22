@@ -189,6 +189,13 @@ describe('PortfolioPicker', () => {
       expect(screen.queryByRole('button', { name: 'Import a shared mapping from Google Drive' })).toBeFalsy()
     })
 
+    it('keeps the Settings gear above the selected Google Drive tab', () => {
+      renderPicker()
+      selectPickerMode('Google Drive')
+
+      expect(screen.getByRole('button', { name: 'Settings' }).style.zIndex).toBe('1')
+    })
+
     it('opens the category mapping settings panel and hides the picker modes', () => {
       renderPicker()
       openSettings()
@@ -239,14 +246,15 @@ describe('PortfolioPicker', () => {
       expect(await screen.findByText('2 categories · 3 category mappings')).toBeTruthy()
     })
 
-    it('navigates to category management from settings', () => {
+    it('opens category mappings from settings without navigating away', () => {
       window.location.hash = ''
       renderPicker()
       openSettings()
 
       fireEvent.click(screen.getByRole('button', { name: 'Manage' }))
 
-      expect(window.location.hash).toBe('#/categories')
+      expect(window.location.hash).toBe('')
+      expect(screen.getByRole('dialog', { name: 'Category mappings' })).toBeTruthy()
     })
 
     it('loads empty global state and enables Download after importing a valid mapping', async () => {

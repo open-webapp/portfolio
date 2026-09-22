@@ -80,6 +80,82 @@ function TrashIcon() {
   )
 }
 
+export interface CategoryMappingsDialogProps {
+  mappings: CategoryMapping[]
+  onUpdate: (mapping: CategoryMapping, substring: string) => void | Promise<void>
+  onDelete: (mapping: CategoryMapping) => void | Promise<void>
+  onClose: () => void
+}
+
+export function CategoryMappingsDialog({ mappings, onUpdate, onDelete, onClose }: CategoryMappingsDialogProps) {
+  const [editingMappingSubstringId, setEditingMappingSubstringId] = useState<string | null>(null)
+  const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
+
+  const close = () => {
+    setEditingMappingSubstringId(null)
+    setMappingSubstringDraft('')
+    onClose()
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (editingMappingSubstringId) {
+        setEditingMappingSubstringId(null)
+        setMappingSubstringDraft('')
+      } else {
+        close()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [editingMappingSubstringId])
+
+  const save = (mapping: CategoryMapping) => {
+    const substring = mappingSubstringDraft.trim()
+    if (!substring || substring === mapping.substring) return
+    void onUpdate(mapping, substring)
+    setEditingMappingSubstringId(null)
+    setMappingSubstringDraft('')
+  }
+
+  const remove = (mapping: CategoryMapping) => {
+    if (!window.confirm('Delete this mapping? This cannot be undone.')) return
+    void onDelete(mapping)
+  }
+
+  return (
+    <div className="dialog-backdrop">
+      <div className="dialog blueprint category-mapping-dialog" role="dialog" aria-modal="true" aria-label="Category mappings" data-mapping-substring-draft={mappingSubstringDraft}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="dialog-title">Category mappings</div>
+          <button type="button" style={iconBtn} aria-label="Close" onClick={close}>×</button>
+        </div>
+        <div className="dialog-body">
+          {mappings.length === 0 ? (
+            <div className="text-muted">No category mappings.</div>
+          ) : (
+            mappings.map((mapping) => (
+              <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                {editingMappingSubstringId === mapping.id ? (
+                  <input type="text" className="input" aria-label="Edit category mapping substring" autoFocus value={mappingSubstringDraft} onChange={(event) => setMappingSubstringDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save(mapping) }} />
+                ) : (
+                  <button type="button" style={{ ...textBtnAccent, color: 'inherit', fontWeight: 400 }} aria-label={`Edit category mapping ${mapping.substring}`} onClick={() => { setEditingMappingSubstringId(mapping.id); setMappingSubstringDraft(mapping.substring) }}>
+                    {mapping.substring}
+                  </button>
+                )}
+                <button type="button" style={{ ...iconBtn, color: LOSS_COLOR }} aria-label={`Delete category mapping ${mapping.substring}`} title="Delete category mapping" onClick={() => remove(mapping)}>
+                  <TrashIcon />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RepeatIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
@@ -142,8 +218,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     field: 'date' | 'description' | 'category' | 'account' | 'amount'
   } | null>(null)
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
-  const [editingMappingSubstringId, setEditingMappingSubstringId] = useState<string | null>(null)
-  const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
   const [cellDraft, setCellDraft] = useState('')
   const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
@@ -295,31 +369,10 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     ? mappingsForExpense(editingMappingExpense.id)
     : []
 
-  useEffect(() => {
-    if (!editingMappingId) return
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (editingMappingSubstringId) {
-          setEditingMappingSubstringId(null)
-          setMappingSubstringDraft('')
-        } else {
-          setEditingMappingId(null)
-          setMappingSubstringDraft('')
-        }
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editingMappingId, editingMappingSubstringId])
-
-  const saveMappingSubstring = (mapping: CategoryMapping) => {
-    const substring = mappingSubstringDraft.trim()
-    if (!substring || substring === mapping.substring) return
+  const saveMappingSubstring = (mapping: CategoryMapping, substring: string) => {
     categoryDispatch({ type: 'UPDATE_CATEGORY_MAPPING', id: mapping.id, patch: { substring } })
     const nextMappings = updateCategoryMapping({ categories, categoryMappings, budgetAccountRules }, mapping.id, { substring }).categoryMappings
     dispatch({ type: 'REAPPLY_CATEGORY_MAPPINGS', categoryMappings: nextMappings })
-    setEditingMappingSubstringId(null)
-    setMappingSubstringDraft('')
   }
 
   const deleteMapping = (mapping: CategoryMapping) => {
@@ -884,8 +937,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                                 onClick={(event) => {
                                   event.stopPropagation()
                                   setEditingMappingId(row.id)
-                                  setEditingMappingSubstringId(null)
-                                  setMappingSubstringDraft('')
                                 }}
                               >
                                 <MappingIcon />
@@ -1269,77 +1320,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         </div>
       )}
 
-      {editingMappingId && (
-        <div className="dialog-backdrop">
-          <div
-            className="dialog blueprint category-mapping-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Category mappings"
-            data-mapping-substring-draft={mappingSubstringDraft}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div className="dialog-title">Category mappings</div>
-              <button
-                type="button"
-                style={iconBtn}
-                aria-label="Close"
-                onClick={() => {
-                  setEditingMappingId(null)
-                  setEditingMappingSubstringId(null)
-                  setMappingSubstringDraft('')
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <div className="dialog-body">
-              {editingMappings.length === 0 ? (
-                <div className="text-muted">No category mappings.</div>
-              ) : (
-                editingMappings.map((mapping) => (
-                  <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    {editingMappingSubstringId === mapping.id ? (
-                      <input
-                        type="text"
-                        className="input"
-                        aria-label="Edit category mapping substring"
-                        autoFocus
-                        value={mappingSubstringDraft}
-                        onChange={(event) => setMappingSubstringDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') saveMappingSubstring(mapping)
-                        }}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        style={{ ...textBtnAccent, color: 'inherit', fontWeight: 400 }}
-                        aria-label={`Edit category mapping ${mapping.substring}`}
-                        onClick={() => {
-                          setEditingMappingSubstringId(mapping.id)
-                          setMappingSubstringDraft(mapping.substring)
-                        }}
-                      >
-                        {mapping.substring}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      style={{ ...iconBtn, color: LOSS_COLOR }}
-                      aria-label={`Delete category mapping ${mapping.substring}`}
-                      title="Delete category mapping"
-                      onClick={() => deleteMapping(mapping)}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {editingMappingId && <CategoryMappingsDialog mappings={editingMappings} onUpdate={saveMappingSubstring} onDelete={deleteMapping} onClose={() => setEditingMappingId(null)} />}
     </div>
   )
 }

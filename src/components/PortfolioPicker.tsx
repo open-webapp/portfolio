@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import type { Portfolio } from '../lib/types'
+import type { Portfolio, CategoryMapping } from '../lib/types'
 import type { EncryptedEnvelope } from '../lib/crypto'
 import { nameKey } from '../lib/portfolioRegistry'
 import {
@@ -18,7 +18,8 @@ import {
   setSharedCategoryDriveFileId,
 } from '../lib/categoryPersist'
 import { mergeCategoryState } from '../lib/categoryMerge'
-import { navigateToCategories } from '../lib/router'
+import { deleteCategoryMapping, updateCategoryMapping } from '../lib/categoryStore'
+import { CategoryMappingsDialog } from './BudgetPage'
 import { SharedSourceBadge, UnlinkButton } from './SharedSource'
 
 export interface PortfolioPickerProps {
@@ -87,6 +88,7 @@ export function PortfolioPicker({
   const [driveFoldersOpen, setDriveFoldersOpen] = useState(false)
   const [pickerMode, setPickerMode] = useState<PickerMode>('open')
   const [showSettings, setShowSettings] = useState(false)
+  const [showCategoryMappings, setShowCategoryMappings] = useState(false)
   const [driveFolders, setDriveFolders] = useState<{ name: string; id: string }[] | null>(null)
   const [driveListError, setDriveListError] = useState<string | null>(null)
   const [driveListLoading, setDriveListLoading] = useState(false)
@@ -137,6 +139,18 @@ export function PortfolioPicker({
       },
       'category-mapping.json',
     )
+  }
+
+  const updateMapping = async (mapping: CategoryMapping, substring: string) => {
+    const next = updateCategoryMapping(globalCategoryState, mapping.id, { substring })
+    await saveGlobalCategoryState(next)
+    setGlobalCategoryState(next)
+  }
+
+  const deleteMapping = async (mapping: CategoryMapping) => {
+    const next = deleteCategoryMapping(globalCategoryState, mapping.id)
+    await saveGlobalCategoryState(next)
+    setGlobalCategoryState(next)
   }
 
   const handleCategoryMappingImport = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -431,7 +445,7 @@ export function PortfolioPicker({
                   </label>
                 ))}
               </div>
-              <button type="button" className="btn-ghost" aria-label="Settings" style={{ position: 'absolute', right: 'var(--space-1)', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-2)' }} onClick={() => setShowSettings(true)}>
+              <button type="button" className="btn-ghost" aria-label="Settings" style={{ position: 'absolute', zIndex: 1, right: 'var(--space-1)', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-2)' }} onClick={() => setShowSettings(true)}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.3h-3v-.08A1.7 1.7 0 0 0 10.66 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04h-.08v-3h.08A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7v-.08h3v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.08v3h-.08A1.7 1.7 0 0 0 19.4 15Z" />
@@ -692,7 +706,7 @@ export function PortfolioPicker({
             />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
               <div className="card-body">{globalCategoryState.categories.length} categories · {globalCategoryState.categoryMappings.length} category mappings</div>
-              <button type="button" className="btn btn-primary" onClick={navigateToCategories}>Manage</button>
+              <button type="button" className="btn btn-primary" onClick={() => setShowCategoryMappings(true)}>Manage</button>
             </div>
             <div className="hr" />
             <div className="card-body">Open the mapping someone else shared with you directly or via Google Drive.</div>
@@ -701,6 +715,7 @@ export function PortfolioPicker({
             {categoryMappingImportError && <div className="tag tag-outline">{categoryMappingImportError}</div>}
           </div>
         )}
+        {showCategoryMappings && <CategoryMappingsDialog mappings={globalCategoryState.categoryMappings.filter((mapping) => !mapping.deletedAt)} onUpdate={updateMapping} onDelete={deleteMapping} onClose={() => setShowCategoryMappings(false)} />}
       </div>
     </div>
   )
