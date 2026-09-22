@@ -1,6 +1,5 @@
 import type { GlobalCategoryState } from './categoryStore'
-import { initialGlobalCategoryState, resolveSpendExpenseForCategory } from './categoryStore'
-import type { CategoryMapping, ExpenseDefinition } from './types'
+import { initialGlobalCategoryState } from './categoryStore'
 
 const DB_NAME = 'ledger_global_categories_v1'
 const STATE_STORE = 'state'
@@ -62,88 +61,20 @@ async function putValue<T>(storeName: string, key: string, value: T): Promise<vo
   })
 }
 
-export async function loadGlobalCategoryState(
-  budgetExpenseDefinitions: ExpenseDefinition[]
-): Promise<GlobalCategoryState> {
+export async function loadGlobalCategoryState(): Promise<GlobalCategoryState> {
   const state = await getValue<GlobalCategoryState>(STATE_STORE, STATE_KEY)
-  const loaded = state
-    ? {
-        ...state,
-        budgetAccountRules: Array.isArray(state.budgetAccountRules) ? state.budgetAccountRules : [],
-      }
-    : initialGlobalCategoryState()
-  return migrateCategoryMappingsToSpendKey(loaded, budgetExpenseDefinitions)
-}
-
-/**
- * Legacy (pre-spendkey) mapping shape: keyed by `categoryId` instead of
- * `spendExpenseId`. Persisted IDB rows may still hold this shape until the
- * one-time migration below rewrites them. `categoryId` must NOT be re-added
- * to `CategoryMapping` — access it only through this local cast.
- */
-type LegacyCategoryMapping = Omit<CategoryMapping, 'spendExpenseId'> & {
-  spendExpenseId?: string
-  categoryId?: string
-}
-
-/**
- * One-time in-place categoryId → spendExpenseId migration over the loaded
- * mappings. For each old-shape row (`categoryId`, no `spendExpenseId`):
- * resolve via `resolveSpendExpenseForCategory` — match rewrites the row to
- * `spendExpenseId` (dropping `categoryId`), no match drops the row entirely.
- * Already-migrated rows pass through untouched.
- *
- * Idempotent by content: a migrated store holds no legacy rows, so a second
- * load is a no-op with no write. That is why no MIGRATION_KEY flag is added —
- * the existing seeded marker there governs initial seeding, a different
- * concern. Persists the migrated result via saveGlobalCategoryState only when
- * at least one row changed, making the first post-upgrade load the single
- * write.
- */
-async function migrateCategoryMappingsToSpendKey(
-  loaded: GlobalCategoryState,
-  budgetExpenseDefinitions: ExpenseDefinition[]
-): Promise<GlobalCategoryState> {
-  let changed = false
-  const categoryMappings: CategoryMapping[] = []
-  for (const mapping of loaded.categoryMappings) {
-    const legacy = mapping as LegacyCategoryMapping
-    if (legacy.spendExpenseId !== undefined) {
-      if (legacy.categoryId === undefined) {
-        categoryMappings.push(mapping)
-      } else {
-        // Both fields (e.g. Drive-merged old remote row): spendExpenseId is
-        // authoritative, strip the stale categoryId residue.
-        const { categoryId: _legacyCategoryId, ...rest } = legacy
-        void _legacyCategoryId
-        categoryMappings.push({ ...rest, spendExpenseId: legacy.spendExpenseId })
-        changed = true
-      }
-      continue
-    }
-    if (legacy.categoryId === undefined) {
-      // Neither field — unknown shape; keep rather than destroy data.
-      categoryMappings.push(mapping)
-      continue
-    }
-    const match = resolveSpendExpenseForCategory(budgetExpenseDefinitions, legacy.categoryId)
-    if (!match) {
-      changed = true
-      continue
-    }
-    const { categoryId: _legacyCategoryId, ...rest } = legacy
-    void _legacyCategoryId
-    categoryMappings.push({ ...rest, spendExpenseId: match.id })
-    changed = true
+  if (!state) return initialGlobalCategoryState()
+  return {
+    categories: Array.isArray(state.categories) ? state.categories : [],
+    budgetAccountRules: Array.isArray(state.budgetAccountRules) ? state.budgetAccountRules : [],
   }
-  if (!changed) return loaded
-  const migrated: GlobalCategoryState = { ...loaded, categoryMappings }
-  await saveGlobalCategoryState(migrated)
-  return migrated
 }
 
 export async function saveGlobalCategoryState(s: GlobalCategoryState): Promise<void> {
-  await putValue(STATE_STORE, STATE_KEY, s)
+  await putValue(STATE_STORE, STATE_KEY, {
+    categories: s.categories,
+    budgetAccountRules: s.budgetAccountRules,
+  })
 }
 
 export async function isGlobalStoreSeeded(): Promise<boolean> {

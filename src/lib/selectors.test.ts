@@ -437,15 +437,15 @@ describe('sankeyFlowData', () => {
 })
 
 describe('mappingsForExpense', () => {
-  it('excludes tombstoned mappings while preserving substring sort', () => {
+  it('preserves substring sort within an expense', () => {
     const mappings = [
       { id: 'zebra', spendExpenseId: 'groceries', substring: 'zebra' },
-      { id: 'deleted', spendExpenseId: 'groceries', substring: 'apple', deletedAt: '2026-09-19T00:00:00.000Z' },
+      { id: 'apple', spendExpenseId: 'groceries', substring: 'apple' },
       { id: 'alpha', spendExpenseId: 'groceries', substring: 'alpha' },
       { id: 'other', spendExpenseId: 'salary', substring: 'aardvark' }
     ] as CategoryMapping[]
 
-    expect(mappingsForExpense(mappings, 'groceries').map((mapping) => mapping.id)).toEqual(['alpha', 'zebra'])
+    expect(mappingsForExpense(mappings, 'groceries').map((mapping) => mapping.id)).toEqual(['alpha', 'apple', 'zebra'])
   })
 })
 

@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BudgetPage as BudgetPageUnderTest, type BudgetPageProps } from './BudgetPage'
 import { initialState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
-import { categoryStoreReducer } from '../lib/categoryStore'
 import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, type SpendScope } from '../lib/selectors'
 
 afterEach(() => cleanup())
@@ -714,16 +713,13 @@ describe('BudgetPage category mapping overlay', () => {
         { id: 'expense-b', name: 'Expense B', categoryId: 'food', frequency: 'monthly' as const },
       ],
       budgetTransactions: [{ id: 'market-row', date: `${year}-01-01`, description: 'Market run', categoryId: 'food', amount: 42, spendExpenseId: 'expense-a' }],
-    })
-    const [categoryState, categoryDispatch] = useReducer(categoryStoreReducer, {
-      categories,
       categoryMappings: initialMappings,
     })
 
-    return <BudgetPage state={appState} dispatch={dispatch} categories={categoryState.categories} categoryMappings={categoryState.categoryMappings} categoryDispatch={categoryDispatch} categoriesHydrated {...periodProps} />
+    return <BudgetPage state={appState} dispatch={dispatch} categories={categories} categoryMappings={appState.categoryMappings} categoryDispatch={vi.fn()} categoriesHydrated {...periodProps} />
   }
 
-  it('edits a mapping substring on Enter and reapplies the updated mappings', () => {
+  it('edits a mapping substring on Enter with one main-state action', () => {
     const { dispatch, categoryDispatch } = renderOverlay()
 
     fireEvent.click(screen.getByText('Market'))
@@ -731,11 +727,9 @@ describe('BudgetPage category mapping overlay', () => {
     fireEvent.change(input, { target: { value: ' Grocery ' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(categoryDispatch).toHaveBeenCalledWith({ type: 'UPDATE_CATEGORY_MAPPING', id: 'market', patch: { substring: 'Grocery' } })
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'REAPPLY_CATEGORY_MAPPINGS',
-      categoryMappings: [expect.objectContaining({ id: 'market', substring: 'Grocery' })],
-    }))
+    expect(categoryDispatch).not.toHaveBeenCalled()
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'UPDATE_CATEGORY_MAPPING', id: 'market', patch: { substring: 'Grocery' } })
     expect(screen.queryByLabelText('Edit category mapping substring')).toBeNull()
     expect(screen.getByText('Market')).toBeTruthy()
   })
@@ -768,17 +762,15 @@ describe('BudgetPage category mapping overlay', () => {
     confirm.mockRestore()
   })
 
-  it('deletes a confirmed mapping, reapplies the tombstoned list, and leaves the empty dialog open', () => {
+  it('deletes a confirmed mapping with one main-state action and leaves the empty dialog open', () => {
     const { dispatch, categoryDispatch, rerender } = renderOverlay()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     fireEvent.click(screen.getByLabelText('Delete category mapping Market'))
 
-    expect(categoryDispatch).toHaveBeenCalledWith({ type: 'DELETE_CATEGORY_MAPPING', id: 'market' })
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'REAPPLY_CATEGORY_MAPPINGS',
-      categoryMappings: [expect.objectContaining({ id: 'market', deletedAt: expect.any(String) })],
-    }))
+    expect(categoryDispatch).not.toHaveBeenCalled()
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_CATEGORY_MAPPING', id: 'market' })
     rerender(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={categoryDispatch} categoriesHydrated {...periodProps} />)
     expect(screen.getByRole('dialog', { name: 'Category mappings' })).toBeTruthy()
     expect(screen.getByText('No category mappings.')).toBeTruthy()

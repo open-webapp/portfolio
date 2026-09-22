@@ -4,7 +4,6 @@ import {
   initialGlobalCategoryState,
   visibleBudgetAccountRules,
   visibleCategories,
-  visibleMappings,
 } from '../lib/categoryStore'
 import {
   loadGlobalCategoryState,
@@ -19,10 +18,7 @@ import {
   getGlobalCategoriesModifiedTime,
 } from '../lib/categoryDrive'
 import { mergeCategoryState } from '../lib/categoryMerge'
-import { seedGlobalCategoriesIfNeeded as seedGlobalCategoriesIfNeededImpl } from '../lib/categoryMigration'
 import type { getDriveAuthFor } from '../lib/drive'
-import type { ExpenseDefinition } from '../lib/types'
-import type { Portfolio } from '../lib/types'
 
 const SAVE_DEBOUNCE_MS = 500
 const POLL_INTERVAL_MS = 60_000
@@ -30,8 +26,7 @@ const POLL_INTERVAL_MS = 60_000
 export function useGlobalCategories(
   driveAuth: ReturnType<typeof getDriveAuthFor> | null,
   driveConnected: boolean,
-  driveProjectId: string | null,
-  budgetExpenseDefinitions: ExpenseDefinition[] | undefined = []
+  driveProjectId: string | null
 ) {
   const [state, dispatch] = useReducer(categoryStoreReducer, initialGlobalCategoryState())
   const [hydrated, setHydrated] = useState(false)
@@ -43,22 +38,15 @@ export function useGlobalCategories(
   const sharedCategoryDriveFileIdRef = useRef<string | undefined>(undefined)
   latestStateRef.current = state
 
-  // One-shot hydrate on mount. Deferred while budgetExpenseDefinitions is
-  // undefined (App passes undefined until its own portfolio state hydrates
-  // post-unlock): loadGlobalCategoryState runs the categoryId→spendExpenseId
-  // migration, which needs the active portfolio's real definitions — running
-  // it with a pre-hydration [] would resolve nothing and drop every legacy
-  // mapping. The didHydrateRef guard keeps this one-shot across defs ref
-  // changes (e.g. portfolio switches on the shared cross-portfolio store).
+  // One-shot hydrate on mount.
   const didHydrateRef = useRef(false)
   useEffect(() => {
     if (didHydrateRef.current) return
-    if (budgetExpenseDefinitions === undefined) return
     didHydrateRef.current = true
     let cancelled = false
     ;(async () => {
       const [loaded, sharedCategoryDriveFileId] = await Promise.all([
-        loadGlobalCategoryState(budgetExpenseDefinitions),
+        loadGlobalCategoryState(),
         getSharedCategoryDriveFileId(),
       ])
       if (cancelled) return
@@ -70,7 +58,7 @@ export function useGlobalCategories(
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budgetExpenseDefinitions])
+  }, [])
 
   // Debounced local save, skipping the first post-hydrate run (would just re-save
   // the state we just loaded).
@@ -83,13 +71,12 @@ export function useGlobalCategories(
     const id = setTimeout(() => {
       saveGlobalCategoryState({
         categories: state.categories,
-        categoryMappings: state.categoryMappings,
         budgetAccountRules: state.budgetAccountRules,
       })
     }, SAVE_DEBOUNCE_MS)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.categories, state.categoryMappings, state.budgetAccountRules, hydrated])
+  }, [state.categories, state.budgetAccountRules, hydrated])
 
   // Immediate fire-and-forget push to Drive when connected. Gated on
   // initialPullDone: pushGlobalCategoriesToDrive does a blind full-file
@@ -104,14 +91,13 @@ export function useGlobalCategories(
       sharedCategoryDriveFileIdRef.current = await getSharedCategoryDriveFileId()
       await pushGlobalCategoriesToDrive(driveAuth, driveProjectId, {
         categories: state.categories,
-        categoryMappings: state.categoryMappings,
         budgetAccountRules: state.budgetAccountRules,
       }, sharedCategoryDriveFileIdRef.current)
     })().catch(console.error)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.categories, state.categoryMappings, state.budgetAccountRules, hydrated, initialPullDone, driveConnected, driveAuth, driveProjectId])
+  }, [state.categories, state.budgetAccountRules, hydrated, initialPullDone, driveConnected, driveAuth, driveProjectId])
 
-  // Pull remote categories/mappings, merge with local, and persist. Shared by
+  // Pull remote categories, merge with local, and persist. Shared by
   // the initial post-connect pull, the 60s poll, and any caller that wants an
   // on-demand refresh (e.g. after a manual portfolio Drive sync).
   const pullAndMerge = async () => {
@@ -123,7 +109,6 @@ export function useGlobalCategories(
     const merged = mergeCategoryState(
       {
         categories: current.categories,
-        categoryMappings: current.categoryMappings,
         budgetAccountRules: current.budgetAccountRules,
       },
       remote
@@ -159,7 +144,6 @@ export function useGlobalCategories(
         const merged = mergeCategoryState(
           {
             categories: current.categories,
-            categoryMappings: current.categoryMappings,
             budgetAccountRules: current.budgetAccountRules,
           },
           remote
@@ -173,23 +157,11 @@ export function useGlobalCategories(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated])
 
-  const seedGlobalCategoriesIfNeeded = async (portfolio: Portfolio, rawBlob: Record<string, unknown>) => {
-    await seedGlobalCategoriesIfNeededImpl(portfolio, rawBlob)
-    // Portfolio is registry metadata (no budget data), so the reload reuses
-    // the hook's threaded definitions. Runs post-unlock (App gates on
-    // sessionKey + isHydrated), hence definitions are defined here; the
-    // ?? [] fallback only satisfies the signature in unreachable cases.
-    const seeded = await loadGlobalCategoryState(budgetExpenseDefinitions ?? [])
-    dispatch({ type: '__REPLACE', state: seeded })
-  }
-
   return {
     categories: visibleCategories(state),
-    categoryMappings: visibleMappings(state),
     budgetAccountRules: visibleBudgetAccountRules(state),
     dispatch,
     hydrated,
-    seedGlobalCategoriesIfNeeded,
     syncNow: pullAndMerge,
   }
 }

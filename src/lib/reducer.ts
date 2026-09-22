@@ -43,6 +43,10 @@ export type AppAction =
   | { type: 'IMPORT_EXPENSE_PASTE'; year: string; uncategorizedCategoryId: string; rows: ExpensePasteImportRow[] }
   | { type: 'UPDATE_EXPENSE_DEFINITION'; id: string; patch: Partial<Omit<ExpenseDefinition, 'id'>> }
   | { type: 'DELETE_EXPENSE_DEFINITION'; id: string }
+  | { type: 'UPSERT_CATEGORY_MAPPING'; description: string; spendExpenseId: string }
+  | { type: 'UPDATE_CATEGORY_MAPPING'; id: string; patch: Partial<Pick<CategoryMapping, 'substring' | 'spendExpenseId'>> }
+  | { type: 'ADD_CATEGORY_MAPPING'; spendExpenseId: string; substring: string }
+  | { type: 'DELETE_CATEGORY_MAPPING'; id: string }
   | { type: 'SET_EXPENSE_AMOUNT'; year: string; expenseId: string; amount: number }
   | { type: 'CLEAR_EXPENSE_AMOUNT'; year: string; expenseId: string }
   | { type: 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED' }
@@ -193,6 +197,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'DELETE_EXPENSE_DEFINITION':
       return StateActions.deleteExpenseDefinition(state, action.id)
+
+    case 'UPSERT_CATEGORY_MAPPING':
+      return StateActions.upsertCategoryMapping(state, action.description, action.spendExpenseId)
+
+    case 'UPDATE_CATEGORY_MAPPING':
+      return StateActions.updateCategoryMapping(state, action.id, action.patch)
+
+    case 'ADD_CATEGORY_MAPPING':
+      return StateActions.addCategoryMapping(state, action.spendExpenseId, action.substring)
+
+    case 'DELETE_CATEGORY_MAPPING':
+      return StateActions.deleteCategoryMapping(state, action.id)
 
     case 'SET_EXPENSE_AMOUNT':
       return StateActions.setExpenseAmount(state, action.year, action.expenseId, action.amount)

@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import {
   addExpenseDefinition,
+  addCategoryMapping,
+  deleteCategoryMapping,
+  deleteExpenseDefinition,
   ensureExpenseAmountsSnapshotForYear,
   importBudgetTransactions,
   initialState,
   reconcileBudgetAccountConventions,
   rolloverBudgetExpenseAmountsIfNeeded,
   stripEmptyBudgetSnapshots,
+  updateCategoryMapping,
   updateExpenseDefinition,
+  upsertCategoryMapping,
 } from './state'
 import type { BudgetAccountRule, StatementConvention } from './types'
+import { appReducer, type AppAction } from './reducer'
 
 describe('budget state', () => {
   it('has no manual income state', () => {
@@ -52,6 +58,113 @@ describe('budget state', () => {
     }
 
     expect(updateExpenseDefinition(state, 'utilities', { name: ' rent ' })).toBe(state)
+  })
+
+  it('hard-deletes mappings for a deleted expense definition', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' as const }],
+      categoryMappings: [
+        { id: 'rent-map', substring: 'Landlord', spendExpenseId: 'rent', updatedAt: '' },
+        { id: 'other-map', substring: 'Store', spendExpenseId: 'other', updatedAt: '' },
+      ],
+    }
+
+    const result = deleteExpenseDefinition(state, 'rent')
+    expect(result.categoryMappings.find((mapping) => mapping.id === 'rent-map')).toBeUndefined()
+    expect(result.categoryMappings).toEqual([state.categoryMappings[1]])
+  })
+
+  it('leaves mappings untouched when deleting an expense without mappings', () => {
+    const state = {
+      ...initialState(),
+      categoryMappings: [{ id: 'other-map', substring: 'Store', spendExpenseId: 'other', updatedAt: '' }],
+    }
+
+    expect(deleteExpenseDefinition(state, 'rent').categoryMappings).toBe(state.categoryMappings)
+  })
+})
+
+describe('category mappings', () => {
+  it('upserts by case-insensitive substring without tombstoning', () => {
+    const once = upsertCategoryMapping(initialState(), ' Grocery ', 'groceries')
+    const twice = upsertCategoryMapping(once, 'gRoCeRy', 'food')
+
+    expect(twice.categoryMappings).toHaveLength(1)
+    expect(twice.categoryMappings[0]).toMatchObject({ substring: 'Grocery', spendExpenseId: 'food' })
+    expect(twice.categoryMappings[0]).not.toHaveProperty('deletedAt')
+  })
+
+  it('updates a mapping by ID', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: [
+        { id: 'other-expense', name: 'Other', categoryId: 'other', frequency: 'monthly' as const },
+        { id: 'food-expense', name: 'Food', categoryId: 'food', frequency: 'monthly' as const },
+      ],
+      categoryMappings: [{ id: 'map', substring: 'Store', spendExpenseId: 'other', updatedAt: '' }],
+      budgetTransactions: [
+        { id: 'store', date: '2026-01-01', description: 'Store run', categoryId: 'other', amount: 10, spendExpenseId: 'other-expense' },
+        { id: 'market', date: '2026-01-02', description: 'Market run', categoryId: 'other', amount: 20 },
+      ],
+    }
+
+    const result = updateCategoryMapping(state, 'map', { substring: 'Market', spendExpenseId: 'food-expense' })
+    expect(result.categoryMappings[0])
+      .toMatchObject({ id: 'map', substring: 'Market', spendExpenseId: 'food-expense' })
+    expect(result.budgetTransactions).toMatchObject([
+      { id: 'store', categoryId: 'other', spendExpenseId: 'other-expense' },
+      { id: 'market', categoryId: 'food', spendExpenseId: 'food-expense' },
+    ])
+  })
+
+  it('does not add mappings with blank substrings', () => {
+    const state = initialState()
+    expect(addCategoryMapping(state, 'food', '   ')).toBe(state)
+    expect(upsertCategoryMapping(state, '   ', 'food')).toBe(state)
+  })
+
+  it('hard-deletes a mapping and no-ops for an unknown ID', () => {
+    const state = {
+      ...initialState(),
+      categoryMappings: [{ id: 'map', substring: 'Store', spendExpenseId: 'food', updatedAt: '' }],
+    }
+    const deleted = deleteCategoryMapping(state, 'map')
+
+    expect(deleted.categoryMappings.find((mapping) => mapping.id === 'map')).toBeUndefined()
+    expect(deleteCategoryMapping(state, 'missing')).toBe(state)
+  })
+
+  it('handles mapping mutations through the app reducer', () => {
+    const state = {
+      ...initialState(),
+      categoryMappings: [{ id: 'existing', substring: 'Store', spendExpenseId: 'other', updatedAt: '' }],
+    }
+    const upserted = appReducer(state, {
+      type: 'UPSERT_CATEGORY_MAPPING', description: ' Grocery ', spendExpenseId: 'groceries',
+    })
+    const updated = appReducer(upserted, {
+      type: 'UPDATE_CATEGORY_MAPPING', id: 'existing', patch: { spendExpenseId: 'food' },
+    })
+    const added = appReducer(updated, {
+      type: 'ADD_CATEGORY_MAPPING', spendExpenseId: 'food', substring: ' Market ',
+    })
+    const deleted = appReducer(added, { type: 'DELETE_CATEGORY_MAPPING', id: 'existing' })
+
+    expect(upserted.categoryMappings).toHaveLength(2)
+    expect(upserted.categoryMappings[1]).toMatchObject({ substring: 'Grocery', spendExpenseId: 'groceries' })
+    expect(updated.categoryMappings[0]).toMatchObject({ id: 'existing', spendExpenseId: 'food' })
+    expect(added.categoryMappings[2]).toMatchObject({ substring: 'Market', spendExpenseId: 'food' })
+    expect(deleted.categoryMappings.map((mapping) => mapping.id)).not.toContain('existing')
+  })
+
+  it('returns the original state for an unknown mapping-shaped action', () => {
+    const state = initialState()
+    const action = {
+      type: 'UPSERT_CATEGORY_MAPING', description: 'Grocery', spendExpenseId: 'groceries',
+    } as unknown as AppAction
+
+    expect(appReducer(state, action)).toBe(state)
   })
 })
 

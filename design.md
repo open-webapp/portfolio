@@ -28,21 +28,20 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 ```ts
 interface GlobalCategoryState {
   categories: Category[]
-  categoryMappings: CategoryMapping[]
   budgetAccountRules: BudgetAccountRule[]
 }
 ```
 
-- `GlobalCategoryState` is cross-portfolio and is not part of `AppState`.
-- `categoryStoreReducer` owns category/mapping CRUD plus `CONFIGURE_BUDGET_ACCOUNT_RULE` and `DELETE_BUDGET_ACCOUNT_RULE`. Rule identity is `normalizedName`; deletion tombstones the record.
-- `mergeCategoryState(a, b)` merges categories/mappings by `id` and rules by `normalizedName`; larger `deletedAt ?? updatedAt` wins, ties retain `a`.
+- `GlobalCategoryState` is cross-portfolio and is not part of `AppState`; `AppState.categoryMappings` is encrypted and portfolio-scoped.
+- `categoryStoreReducer` owns category CRUD plus `CONFIGURE_BUDGET_ACCOUNT_RULE` and `DELETE_BUDGET_ACCOUNT_RULE`. Rule identity is `normalizedName`; deletion tombstones the record.
+- `appReducer` owns mapping CRUD; mapping mutations reapply the active portfolio's budget transactions, and expense deletion cascades hard-deletion of its mappings.
+- `mergeCategoryState(a, b)` merges categories by `id` and rules by `normalizedName`; larger `deletedAt ?? updatedAt` wins, ties retain `a`.
 - `categoryPersist.ts` stores one global IndexedDB document; its `DriveSyncMeta` has optional `lastKnownRemoteModifiedTime` and `sharedFileId` fields.
 - `categoryDrive.ts` reads/writes unencrypted shared Drive `OpenWebApp/Portfolio/category-mappings.json`. `pullGlobalCategoriesFromDrive`, `pushGlobalCategoriesToDrive`, and `getGlobalCategoriesModifiedTime` each accept optional `fileId?: string`; when supplied, they read/write/status that file instead of resolving it by name in the shared root.
-- `useGlobalCategories(driveAuth, driveConnected, driveProjectId, budgetExpenseDefinitions?)` hydrates once, returns visible `{ categories, categoryMappings, budgetAccountRules, dispatch, hydrated, seedGlobalCategoriesIfNeeded, syncNow }`, debounce-saves locally (500ms), merges Drive initial/manual/polled pulls, immediately pushes connected local edits, and polls every 60 seconds.
-- `PortfolioPicker` has a separate one-shot global-mapping path: it loads/saves the global category document locally, can merge a picker-selected shared Drive mapping, and stores/unlinks its `sharedFileId`. It is distinct from the `useGlobalCategories` lifecycle and starts no interval.
-- `PortfolioPicker` uses a centered 520px landing layout with a full-width `Open` (default) / `Create` / `Google Drive` segment and absolutely positioned settings gear. Only the selected top-level panel mounts. The Drive card renders sequential My-portfolios and Shared-portfolio sections separated by `.hr`. Local file import remains inside Create; switching modes preserves component-local state. The gear toggles component-local `showSettings` for global category-mapping settings; its header has Close, heading, and local import/download icons, with shared-Drive mapping controls in the card body.
+- `useGlobalCategories(driveAuth, driveConnected, driveProjectId)` hydrates once, returns visible `{ categories, budgetAccountRules, dispatch, hydrated, syncNow }`, debounce-saves locally (500ms), merges Drive initial/manual/polled pulls, immediately pushes connected local edits, and polls every 60 seconds.
+- `PortfolioPicker` uses a centered 520px landing layout with a full-width `Open` (default) / `Create` / `Google Drive` segment. Only the selected top-level panel mounts. The Drive card renders sequential My-portfolios and Shared-portfolio sections separated by `.hr`. Local file import remains inside Create; switching modes preserves component-local state.
 - `ManageCategoriesPage` is rendered at `#/categories` for global category management. `router.ts` adds the `categories` `Route` variant and `navigateToCategories()` helper.
-- `App.tsx` prop-drills global categories, mappings, rules, hydration state, and `categoryDispatch` into `BudgetPage`; no context.
+- `App.tsx` prop-drills global categories, rules, hydration state, and `categoryDispatch` into `BudgetPage`; its mapping prop is `state.categoryMappings`; no context.
 
 ## Account Sign Reconciliation
 

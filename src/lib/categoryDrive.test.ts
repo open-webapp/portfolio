@@ -106,7 +106,6 @@ describe('categoryDrive', () => {
     it('returns the parsed GlobalCategoryState for valid JSON content', async () => {
       const state: GlobalCategoryState = {
         categories: [{ id: 'cat-1', name: 'Food', updatedAt: '2026-01-01T00:00:00Z' }],
-        categoryMappings: [{ id: 'map-1', substring: 'starbucks', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00Z' }],
         budgetAccountRules: [{ id: 'rule-1', accountId: 'account-1', sign: 'negative' }],
       }
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
@@ -118,7 +117,7 @@ describe('categoryDrive', () => {
     })
 
     it('reads an explicit fileId without resolving the shared folder', async () => {
-      const state: GlobalCategoryState = { categories: [], categoryMappings: [], budgetAccountRules: [] }
+      const state: GlobalCategoryState = { categories: [], budgetAccountRules: [] }
       mockFilesRead.mockResolvedValue(JSON.stringify(state))
 
       await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId, 'known-file')).resolves.toEqual(state)
@@ -137,7 +136,7 @@ describe('categoryDrive', () => {
     })
 
     it('defaults budgetAccountRules for an older Drive file', async () => {
-      const oldState = { categories: [], categoryMappings: [] }
+      const oldState = { categories: [] }
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesRead.mockResolvedValue(JSON.stringify(oldState))
 
@@ -147,17 +146,29 @@ describe('categoryDrive', () => {
       })
     })
 
+    it('accepts an old-shape file and ignores its categoryMappings key', async () => {
+      mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
+      mockFilesRead.mockResolvedValue(JSON.stringify({
+        categories: [],
+        categoryMappings: [{ id: 'stale-mapping' }],
+        budgetAccountRules: [],
+      }))
+
+      await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId)).resolves.toEqual({
+        categories: [],
+        budgetAccountRules: [],
+      })
+    })
+
     it('drops malformed budgetAccountRules entries while retaining rule objects', async () => {
       mockFilesList.mockResolvedValue([{ id: 'file-1', name: 'category-mappings.json' }])
       mockFilesRead.mockResolvedValue(JSON.stringify({
         categories: [],
-        categoryMappings: [],
         budgetAccountRules: [{ id: 'rule-1' }, null, 'not a rule', 42, []],
       }))
 
       await expect(pullGlobalCategoriesFromDrive(driveAuth, testProjectId)).resolves.toEqual({
         categories: [],
-        categoryMappings: [],
         budgetAccountRules: [{ id: 'rule-1' }],
       })
     })
@@ -188,7 +199,6 @@ describe('categoryDrive', () => {
   describe('pushGlobalCategoriesToDrive', () => {
     const state: GlobalCategoryState = {
       categories: [{ id: 'cat-1', name: 'Food', updatedAt: '2026-01-01T00:00:00Z' }],
-      categoryMappings: [],
       budgetAccountRules: [{ id: 'rule-1', accountId: 'account-1', sign: 'negative' }],
     }
 

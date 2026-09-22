@@ -23,18 +23,19 @@ const FILENAME = 'category-mappings.json'
  * Shape-checks a parsed JSON value as a `GlobalCategoryState`. Deliberately
  * loose (array presence only, not per-item field validation) — mirrors this
  * codebase's existing "swallow malformed, don't hard-fail" convention (see
- * `decryptDriveFolderBackup` in drive.ts).
+ * `decryptDriveFolderBackup` in drive.ts). Old files may include an extra
+ * `categoryMappings` key during mixed-version upgrades; it is ignored.
  */
 function isGlobalCategoryStateShape(value: unknown): value is GlobalCategoryState {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
-  return Array.isArray(v.categories) && Array.isArray(v.categoryMappings)
+  return Array.isArray(v.categories)
 }
 
 function normalizeGlobalCategoryState(value: GlobalCategoryState): GlobalCategoryState {
   const rules = (value as unknown as Record<string, unknown>).budgetAccountRules
   return {
-    ...value,
+    categories: value.categories,
     budgetAccountRules: Array.isArray(rules)
       ? rules.filter((rule) => !!rule && typeof rule === 'object' && !Array.isArray(rule)) as GlobalCategoryState['budgetAccountRules']
       : [],

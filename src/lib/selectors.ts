@@ -1173,7 +1173,7 @@ export function categoryBreakdown(
  */
 export function mappingsForExpense(mappings: CategoryMapping[], spendExpenseId: string): CategoryMapping[] {
   return mappings
-    .filter((m) => m.spendExpenseId === spendExpenseId && !m.deletedAt)
+    .filter((m) => m.spendExpenseId === spendExpenseId)
     .sort((a, b) => a.substring.localeCompare(b.substring))
 }
 

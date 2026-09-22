@@ -10,11 +10,11 @@ src/
   main.tsx / index.css               — entry point
   hooks/
     useHashRoute.ts                  — hash-based route hook
-    useGlobalCategories.ts            — global category/mapping/account-rule hydrate, persist, Drive sync hook
+    useGlobalCategories.ts            — global category/account-rule hydrate, persist, Drive sync hook
   lib/
     types.ts                         — domain model (Portfolio, Account, Position, Transaction, ...)
     state.ts / reducer.ts            — AppState + useReducer action helpers/dispatch table; per-portfolio applied account-convention markers
-    categoryStore.ts / categoryMerge.ts / categoryPersist.ts / categoryDrive.ts / categoryMigration.ts — global categories, mappings, and account sign rules
+    categoryStore.ts / categoryMerge.ts / categoryPersist.ts / categoryDrive.ts — global categories and account sign rules; retained legacy mappings for migration cleanup
     portfolioRegistry.ts             — portfolio CRUD + legacy-db migration (own IndexedDB)
     router.ts                        — hash parse/navigate helpers
     persist.ts                       — per-portfolio IndexedDB read/write/encrypt
@@ -31,7 +31,7 @@ src/
     *.test.ts                        — one colocated test file per module
     design.md                        — drive.ts-focused module doc (see header note)
   components/
-    PortfolioPicker.tsx              — portfolio create/rename/delete/open UI and category-mapping settings
+    PortfolioPicker.tsx              — portfolio create/rename/delete/open UI
     ManageCategoriesPage.tsx         — standalone global category management page
     Nav.tsx                          — left rail: view, sync, settings, portfolio-exit controls; period-only top-bar strip
     PasswordGate.tsx                 — password set/enter screens (portfolio-scoped Drive props)
@@ -57,7 +57,7 @@ src/
 - `src/lib/reducer.ts`: thin `appReducer(state, action)` dispatch table — each `case` calls one `state.ts` helper. No logic lives directly in the reducer or in components.
 - Full `AppState` field list, invariants, and per-field types: see `src/lib/types.ts` and `src/lib/state.ts` (not duplicated here).
 - Budget income is derived in `selectors.ts` from active exact normalized `Income` categories, expense definitions, and budget transactions. No manual income state is persisted or exported.
-- `GlobalCategoryState = { categories: Category[]; categoryMappings: CategoryMapping[]; budgetAccountRules: BudgetAccountRule[] }` is global across portfolios. `useGlobalCategories` hydrates it, saves edits to its own IndexedDB store (500ms debounce), merges initial/polled/manual Drive data with `mergeCategoryState`, immediately pushes connected local edits to shared unencrypted `category-mappings.json`, and returns visible records plus `dispatch`, `hydrated`, and `syncNow`.
+- `GlobalCategoryState = { categories: Category[]; budgetAccountRules: BudgetAccountRule[] }` is global across portfolios. `AppState.categoryMappings: CategoryMapping[]` is encrypted and portfolio-scoped; mapping actions dispatch through `appReducer` and reapply that portfolio's transactions internally. `useGlobalCategories` hydrates global state, saves edits to its own IndexedDB store (500ms debounce), merges initial/polled/manual Drive data with `mergeCategoryState`, immediately pushes connected local edits to shared unencrypted `category-mappings.json`, and returns visible records plus `dispatch`, `hydrated`, and `syncNow`.
 - `budgetAccountAppliedConventions: Record<string, StatementConvention>` remains per-portfolio `AppState` data. Budget imports require an account, canonicalize its name/sign before import dedup, and persist the applied convention marker even when all rows dedup. `App.tsx` reconciles markers/rules before shell render after hydrate and after global-rule changes; the Budget Accounts tab confirms then reconciles local changes immediately. Parsers are unchanged.
 
 ## Portfolio Routing Layer (multi-portfolio)
@@ -111,7 +111,7 @@ App.tsx
          ├─ RailNav (view items Budget/Positions/Register/Quotes; Sync above Settings when connected or syncing; Settings second-to-last; Switch portfolio last with amber exit fill)
         ├─ TopBar (period-control-only strip; blank outside Budget)
         ├─ desktop content shell offsets 76px for the fixed left rail; at <=480px the rail moves to the bottom and the offset is removed
-         ├─ state.view === 'budget'    → BudgetPage (App-owned Expenses/Spend/Analytics period and Spend scope; receives hydrated global categories, mappings, and account rules)
+         ├─ state.view === 'budget'    → BudgetPage (App-owned Expenses/Spend/Analytics period and Spend scope; receives hydrated global categories and account rules; mappings come from AppState)
         ├─ state.view === 'accounts'  → AccountsPage
         ├─ state.view === 'register'  → RegisterPage
         ├─ state.view === 'quotes'    → QuotesPage

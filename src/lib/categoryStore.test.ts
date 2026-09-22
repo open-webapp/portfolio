@@ -5,13 +5,8 @@ import {
   renameCategory,
   setCategoryExcludeFromSpend,
   deleteCategory,
-  upsertCategoryMapping,
-  updateCategoryMapping,
-  addCategoryMapping,
-  deleteCategoryMapping,
   resolveSpendExpenseIdForDescription,
   visibleCategories,
-  visibleMappings,
   configureBudgetAccountRule,
   deleteBudgetAccountRule,
   visibleBudgetAccountRules,
@@ -81,97 +76,6 @@ describe('categoryStore', () => {
     })
   })
 
-  describe('upsertCategoryMapping', () => {
-    it('creates a new mapping for a new description', () => {
-      const s = initialGlobalCategoryState()
-      const updated = upsertCategoryMapping(s, 'Costco', 'exp-1')
-      expect(updated.categoryMappings).toHaveLength(1)
-      expect(updated.categoryMappings[0]).toMatchObject({ substring: 'Costco', spendExpenseId: 'exp-1' })
-    })
-
-    it('matches an existing mapping case-insensitively and updates it instead of duplicating', () => {
-      const s = initialGlobalCategoryState()
-      const first = upsertCategoryMapping(s, 'Costco', 'exp-1')
-      const firstMapping = first.categoryMappings[0]
-      const second = upsertCategoryMapping(first, 'COSTCO', 'exp-2')
-      expect(second.categoryMappings).toHaveLength(1)
-      expect(second.categoryMappings[0].id).toBe(firstMapping.id)
-      expect(second.categoryMappings[0].spendExpenseId).toBe('exp-2')
-    })
-
-    it('is a no-op for a blank/whitespace-only description', () => {
-      const s = initialGlobalCategoryState()
-      const updated = upsertCategoryMapping(s, '   ', 'exp-1')
-      expect(updated).toEqual(s)
-    })
-
-    it('does not let a tombstoned mapping with the same substring block a fresh create', () => {
-      const tombstoned: CategoryMapping = {
-        id: 'map-old',
-        substring: 'Costco',
-        spendExpenseId: 'exp-1',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-        deletedAt: '2026-01-02T00:00:00.000Z',
-      }
-      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categoryMappings: [tombstoned] }
-      const updated = upsertCategoryMapping(s, 'Costco', 'exp-2')
-      expect(updated.categoryMappings).toHaveLength(2)
-      const fresh = updated.categoryMappings.find((m) => m.id !== 'map-old')
-      expect(fresh).toMatchObject({ substring: 'Costco', spendExpenseId: 'exp-2' })
-      expect(fresh?.deletedAt).toBeUndefined()
-    })
-  })
-
-  describe('updateCategoryMapping', () => {
-    it('patches an existing mapping by id', () => {
-      const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categoryMappings: [mapping] }
-      const updated = updateCategoryMapping(s, 'map-1', { spendExpenseId: 'exp-2' })
-      expect(updated.categoryMappings[0].spendExpenseId).toBe('exp-2')
-      expect(updated.categoryMappings[0].substring).toBe('Costco')
-      expect(updated.categoryMappings[0].updatedAt).not.toBe(mapping.updatedAt)
-    })
-
-    it('is a no-op when the id is unknown', () => {
-      const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categoryMappings: [mapping] }
-      const updated = updateCategoryMapping(s, 'map-nope', { spendExpenseId: 'exp-2' })
-      expect(updated.categoryMappings).toEqual([mapping])
-    })
-  })
-
-  describe('addCategoryMapping', () => {
-    it('appends a new mapping', () => {
-      const s = initialGlobalCategoryState()
-      const updated = addCategoryMapping(s, 'exp-1', 'Costco')
-      expect(updated.categoryMappings).toHaveLength(1)
-      expect(updated.categoryMappings[0]).toMatchObject({ substring: 'Costco', spendExpenseId: 'exp-1' })
-    })
-
-    it('is a no-op for a blank/whitespace-only substring', () => {
-      const s = initialGlobalCategoryState()
-      const updated = addCategoryMapping(s, 'exp-1', '   ')
-      expect(updated).toEqual(s)
-    })
-  })
-
-  describe('deleteCategoryMapping', () => {
-    it('stamps both deletedAt and updatedAt', () => {
-      const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categoryMappings: [mapping] }
-      const updated = deleteCategoryMapping(s, 'map-1')
-      expect(updated.categoryMappings[0].deletedAt).toBeTruthy()
-      expect(updated.categoryMappings[0].updatedAt).toBe(updated.categoryMappings[0].deletedAt)
-    })
-
-    it('is a no-op when the id is unknown', () => {
-      const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categoryMappings: [mapping] }
-      const updated = deleteCategoryMapping(s, 'map-nope')
-      expect(updated).toEqual(s)
-    })
-  })
-
   describe('resolveSpendExpenseIdForDescription', () => {
     it('returns the spendExpenseId for a single match', () => {
       const mappings: CategoryMapping[] = [
@@ -202,13 +106,6 @@ describe('categoryStore', () => {
       expect(resolveSpendExpenseIdForDescription(mappings, 'Whole Foods Market #42')).toBe('exp-newer')
     })
 
-    it('ignores a tombstoned mapping even if it would otherwise win on updatedAt', () => {
-      const mappings: CategoryMapping[] = [
-        { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-older', updatedAt: '2026-01-01T00:00:00.000Z' },
-        { id: 'map-2', substring: 'Costco', spendExpenseId: 'exp-tombstoned-newer', updatedAt: '2026-06-01T00:00:00.000Z', deletedAt: '2026-06-02T00:00:00.000Z' },
-      ]
-      expect(resolveSpendExpenseIdForDescription(mappings, 'Costco Gas')).toBe('exp-older')
-    })
   })
 
   describe('budget account rules', () => {
@@ -269,20 +166,15 @@ describe('categoryStore', () => {
     })
   })
 
-  describe('visibleCategories / visibleMappings', () => {
+  describe('visibleCategories', () => {
     it('filters out tombstoned records and preserves order', () => {
       const categories: Category[] = [
         { id: 'cat-1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
         { id: 'cat-2', name: 'Deleted', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: '2026-01-02T00:00:00.000Z' },
         { id: 'cat-3', name: 'Dining', updatedAt: '2026-01-01T00:00:00.000Z' },
       ]
-      const mappings: CategoryMapping[] = [
-        { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
-        { id: 'map-2', substring: 'Deleted', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: '2026-01-02T00:00:00.000Z' },
-      ]
-      const s: GlobalCategoryState = { categories, categoryMappings: mappings, budgetAccountRules: [] }
+      const s: GlobalCategoryState = { categories, budgetAccountRules: [] }
       expect(visibleCategories(s)).toEqual([categories[0], categories[2]])
-      expect(visibleMappings(s)).toEqual([mappings[0]])
     })
   })
 
@@ -319,6 +211,22 @@ describe('categoryStore', () => {
       const twice = reapplyMappingsToTransactions(once, mappings, budgetExpenseDefinitions)
 
       expect(twice).toEqual(once)
+    })
+
+    it('uses the latest-updated mapping when multiple substrings match', () => {
+      const mappings: CategoryMapping[] = [
+        { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-older', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'map-2', substring: 'Costco Gas', spendExpenseId: 'exp-newer', updatedAt: '2026-06-01T00:00:00.000Z' },
+      ]
+      const definitions: ExpenseDefinition[] = [
+        { id: 'exp-older', name: 'Groceries', categoryId: 'cat-groceries', frequency: 'monthly' },
+        { id: 'exp-newer', name: 'Fuel', categoryId: 'cat-fuel', frequency: 'monthly' },
+      ]
+      const transaction: BudgetTransaction = { id: 'tx-1', date: '2026-01-01', description: 'Costco Gas', categoryId: 'cat-old', amount: 40 }
+
+      expect(reapplyMappingsToTransactions([transaction], mappings, definitions)).toEqual([
+        { ...transaction, categoryId: 'cat-fuel', spendExpenseId: 'exp-newer' },
+      ])
     })
 
     // Note: mappings are keyed by spendExpenseId (not categoryId) since the T2 rekey, so
@@ -461,75 +369,11 @@ describe('categoryStore', () => {
       expect(updated.categories[0].deletedAt).toBeTruthy()
     })
 
-    it('UPSERT_CATEGORY_MAPPING creates a mapping', () => {
-      const updated = categoryStoreReducer(initialGlobalCategoryState(), { type: 'UPSERT_CATEGORY_MAPPING', description: 'Costco', spendExpenseId: 'exp-1' })
-      expect(updated.categoryMappings).toHaveLength(1)
-    })
-
-    it('UPDATE_CATEGORY_MAPPING patches a mapping', () => {
-      const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categoryMappings: [mapping] }
-      const updated = categoryStoreReducer(s, { type: 'UPDATE_CATEGORY_MAPPING', id: 'map-1', patch: { spendExpenseId: 'exp-2' } })
-      expect(updated.categoryMappings[0].spendExpenseId).toBe('exp-2')
-    })
-
-    it('ADD_CATEGORY_MAPPING appends a mapping', () => {
-      const updated = categoryStoreReducer(initialGlobalCategoryState(), { type: 'ADD_CATEGORY_MAPPING', spendExpenseId: 'exp-1', substring: 'Costco' })
-      expect(updated.categoryMappings).toHaveLength(1)
-    })
-
-    it('DELETE_CATEGORY_MAPPING tombstones a mapping', () => {
-      const mapping: CategoryMapping = { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' }
-      const s: GlobalCategoryState = { ...initialGlobalCategoryState(), categoryMappings: [mapping] }
-      const updated = categoryStoreReducer(s, { type: 'DELETE_CATEGORY_MAPPING', id: 'map-1' })
-      expect(updated.categoryMappings[0].deletedAt).toBeTruthy()
-    })
-
-    describe('DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE', () => {
-      it('removes all matching mappings and leaves others untouched', () => {
-        const s: GlobalCategoryState = {
-          ...initialGlobalCategoryState(),
-          categoryMappings: [
-            { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
-            { id: 'map-2', substring: 'Costco Gas', spendExpenseId: 'exp-1', updatedAt: '2026-01-02T00:00:00.000Z' },
-            { id: 'map-3', substring: 'Netflix', spendExpenseId: 'exp-2', updatedAt: '2026-01-03T00:00:00.000Z' },
-          ],
-        }
-        const updated = categoryStoreReducer(s, { type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE', spendExpenseId: 'exp-1' })
-        expect(updated.categoryMappings).toEqual([s.categoryMappings[2]])
-      })
-
-      it('is a no-op when no mappings match', () => {
-        const s: GlobalCategoryState = {
-          ...initialGlobalCategoryState(),
-          categoryMappings: [
-            { id: 'map-1', substring: 'Netflix', spendExpenseId: 'exp-2', updatedAt: '2026-01-01T00:00:00.000Z' },
-          ],
-        }
-        const updated = categoryStoreReducer(s, { type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE', spendExpenseId: 'exp-1' })
-        expect(updated).toEqual(s)
-      })
-
-      it('is a no-op on unknown spendExpenseId', () => {
-        const s: GlobalCategoryState = {
-          ...initialGlobalCategoryState(),
-          categoryMappings: [
-            { id: 'map-1', substring: 'Costco', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
-          ],
-        }
-        const updated = categoryStoreReducer(s, { type: 'DELETE_CATEGORY_MAPPINGS_FOR_EXPENSE', spendExpenseId: 'exp-unknown' })
-        expect(updated).toEqual(s)
-      })
-    })
-
     it('__MERGE_IMPORTED merges the imported state in via mergeCategoryState (newer updatedAt wins per id, unique ids pass through)', () => {
       const s: GlobalCategoryState = {
         categories: [
           { id: 'c1', name: 'A-Groceries', updatedAt: '2024-01-05T00:00:00.000Z' },
           { id: 'c3', name: 'A-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
-        ],
-        categoryMappings: [
-          { id: 'm1', substring: 'walmart', spendExpenseId: 'exp-1', updatedAt: '2024-01-01T00:00:00.000Z' },
         ],
         budgetAccountRules: [],
       }
@@ -537,10 +381,6 @@ describe('categoryStore', () => {
         categories: [
           { id: 'c1', name: 'B-Groceries', updatedAt: '2024-01-02T00:00:00.000Z' },
           { id: 'c4', name: 'B-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
-        ],
-        categoryMappings: [
-          { id: 'm1', substring: 'walmart-b', spendExpenseId: 'exp-1', updatedAt: '2024-01-09T00:00:00.000Z' },
-          { id: 'm2', substring: 'costco', spendExpenseId: 'exp-2', updatedAt: '2024-01-01T00:00:00.000Z' },
         ],
         budgetAccountRules: [],
       }
@@ -554,13 +394,6 @@ describe('categoryStore', () => {
         ])
       )
       expect(updated.categories).toHaveLength(3)
-      expect(updated.categoryMappings).toEqual(
-        expect.arrayContaining([
-          { id: 'm1', substring: 'walmart-b', spendExpenseId: 'exp-1', updatedAt: '2024-01-09T00:00:00.000Z' },
-          { id: 'm2', substring: 'costco', spendExpenseId: 'exp-2', updatedAt: '2024-01-01T00:00:00.000Z' },
-        ])
-      )
-      expect(updated.categoryMappings).toHaveLength(2)
     })
   })
 

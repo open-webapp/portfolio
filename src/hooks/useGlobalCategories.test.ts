@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useGlobalCategories } from './useGlobalCategories'
-import type { GlobalCategoryState } from '../lib/categoryStore'
 
 const mockLoadGlobalCategoryState = vi.fn()
 const mockSaveGlobalCategoryState = vi.fn()
@@ -27,13 +26,7 @@ vi.mock('../lib/categoryDrive', () => ({
   getGlobalCategoriesModifiedTime: (...args: unknown[]) => mockGetGlobalCategoriesModifiedTime(...args),
 }))
 
-const mockSeedGlobalCategoriesIfNeeded = vi.fn()
-
-vi.mock('../lib/categoryMigration', () => ({
-  seedGlobalCategoriesIfNeeded: (...args: unknown[]) => mockSeedGlobalCategoriesIfNeeded(...args),
-}))
-
-const emptyState = (): GlobalCategoryState => ({ categories: [], categoryMappings: [], budgetAccountRules: [] })
+const emptyState = () => ({ categories: [], budgetAccountRules: [] })
 
 const rule = {
   id: 'r1',
@@ -56,7 +49,6 @@ describe('useGlobalCategories', () => {
     mockPullGlobalCategoriesFromDrive.mockReset().mockResolvedValue(null)
     mockPushGlobalCategoriesToDrive.mockReset().mockResolvedValue(undefined)
     mockGetGlobalCategoriesModifiedTime.mockReset().mockResolvedValue(null)
-    mockSeedGlobalCategoriesIfNeeded.mockReset().mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -64,9 +56,8 @@ describe('useGlobalCategories', () => {
   })
 
   it('starts empty and reflects hydrated state once loaded', async () => {
-    const fixture: GlobalCategoryState = {
+    const fixture = {
       categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
-      categoryMappings: [],
       budgetAccountRules: [],
     }
     mockLoadGlobalCategoryState.mockResolvedValue(fixture)
@@ -111,6 +102,7 @@ describe('useGlobalCategories', () => {
         budgetAccountRules: [],
       })
     )
+    expect('categoryMappings' in mockSaveGlobalCategoryState.mock.calls[0][0]).toBe(false)
   })
 
   it('pushes to drive immediately when connected, without waiting for the debounce', async () => {
@@ -138,6 +130,7 @@ describe('useGlobalCategories', () => {
       expect.objectContaining({ budgetAccountRules: [] }),
       undefined
     )
+    expect('categoryMappings' in mockPushGlobalCategoriesToDrive.mock.calls[0][2]).toBe(false)
   })
 
   it('includes dispatched rules in local saves and Drive pushes', async () => {
@@ -154,7 +147,7 @@ describe('useGlobalCategories', () => {
     act(() => {
       result.current.dispatch({
         type: '__REPLACE',
-        state: { categories: [], categoryMappings: [], budgetAccountRules: [rule] },
+        state: { categories: [], budgetAccountRules: [rule] },
       })
     })
 
@@ -171,7 +164,7 @@ describe('useGlobalCategories', () => {
     )
   })
 
-  it('exposes an empty rules list when hydrating legacy state', async () => {
+  it('ignores a legacy categoryMappings key when hydrating state', async () => {
     mockLoadGlobalCategoryState.mockResolvedValue({ categories: [], categoryMappings: [] })
 
     const { result } = renderHook(() => useGlobalCategories(null, false, null))
@@ -181,6 +174,7 @@ describe('useGlobalCategories', () => {
     })
 
     expect(result.current.budgetAccountRules).toEqual([])
+    expect('categoryMappings' in result.current).toBe(false)
   })
 
   it('never pushes to drive when not connected', async () => {
@@ -203,16 +197,14 @@ describe('useGlobalCategories', () => {
   })
 
   it('runs an initial pull+merge exactly once when driveConnected flips true post-hydrate', async () => {
-    const localFixture: GlobalCategoryState = {
+    const localFixture = {
       categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
-      categoryMappings: [],
       budgetAccountRules: [],
     }
     mockLoadGlobalCategoryState.mockResolvedValue(localFixture)
 
-    const remoteFixture: GlobalCategoryState = {
+    const remoteFixture = {
       categories: [{ id: 'c1', name: 'Groceries (renamed)', updatedAt: '2026-02-01T00:00:00.000Z' }],
-      categoryMappings: [],
       budgetAccountRules: [],
     }
     mockPullGlobalCategoriesFromDrive.mockResolvedValue(remoteFixture)
@@ -271,7 +263,6 @@ describe('useGlobalCategories', () => {
     mockGetGlobalCategoriesModifiedTime.mockResolvedValue('2026-03-01T00:00:00.000Z')
     mockPullGlobalCategoriesFromDrive.mockResolvedValue({
       categories: [{ id: 'c2', name: 'From poll', updatedAt: '2026-03-01T00:00:00.000Z' }],
-      categoryMappings: [],
       budgetAccountRules: [],
     })
 
@@ -303,7 +294,7 @@ describe('useGlobalCategories', () => {
   })
 
   it('retains local rules when a poll cannot load remote state', async () => {
-    mockLoadGlobalCategoryState.mockResolvedValue({ categories: [], categoryMappings: [], budgetAccountRules: [rule] })
+    mockLoadGlobalCategoryState.mockResolvedValue({ categories: [], budgetAccountRules: [rule] })
     mockGetLastKnownRemoteModifiedTime.mockResolvedValue('2026-01-01T00:00:00.000Z')
     mockGetGlobalCategoriesModifiedTime.mockResolvedValue('2026-03-01T00:00:00.000Z')
     mockPullGlobalCategoriesFromDrive.mockResolvedValue(null)
@@ -320,17 +311,16 @@ describe('useGlobalCategories', () => {
     expect(result.current.budgetAccountRules).toEqual([rule])
   })
 
-  it('(bug-reveal) never pushes to Drive before the initial pull has resolved, so it cannot clobber a remote-only mapping', async () => {
-    const localFixture: GlobalCategoryState = {
+  it('(bug-reveal) never pushes to Drive before the initial pull has resolved, so it cannot clobber a remote-only category', async () => {
+    const localFixture = {
       categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
-      categoryMappings: [],
       budgetAccountRules: [],
     }
     mockLoadGlobalCategoryState.mockResolvedValue(localFixture)
 
     // The pull is slow (e.g. a real network round-trip) and resolves with a
-    // mapping that only exists on Drive, added by another browser.
-    let resolvePull: (v: GlobalCategoryState) => void
+    // category that only exists on Drive, added by another browser.
+    let resolvePull: (v: unknown) => void
     mockPullGlobalCategoriesFromDrive.mockImplementation(
       () => new Promise((resolve) => { resolvePull = resolve })
     )
@@ -345,13 +335,12 @@ describe('useGlobalCategories', () => {
 
     // Pull is in flight but hasn't resolved yet — the push effect must NOT
     // have fired, or it would overwrite Drive with local-only data and
-    // permanently lose the remote mapping the pull is about to bring in.
+    // permanently lose the remote category the pull is about to bring in.
     expect(mockPushGlobalCategoriesToDrive).not.toHaveBeenCalled()
 
     await act(async () => {
       resolvePull!({
-        categories: localFixture.categories,
-        categoryMappings: [{ id: 'm1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-1', updatedAt: '2026-03-01T00:00:00.000Z' }],
+        categories: [...localFixture.categories, { id: 'c2', name: 'Dining', updatedAt: '2026-03-01T00:00:00.000Z' }],
         budgetAccountRules: [],
       })
       await Promise.resolve()
@@ -362,9 +351,7 @@ describe('useGlobalCategories', () => {
     expect(mockPushGlobalCategoriesToDrive).toHaveBeenCalledWith(
       fakeDriveAuth,
       'proj-1',
-      expect.objectContaining({
-        categoryMappings: expect.arrayContaining([expect.objectContaining({ substring: 'WHOLE FOODS' })]),
-      }),
+      expect.objectContaining({ categories: expect.arrayContaining([expect.objectContaining({ id: 'c2' })]) }),
       undefined
     )
   })
@@ -437,7 +424,7 @@ describe('useGlobalCategories', () => {
   })
 
   it('retains local state when pulling an invalid shared file ID fails', async () => {
-    mockLoadGlobalCategoryState.mockResolvedValue({ categories: [], categoryMappings: [], budgetAccountRules: [rule] })
+    mockLoadGlobalCategoryState.mockResolvedValue({ categories: [], budgetAccountRules: [rule] })
     mockGetSharedCategoryDriveFileId.mockResolvedValue('stale-file')
     mockPullGlobalCategoriesFromDrive.mockResolvedValue(null)
 
@@ -453,9 +440,8 @@ describe('useGlobalCategories', () => {
   })
 
   it('retains the picker-saved local state when a revoked shared-file poll is swallowed by the Drive layer', async () => {
-    const pickerSavedState: GlobalCategoryState = {
+    const pickerSavedState = {
       categories: [{ id: 'shared-category', name: 'Shared category', updatedAt: '2026-03-01T00:00:00.000Z' }],
-      categoryMappings: [{ id: 'shared-mapping', substring: 'MARKET', spendExpenseId: 'expense-1', updatedAt: '2026-03-01T00:00:00.000Z' }],
       budgetAccountRules: [],
     }
     mockLoadGlobalCategoryState.mockResolvedValue(pickerSavedState)
@@ -479,13 +465,11 @@ describe('useGlobalCategories', () => {
 
     expect(mockGetGlobalCategoriesModifiedTime).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-1')
     expect(result.current.categories).toEqual(pickerSavedState.categories)
-    expect(result.current.categoryMappings).toEqual(pickerSavedState.categoryMappings)
   })
 
   it('hydrates the picker-saved state before merging the same shared file without a duplicate local save', async () => {
-    const pickerSavedState: GlobalCategoryState = {
+    const pickerSavedState = {
       categories: [{ id: 'shared-category', name: 'Shared category', updatedAt: '2026-03-01T00:00:00.000Z' }],
-      categoryMappings: [{ id: 'shared-mapping', substring: 'MARKET', spendExpenseId: 'expense-1', updatedAt: '2026-03-01T00:00:00.000Z' }],
       budgetAccountRules: [],
     }
     mockLoadGlobalCategoryState.mockResolvedValue(pickerSavedState)
@@ -501,17 +485,15 @@ describe('useGlobalCategories', () => {
       await Promise.resolve()
     })
 
-    expect(mockLoadGlobalCategoryState).toHaveBeenCalledWith([])
+    expect(mockLoadGlobalCategoryState).toHaveBeenCalledWith()
     expect(mockPullGlobalCategoriesFromDrive).toHaveBeenCalledWith(fakeDriveAuth, 'proj-1', 'shared-file-1')
     expect(result.current.categories).toEqual(pickerSavedState.categories)
-    expect(result.current.categoryMappings).toEqual(pickerSavedState.categoryMappings)
     expect(mockSaveGlobalCategoryState).toHaveBeenCalledTimes(1)
   })
 
-  it('syncNow pulls+merges remote mappings on demand, for use after a manual Drive sync', async () => {
-    const localFixture: GlobalCategoryState = {
+  it('syncNow pulls+merges remote categories on demand, for use after a manual Drive sync', async () => {
+    const localFixture = {
       categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
-      categoryMappings: [],
       budgetAccountRules: [],
     }
     mockLoadGlobalCategoryState.mockResolvedValue(localFixture)
@@ -525,14 +507,11 @@ describe('useGlobalCategories', () => {
     })
     expect(result.current.hydrated).toBe(true)
 
-    // Initial pull already ran (and found nothing new) — simulate a mapping
+    // Initial pull already ran (and found nothing new) — simulate a category
     // that landed on Drive from another browser since then.
     mockPullGlobalCategoriesFromDrive.mockClear()
     mockPullGlobalCategoriesFromDrive.mockResolvedValue({
-      categories: [{ id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' }],
-      categoryMappings: [
-        { id: 'm1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-1', updatedAt: '2026-03-01T00:00:00.000Z' },
-      ],
+      categories: [{ id: 'c1', name: 'Food', updatedAt: '2026-03-01T00:00:00.000Z' }],
       budgetAccountRules: [],
     })
 
@@ -540,25 +519,14 @@ describe('useGlobalCategories', () => {
       await result.current.syncNow()
     })
 
-    expect(result.current.categoryMappings).toHaveLength(1)
-    expect(result.current.categoryMappings[0].substring).toBe('WHOLE FOODS')
+    expect(result.current.categories[0].name).toBe('Food')
   })
 
-  it('excludes tombstoned categories and mappings from hook output', async () => {
-    const fixture: GlobalCategoryState = {
+  it('excludes tombstoned categories from hook output', async () => {
+    const fixture = {
       categories: [
         { id: 'c1', name: 'Groceries', updatedAt: '2026-01-01T00:00:00.000Z' },
         { id: 'c2', name: 'Deleted Cat', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: '2026-01-02T00:00:00.000Z' },
-      ],
-      categoryMappings: [
-        { id: 'm1', substring: 'WHOLE FOODS', spendExpenseId: 'exp-1', updatedAt: '2026-01-01T00:00:00.000Z' },
-        {
-          id: 'm2',
-          substring: 'OLD STORE',
-          spendExpenseId: 'exp-2',
-          updatedAt: '2026-01-01T00:00:00.000Z',
-          deletedAt: '2026-01-02T00:00:00.000Z',
-        },
       ],
       budgetAccountRules: [],
     }
@@ -572,7 +540,5 @@ describe('useGlobalCategories', () => {
 
     expect(result.current.categories).toHaveLength(1)
     expect(result.current.categories[0].id).toBe('c1')
-    expect(result.current.categoryMappings).toHaveLength(1)
-    expect(result.current.categoryMappings[0].id).toBe('m1')
   })
 })

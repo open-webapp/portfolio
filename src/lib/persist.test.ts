@@ -13,4 +13,10 @@ describe('budget persistence migration', () => {
   it('defaults missing budget account convention markers from old blobs', () => {
     expect(coalesceWithDefaults({ budgetTransactions: [] }).budgetAccountAppliedConventions).toEqual({})
   })
+
+  it('defaults missing category mappings while preserving an existing empty collection', () => {
+    expect(coalesceWithDefaults({}).categoryMappings).toEqual([])
+    expect(coalesceWithDefaults({ categoryMappings: [] }).categoryMappings).toEqual([])
+  })
+
 })

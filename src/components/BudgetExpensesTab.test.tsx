@@ -25,17 +25,20 @@ const categories: Category[] = [
 ]
 
 function renderTab(state: AppState, actions: AppAction[] = []) {
+  let currentState = state
+
   function Harness() {
-    const [currentState, reducerDispatch] = useReducer(appReducer, state)
+    const [renderedState, reducerDispatch] = useReducer(appReducer, state)
+    currentState = renderedState
     const dispatch = (action: AppAction) => {
       actions.push(action)
       reducerDispatch(action)
     }
 
-    return <BudgetExpensesTab state={currentState} dispatch={dispatch} categories={categories} categoryDispatch={() => undefined} />
+    return <BudgetExpensesTab state={renderedState} dispatch={dispatch} categories={categories} categoryDispatch={() => undefined} />
   }
 
-  return render(<Harness />)
+  return { ...render(<Harness />), getState: () => currentState }
 }
 
 function downloaded() {
@@ -158,6 +161,41 @@ describe('BudgetExpensesTab expense downloads', () => {
       `Name,Category,Frequency,${year}\r\nUtility,Bills,Monthly,10\r\n`,
       expect.stringMatching(/^expenses-\d{4}-\d{2}-\d{2}\.csv$/)
     )
+  })
+})
+
+describe('BudgetExpensesTab expense deletion', () => {
+  it('dispatches once and cascades matching category mappings from the resulting state', () => {
+    const actions: AppAction[] = []
+    const view = renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' }],
+      categoryMappings: [
+        { id: 'rent-map', substring: 'landlord', spendExpenseId: 'rent', updatedAt: '' },
+        { id: 'food-map', substring: 'market', spendExpenseId: 'groceries', updatedAt: '' },
+      ],
+    }, actions)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete expense' }))
+
+    expect(actions).toEqual([{ type: 'DELETE_EXPENSE_DEFINITION', id: 'rent' }])
+    expect(view.getState().categoryMappings).toEqual([
+      { id: 'food-map', substring: 'market', spendExpenseId: 'groceries', updatedAt: '' },
+    ])
+  })
+
+  it('dispatches once when the definition has no category mappings', () => {
+    const actions: AppAction[] = []
+    renderTab({
+      ...initialState(),
+      budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' }],
+    }, actions)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete expense' }))
+
+    expect(actions).toEqual([{ type: 'DELETE_EXPENSE_DEFINITION', id: 'rent' }])
   })
 })
 

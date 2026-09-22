@@ -3,7 +3,7 @@ import { mergeCategoryState } from './categoryMerge'
 import type { GlobalCategoryState } from './categoryStore'
 
 function state(partial: Partial<GlobalCategoryState>): GlobalCategoryState {
-  return { categories: [], categoryMappings: [], budgetAccountRules: [], ...partial }
+  return { categories: [], budgetAccountRules: [], ...partial }
 }
 
 type BudgetAccountRule = GlobalCategoryState['budgetAccountRules'][number]
@@ -75,54 +75,11 @@ describe('mergeCategoryState', () => {
     expect(merged2.categories).toEqual(b.categories)
   })
 
-  it('merges both categories and categoryMappings in one call', () => {
-    const a = state({
-      categories: [
-        { id: 'c1', name: 'A-Groceries', updatedAt: '2024-01-05T00:00:00.000Z' },
-        { id: 'c3', name: 'A-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
-      ],
-      categoryMappings: [
-        { id: 'm1', substring: 'walmart', spendExpenseId: 'exp-1', updatedAt: '2024-01-01T00:00:00.000Z' },
-      ],
-    })
-    const b = state({
-      categories: [
-        { id: 'c1', name: 'B-Groceries', updatedAt: '2024-01-02T00:00:00.000Z' },
-        { id: 'c4', name: 'B-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
-      ],
-      categoryMappings: [
-        { id: 'm1', substring: 'walmart-b', spendExpenseId: 'exp-1', updatedAt: '2024-01-09T00:00:00.000Z' },
-        { id: 'm2', substring: 'costco', spendExpenseId: 'exp-4', updatedAt: '2024-01-01T00:00:00.000Z' },
-      ],
-    })
-    const merged = mergeCategoryState(a, b)
-
-    expect(merged.categories).toEqual(
-      expect.arrayContaining([
-        { id: 'c1', name: 'A-Groceries', updatedAt: '2024-01-05T00:00:00.000Z' },
-        { id: 'c3', name: 'A-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
-        { id: 'c4', name: 'B-only-cat', updatedAt: '2024-01-01T00:00:00.000Z' },
-      ])
-    )
-    expect(merged.categories).toHaveLength(3)
-
-    expect(merged.categoryMappings).toEqual(
-      expect.arrayContaining([
-        { id: 'm1', substring: 'walmart-b', spendExpenseId: 'exp-1', updatedAt: '2024-01-09T00:00:00.000Z' },
-        { id: 'm2', substring: 'costco', spendExpenseId: 'exp-4', updatedAt: '2024-01-01T00:00:00.000Z' },
-      ])
-    )
-    expect(merged.categoryMappings).toHaveLength(2)
-  })
-
-  it('merges rules by LWW and tombstone precedence without regressing categories or mappings in the same call', () => {
+  it('merges rules by LWW and tombstone precedence without regressing categories', () => {
     const local = state({
       categories: [
         { id: 'category-shared', name: 'Local category', updatedAt: '2026-01-03T00:00:00.000Z' },
         { id: 'category-local', name: 'Local only', updatedAt: '2026-01-01T00:00:00.000Z' },
-      ],
-      categoryMappings: [
-        { id: 'mapping-shared', substring: 'local', spendExpenseId: 'expense-local', updatedAt: '2026-01-01T00:00:00.000Z' },
       ],
       budgetAccountRules: [
         rule('checking', '2026-01-01T00:00:00.000Z', { statementConvention: 'negativeSpend' }),
@@ -133,10 +90,6 @@ describe('mergeCategoryState', () => {
       categories: [
         { id: 'category-shared', name: 'Remote category', updatedAt: '2026-01-02T00:00:00.000Z' },
         { id: 'category-remote', name: 'Remote only', updatedAt: '2026-01-01T00:00:00.000Z' },
-      ],
-      categoryMappings: [
-        { id: 'mapping-shared', substring: 'remote', spendExpenseId: 'expense-remote', updatedAt: '2026-01-05T00:00:00.000Z' },
-        { id: 'mapping-remote', substring: 'remote only', spendExpenseId: 'expense-remote', updatedAt: '2026-01-01T00:00:00.000Z' },
       ],
       budgetAccountRules: [
         rule('checking', '2026-01-03T00:00:00.000Z', { statementConvention: 'positiveSpend' }),
@@ -149,9 +102,6 @@ describe('mergeCategoryState', () => {
 
     expect(merged.categories).toEqual(expect.arrayContaining([
       local.categories[0], local.categories[1], remote.categories[1],
-    ]))
-    expect(merged.categoryMappings).toEqual(expect.arrayContaining([
-      remote.categoryMappings[0], remote.categoryMappings[1],
     ]))
     expect(merged.budgetAccountRules).toEqual(expect.arrayContaining([
       remote.budgetAccountRules[0], local.budgetAccountRules[1], remote.budgetAccountRules[2],
@@ -204,9 +154,18 @@ describe('mergeCategoryState', () => {
   it('treats malformed or missing budget account rule arrays as empty', () => {
     const valid = rule('checking', '2024-01-01T00:00:00.000Z', { sign: 1 })
     const malformed = state({ budgetAccountRules: undefined as unknown as BudgetAccountRule[] })
-    const missing = { categories: [], categoryMappings: [] } as GlobalCategoryState
+    const missing = { categories: [] } as GlobalCategoryState
 
     expect(mergeCategoryState(malformed, state({ budgetAccountRules: [valid] })).budgetAccountRules).toEqual([valid])
     expect(mergeCategoryState(state({ budgetAccountRules: [valid] }), missing).budgetAccountRules).toEqual([valid])
+  })
+
+  it('does not resurrect a stray categoryMappings field from stale state', () => {
+    const stale = {
+      ...state({}),
+      categoryMappings: [{ id: 'stale-mapping' }],
+    } as unknown as GlobalCategoryState
+
+    expect(mergeCategoryState(stale, state({}))).not.toHaveProperty('categoryMappings')
   })
 })
