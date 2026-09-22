@@ -488,8 +488,8 @@ function App() {
 
   useEffect(() => {
     document.title = route.name === 'portfolio' && activePortfolio && sessionKey !== null && isHydrated
-      ? `Ledger | ${activePortfolio.name}`
-      : 'Ledger'
+      ? `Ledger Dashboard | ${activePortfolio.name}`
+      : 'Ledger Dashboard'
   }, [route.name, activePortfolio, sessionKey, isHydrated])
 
   // Price-sync trigger: fetches held Equity/ETF prices on mount + on tab focus.

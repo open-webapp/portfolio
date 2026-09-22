@@ -363,13 +363,13 @@ describe('navigation shell title and controls', () => {
   })
 
   afterEach(() => {
-    document.title = 'Ledger'
+    document.title = 'Ledger Dashboard'
   })
 
   it('uses the active portfolio title only after unlock and keeps the top bar across unlocked views', async () => {
     await renderUnlockedApp()
 
-    await waitFor(() => expect(document.title).toBe('Ledger | Test Portfolio'))
+    await waitFor(() => expect(document.title).toBe('Ledger Dashboard | Test Portfolio'))
     expect(document.querySelector('header.top-bar')).toBeTruthy()
 
     for (const view of ['Budget', 'Positions', 'Register', 'Quotes'] as const) {
@@ -394,10 +394,10 @@ describe('navigation shell title and controls', () => {
     expect(screen.queryByLabelText('Select year')).toBeNull()
   })
 
-  it('uses Ledger without a portfolio title for the gate and picker', async () => {
+  it('uses Ledger Dashboard without a portfolio title for the gate and picker', async () => {
     render(<App />)
     await waitFor(() => expect(screen.getByText('MockUnlock')).toBeTruthy())
-    expect(document.title).toBe('Ledger')
+    expect(document.title).toBe('Ledger Dashboard')
     cleanup()
 
     await clearRegistryStore()
@@ -405,7 +405,7 @@ describe('navigation shell title and controls', () => {
     window.location.hash = '#/'
     render(<App />)
     await waitFor(() => expect(screen.getByText('Create')).toBeTruthy())
-    expect(document.title).toBe('Ledger')
+    expect(document.title).toBe('Ledger Dashboard')
   })
 
   it('hides an idle Sync control when Drive is disconnected', async () => {

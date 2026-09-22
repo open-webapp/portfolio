@@ -25,7 +25,7 @@ User-visible behavior. Sibling: `design.md` (architecture). Module-specific: `sr
 - On desktop, application content begins to the right of the fixed 76px navigation rail. At viewport widths of 480px or less, the rail moves to the bottom and content uses the full width.
 - The mobile bottom rail preserves this order: Switch portfolio, main views, Sync when shown, Settings.
 - The top-bar strip is period-control-only. Budget shows the four-tab control and, for Spend, a same-row right-aligned year All/year selector; non-Budget views retain an intentionally blank strip.
-- Browser title is `Ledger` until an active portfolio is unlocked and hydrated, then `Ledger | {portfolio name}`. It returns to `Ledger` when leaving that ready portfolio state.
+- Browser title is `Ledger Dashboard` until an active portfolio is unlocked and hydrated, then `Ledger Dashboard | {portfolio name}`. It returns to `Ledger Dashboard` when leaving that ready portfolio state.
 
 ### First-time / empty registry
 
