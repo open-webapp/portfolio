@@ -347,7 +347,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         return (
           t.description.toLowerCase().includes(searchLower) ||
           categoryLabel.toLowerCase().includes(searchLower) ||
-          (t.accountName ?? '').toLowerCase().includes(searchLower)
+          (t.accountName ?? '').toLowerCase().includes(searchLower) ||
+          (t.tags ?? []).some((tag) => tag.toLowerCase().includes(searchLower))
         )
       })
     : recordSourceTransactions

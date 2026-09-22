@@ -13,7 +13,7 @@ Sibling: `BudgetPage.design.md`.
 - The Spend view uses the shell-controlled All/year scope, then shows three summary cards and a Budget flow Sankey chart before the records card.
 - Spend vs budget shows scoped actual spending against scoped budget. Projected spend uses the current-date projection and marks over/under budget. Savings rate is available for a selected year; its edit control updates the aggregate annual income budget. A fourth summary card is out of scope.
 - Budget flow is derived by `sankeyFlowData` from scoped budget definitions/annual amounts and transactions, aggregated by category. It shows Income -> category budgets -> category actuals, with unused budget flowing to Unspent; no data shows `No budget flow for this period.`
-- Search matches description, account, and the displayed Spend Category label, including `Uncategorized (<category>)` for unlinked records.
+- Search matches description, account, tags (case-insensitive substring), and the displayed Spend Category label, including `Uncategorized (<category>)` for unlinked records.
 - Recurring spend is one representative per month in a chain of >=3 consecutive calendar months with the same account name and effective category; absolute amounts must be within +/-10% of the running chain average. Income and categories with `excludeFromSpend` are never flagged.
 - Recurring classification always considers all `budgetTransactions`, independent of the Spend year/`All years` scope selector.
 - Flagged rows show a non-interactive repeat icon titled `Recurring spend` before the delete button.

@@ -1005,6 +1005,21 @@ describe('BudgetPage spend record tag filter', () => {
     expect(screen.queryByTestId('bulk-action-bar')).toBeNull()
     expect(screen.queryByTestId('records-pagination')).toBeNull()
   })
+
+  it('finds spend records with matching tags via the search box', () => {
+    renderTagSpend([
+      { id: 'a', date: '2025-01-01', description: 'Office supplies', categoryId: 'food', amount: 10, tags: ['Work'] },
+      { id: 'b', date: '2025-01-02', description: 'Team lunch', categoryId: 'food', amount: 12, tags: ['personal'] },
+    ])
+
+    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'work' } })
+    expect(screen.getByText('Office supplies')).toBeTruthy()
+    expect(screen.queryByText('Team lunch')).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'WORK' } })
+    expect(screen.getByText('Office supplies')).toBeTruthy()
+    expect(screen.queryByText('Team lunch')).toBeNull()
+  })
 })
 
 describe('BudgetPage tag filter combobox', () => {
