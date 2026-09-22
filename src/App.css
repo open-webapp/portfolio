@@ -6,6 +6,10 @@
   margin-left: 76px;
 }
 
+.app-shell .top-bar {
+  padding: var(--space-4) var(--space-4) 0;
+}
+
 @media (max-width: 480px) {
   .app-shell {
     margin-left: 0;

@@ -942,7 +942,7 @@ function App() {
 
         {state.view === 'budget' ? (
           /* Budget page view */
-          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
+          <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
             <BudgetPage
               {...{
                 state,
@@ -961,22 +961,22 @@ function App() {
           </div>
         ) : state.view === 'accounts' ? (
           /* Accounts page view */
-          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
+          <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
             <AccountsPage state={state} dispatch={dispatch} />
           </div>
         ) : state.view === 'register' ? (
           /* Register page view */
-          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
+          <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
             <RegisterPage state={state} dispatch={dispatch} />
           </div>
         ) : state.view === 'quotes' ? (
           /* Quotes page view */
-          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)' }}>
+          <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
             <QuotesPage state={state} dispatch={dispatch} tickerOverviewErrors={tickerOverviewErrors} />
           </div>
         ) : (
           /* Settings page view */
-          <div style={{ padding: '0 var(--space-4) var(--space-6) var(--space-4)', maxWidth: '560px', margin: '0 auto' }}>
+          <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)', maxWidth: '560px', margin: '0 auto' }}>
             <SettingsPage
               state={state}
               dispatch={dispatch}

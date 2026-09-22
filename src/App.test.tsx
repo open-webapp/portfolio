@@ -321,6 +321,29 @@ describe('app shell layout', () => {
 
     expect(appCss).toMatch(/\.app-shell\s*\{[^}]*margin-left:\s*76px/)
   })
+
+  it('gives every page top padding and pads the top bar', async () => {
+    const appCss = readFileSync('src/App.css', 'utf8')
+
+    expect(appCss).toMatch(/\.app-shell\s+\.top-bar\s*\{[^}]*padding:/)
+
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    await renderUnlockedApp()
+
+    const expectPageHasTopPadding = () => {
+      const topBar = document.querySelector('header.top-bar')
+      const page = topBar?.nextElementSibling as HTMLElement | null
+      expect(page?.style.padding.split(' ')[0]).not.toBe('0')
+    }
+
+    for (const view of ['Budget', 'Positions', 'Register', 'Quotes'] as const) {
+      fireEvent.click(navTab(view))
+      expectPageHasTopPadding()
+    }
+
+    fireEvent.click(screen.getByTitle('Settings'))
+    expectPageHasTopPadding()
+  })
 })
 
 describe('navigation shell title and controls', () => {
