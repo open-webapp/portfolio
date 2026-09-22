@@ -111,7 +111,6 @@ function openSettings() {
 
 function selectSharedDriveMode() {
   selectPickerMode('Google Drive')
-  fireEvent.click(screen.getByRole('radio', { name: 'Shared portfolio' }))
 }
 
 describe('PortfolioPicker', () => {
@@ -145,6 +144,16 @@ describe('PortfolioPicker', () => {
       selectPickerMode('Create')
       expect(screen.getByPlaceholderText('e.g. Retirement')).toBeTruthy()
       expect(screen.queryByText('No portfolios yet. Create one to get started.')).toBeFalsy()
+    })
+
+    it('keeps the full-width mode segment independent from the settings gear', () => {
+      const { container } = renderPicker()
+
+      const segment = container.querySelector('.seg') as HTMLElement
+      expect(segment.parentElement?.style.position).toBe('relative')
+      expect(segment.parentElement?.style.display).not.toBe('flex')
+      expect(segment.style.width).toBe('100%')
+      expect(screen.getByRole('button', { name: 'Settings' }).style.position).toBe('absolute')
     })
 
     it('renders existing portfolios and open/delete/rename still work', async () => {
@@ -188,6 +197,23 @@ describe('PortfolioPicker', () => {
       expect(screen.queryByRole('radio', { name: 'Open' })).toBeFalsy()
       expect(screen.queryByRole('radio', { name: 'Create' })).toBeFalsy()
       expect(screen.queryByRole('radio', { name: 'Google Drive' })).toBeFalsy()
+    })
+
+    it('uses a compact settings header with two local-file icon actions', () => {
+      renderPicker()
+      openSettings()
+
+      const close = screen.getByRole('button', { name: 'Close settings' })
+      const heading = screen.getByRole('heading', { name: 'Settings — Category mapping' })
+      const importMapping = screen.getByRole('button', { name: 'Import mapping file' })
+      const downloadMapping = screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement
+      expect(close.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(heading.compareDocumentPosition(importMapping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(importMapping.className).toContain('btn-icon')
+      expect(downloadMapping.className).toContain('btn-icon')
+      expect(downloadMapping.disabled).toBe(true)
+      expect(screen.queryByRole('button', { name: 'Import Category Mapping' })).toBeFalsy()
+      expect(screen.queryByRole('button', { name: 'Download Category Mapping' })).toBeFalsy()
     })
 
     it('closes settings and returns to the selected picker mode', () => {
@@ -235,7 +261,7 @@ describe('PortfolioPicker', () => {
       const { container } = renderPicker()
       openSettings()
 
-      const download = screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement
+      const download = screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement
       expect(download.disabled).toBe(true)
       await waitFor(() => {
         expect(loadGlobalCategoryState).toHaveBeenCalledWith([])
@@ -274,7 +300,7 @@ describe('PortfolioPicker', () => {
       openSettings()
 
       await waitFor(() => {
-        expect((screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement).disabled).toBe(false)
+        expect((screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement).disabled).toBe(false)
       })
       const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[0] as HTMLInputElement
       fireEvent.change(mappingInput, { target: { files: [new File(['{}'], 'mapping.json')] } })
@@ -291,7 +317,7 @@ describe('PortfolioPicker', () => {
       })
       const { container } = renderPicker()
       openSettings()
-      const download = screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement
+      const download = screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement
       const mappingInput = Array.from(container.querySelectorAll('input[type="file"]'))[0] as HTMLInputElement
 
       fireEvent.change(mappingInput, { target: { files: [new File(['not json'], 'mapping.json')] } })
@@ -330,7 +356,7 @@ describe('PortfolioPicker', () => {
       openSettings()
 
       await waitFor(() => {
-        expect((screen.getByRole('button', { name: 'Download Category Mapping' }) as HTMLButtonElement).disabled).toBe(false)
+        expect((screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement).disabled).toBe(false)
       })
       fireEvent.click(screen.getByRole('button', { name: 'Import a shared mapping from Google Drive' }))
 
@@ -345,7 +371,7 @@ describe('PortfolioPicker', () => {
       expect(mergeCategoryState).toHaveBeenCalledTimes(1)
       expect(saveGlobalCategoryState).toHaveBeenCalledTimes(1)
       expect(setSharedCategoryDriveFileId).toHaveBeenCalledTimes(1)
-      fireEvent.click(screen.getByRole('button', { name: 'Download Category Mapping' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Download mapping file' }))
       expect(downloadJsonAsFile).toHaveBeenCalledWith(merged, 'category-mapping.json')
     })
 
@@ -370,9 +396,7 @@ describe('PortfolioPicker', () => {
       openSettings()
 
       await waitFor(() => {
-        expect(
-          within(screen.getByRole('heading', { name: 'Settings — Category mapping' }).parentElement as HTMLElement).getByText('Shared')
-        ).toBeTruthy()
+        expect(screen.getByText('Shared')).toBeTruthy()
       })
     })
 
@@ -387,13 +411,12 @@ describe('PortfolioPicker', () => {
       renderPicker()
       openSettings()
 
-      const header = screen.getByRole('heading', { name: 'Settings — Category mapping' }).parentElement as HTMLElement
-      await waitFor(() => expect(within(header).getByText('Shared')).toBeTruthy())
-      fireEvent.click(within(header).getByRole('button', { name: 'Unlink' }))
+      await waitFor(() => expect(screen.getByText('Shared')).toBeTruthy())
+      fireEvent.click(screen.getByRole('button', { name: 'Unlink' }))
 
       await waitFor(() => {
         expect(setSharedCategoryDriveFileId).toHaveBeenCalledWith(null)
-        expect(within(header).queryByText('Shared')).toBeFalsy()
+        expect(screen.queryByText('Shared')).toBeFalsy()
       })
       expect(saveGlobalCategoryState).not.toHaveBeenCalled()
       expect(mergeCategoryState).not.toHaveBeenCalled()
@@ -403,8 +426,7 @@ describe('PortfolioPicker', () => {
       renderPicker()
       openSettings()
 
-      const header = screen.getByRole('heading', { name: 'Settings — Category mapping' }).parentElement as HTMLElement
-      expect(within(header).queryByRole('button', { name: 'Unlink' })).toBeFalsy()
+      expect(screen.queryByRole('button', { name: 'Unlink' })).toBeFalsy()
       expect(setSharedCategoryDriveFileId).not.toHaveBeenCalled()
     })
 
@@ -514,6 +536,20 @@ describe('PortfolioPicker', () => {
   })
 
   describe('Drive-folder panel', () => {
+    it('shows My portfolios and Shared portfolio sections together without nested tabs', () => {
+      const { container } = renderPicker()
+      selectPickerMode('Google Drive')
+
+      const myPortfoliosHeading = screen.getByText('My portfolios')
+      const sharedPortfolioHeading = screen.getByText('Shared portfolio')
+      const myPortfolios = screen.getByText("Restore a portfolio you've backed up to Google Drive.")
+      const sharedPortfolio = screen.getByText('Open a portfolio someone else shared with you on Google Drive.')
+      expect(myPortfoliosHeading.compareDocumentPosition(sharedPortfolioHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(myPortfolios.compareDocumentPosition(sharedPortfolio) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(container.querySelectorAll('input[name="portfolioDriveMode"]')).toHaveLength(0)
+      expect(myPortfolios.parentElement?.nextElementSibling?.className).toContain('hr')
+    })
+
     it('disables the trigger button and shows offline tooltip when isOnline is false', () => {
       renderPicker({ isOnline: false })
       selectPickerMode('Google Drive')

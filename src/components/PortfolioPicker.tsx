@@ -47,7 +47,6 @@ interface DriveRowState {
 }
 
 type PickerMode = 'open' | 'create' | 'drive'
-type DriveMode = 'mine' | 'shared'
 
 function driveImportErrorMessage(err: unknown): string {
   if (err instanceof DriveDecryptError) return 'Incorrect password.'
@@ -88,7 +87,6 @@ export function PortfolioPicker({
   const [driveFoldersOpen, setDriveFoldersOpen] = useState(false)
   const [pickerMode, setPickerMode] = useState<PickerMode>('open')
   const [showSettings, setShowSettings] = useState(false)
-  const [driveMode, setDriveMode] = useState<DriveMode>('mine')
   const [driveFolders, setDriveFolders] = useState<{ name: string; id: string }[] | null>(null)
   const [driveListError, setDriveListError] = useState<string | null>(null)
   const [driveListLoading, setDriveListLoading] = useState(false)
@@ -420,8 +418,8 @@ export function PortfolioPicker({
 
         {!showSettings && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <div className="seg" style={{ display: 'flex', flex: 1, minWidth: 0 }}>
+            <div style={{ position: 'relative' }}>
+              <div className="seg" style={{ display: 'flex', width: '100%' }}>
                 {([
                   ['open', 'Open'],
                   ['create', 'Create'],
@@ -433,7 +431,7 @@ export function PortfolioPicker({
                   </label>
                 ))}
               </div>
-              <button type="button" className="btn-ghost" aria-label="Settings" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-2)', flex: 'none' }} onClick={() => setShowSettings(true)}>
+              <button type="button" className="btn-ghost" aria-label="Settings" style={{ position: 'absolute', right: 'var(--space-1)', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-2)' }} onClick={() => setShowSettings(true)}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20.3h-3v-.08A1.7 1.7 0 0 0 10.66 18.66a1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.04h-.08v-3h.08A1.7 1.7 0 0 0 7 9.92a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7v-.08h3v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04h.08v3h-.08A1.7 1.7 0 0 0 19.4 15Z" />
@@ -569,13 +567,8 @@ export function PortfolioPicker({
 
         {pickerMode === 'drive' && (
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            <div className="seg" style={{ display: 'flex', width: '100%' }}>
-              {([['mine', 'My portfolios'], ['shared', 'Shared portfolio']] as const).map(([mode, label]) => (
-                <label key={mode} className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="portfolioDriveMode" checked={driveMode === mode} onChange={() => setDriveMode(mode)} /><span>{label}</span></label>
-              ))}
-            </div>
-
-            {driveMode === 'mine' && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div className="card-title">My portfolios</div>
               {!driveFoldersOpen && <><div className="card-body">Restore a portfolio you've backed up to Google Drive.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={!isOnline || driveListLoading} title={isOnline ? undefined : 'Connect to the internet to import from Google Drive'} onClick={() => void handleOpenDriveFolders()}>{driveListLoading ? 'Loading Google Drive...' : 'Load from Google Drive'}</button></>}
               {driveListError && <div className="tag tag-outline">{driveListError} <button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} onClick={dismissDriveListError}>Dismiss</button></div>}
               {driveFoldersOpen && !driveListError && (
@@ -659,11 +652,13 @@ export function PortfolioPicker({
               })}
                 </div>
               )}
-            </div>}
-            {driveMode === 'shared' && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            </div>
+            <div className="hr" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              <div className="card-title">Shared portfolio</div>
               {!sharedImportFolder && <><div className="card-body">Open a portfolio someone else shared with you on Google Drive.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => void handlePickSharedPortfolio()}>Import a shared portfolio</button></>}
               {sharedImportFolder && sharedImportState && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}><div className="card-title">{sharedImportFolder.name}</div><div className="field"><label>Password</label><input className="input" type="password" placeholder="Enter the portfolio's password" value={sharedImportState.password} autoFocus autoComplete="current-password" disabled={sharedImportState.importing} onChange={(e) => setSharedImportState({ ...sharedImportState, password: e.target.value, error: null })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSubmitSharedImport() } }} /></div>{sharedImportState.error && <div className="tag tag-outline" style={{ marginBottom: 0 }}>{sharedImportState.error}</div>}<div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}><button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} disabled={sharedImportState.importing} onClick={() => { setSharedImportFolder(null); setSharedImportState(null) }}>Cancel</button><button type="button" className="btn btn-primary" disabled={sharedImportState.importing} onClick={() => void handleSubmitSharedImport()}>{sharedImportState.importing ? 'Importing...' : 'Import'}</button></div></div>}
-            </div>}
+            </div>
           </div>
         )}
           </>
@@ -672,18 +667,22 @@ export function PortfolioPicker({
         {showSettings && (
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <h2 className="card-title" style={{ fontSize: 18, margin: 0, flex: 1 }}>
-                Settings — Category mapping
-              </h2>
-              {sharedCategoryDriveFileId && <SharedSourceBadge />}
-              {sharedCategoryDriveFileId && <UnlinkButton confirmText="Unlink this shared category mapping?" onUnlink={handleUnlinkSharedCategoryMapping} />}
               <button type="button" className="btn-ghost" aria-label="Close settings" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 'var(--space-1)' }} onClick={() => setShowSettings(false)}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg>
               </button>
+              <h2 className="card-title" style={{ fontSize: 18, margin: 0 }}>
+                Settings — Category mapping
+              </h2>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--space-2)' }}>
+                <button type="button" className="btn btn-secondary btn-icon" aria-label="Import mapping file" title="Import mapping file" onClick={() => categoryMappingInputRef.current?.click()}>
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5M12 3v12" /></svg>
+                </button>
+                <button type="button" className="btn btn-secondary btn-icon" aria-label="Download mapping file" title="Download mapping file" disabled={globalCategoryState.categories.length === 0 && globalCategoryState.categoryMappings.length === 0} onClick={handleDownloadCategoryMapping}>
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></svg>
+                </button>
+              </div>
             </div>
-            <div className="card-body">
-              {globalCategoryState.categories.length} categories · {globalCategoryState.categoryMappings.length} category mappings
-            </div>
+            <div className="card-body">Applies the same asset-class categories and account mappings across every portfolio on this device. Loading a portfolio from Google Drive loads its mapping too.</div>
             <input
               ref={categoryMappingInputRef}
               type="file"
@@ -691,12 +690,14 @@ export function PortfolioPicker({
               style={{ display: 'none' }}
               onChange={(e) => void handleCategoryMappingImport(e)}
             />
-            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-              <button type="button" className="btn btn-primary" disabled={globalCategoryState.categories.length === 0 && globalCategoryState.categoryMappings.length === 0} onClick={handleDownloadCategoryMapping}>Download Category Mapping</button>
-              <button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => categoryMappingInputRef.current?.click()}>Import Category Mapping</button>
-              <button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => void handleSharedCategoryMappingDriveImport()}>Import a shared mapping from Google Drive</button>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+              <div className="card-body">{globalCategoryState.categories.length} categories · {globalCategoryState.categoryMappings.length} category mappings</div>
               <button type="button" className="btn btn-primary" onClick={navigateToCategories}>Manage</button>
             </div>
+            <div className="hr" />
+            <div className="card-body">Open the mapping someone else shared with you directly or via Google Drive.</div>
+            {!sharedCategoryDriveFileId && <button type="button" className="btn btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={() => void handleSharedCategoryMappingDriveImport()}>Import a shared mapping from Google Drive</button>}
+            {sharedCategoryDriveFileId && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)' }}><SharedSourceBadge /><UnlinkButton confirmText="Unlink this shared category mapping?" onUnlink={handleUnlinkSharedCategoryMapping} /></div>}
             {categoryMappingImportError && <div className="tag tag-outline">{categoryMappingImportError}</div>}
           </div>
         )}

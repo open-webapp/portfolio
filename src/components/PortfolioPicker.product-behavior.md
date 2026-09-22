@@ -4,7 +4,7 @@ Sibling doc: `PortfolioPicker.design.md` (props, state, data flow).
 
 ## Overview
 
-Landing page at the `picker` route. A centered Ledger heading precedes an always-visible `Open` / `Create` / `Google Drive` segmented control; only the selected panel renders. Local-file import is an action within Create. Mode switches preserve all in-progress panel state. Global Mapping remains a separate, unchanged section below this picker.
+Landing page at the `picker` route. A centered Ledger heading precedes an always-visible full-width `Open` / `Create` / `Google Drive` segmented control with a non-constraining Settings gear. Only the selected panel renders. Local-file import is an action within Create. Mode switches preserve all in-progress panel state.
 
 ## Existing portfolios list
 
@@ -36,7 +36,7 @@ Landing page at the `picker` route. A centered Ledger heading precedes an always
 
 ## Flow 2 — Import from Google Drive folder
 
-1. Select `Google Drive`, then its default `My portfolios` submode; the "Load from Google Drive" button opens that panel.
+1. Select `Google Drive`; its My-portfolios restore section and Shared-portfolio import section are both visible, separated by a divider. The "Load from Google Drive" button opens the restore list.
    - **Offline** (`isOnline === false`): button disabled, `title="Connect to the internet to import from Google Drive"`.
    - **Loading**: label becomes "Loading Google Drive...", button disabled during the list fetch.
 2. On click, calls `onListDriveFolders()`, then filters out any folder whose name matches (case-insensitive, trimmed) an existing local portfolio's name.
@@ -71,6 +71,7 @@ Landing page at the `picker` route. A centered Ledger heading precedes an always
 ## Cross-flow notes
 
 - While the Create password panel is open, the name field and "Import from file" action are disabled (mutually exclusive with editing the create name).
-- Google Drive has `My portfolios` and `Shared portfolio` submodes. Shared uses the unscoped folder Picker, then the existing password form.
+- The Drive card shows labeled **My portfolios** and **Shared portfolio** sections together; Shared portfolio uses the unscoped folder Picker, then the existing password form.
+- Settings has Close, a heading, and local-file import/download icon buttons (download is disabled with no mapping data). It explains device-wide mapping, shows a summary plus Manage action, then offers the separate Google Drive shared-mapping import/link/unlink flow.
 - Each panel tracks its own error/loading state; switching away and back preserves it.
 - No flow shows a global spinner/overlay; all pending states are local button-label changes ("Creating...", "Importing...", "Loading Google Drive...").
