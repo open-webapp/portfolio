@@ -6,7 +6,7 @@ Directory structure, API contract, component tree, state management, data model,
 
 - `App.tsx` owns the non-persisted Budget `period` and Spend `selectedScope`; `BudgetPage.tsx` receives both. `period` initializes to `'spend'`; `selectedScope` initializes to the newest transaction-backed year or `SPEND_ALL_YEARS`. The top-bar control has three tabs: Expenses, Spend, Analytics; Spend's All/year selector is a second row. Shared account-rule controls are in Settings.
 - `router.ts` recognizes `#/categories`; `App.tsx` renders `ManageCategoriesPage` there without requiring a portfolio session.
-- `Settings.tsx` has exactly Backup, Encryption, and Quotes API Key tabs. Its props contain no categories, mappings, category dispatcher, or category-hydration state.
+- `Settings.tsx` has exactly Backup, Encryption, Quotes API Key, and Spend Accounts tabs. Its props contain no categories, mappings, category dispatcher, or category-hydration state.
 - `ClosedPositionsTable.tsx` — table with symbol, closed date, realized G/L, delete + undo buttons; takes `positions` prop (caller-supplied ClosedPosition[])
   - Used by `PositionsTable.tsx` (passes `state.closedPositions`)
   - Used by `AccountsPage.tsx` (passes `acctFilteredClosedPositions(state)`)
@@ -245,6 +245,11 @@ successful name fetch, mirroring `tickerOverview.ts`'s pattern.
 - `exportBackup(state, key, salt)` — `buildExportableState` then `encryptState` (`./crypto`) → `EncryptedEnvelope`.
 - `downloadEnvelopeAsFile(envelope, filename)` — Blob + anchor-click browser download.
 - `downloadCsvAsFile(csvText, filename)` — public Blob + anchor-click local CSV download (`text/csv;charset=utf-8`); no persistence, import, encryption, or Drive interaction.
+- `UnencryptedPortfolioExport` (type) — `ExportableState` + `categoryMappings: CategoryMapping[]`.
+- `buildUnencryptedPortfolioExport(state)` — pure; spreads `buildExportableState`, adds `state.categoryMappings`, blanks `priceSync.apiKey`/`mutualFundSync.apiKey` to `''` (`lastRun` kept); never mutates input.
+- `buildUnencryptedCategoriesExport(categories, budgetAccountRules)` — pure; returns `GlobalCategoryState` `{categories, budgetAccountRules}`.
+- `localDateStamp(d = new Date())` — local-calendar `YYYY-MM-DD` stamp for filenames.
+- `downloadPrettyJsonAsFile(data, filename)` — Blob + anchor-click download of 2-space pretty-printed JSON (`JSON.stringify(data, null, 2)`, `application/json`); silent, no password prompt or confirm. Settings Download card writes `ledger-portfolio-YYYY-MM-DD.json` (portfolio export) and `ledger-categories-YYYY-MM-DD.json` (categories export). Export-only — no import path. Same exclusions as the encrypted backup: UI/filter state and `heldPrices`/`lastFetchedDate`/`callBudget`. Encrypted `Download Backup` and `PortfolioPicker.tsx` `handleDownloadCategoryMapping` (`category-mapping.json`) untouched.
 - `ImportDecryptError` (extends `Error`) — wrong password (auth-tag mismatch on decrypt).
 - `ImportMalformedFileError` (extends `Error`) — file isn't valid JSON, or isn't envelope-shaped per `detectEnvelopeShape`.
 - `parseImportFile(fileText)` — `JSON.parse` + `detectEnvelopeShape` check → `EncryptedEnvelope`; throws `ImportMalformedFileError`.

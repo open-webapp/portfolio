@@ -996,6 +996,7 @@ function App() {
               setSettingsSection={setSettingsSection}
               budgetTransactions={state.budgetTransactions}
               budgetAccountRules={globalCategories.budgetAccountRules}
+              categories={globalCategories.categories}
               categoriesHydrated={globalCategories.hydrated}
               categoryDispatch={globalCategories.dispatch}
               runPriceSyncTrigger={runPriceSyncTrigger}

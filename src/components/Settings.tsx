@@ -11,6 +11,10 @@ import { loadPersistedApp, savePersistedApp } from '../lib/persist'
 import {
   exportBackup,
   downloadEnvelopeAsFile,
+  buildUnencryptedPortfolioExport,
+  buildUnencryptedCategoriesExport,
+  downloadPrettyJsonAsFile,
+  localDateStamp,
 } from '../lib/importExport'
 import { SharedSourceBadge, UnlinkButton } from './SharedSource'
 import { BudgetAccountsTab } from './BudgetAccountsTab'
@@ -66,6 +70,7 @@ export interface SettingsPageProps {
   driveConnected: boolean
   budgetTransactions: BudgetTransaction[]
   budgetAccountRules: GlobalCategoryState['budgetAccountRules']
+  categories: GlobalCategoryState['categories']
   categoriesHydrated: boolean
   categoryDispatch: (action: CategoryAction) => void
 }
@@ -94,6 +99,7 @@ export function SettingsPage({
   driveConnected,
   budgetTransactions,
   budgetAccountRules,
+  categories,
   categoriesHydrated,
   categoryDispatch,
 }: SettingsPageProps) {
@@ -318,6 +324,27 @@ export function SettingsPage({
         >
           Download Backup
         </button>
+        <button
+          className="btn btn-secondary blueprint"
+          type="button"
+          style={{ marginTop: 'var(--space-3)', display: 'block', width: '100%' }}
+          onClick={() => {
+            downloadPrettyJsonAsFile(buildUnencryptedPortfolioExport(state), 'ledger-portfolio-' + localDateStamp() + '.json')
+          }}
+        >
+          Download Portfolio (Unencrypted)
+        </button>
+        <button
+          className="btn btn-secondary blueprint"
+          type="button"
+          style={{ marginTop: 'var(--space-3)', display: 'block', width: '100%' }}
+          onClick={() => {
+            downloadPrettyJsonAsFile(buildUnencryptedCategoriesExport(categories, budgetAccountRules), 'ledger-categories-' + localDateStamp() + '.json')
+          }}
+        >
+          Download Categories (Unencrypted)
+        </button>
+        <p>Unencrypted — anyone with this file can read your balances and transactions.</p>
       </section>
       )}
 
