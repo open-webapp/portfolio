@@ -61,8 +61,15 @@ export function applyAutoTags<T extends { description: string; tags?: string[] }
  * Cluster descriptions by case-insensitive longest-common-prefix (LCP)
  * horizontal scan over sort-by-lowercased-description order.
  *
+ * A cluster only forms when the trimmed LCP meets MIN_TAG_LENGTH —
+ * whitespace never counts toward the minimum, guaranteeing every emitted
+ * tag is at least MIN_TAG_LENGTH chars with no leading/trailing whitespace.
+ *
  * Pure; no IO. `indices` refer to positions in the input array.
  */
+/** Minimum trimmed tag length for an auto-tag cluster to form. */
+export const MIN_TAG_LENGTH = 4
+
 export function clusterDescriptions(descriptions: string[]): AutoTagCluster[] {
   if (descriptions.length === 0) return []
 
@@ -80,7 +87,8 @@ export function clusterDescriptions(descriptions: string[]): AutoTagCluster[] {
 
   const closeCluster = () => {
     if (currentIndices.length >= 2) {
-      clusters.push({ indices: currentIndices, tag: clusterPrefix.trimEnd() })
+      const tag = clusterPrefix.trim()
+      clusters.push({ indices: currentIndices, tag: tag.length >= MIN_TAG_LENGTH ? tag : null })
     } else {
       clusters.push({ indices: currentIndices, tag: null })
     }
@@ -94,9 +102,10 @@ export function clusterDescriptions(descriptions: string[]): AutoTagCluster[] {
     while (len > 0 && !nextLower.startsWith(prefixLower.slice(0, len))) {
       len--
     }
-    if (len >= 3) {
+    const candidate = clusterPrefix.slice(0, len).trim()
+    if (candidate.length >= MIN_TAG_LENGTH) {
       currentIndices.push(sorted[i].idx)
-      clusterPrefix = clusterPrefix.slice(0, len).trimEnd()
+      clusterPrefix = candidate
     } else {
       closeCluster()
       currentIndices = [sorted[i].idx]
