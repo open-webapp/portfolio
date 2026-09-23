@@ -1249,7 +1249,7 @@ describe('BudgetPage auto-tag records', () => {
 
     expect(actions).toContainEqual({ type: 'AUTO_TAG_BUDGET_TRANSACTIONS' })
     expect(screen.getByText('Tagged 2 record(s)')).toBeTruthy()
-    expect(screen.getAllByText('TRADER JOES #')).toHaveLength(2)
+    expect(screen.getAllByText('TRADERJOES')).toHaveLength(2)
   })
 
   it('shows "No new tags found" when nothing clusters', () => {

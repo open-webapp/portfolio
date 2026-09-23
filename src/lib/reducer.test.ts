@@ -49,8 +49,8 @@ describe('budget reducer', () => {
     const direct = autoTagBudgetTransactions(state)
     expect(viaReducer).toEqual(direct)
     expect(viaReducer.budgetTransactions).toMatchObject([
-      { id: 'a', tags: ['COSTCO WHOLESALE #'] },
-      { id: 'b', tags: ['COSTCO WHOLESALE #'] },
+      { id: 'a', tags: ['COSTCOWHOL'] },
+      { id: 'b', tags: ['COSTCOWHOL'] },
     ])
   })
 

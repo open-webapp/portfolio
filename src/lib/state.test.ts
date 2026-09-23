@@ -351,8 +351,8 @@ describe('autoTagBudgetTransactions', () => {
     }
     const result = autoTagBudgetTransactions(state)
     expect(result.budgetTransactions).toMatchObject([
-      { id: 'a', tags: ['COSTCO WHOLESALE #'] },
-      { id: 'b', tags: ['COSTCO WHOLESALE #'] },
+      { id: 'a', tags: ['COSTCOWHOL'] },
+      { id: 'b', tags: ['COSTCOWHOL'] },
     ])
   })
 
@@ -447,8 +447,8 @@ describe('importBudgetTransactions auto-tag', () => {
       convention
     )
     expect(result.budgetTransactions).toMatchObject([
-      { description: 'COSTCO WHOLESALE #101', tags: ['COSTCO WHOLESALE #'] },
-      { description: 'COSTCO WHOLESALE #202', tags: ['COSTCO WHOLESALE #'] },
+      { description: 'COSTCO WHOLESALE #101', tags: ['COSTCOWHOL'] },
+      { description: 'COSTCO WHOLESALE #202', tags: ['COSTCOWHOL'] },
     ])
   })
 
@@ -486,7 +486,7 @@ describe('importBudgetTransactions auto-tag', () => {
       convention
     )
     expect(result.budgetTransactions).toHaveLength(1)
-    expect(result.budgetTransactions[0].tags).toEqual(['COSTCO WHOLESALE #101'])
+    expect(result.budgetTransactions[0].tags).toEqual(['COSTCOWHOL'])
   })
 
   it('resolveBudgetImportRows called directly does not auto-tag', () => {
