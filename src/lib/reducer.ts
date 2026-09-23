@@ -54,6 +54,7 @@ export type AppAction =
   | { type: 'ADD_BUDGET_TRANSACTION'; tx: Omit<BudgetTransaction, 'id'> }
   | { type: 'UPDATE_BUDGET_TRANSACTION'; id: string; patch: Partial<Omit<BudgetTransaction, 'id'>> }
   | { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK'; ids: string[]; categoryId: string; spendExpenseId?: string; tagsToAdd?: string[] }
+  | { type: 'AUTO_TAG_BUDGET_TRANSACTIONS' }
   | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
   | {
       type: 'IMPORT_BUDGET_TRANSACTIONS'
@@ -237,6 +238,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'DELETE_BUDGET_TRANSACTION':
       return StateActions.deleteBudgetTransaction(state, action.id)
+
+    case 'AUTO_TAG_BUDGET_TRANSACTIONS':
+      return StateActions.autoTagBudgetTransactions(state)
 
     case 'IMPORT_BUDGET_TRANSACTIONS':
       return StateActions.importBudgetTransactions(

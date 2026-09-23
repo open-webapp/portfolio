@@ -217,6 +217,9 @@ Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup f
 - Legacy manual-income fields are discarded on local hydration and backup import/export; they are never converted.
 - Expense definitions are unique by trimmed, case-insensitive name within a category. Re-adding one updates its current-year amount; edits that would duplicate another definition are ignored.
 - Imported account conventions are persisted per normalized account name in `budgetAccountAppliedConventions`; a duplicate-only import still records its applied convention. `negativeSpend` is the permanent silent default; a `positiveSpend` rule canonicalizes positive imported spend to negative. Rule changes/removal require confirmation and reconcile the open portfolio immediately; other portfolios reconcile when opened. **Known limitation:** manual transactions have no provenance, so a later convention change flips their matching sign too, with no exclusion. Parsers are unchanged.
+- Spend header left-group holds title + `Auto-tag records` button + transient feedback text; no tag-filter combobox. Feedback auto-clears after ~4s.
+- Manual `Auto-tag records` pools ALL budget transactions across all years regardless of selected Spend-tab scope. Algorithm is LCP clustering with min-3-char threshold; singleton clusters stay untagged. Tags are additive, never replacing existing tags, capped at 5 per record.
+- Every Paste/Upload import (CSV and OFX/QFX) auto-tags automatically, scoped to just the imported batch, before dedup. Pre-existing records are never touched.
 
 ### Expense CSV Download
 

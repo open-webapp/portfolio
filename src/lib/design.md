@@ -30,6 +30,13 @@ Spend only: `spendBudgetYears(budgetTransactions)` returns newest-first transact
 
 `sankeyFlowData` spaces category nodes by a 32px minimum gap so two-line labels do not overlap. `BudgetSankey` derives its canvas height from the lowest node (460px minimum) and scrolls both axes within a 720px-tall viewport.
 
+### Budget Auto-Tag
+
+- Two triggers, different pools: manual `AUTO_TAG_BUDGET_TRANSACTIONS` (no payload) → `autoTagBudgetTransactions` (`state.ts`) clusters ALL `budgetTransactions` regardless of Spend scope; import path → `importBudgetTransactions` auto-tags just the imported batch pre-dedup, never pre-existing records.
+- Clustering lives in `autoTag.ts` (zero imports; `state.ts` → `autoTag.ts` acyclic): LCP clustering with min-3-char threshold, singleton clusters untagged. Generic `applyAutoTags<T extends { description: string; tags?: string[] }>` reused by both triggers (manual passes `BudgetTransaction[]`, import passes raw rows).
+- Tag merge is shared exported pure `unionTags` (`autoTag.ts`, also called by refactored `updateBudgetTransactionsBulk`): additive union with existing bulk-tag-apply dedupe + cap-5/record rule, never replaces.
+- `BudgetPage.tsx` header left-group holds title + Auto-tag button + transient ~4s feedback text; no tag-filter combobox.
+
 ### Undo Closed Position
 
 ClosedPosition → ClosedPositionsTable Undo click → findMatchingOpenPosition/isExactLotMatch dedup check (state.ts) → [window.confirm if exact-lot match] → RESTORE_CLOSED_POSITION dispatch → restoreClosedPosition (state.ts)

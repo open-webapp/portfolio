@@ -19,6 +19,7 @@ import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import { TagInput } from './TagInput'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
+import { applyAutoTags } from '../lib/autoTag'
 import {
   isIncomeOrExcludedTransaction,
   effectiveCategoryId,
@@ -246,6 +247,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const importFileInputRef = useRef<HTMLInputElement>(null)
   const [isEditingIncome, setIsEditingIncome] = useState(false)
   const [incomeDraft, setIncomeDraft] = useState('')
+  const [autoTagFeedback, setAutoTagFeedback] = useState<string | null>(null)
+  const autoTagFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { budgetedSpend: totalExpense, actualSpend: totalActual } = spendCardTotals(
     state.budgetExpenseDefinitions,
@@ -285,6 +288,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   useEffect(() => {
     setRecPage(0)
   }, [selectedScope])
+
+  useEffect(() => {
+    return () => {
+      if (autoTagFeedbackTimer.current) clearTimeout(autoTagFeedbackTimer.current)
+    }
+  }, [])
 
   const periodFilteredTransactions = spendTransactionsForScope(state.budgetTransactions, selectedScope)
   const rangeLabel = selectedScope === SPEND_ALL_YEARS ? 'All years' : selectedScope
@@ -376,6 +385,14 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const deleteMapping = (mapping: CategoryMapping) => {
     if (!window.confirm('Delete this mapping? This cannot be undone.')) return
     dispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
+  }
+
+  const handleAutoTag = () => {
+    const { taggedCount } = applyAutoTags(state.budgetTransactions)
+    dispatch({ type: 'AUTO_TAG_BUDGET_TRANSACTIONS' })
+    setAutoTagFeedback(taggedCount >= 1 ? `Tagged ${taggedCount} record(s)` : 'No new tags found')
+    if (autoTagFeedbackTimer.current) clearTimeout(autoTagFeedbackTimer.current)
+    autoTagFeedbackTimer.current = setTimeout(() => setAutoTagFeedback(null), 4000)
   }
 
   // Clears row selection whenever the visible set/order of Spend records can
@@ -775,7 +792,17 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             marginBottom: 'var(--space-3)',
           }}
         >
-          <div className="card-title">Spend records ({rangeLabel})</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <div className="card-title">Spend records ({rangeLabel})</div>
+            <button type="button" className="btn" onClick={handleAutoTag}>
+              Auto-tag records
+            </button>
+            {autoTagFeedback && (
+              <span className="text-muted" style={{ fontSize: '12px' }}>
+                {autoTagFeedback}
+              </span>
+            )}
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             <label
               style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '12px' }}
