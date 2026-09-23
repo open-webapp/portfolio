@@ -8,7 +8,7 @@ describe('clusterDescriptions', () => {
     expect(result).toHaveLength(2)
     const pair = result.find((c) => c.indices.length === 2)!
     expect(new Set(pair.indices)).toEqual(new Set([0, 1]))
-    expect(pair.tag).toBe('COSTCO WHSE #')
+    expect(pair.tag).toBe('COSTCOWHSE')
     const solo = result.find((c) => c.indices.length === 1)!
     expect(solo.indices).toEqual([2])
     expect(solo.tag).toBeNull()
@@ -51,7 +51,7 @@ describe('clusterDescriptions', () => {
     const result = clusterDescriptions(['Costco Whse', 'COSTCO WHSE #2'])
     expect(result).toHaveLength(1)
     expect(result[0].indices).toHaveLength(2)
-    expect(result[0].tag).toBe('Costco Whse')
+    expect(result[0].tag).toBe('CostcoWhse')
   })
 
   it('gives singleton clusters tag null', () => {
@@ -64,14 +64,30 @@ describe('clusterDescriptions', () => {
   it('preserves tag casing from the FIRST member by sort order', () => {
     const result = clusterDescriptions(['COSTCO WHSE #123', 'COSTCO WHSE #456'])
     expect(result).toHaveLength(1)
-    expect(result[0].tag).toBe('COSTCO WHSE #')
-    expect(result[0].tag).not.toBe('costco whse #')
+    expect(result[0].tag).toBe('COSTCOWHSE')
+    expect(result[0].tag).not.toBe('costcowhse')
   })
 
-  it('trims trailing whitespace only, no word-boundary snap', () => {
+  it('sanitizes to alphanumeric capped at 10 chars, no word-boundary snap', () => {
+    // Raw LCP is "COSTCO WHSE #" (char LCP, not word-snapped) — emitted
+    // sanitized like a manual TagInput token.
     const result = clusterDescriptions(['COSTCO WHSE #123', 'COSTCO WHSE #456'])
-    expect(result[0].tag).toBe('COSTCO WHSE #')
+    expect(result[0].tag).toBe('COSTCOWHSE')
     expect(result[0].tag).not.toBe('COSTCO WHSE')
+  })
+
+  it('keeps prefix-containment chains together (AMAZON MKT 1 < 12 < 123)', () => {
+    const result = clusterDescriptions(['AMAZON MKT 1', 'AMAZON MKT 12', 'AMAZON MKT 123'])
+    expect(result).toHaveLength(1)
+    expect(result[0].indices).toHaveLength(3)
+    expect(result[0].tag).toBe('AMAZONMKT1')
+  })
+
+  it('keeps numbered series together despite slight pair LCP differences', () => {
+    const result = clusterDescriptions(['NETFLIX SUB 1', 'NETFLIX SUB 10', 'NETFLIX SUB 2'])
+    expect(result).toHaveLength(1)
+    expect(result[0].indices).toHaveLength(3)
+    expect(result[0].tag).toBe('NETFLIXSUB')
   })
 
   it('partitions a multi-cluster pool correctly', () => {
@@ -92,8 +108,8 @@ describe('clusterDescriptions', () => {
     expect(byIndex.get(0)).toBe(byIndex.get(3))
     expect(byIndex.get(1)).toBe(byIndex.get(4))
     expect(byIndex.get(2)).toBe(byIndex.get(5))
-    expect(byIndex.get(0)!.tag).toBe('COSTCO WHSE #')
-    expect(byIndex.get(2)!.tag).toBe('AMAZON MKT')
+    expect(byIndex.get(0)!.tag).toBe('COSTCOWHSE')
+    expect(byIndex.get(2)!.tag).toBe('AMAZONMKT')
     expect(byIndex.get(1)!.tag).toBe('STARBUCKS')
     // Solo record is alone with null tag
     expect(byIndex.get(6)!.indices).toEqual([6])
@@ -108,10 +124,30 @@ describe('clusterDescriptions', () => {
   })
 
   it('returns one null-tagged cluster for a single record', () => {
-    const result = clusterDescriptions(['COSTCO WHSE #123'])
+    const result = clusterDescriptions(['COSTCOWHSE123'])
     expect(result).toHaveLength(1)
     expect(result[0].indices).toEqual([0])
     expect(result[0].tag).toBeNull()
+  })
+
+  it('caps a full-description LCP tag at 10 alphanumeric chars (bug: entire string)', () => {
+    const desc = 'JPMORGAN CHASE   CHASE ACH                  PPD ID: 353'
+    const result = clusterDescriptions([desc, desc])
+    expect(result).toHaveLength(1)
+    expect(result[0].tag).not.toBe(desc)
+    expect(result[0].tag!.length).toBeLessThanOrEqual(10)
+    expect(result[0].tag).toMatch(/^[a-zA-Z0-9]+$/)
+  })
+
+  it('does not dilute a coherent pair when a divergent third sorts adjacent (bug: netflix -> net)', () => {
+    const result = clusterDescriptions(['NETFLIX SUB 1', 'NETFLIX SUB 2', 'NETF OTHER'])
+    const byIndex = new Map<number, (typeof result)[number]>()
+    for (const c of result) for (const i of c.indices) byIndex.set(i, c)
+    // Coherent pair keeps its own full LCP, divergent third splits off
+    expect(byIndex.get(0)).toBe(byIndex.get(1))
+    expect(byIndex.get(0)!.tag).toBe('NETFLIXSUB')
+    expect(byIndex.get(2)!.indices).toEqual([2])
+    expect(byIndex.get(2)!.tag).toBeNull()
   })
 })
 
@@ -149,8 +185,8 @@ describe('applyAutoTags', () => {
     ]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(2)
-    expect(transactions[0].tags).toEqual(['COSTCO WHSE #'])
-    expect(transactions[1].tags).toEqual(['COSTCO WHSE #'])
+    expect(transactions[0].tags).toEqual(['COSTCOWHSE'])
+    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
     expect(transactions[2].tags).toBeUndefined()
     // Immutable: input records untouched, new array returned
     expect(input[0].tags).toBeUndefined()
@@ -159,12 +195,12 @@ describe('applyAutoTags', () => {
   })
 
   it('dedups case-insensitively against pre-existing tags and excludes them from taggedCount', () => {
-    const input = [tx('a', 'COSTCO WHSE #123', ['costco whse #']), tx('b', 'COSTCO WHSE #456')]
+    const input = [tx('a', 'COSTCO WHSE #123', ['costcowhse']), tx('b', 'COSTCO WHSE #456')]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(1)
     // Existing casing wins, no duplicate appended
-    expect(transactions[0].tags).toEqual(['costco whse #'])
-    expect(transactions[1].tags).toEqual(['COSTCO WHSE #'])
+    expect(transactions[0].tags).toEqual(['costcowhse'])
+    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
   })
 
   it('silently skips records already at the 5-tag cap without counting them', () => {
@@ -175,22 +211,22 @@ describe('applyAutoTags', () => {
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(1)
     expect(transactions[0].tags).toEqual(['t1', 't2', 't3', 't4', 't5'])
-    expect(transactions[1].tags).toEqual(['COSTCO WHSE #'])
+    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
   })
 
   it('never removes or replaces existing tags', () => {
     const input = [tx('a', 'COSTCO WHSE #123', ['manual']), tx('b', 'COSTCO WHSE #456')]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(2)
-    expect(transactions[0].tags).toEqual(['manual', 'COSTCO WHSE #'])
-    expect(transactions[1].tags).toEqual(['COSTCO WHSE #'])
+    expect(transactions[0].tags).toEqual(['manual', 'COSTCOWHSE'])
+    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
   })
 
   it('unions unrelated existing tags with the new cluster tag', () => {
     const input = [tx('a', 'COSTCO WHSE #123', ['groceries', 'weekly']), tx('b', 'COSTCO WHSE #456')]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(2)
-    expect(transactions[0].tags).toEqual(['groceries', 'weekly', 'COSTCO WHSE #'])
+    expect(transactions[0].tags).toEqual(['groceries', 'weekly', 'COSTCOWHSE'])
   })
 
   it('returns an empty pool unchanged with count 0', () => {
