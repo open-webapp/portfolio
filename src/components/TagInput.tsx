@@ -41,11 +41,11 @@ export function TagInput({ value, onChange, ariaLabel = 'Tags', disabled = false
   }
 
   return (
-    <div>
+    <div className="tag-input">
       {value.map((tag, i) => (
         <span key={`${tag.toLowerCase()}-${i}`} className="tag tag-outline">
           {tag}
-          <button type="button" aria-label={`Remove ${tag}`} onClick={() => removeAt(i)} disabled={disabled}>
+          <button type="button" className="tag-remove" aria-label={`Remove ${tag}`} onClick={() => removeAt(i)} disabled={disabled}>
             ×
           </button>
         </span>

@@ -114,6 +114,15 @@ describe('TagInput', () => {
     expect(chips()).toEqual(['bar'])
   })
 
+  it('renders remove buttons with reset class inside a flex wrapper (no native button chrome)', () => {
+    render(<Harness initial={['foo', 'bar']} />)
+
+    const removeBtn = screen.getByRole('button', { name: 'Remove foo' })
+    expect(removeBtn.classList.contains('tag-remove')).toBe(true)
+    const wrapper = removeBtn.closest('div')
+    expect(wrapper?.classList.contains('tag-input')).toBe(true)
+  })
+
   it('Backspace with empty input removes the last chip', async () => {
     const user = userEvent.setup()
     const handleChange = vi.fn()
