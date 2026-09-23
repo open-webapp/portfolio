@@ -3,9 +3,12 @@ import {
   buildExportableState,
   buildUnencryptedCategoriesExport,
   buildUnencryptedPortfolioExport,
+  decryptImportEnvelope,
   downloadCsvAsFile,
+  exportBackup,
   localDateStamp,
 } from './importExport'
+import { deriveKey, generateSalt } from './crypto'
 import { initialState } from './state'
 
 afterEach(() => {
@@ -94,6 +97,41 @@ describe('buildUnencryptedCategoriesExport', () => {
 
   it('handles empty arrays', () => {
     expect(buildUnencryptedCategoriesExport([], [])).toEqual({ categories: [], budgetAccountRules: [] })
+  })
+})
+
+describe('budget tag provenance round-trip', () => {
+  it('buildExportableState → decryptImportEnvelope preserves the tags/autoTags split', async () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 't1', date: '2025-01-01', description: 'Store', categoryId: 'c1', amount: 10, tags: ['user-tag'], autoTags: ['auto-tag'] },
+        { id: 't2', date: '2025-01-02', description: 'Cafe', categoryId: 'c1', amount: 5, tags: ['lunch'] },
+      ],
+    }
+    const password = 'test-password'
+    const salt = generateSalt()
+    const key = await deriveKey(password, salt)
+    const envelope = await exportBackup(state, key, salt)
+    const restored = await decryptImportEnvelope(envelope, password)
+    expect(restored.budgetTransactions).toEqual(state.budgetTransactions)
+    expect(restored.budgetTransactions[0].tags).toEqual(['user-tag'])
+    expect(restored.budgetTransactions[0].autoTags).toEqual(['auto-tag'])
+    expect(restored.budgetTransactions[1].tags).toEqual(['lunch'])
+    expect(restored.budgetTransactions[1].autoTags).toBeUndefined()
+  })
+
+  it('buildUnencryptedPortfolioExport keeps both tags and autoTags', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 't1', date: '2025-01-01', description: 'Store', categoryId: 'c1', amount: 10, tags: ['user-tag'], autoTags: ['auto-tag'] },
+      ],
+    }
+    const exported = buildUnencryptedPortfolioExport(state)
+    expect(exported.budgetTransactions).toEqual(state.budgetTransactions)
+    expect(exported.budgetTransactions[0].tags).toEqual(['user-tag'])
+    expect(exported.budgetTransactions[0].autoTags).toEqual(['auto-tag'])
   })
 })
 

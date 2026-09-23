@@ -167,66 +167,160 @@ describe('unionTags', () => {
   })
 })
 
+describe('unionTags combined user+auto', () => {
+  it('suppresses cross-dup user->auto, existing casing wins', () => {
+    expect(unionTags(['Groceries'], undefined, ['groceries'], 'auto')).toBeUndefined()
+    expect(unionTags(['Groceries'], ['Other'], ['GROCERIES', 'Fresh'], 'auto')).toEqual(['Other', 'Fresh'])
+  })
+
+  it('suppresses cross-dup auto->user, existing casing wins', () => {
+    expect(unionTags(undefined, ['Groceries'], ['groceries'], 'user')).toBeUndefined()
+    expect(unionTags(['Other'], ['Groceries'], ['groceries', 'Fresh'], 'user')).toEqual(['Other', 'Fresh'])
+  })
+
+  it('skips auto candidate when user side already holds 5 (combined cap)', () => {
+    const user = ['t1', 't2', 't3', 't4', 't5']
+    expect(unionTags(user, undefined, ['NEWTAG'], 'auto')).toBeUndefined()
+  })
+
+  it('refuses the 6th tag once combined 4+1 is full, either target', () => {
+    const user = ['t1', 't2', 't3', 't4']
+    const auto = ['a1']
+    expect(unionTags(user, auto, ['sixth'], 'user')).toEqual(['t1', 't2', 't3', 't4'])
+    expect(unionTags(user, auto, ['sixth'], 'auto')).toEqual(['a1'])
+  })
+
+  it('returns undefined-not-[] for both targets when nothing to set', () => {
+    expect(unionTags(undefined, undefined, [], 'user')).toBeUndefined()
+    expect(unionTags(undefined, undefined, [], 'auto')).toBeUndefined()
+    expect(unionTags([], [], [], 'user')).toBeUndefined()
+    expect(unionTags([], [], [], 'auto')).toBeUndefined()
+    // All-skipped dup on an empty target side stays undefined
+    expect(unionTags(['Keep'], undefined, ['keep'], 'auto')).toBeUndefined()
+    expect(unionTags(undefined, ['Keep'], ['KEEP'], 'user')).toBeUndefined()
+  })
+
+  it('does not mutate inputs', () => {
+    const user = ['t1']
+    const auto = ['a1']
+    unionTags(user, auto, ['New'], 'auto')
+    unionTags(user, auto, ['New'], 'user')
+    expect(user).toEqual(['t1'])
+    expect(auto).toEqual(['a1'])
+  })
+})
+
 describe('applyAutoTags', () => {
-  const tx = (id: string, description: string, tags?: string[]): BudgetTransaction => ({
+  const tx = (id: string, description: string, tags?: string[], autoTags?: string[]): BudgetTransaction => ({
     id,
     date: '2026-01-05',
     description,
     categoryId: 'c1',
     amount: 10,
     ...(tags === undefined ? {} : { tags }),
+    ...(autoTags === undefined ? {} : { autoTags }),
   })
 
-  it('tags clustered members, leaves singletons untagged, and does not mutate input', () => {
+  it('sets autoTags on clustered members, leaves singletons empty, never touches tags, does not mutate input', () => {
     const input = [
-      tx('a', 'COSTCO WHSE #123'),
+      tx('a', 'COSTCO WHSE #123', ['manual']),
       tx('b', 'COSTCO WHSE #456'),
       tx('c', 'STARBUCKS SEATTLE'),
     ]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(2)
-    expect(transactions[0].tags).toEqual(['COSTCOWHSE'])
-    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
+    expect(transactions[0].autoTags).toEqual(['COSTCOWHSE'])
+    expect(transactions[1].autoTags).toEqual(['COSTCOWHSE'])
+    expect(transactions[2].autoTags).toBeUndefined()
+    // User tags untouched
+    expect(transactions[0].tags).toEqual(['manual'])
+    expect(transactions[1].tags).toBeUndefined()
     expect(transactions[2].tags).toBeUndefined()
     // Immutable: input records untouched, new array returned
-    expect(input[0].tags).toBeUndefined()
-    expect(input[1].tags).toBeUndefined()
+    expect(input[0].autoTags).toBeUndefined()
+    expect(input[1].autoTags).toBeUndefined()
     expect(transactions).not.toBe(input)
   })
 
-  it('dedups case-insensitively against pre-existing tags and excludes them from taggedCount', () => {
+  it('removes stale auto tags when a description changes (recompute overwrite, removals not counted)', () => {
+    const first = applyAutoTags([tx('a', 'COSTCO WHSE #123'), tx('b', 'COSTCO WHSE #456')])
+    expect(first.taggedCount).toBe(2)
+    // 'a' drifts out of the cluster; 'b' is left a singleton too
+    const second = applyAutoTags([
+      { ...first.transactions[0], description: 'STARBUCKS SEATTLE' },
+      first.transactions[1],
+    ])
+    expect(second.taggedCount).toBe(0)
+    expect(second.transactions[0].autoTags).toBeUndefined()
+    expect(second.transactions[1].autoTags).toBeUndefined()
+  })
+
+  it('swaps the auto tag when a record moves to a new cluster (gain counted)', () => {
+    const first = applyAutoTags([tx('a', 'COSTCO WHSE #123'), tx('b', 'COSTCO WHSE #456')])
+    // 'a' joins a new cluster; stale COSTCOWHSE is replaced, not accumulated
+    const second = applyAutoTags([
+      { ...first.transactions[0], description: 'AMAZON MKT 1' },
+      tx('c', 'AMAZON MKT 2'),
+      first.transactions[1],
+    ])
+    expect(second.transactions[0].autoTags).toEqual(['AMAZONMKT'])
+    expect(second.transactions[1].autoTags).toEqual(['AMAZONMKT'])
+    expect(second.transactions[2].autoTags).toBeUndefined()
+    expect(second.taggedCount).toBe(2)
+  })
+
+  it('clears prior auto tags on singletons', () => {
+    const input = [tx('a', 'ZZZ SOLO', undefined, ['STALE']), tx('b', 'QQQ OTHER', undefined, ['STALE'])]
+    const { transactions, taggedCount } = applyAutoTags(input)
+    expect(taggedCount).toBe(0)
+    expect(transactions[0].autoTags).toBeUndefined()
+    expect(transactions[0].tags).toBeUndefined()
+    expect(transactions[1].autoTags).toBeUndefined()
+    // Key deleted, not emptied
+    expect('autoTags' in transactions[0]).toBe(false)
+  })
+
+  it('skips records whose user tags clash with the cluster tag (not counted), tags the rest', () => {
     const input = [tx('a', 'COSTCO WHSE #123', ['costcowhse']), tx('b', 'COSTCO WHSE #456')]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(1)
-    // Existing casing wins, no duplicate appended
+    // Clash: no auto tag written, user casing preserved
+    expect(transactions[0].autoTags).toBeUndefined()
     expect(transactions[0].tags).toEqual(['costcowhse'])
-    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
+    expect(transactions[1].autoTags).toEqual(['COSTCOWHSE'])
   })
 
-  it('silently skips records already at the 5-tag cap without counting them', () => {
+  it('skips records at the combined 5-tag cap without counting them', () => {
     const input = [
       tx('a', 'COSTCO WHSE #123', ['t1', 't2', 't3', 't4', 't5']),
       tx('b', 'COSTCO WHSE #456'),
     ]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(1)
+    expect(transactions[0].autoTags).toBeUndefined()
     expect(transactions[0].tags).toEqual(['t1', 't2', 't3', 't4', 't5'])
-    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
+    expect(transactions[1].autoTags).toEqual(['COSTCOWHSE'])
   })
 
-  it('never removes or replaces existing tags', () => {
-    const input = [tx('a', 'COSTCO WHSE #123', ['manual']), tx('b', 'COSTCO WHSE #456')]
-    const { transactions, taggedCount } = applyAutoTags(input)
-    expect(taggedCount).toBe(2)
-    expect(transactions[0].tags).toEqual(['manual', 'COSTCOWHSE'])
-    expect(transactions[1].tags).toEqual(['COSTCOWHSE'])
+  it('is idempotent: a re-run over tagged records gains nothing (full-record skip)', () => {
+    const first = applyAutoTags([tx('a', 'COSTCO WHSE #123'), tx('b', 'COSTCO WHSE #456')])
+    const second = applyAutoTags(first.transactions)
+    expect(second.taggedCount).toBe(0)
+    expect(second.transactions[0].autoTags).toEqual(['COSTCOWHSE'])
+    expect(second.transactions[1].autoTags).toEqual(['COSTCOWHSE'])
   })
 
-  it('unions unrelated existing tags with the new cluster tag', () => {
-    const input = [tx('a', 'COSTCO WHSE #123', ['groceries', 'weekly']), tx('b', 'COSTCO WHSE #456')]
+  it('never removes or replaces existing user tags', () => {
+    const input = [
+      tx('a', 'COSTCO WHSE #123', ['manual']),
+      tx('b', 'COSTCO WHSE #456', ['groceries', 'weekly']),
+    ]
     const { transactions, taggedCount } = applyAutoTags(input)
     expect(taggedCount).toBe(2)
-    expect(transactions[0].tags).toEqual(['groceries', 'weekly', 'COSTCOWHSE'])
+    expect(transactions[0].tags).toEqual(['manual'])
+    expect(transactions[0].autoTags).toEqual(['COSTCOWHSE'])
+    expect(transactions[1].tags).toEqual(['groceries', 'weekly'])
+    expect(transactions[1].autoTags).toEqual(['COSTCOWHSE'])
   })
 
   it('returns an empty pool unchanged with count 0', () => {

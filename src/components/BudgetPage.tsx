@@ -81,6 +81,16 @@ function TrashIcon() {
   )
 }
 
+/**
+ * Auto tags visible on a spend record: auto-first order with cross-dupe
+ * suppression — an auto chip whose lowercase matches any user chip on the
+ * same record is hidden (the red user chip wins).
+ */
+function visibleAutoTags(row: { tags?: string[]; autoTags?: string[] }): string[] {
+  const userLower = new Set((row.tags ?? []).map((t) => t.toLowerCase()))
+  return (row.autoTags ?? []).filter((auto) => !userLower.has(auto.toLowerCase()))
+}
+
 export interface CategoryMappingsDialogProps {
   mappings: CategoryMapping[]
   onUpdate: (mapping: CategoryMapping, substring: string) => void | Promise<void>
@@ -249,6 +259,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [incomeDraft, setIncomeDraft] = useState('')
   const [autoTagFeedback, setAutoTagFeedback] = useState<string | null>(null)
   const autoTagFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [clearScope, setClearScope] = useState<'user' | 'auto' | 'both' | null>(null)
 
   const { budgetedSpend: totalExpense, actualSpend: totalActual } = spendCardTotals(
     state.budgetExpenseDefinitions,
@@ -323,7 +334,8 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           t.description.toLowerCase().includes(searchLower) ||
           categoryLabel.toLowerCase().includes(searchLower) ||
           (t.accountName ?? '').toLowerCase().includes(searchLower) ||
-          (t.tags ?? []).some((tag) => tag.toLowerCase().includes(searchLower))
+          (t.tags ?? []).some((tag) => tag.toLowerCase().includes(searchLower)) ||
+          (t.autoTags ?? []).some((tag) => tag.toLowerCase().includes(searchLower))
         )
       })
     : recordSourceTransactions
@@ -395,20 +407,59 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     autoTagFeedbackTimer.current = setTimeout(() => setAutoTagFeedback(null), 4000)
   }
 
-  const handleClearTags = () => {
-    const taggedCount = state.budgetTransactions.filter((t) => (t.tags ?? []).length > 0).length
-    if (taggedCount === 0) {
-      setAutoTagFeedback('No tags to clear')
-      if (autoTagFeedbackTimer.current) clearTimeout(autoTagFeedbackTimer.current)
-      autoTagFeedbackTimer.current = setTimeout(() => setAutoTagFeedback(null), 4000)
-      return
-    }
-    if (!window.confirm(`Remove all tags from ${taggedCount} tagged record(s)? This cannot be undone.`)) return
-    dispatch({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
-    setAutoTagFeedback(`Cleared tags from ${taggedCount} record(s)`)
+  const userTaggedCount = state.budgetTransactions.filter((t) => (t.tags ?? []).length > 0).length
+  const autoTaggedCount = state.budgetTransactions.filter((t) => (t.autoTags ?? []).length > 0).length
+  const anyTaggedCount = state.budgetTransactions.filter(
+    (t) => (t.tags ?? []).length > 0 || (t.autoTags ?? []).length > 0
+  ).length
+  const flashAutoTagFeedback = (text: string) => {
+    setAutoTagFeedback(text)
     if (autoTagFeedbackTimer.current) clearTimeout(autoTagFeedbackTimer.current)
     autoTagFeedbackTimer.current = setTimeout(() => setAutoTagFeedback(null), 4000)
   }
+
+  const handleClearTags = () => {
+    if (anyTaggedCount === 0) {
+      flashAutoTagFeedback('No tags to clear')
+      return
+    }
+    setClearScope('user')
+  }
+
+  const confirmClearScope = () => {
+    const scope = clearScope
+    setClearScope(null)
+    if (scope === 'user') {
+      if (userTaggedCount === 0) {
+        flashAutoTagFeedback('No user tags to clear')
+        return
+      }
+      dispatch({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+      flashAutoTagFeedback(`Cleared user tags from ${userTaggedCount} record(s)`)
+    } else if (scope === 'auto') {
+      if (autoTaggedCount === 0) {
+        flashAutoTagFeedback('No auto-tags to clear')
+        return
+      }
+      dispatch({ type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' })
+      flashAutoTagFeedback(`Cleared auto-tags from ${autoTaggedCount} record(s)`)
+    } else if (scope === 'both') {
+      if (anyTaggedCount === 0) {
+        flashAutoTagFeedback('No tags to clear')
+        return
+      }
+      dispatch({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+      dispatch({ type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' })
+      flashAutoTagFeedback(`Cleared all tags from ${anyTaggedCount} record(s)`)
+    }
+  }
+
+  const clearConfirmCopy =
+    clearScope === 'user'
+      ? `Remove user tags from ${userTaggedCount} record(s)? This cannot be undone.`
+      : clearScope === 'auto'
+        ? `Remove auto-tags from ${autoTaggedCount} record(s)? This cannot be undone.`
+        : `Remove all tags from ${anyTaggedCount} record(s)? This cannot be undone.`
 
   // Clears row selection whenever the visible set/order of Spend records can
   // change out from under it (paging, sorting, searching, or switching
@@ -860,6 +911,56 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             </div>
           </div>
         </div>
+        <div className="text-muted" style={{ fontSize: '12px', marginBottom: 'var(--space-3)' }}>
+          Gray = auto-tag, red = your tag
+        </div>
+        {clearScope !== null && (
+          <div className="dialog-backdrop">
+            <div className="dialog blueprint" role="dialog" aria-modal="true" aria-label="Clear tags">
+              <div className="dialog-title">Clear tags</div>
+              <div className="dialog-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '12px' }}>
+                  <input
+                    type="radio"
+                    name="clear-scope"
+                    checked={clearScope === 'user'}
+                    onChange={() => setClearScope('user')}
+                  />
+                  User tags ({userTaggedCount})
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '12px' }}>
+                  <input
+                    type="radio"
+                    name="clear-scope"
+                    checked={clearScope === 'auto'}
+                    onChange={() => setClearScope('auto')}
+                  />
+                  Auto-tags ({autoTaggedCount})
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: '12px' }}>
+                  <input
+                    type="radio"
+                    name="clear-scope"
+                    checked={clearScope === 'both'}
+                    onChange={() => setClearScope('both')}
+                  />
+                  Both ({anyTaggedCount})
+                </label>
+                <div className="text-muted" style={{ fontSize: '12px' }}>
+                  {clearConfirmCopy}
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn" onClick={() => setClearScope(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn btn-primary" onClick={confirmClearScope}>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {selectedRowIds.size > 0 && (
           <div
@@ -1092,25 +1193,38 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                     </td>
                     <td onClick={() => startCellEdit(row.id, 'tags', row.tags ?? [])} onBlur={() => handleTagsCellBlur(row.id)} onKeyDown={handleTagsCellKeyDown}>
                       {isEditingCell(row.id, 'tags') ? (
-                        <TagInput
-                          value={cellTagsDraft}
-                          onChange={setCellTagsDraft}
-                          onRemove={(tags) => {
-                            // × persists immediately: removing the chip unmounts the
-                            // focused button, so this cell's blur-commit never fires
-                            // and navigating away would drop the removal. The editor
-                            // stays open so multiple tags can be removed in one pass.
-                            dispatch({ type: 'UPDATE_BUDGET_TRANSACTION', id: row.id, patch: { tags: tags.length ? tags : undefined } })
-                            setCellTagsDraft(tags)
-                          }}
-                          ariaLabel="Edit record tags"
-                        />
-                      ) : (row.tags ?? []).length === 0 ? (
+                        <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '2px', alignItems: 'center' }}>
+                          {visibleAutoTags(row).map((tag, i) => (
+                            <span key={`auto-${tag.toLowerCase()}-${i}`} className="tag tag-neutral" title="Auto-tag">
+                              {tag}
+                            </span>
+                          ))}
+                          <TagInput
+                            value={cellTagsDraft}
+                            onChange={setCellTagsDraft}
+                            onRemove={(tags) => {
+                              // × persists immediately: removing the chip unmounts the
+                              // focused button, so this cell's blur-commit never fires
+                              // and navigating away would drop the removal. The editor
+                              // stays open so multiple tags can be removed in one pass.
+                              dispatch({ type: 'UPDATE_BUDGET_TRANSACTION', id: row.id, patch: { tags: tags.length ? tags : undefined } })
+                              setCellTagsDraft(tags)
+                            }}
+                            ariaLabel="Edit record tags"
+                            blockedTags={row.autoTags}
+                          />
+                        </span>
+                      ) : visibleAutoTags(row).length === 0 && (row.tags ?? []).length === 0 ? (
                         '—'
                       ) : (
                         <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '2px' }}>
+                          {visibleAutoTags(row).map((tag, i) => (
+                            <span key={`auto-${tag.toLowerCase()}-${i}`} className="tag tag-neutral" title="Auto-tag">
+                              {tag}
+                            </span>
+                          ))}
                           {(row.tags ?? []).map((tag, i) => (
-                            <span key={`${tag.toLowerCase()}-${i}`} className="tag tag-outline">
+                            <span key={`user-${tag.toLowerCase()}-${i}`} className="tag tag-outline">
                               {tag}
                             </span>
                           ))}

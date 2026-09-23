@@ -56,6 +56,7 @@ export type AppAction =
   | { type: 'UPDATE_BUDGET_TRANSACTIONS_BULK'; ids: string[]; categoryId: string; spendExpenseId?: string; tagsToAdd?: string[] }
   | { type: 'AUTO_TAG_BUDGET_TRANSACTIONS' }
   | { type: 'CLEAR_BUDGET_TRANSACTION_TAGS' }
+  | { type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' }
   | { type: 'DELETE_BUDGET_TRANSACTION'; id: string }
   | {
       type: 'IMPORT_BUDGET_TRANSACTIONS'
@@ -245,6 +246,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'CLEAR_BUDGET_TRANSACTION_TAGS':
       return StateActions.clearBudgetTransactionTags(state)
+
+    case 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS':
+      return StateActions.clearBudgetTransactionAutoTags(state)
 
     case 'IMPORT_BUDGET_TRANSACTIONS':
       return StateActions.importBudgetTransactions(

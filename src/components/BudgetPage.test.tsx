@@ -1312,7 +1312,17 @@ describe('BudgetPage clear all tags', () => {
     { id: 'b', date: '2025-01-02', description: 'Tagged diner', categoryId: 'food', amount: 12, tags: ['dining'] },
   ]
 
-  const renderClearTags = (transactions: typeof taggedTransactions) => {
+  type ClearTagsRow = {
+    id: string
+    date: string
+    description: string
+    categoryId: string
+    amount: number
+    tags?: string[]
+    autoTags?: string[]
+  }
+
+  const renderClearTags = (transactions: ClearTagsRow[]) => {
     const actions: unknown[] = []
     const Harness = () => {
       const [appState, dispatch] = useReducer(appReducer, {
@@ -1338,88 +1348,152 @@ describe('BudgetPage clear all tags', () => {
     return actions
   }
 
-  it('clears tags from all tagged records after confirm and shows the cleared count', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    try {
-      const actions = renderClearTags(taggedTransactions)
+  const openChooser = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+    return screen.getByRole('dialog', { name: 'Clear tags' })
+  }
 
-      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+  it('user scope (default) dispatches only CLEAR_BUDGET_TRANSACTION_TAGS with the user count', () => {
+    const actions = renderClearTags(taggedTransactions)
 
-      expect(confirm).toHaveBeenCalledWith(
-        'Remove all tags from 2 tagged record(s)? This cannot be undone.'
-      )
-      expect(actions).toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
-      expect(screen.getByText('Cleared tags from 2 record(s)')).toBeTruthy()
-      expect(screen.queryByText('grocery')).toBeNull()
-      expect(screen.queryByText('dining')).toBeNull()
-    } finally {
-      confirm.mockRestore()
-    }
+    const dialog = openChooser()
+    // Default scope is User tags, with the per-scope count in the label.
+    expect(screen.getByRole('radio', { name: 'User tags (2)' })).toBeTruthy()
+    expect((screen.getByRole('radio', { name: 'User tags (2)' }) as HTMLInputElement).checked).toBe(true)
+    expect(dialog.textContent).toContain('Remove user tags from 2 record(s)? This cannot be undone.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(actions).toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+    expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' })
+    expect(screen.getByText('Cleared user tags from 2 record(s)')).toBeTruthy()
+    expect(screen.queryByText('grocery')).toBeNull()
+    expect(screen.queryByText('dining')).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Clear tags' })).toBeNull()
   })
 
-  it('shows "No tags to clear" without confirming or dispatching when nothing is tagged', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    try {
-      const actions = renderClearTags([
-        { id: 'solo', date: '2025-01-01', description: 'Untagged row', categoryId: 'food', amount: 10 },
-      ])
+  it('auto scope dispatches only CLEAR_BUDGET_TRANSACTION_AUTO_TAGS and preserves user tags', () => {
+    const actions = renderClearTags([
+      { id: 'a', date: '2025-01-01', description: 'Mixed market', categoryId: 'food', amount: 10, tags: ['grocery'], autoTags: ['COSTCOWHOL'] },
+      { id: 'b', date: '2025-01-02', description: 'Mixed diner', categoryId: 'food', amount: 12, tags: ['dining'], autoTags: ['TRADERJOES'] },
+    ])
 
-      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+    openChooser()
+    fireEvent.click(screen.getByRole('radio', { name: 'Auto-tags (2)' }))
+    expect(screen.getByRole('dialog', { name: 'Clear tags' }).textContent).toContain(
+      'Remove auto-tags from 2 record(s)? This cannot be undone.'
+    )
 
-      expect(confirm).not.toHaveBeenCalled()
-      expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
-      expect(screen.getByText('No tags to clear')).toBeTruthy()
-    } finally {
-      confirm.mockRestore()
-    }
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+    expect(actions).toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' })
+    expect(screen.getByText('Cleared auto-tags from 2 record(s)')).toBeTruthy()
+    expect(screen.queryByText('COSTCOWHOL')).toBeNull()
+    expect(screen.getByText('grocery')).toBeTruthy()
+    expect(screen.getByText('dining')).toBeTruthy()
   })
 
-  it('keeps tags and shows no feedback when the confirm is cancelled', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    try {
-      const actions = renderClearTags(taggedTransactions)
+  it('both scope dispatches both actions sequentially with the union count', () => {
+    const actions = renderClearTags([
+      { id: 'a', date: '2025-01-01', description: 'Mixed market', categoryId: 'food', amount: 10, tags: ['grocery'], autoTags: ['COSTCOWHOL'] },
+      { id: 'b', date: '2025-01-02', description: 'User-only diner', categoryId: 'food', amount: 12, tags: ['dining'] },
+      { id: 'c', date: '2025-01-03', description: 'Auto-only cafe', categoryId: 'food', amount: 8, autoTags: ['PEETSC0FFEE'] },
+    ])
 
-      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+    openChooser()
+    expect(screen.getByRole('radio', { name: 'User tags (2)' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Auto-tags (2)' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Both (3)' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: 'Both (3)' }))
+    expect(screen.getByRole('dialog', { name: 'Clear tags' }).textContent).toContain(
+      'Remove all tags from 3 record(s)? This cannot be undone.'
+    )
 
-      expect(confirm).toHaveBeenCalledWith(
-        'Remove all tags from 2 tagged record(s)? This cannot be undone.'
-      )
-      expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
-      expect(screen.getByText('grocery')).toBeTruthy()
-      expect(screen.getByText('dining')).toBeTruthy()
-      expect(screen.queryByText('Cleared tags from 2 record(s)')).toBeNull()
-      expect(screen.queryByText('No tags to clear')).toBeNull()
-    } finally {
-      confirm.mockRestore()
-    }
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(actions).toEqual([
+      { type: 'CLEAR_BUDGET_TRANSACTION_TAGS' },
+      { type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' },
+    ])
+    expect(screen.getByText('Cleared all tags from 3 record(s)')).toBeTruthy()
+    expect(screen.queryByText('grocery')).toBeNull()
+    expect(screen.queryByText('COSTCOWHOL')).toBeNull()
   })
 
-  it('clears tags across years with one click while scoped to a concrete year', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    try {
-      const actions = renderClearTags([
-        { id: 'old', date: '2024-06-01', description: 'Old tagged row', categoryId: 'food', amount: 10, tags: ['grocery'] },
-        { id: 'new', date: '2025-06-01', description: 'New tagged row', categoryId: 'food', amount: 12, tags: ['dining'] },
-      ])
+  it('cancel dispatches nothing and shows no feedback', () => {
+    const actions = renderClearTags(taggedTransactions)
 
-      // Harness defaults to the newest concrete year, hiding the 2024 record.
-      expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2025')
-      expect(screen.queryByText('Old tagged row')).toBeNull()
+    openChooser()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
-      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+    expect(actions).toHaveLength(0)
+    expect(screen.queryByRole('dialog', { name: 'Clear tags' })).toBeNull()
+    expect(screen.getByText('grocery')).toBeTruthy()
+    expect(screen.getByText('dining')).toBeTruthy()
+    expect(screen.queryByText(/Cleared/)).toBeNull()
+    expect(screen.queryByText(/No .*tags to clear/)).toBeNull()
+  })
 
-      expect(confirm).toHaveBeenCalledWith(
-        'Remove all tags from 2 tagged record(s)? This cannot be undone.'
-      )
-      expect(actions).toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
-      expect(screen.getByText('Cleared tags from 2 record(s)')).toBeTruthy()
+  it('zero-count auto scope confirms to feedback only without dispatching', () => {
+    const actions = renderClearTags(taggedTransactions)
 
-      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2024' } })
-      expect(screen.getByText('Old tagged row')).toBeTruthy()
-      expect(screen.queryByText('grocery')).toBeNull()
-    } finally {
-      confirm.mockRestore()
-    }
+    openChooser()
+    fireEvent.click(screen.getByRole('radio', { name: 'Auto-tags (0)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(actions).toHaveLength(0)
+    expect(screen.getByText('No auto-tags to clear')).toBeTruthy()
+    expect(screen.getByText('grocery')).toBeTruthy()
+  })
+
+  it('zero-count user scope confirms to feedback only without dispatching', () => {
+    const actions = renderClearTags([
+      { id: 'solo', date: '2025-01-01', description: 'Auto-only row', categoryId: 'food', amount: 10, autoTags: ['COSTCOWHOL'] },
+    ])
+
+    openChooser()
+    // User scope is the default and has nothing to clear here.
+    expect((screen.getByRole('radio', { name: 'User tags (0)' }) as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(actions).toHaveLength(0)
+    expect(screen.getByText('No user tags to clear')).toBeTruthy()
+    expect(screen.getByText('COSTCOWHOL')).toBeTruthy()
+  })
+
+  it('shows "No tags to clear" without opening the chooser when nothing is tagged', () => {
+    const actions = renderClearTags([
+      { id: 'solo', date: '2025-01-01', description: 'Untagged row', categoryId: 'food', amount: 10 },
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Clear tags' })).toBeNull()
+    expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+    expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' })
+    expect(screen.getByText('No tags to clear')).toBeTruthy()
+  })
+
+  it('clears user tags across years with one confirm while scoped to a concrete year', () => {
+    const actions = renderClearTags([
+      { id: 'old', date: '2024-06-01', description: 'Old tagged row', categoryId: 'food', amount: 10, tags: ['grocery'] },
+      { id: 'new', date: '2025-06-01', description: 'New tagged row', categoryId: 'food', amount: 12, tags: ['dining'] },
+    ])
+
+    // Harness defaults to the newest concrete year, hiding the 2024 record.
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2025')
+    expect(screen.queryByText('Old tagged row')).toBeNull()
+
+    openChooser()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    expect(actions).toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+    expect(screen.getByText('Cleared user tags from 2 record(s)')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2024' } })
+    expect(screen.getByText('Old tagged row')).toBeTruthy()
+    expect(screen.queryByText('grocery')).toBeNull()
   })
 
   it('renders the button in the left-hand group alongside the title and auto-tag button', () => {
@@ -1443,5 +1517,134 @@ describe('BudgetPage clear all tags', () => {
     expect(title?.textContent).toContain('Spend records')
     expect(clearButton.parentElement).toBe(title?.parentElement)
     expect(autoTagButton.parentElement).toBe(title?.parentElement)
+  })
+})
+
+describe('BudgetPage auto vs user tags (T5)', () => {
+  const provenanceCategories = [{ id: 'food', name: 'Food', updatedAt: '' }]
+
+  type ProvenanceRow = {
+    id: string
+    date: string
+    description: string
+    categoryId: string
+    amount: number
+    tags?: string[]
+    autoTags?: string[]
+  }
+
+  const renderProvenance = (budgetTransactions: ProvenanceRow[]) => {
+    const dispatch = vi.fn()
+    render(
+      <BudgetPage
+        state={{ ...initialState(), budgetTransactions }}
+        dispatch={dispatch}
+        categories={provenanceCategories}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        categoriesHydrated
+        {...periodProps}
+      />
+    )
+    return dispatch
+  }
+
+  const tagsCell = (description: string) =>
+    screen.getByText(description).closest('tr')!.querySelectorAll('td')[5]!
+
+  const clickTagsCell = (description: string) => {
+    fireEvent.click(tagsCell(description))
+  }
+
+  it('renders auto chips gray first then user chips red, with title="Auto-tag" on gray', () => {
+    renderProvenance([
+      { id: 'a', date: '2025-01-01', description: 'Mixed row', categoryId: 'food', amount: 10, tags: ['mine'], autoTags: ['COSTCOWHOL'] },
+    ])
+
+    const cell = tagsCell('Mixed row')
+    const chips = Array.from(cell.querySelectorAll('span.tag'))
+    expect(chips).toHaveLength(2)
+    expect(chips[0].textContent).toBe('COSTCOWHOL')
+    expect(chips[0].classList.contains('tag-neutral')).toBe(true)
+    expect(chips[0].getAttribute('title')).toBe('Auto-tag')
+    expect(chips[1].textContent).toBe('mine')
+    expect(chips[1].classList.contains('tag-outline')).toBe(true)
+  })
+
+  it('suppresses an auto chip duplicating a user chip (case-insensitive)', () => {
+    renderProvenance([
+      { id: 'a', date: '2025-01-01', description: 'Dupe row', categoryId: 'food', amount: 10, tags: ['Grocery'], autoTags: ['grocery', 'COSTCOWHOL'] },
+    ])
+
+    const cell = tagsCell('Dupe row')
+    const chips = Array.from(cell.querySelectorAll('span.tag'))
+    expect(chips).toHaveLength(2)
+    // Visible auto chip first, then the single user chip; the duped auto chip is hidden.
+    expect(chips[0].textContent).toBe('COSTCOWHOL')
+    expect(chips[0].classList.contains('tag-neutral')).toBe(true)
+    expect(chips[1].textContent).toBe('Grocery')
+    expect(chips[1].classList.contains('tag-outline')).toBe(true)
+  })
+
+  it('renders the toolbar legend line', () => {
+    renderProvenance([
+      { id: 'a', date: '2025-01-01', description: 'Any row', categoryId: 'food', amount: 10 },
+    ])
+
+    expect(screen.getByText('Gray = auto-tag, red = your tag')).toBeTruthy()
+  })
+
+  it('finds auto-only records via the search box', () => {
+    renderProvenance([
+      { id: 'a', date: '2025-01-01', description: 'Auto match', categoryId: 'food', amount: 10, autoTags: ['COSTCOWHOL'] },
+      { id: 'b', date: '2025-01-02', description: 'No match here', categoryId: 'food', amount: 12, tags: ['personal'] },
+    ])
+
+    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'costcowhol' } })
+    expect(screen.getByText('Auto match')).toBeTruthy()
+    expect(screen.queryByText('No match here')).toBeNull()
+  })
+
+  it('editor shows read-only gray chips with no × and refuses a user dupe of an auto tag', () => {
+    const dispatch = renderProvenance([
+      { id: 'a', date: '2025-01-01', description: 'Edit row', categoryId: 'food', amount: 10, tags: ['mine'], autoTags: ['COSTCOWHOL'] },
+    ])
+
+    clickTagsCell('Edit row')
+    const cell = tagsCell('Edit row')
+    const gray = cell.querySelector('span.tag.tag-neutral')
+    expect(gray?.textContent).toBe('COSTCOWHOL')
+    expect(gray?.getAttribute('title')).toBe('Auto-tag')
+    expect(gray?.querySelector('button')).toBeNull()
+
+    const input = screen.getByLabelText('Edit record tags') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'costcowhol' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    // Silent refusal: no new chip, draft cleared.
+    expect(cell.querySelectorAll('span.tag.tag-outline')).toHaveLength(1)
+    expect(input.value).toBe('')
+
+    fireEvent.blur(input)
+    const updateAction = dispatch.mock.calls.map((call) => call[0]).find((action) => action?.type === 'UPDATE_BUDGET_TRANSACTION')
+    expect(updateAction).toBeTruthy()
+    expect(updateAction.id).toBe('a')
+    expect(updateAction.patch).toEqual({ tags: ['mine'] })
+  })
+
+  it('editor refuses a new user tag when the merged set is already at the 5-tag cap', () => {
+    const dispatch = renderProvenance([
+      { id: 'a', date: '2025-01-01', description: 'Full row', categoryId: 'food', amount: 10, tags: ['u1', 'u2', 'u3', 'u4'], autoTags: ['a1'] },
+    ])
+
+    clickTagsCell('Full row')
+    const input = screen.getByLabelText('Edit record tags') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'newtag' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.queryByText('newtag')).toBeNull()
+
+    fireEvent.blur(input)
+    const updateAction = dispatch.mock.calls.map((call) => call[0]).find((action) => action?.type === 'UPDATE_BUDGET_TRANSACTION')
+    expect(updateAction).toBeTruthy()
+    expect(updateAction.patch).toEqual({ tags: ['u1', 'u2', 'u3', 'u4'] })
   })
 })

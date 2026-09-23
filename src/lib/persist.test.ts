@@ -19,4 +19,28 @@ describe('budget persistence migration', () => {
     expect(coalesceWithDefaults({ categoryMappings: [] }).categoryMappings).toEqual([])
   })
 
+  it('loads tags-only records with autoTags absent and tags intact (no guessing)', () => {
+    const coalesced = coalesceWithDefaults({
+      budgetTransactions: [
+        { id: 't1', date: '2025-01-01', description: 'Store', categoryId: 'c1', amount: 10, tags: ['groceries'] },
+        { id: 't2', date: '2025-01-02', description: 'Cafe', categoryId: 'c1', amount: 5 },
+      ],
+    })
+    expect(coalesced.budgetTransactions).toHaveLength(2)
+    expect(coalesced.budgetTransactions[0].tags).toEqual(['groceries'])
+    expect(coalesced.budgetTransactions[0]).not.toHaveProperty('autoTags')
+    expect(coalesced.budgetTransactions[1].tags).toBeUndefined()
+    expect(coalesced.budgetTransactions[1].autoTags).toBeUndefined()
+  })
+
+  it('preserves an existing tags/autoTags split through coalesce', () => {
+    const coalesced = coalesceWithDefaults({
+      budgetTransactions: [
+        { id: 't1', date: '2025-01-01', description: 'Store', categoryId: 'c1', amount: 10, tags: ['user-tag'], autoTags: ['auto-tag'] },
+      ],
+    })
+    expect(coalesced.budgetTransactions[0].tags).toEqual(['user-tag'])
+    expect(coalesced.budgetTransactions[0].autoTags).toEqual(['auto-tag'])
+  })
+
 })

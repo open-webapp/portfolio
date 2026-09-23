@@ -221,7 +221,14 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     regActivityFilter: loaded.regActivityFilter ?? defaults.regActivityFilter,
     budgetExpenseDefinitions: loaded.budgetExpenseDefinitions ?? defaults.budgetExpenseDefinitions,
     budgetExpenseAmountsByYear: loaded.budgetExpenseAmountsByYear ?? defaults.budgetExpenseAmountsByYear,
-    budgetTransactions: loaded.budgetTransactions ?? defaults.budgetTransactions,
+    // Per-record autoTags tolerance: missing stays missing (undefined = none).
+    // Old blobs (tags-only records) load with all existing tags intact as
+    // user tags — no guessing, no migration writes. The Drive restore path
+    // shares this function, so it gets the same guarantee.
+    budgetTransactions: (loaded.budgetTransactions ?? defaults.budgetTransactions).map((t) => ({
+      ...t,
+      ...(t.autoTags === undefined ? {} : { autoTags: t.autoTags }),
+    })),
     budgetAccountAppliedConventions: loaded.budgetAccountAppliedConventions ?? defaults.budgetAccountAppliedConventions,
   }
 }

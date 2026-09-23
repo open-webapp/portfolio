@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { appReducer } from './reducer'
-import { autoTagBudgetTransactions, clearBudgetTransactionTags, initialState } from './state'
+import { autoTagBudgetTransactions, clearBudgetTransactionAutoTags, clearBudgetTransactionTags, initialState } from './state'
 
 describe('budget reducer', () => {
   it('ensures an expense snapshot without any manual-income action', () => {
@@ -49,8 +49,8 @@ describe('budget reducer', () => {
     const direct = autoTagBudgetTransactions(state)
     expect(viaReducer).toEqual(direct)
     expect(viaReducer.budgetTransactions).toMatchObject([
-      { id: 'a', tags: ['COSTCOWHOL'] },
-      { id: 'b', tags: ['COSTCOWHOL'] },
+      { id: 'a', autoTags: ['COSTCOWHOL'] },
+      { id: 'b', autoTags: ['COSTCOWHOL'] },
     ])
   })
 
@@ -66,5 +66,20 @@ describe('budget reducer', () => {
     const direct = clearBudgetTransactionTags(state)
     expect(viaReducer).toEqual(direct)
     expect(viaReducer.budgetTransactions.every((t) => !t.tags || t.tags.length === 0)).toBe(true)
+  })
+
+  it('CLEAR_BUDGET_TRANSACTION_AUTO_TAGS delegates to clearBudgetTransactionAutoTags', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50, tags: ['Mine'], autoTags: ['COSTCOWHOL'] },
+        { id: 'b', date: '2025-06-01', description: 'COSTCO WHOLESALE #202', categoryId: 'other', amount: -60, autoTags: ['COSTCOWHOL'] },
+      ],
+    }
+    const viaReducer = appReducer(state, { type: 'CLEAR_BUDGET_TRANSACTION_AUTO_TAGS' })
+    const direct = clearBudgetTransactionAutoTags(state)
+    expect(viaReducer).toEqual(direct)
+    expect(viaReducer.budgetTransactions.every((t) => !t.autoTags || t.autoTags.length === 0)).toBe(true)
+    expect(viaReducer.budgetTransactions[0].tags).toEqual(['Mine'])
   })
 })

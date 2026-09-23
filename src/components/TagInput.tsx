@@ -12,6 +12,12 @@ export interface TagInputProps {
   onRemove?: (tags: string[]) => void
   ariaLabel?: string
   disabled?: boolean
+  /**
+   * Tags owned elsewhere (e.g. system auto-tags) that count against the
+   * combined 5-tag cap and refuse case-insensitive dupes. Never rendered
+   * here — the host renders them as read-only chips alongside this input.
+   */
+  blockedTags?: string[]
 }
 
 const MAX_TAGS = 5
@@ -24,21 +30,23 @@ function sanitizeToken(raw: string): string {
 /**
  * TagInput: free-form tag editor. Chips (`span.tag.tag-outline` with a
  * per-chip remove button) plus a text input. Invalid chars are stripped
- * live, tokens cap at 10 chars, Enter/`,` commits (5-chip cap,
- * case-insensitive dedup, first-casing wins), Backspace on empty input
- * removes the last chip.
+ * live, tokens cap at 10 chars, Enter/`,` commits (combined 5-chip cap
+ * over `value` + `blockedTags`, case-insensitive dedup, first-casing
+ * wins), Backspace on empty input removes the last chip.
  */
-export function TagInput({ value, onChange, onRemove, ariaLabel = 'Tags', disabled = false }: TagInputProps) {
+export function TagInput({ value, onChange, onRemove, ariaLabel = 'Tags', disabled = false, blockedTags = [] }: TagInputProps) {
   const [draft, setDraft] = useState('')
 
   const commit = (token: string) => {
     const cleaned = sanitizeToken(token)
     if (cleaned === '') return
-    if (value.length >= MAX_TAGS) return
-    if (value.some((t) => t.toLowerCase() === cleaned.toLowerCase())) {
+    const lowered = cleaned.toLowerCase()
+    if (value.some((t) => t.toLowerCase() === lowered) || blockedTags.some((t) => t.toLowerCase() === lowered)) {
       setDraft('')
       return
     }
+    const mergedUnique = new Set([...value, ...blockedTags].map((t) => t.toLowerCase()))
+    if (mergedUnique.size >= MAX_TAGS) return
     onChange([...value, cleaned])
     setDraft('')
   }

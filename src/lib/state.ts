@@ -998,7 +998,7 @@ export function updateBudgetTransaction(state: AppState, id: string, patch: Part
   return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) }
 }
 
-/** Patch categoryId (and optionally spendExpenseId) on multiple budget transactions by ID in one pass. IDs not found are ignored. `tagsToAdd` (if non-empty) unions case-insensitively into each row's existing tags (existing casing wins), appended in order given, capped at 5 total. */
+/** Patch categoryId (and optionally spendExpenseId) on multiple budget transactions by ID in one pass. IDs not found are ignored. `tagsToAdd` (if non-empty) unions case-insensitively into each row's user tags (existing casing wins), appended in order given, checked against the merged (`tags` + `autoTags`) set for case-insensitive dup + combined cap of 5 total — candidates duplicating an auto tag or exceeding the combined cap are refused (dropped, not added). */
 export function updateBudgetTransactionsBulk(
   state: AppState,
   ids: string[],
@@ -1011,20 +1011,20 @@ export function updateBudgetTransactionsBulk(
     budgetTransactions: state.budgetTransactions.map((t) => {
       if (!ids.includes(t.id)) return t
       if (!hasTagsToAdd) return { ...t, ...rest }
-      const merged = unionTags(t.tags, tagsToAdd!)
+      const merged = unionTags(t.tags, t.autoTags, tagsToAdd!, 'user')
       if (merged === undefined) return { ...t, ...rest }
       return { ...t, ...rest, tags: merged }
     }),
   }
 }
 
-/** Auto-tag ALL budget transactions by LCP-clustering descriptions (manual trigger). Pure AppState -> AppState transform. */
+/** Auto-tag ALL budget transactions by LCP-clustering descriptions (manual trigger). Recomputes `autoTags` (overwrite — stale auto tags removed, singletons cleared), never touching user `tags`. Pure AppState -> AppState transform. */
 export function autoTagBudgetTransactions(state: AppState): AppState {
   const { transactions } = applyAutoTags(state.budgetTransactions)
   return { ...state, budgetTransactions: transactions }
 }
 
-/** Clear tags on ALL budget transactions (manual trigger). Pure AppState -> AppState transform. */
+/** Clear user tags on ALL budget transactions (manual trigger). Preserves `autoTags`. Pure AppState -> AppState transform. */
 export function clearBudgetTransactionTags(state: AppState): AppState {
   return {
     ...state,
@@ -1032,6 +1032,19 @@ export function clearBudgetTransactionTags(state: AppState): AppState {
       if (!t.tags || t.tags.length === 0) return t
       const cleared = { ...t, tags: undefined }
       delete cleared.tags
+      return cleared
+    }),
+  }
+}
+
+/** Clear auto-tags on ALL budget transactions (manual trigger). Preserves user `tags`. Pure AppState -> AppState transform. */
+export function clearBudgetTransactionAutoTags(state: AppState): AppState {
+  return {
+    ...state,
+    budgetTransactions: state.budgetTransactions.map((t) => {
+      if (!t.autoTags || t.autoTags.length === 0) return t
+      const cleared = { ...t, autoTags: undefined }
+      delete cleared.autoTags
       return cleared
     }),
   }
@@ -1057,7 +1070,7 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
  */
 export function resolveBudgetImportRows(
   existing: BudgetTransaction[],
-  rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[] }>,
+  rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[]; autoTags?: string[] }>,
   categories: Category[],
   categoryMappings: CategoryMapping[],
   budgetExpenseDefinitions: ExpenseDefinition[]
@@ -1097,7 +1110,7 @@ export function resolveBudgetImportRows(
 
 export function importBudgetTransactions(
   state: AppState,
-  rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[] }>,
+  rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[]; autoTags?: string[] }>,
   categories: Category[],
   categoryMappings: CategoryMapping[],
   budgetExpenseDefinitions: ExpenseDefinition[],
