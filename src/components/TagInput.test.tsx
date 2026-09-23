@@ -8,16 +8,19 @@ function Harness({
   initial = [],
   onChange,
   ariaLabel = 'Tags',
+  blockedTags = [],
 }: {
   initial?: string[]
   onChange?: (tags: string[]) => void
   ariaLabel?: string
+  blockedTags?: string[]
 }) {
   const [tags, setTags] = useState(initial)
   return (
     <TagInput
       value={tags}
       ariaLabel={ariaLabel}
+      blockedTags={blockedTags}
       onChange={(t) => {
         setTags(t)
         onChange?.(t)
@@ -147,5 +150,41 @@ describe('TagInput', () => {
 
     expect(handleChange).not.toHaveBeenCalled()
     expect(chips()).toEqual([])
+  })
+
+  it('refuses a token duplicating a blocked tag (case-insensitive, silent)', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn()
+    render(<Harness initial={['mine']} blockedTags={['COSTCOWHOL']} onChange={handleChange} />)
+
+    const input = screen.getByLabelText('Tags')
+    await user.type(input, 'costcowhol{enter}')
+
+    expect(handleChange).not.toHaveBeenCalled()
+    expect(chips()).toEqual(['mine'])
+  })
+
+  it('refuses a new token when value + blockedTags already reach the 5-tag cap', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn()
+    render(<Harness initial={['u1', 'u2', 'u3', 'u4']} blockedTags={['a1']} onChange={handleChange} />)
+
+    const input = screen.getByLabelText('Tags')
+    await user.type(input, 'newtag{enter}')
+
+    expect(handleChange).not.toHaveBeenCalled()
+    expect(chips()).toEqual(['u1', 'u2', 'u3', 'u4'])
+  })
+
+  it('accepts a new token when the merged set is below the cap', async () => {
+    const user = userEvent.setup()
+    const handleChange = vi.fn()
+    render(<Harness initial={['u1']} blockedTags={['a1']} onChange={handleChange} />)
+
+    const input = screen.getByLabelText('Tags')
+    await user.type(input, 'u2{enter}')
+
+    expect(handleChange).toHaveBeenCalledWith(['u1', 'u2'])
+    expect(chips()).toEqual(['u1', 'u2'])
   })
 })

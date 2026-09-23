@@ -4,6 +4,7 @@ import {
   addExpenseDefinition,
   addCategoryMapping,
   autoTagBudgetTransactions,
+  clearBudgetTransactionAutoTags,
   clearBudgetTransactionTags,
   deleteCategoryMapping,
   deleteExpenseDefinition,
@@ -351,9 +352,38 @@ describe('autoTagBudgetTransactions', () => {
     }
     const result = autoTagBudgetTransactions(state)
     expect(result.budgetTransactions).toMatchObject([
-      { id: 'a', tags: ['COSTCOWHOL'] },
-      { id: 'b', tags: ['COSTCOWHOL'] },
+      { id: 'a', autoTags: ['COSTCOWHOL'] },
+      { id: 'b', autoTags: ['COSTCOWHOL'] },
     ])
+    expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
+    expect(result.budgetTransactions[1]).not.toHaveProperty('tags')
+  })
+
+  it('leaves user tags untouched when recomputing auto tags', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50, tags: ['mine'] },
+        { id: 'b', date: '2025-06-01', description: 'COSTCO WHOLESALE #202', categoryId: 'other', amount: -60, tags: ['mine'] },
+      ],
+    }
+    const result = autoTagBudgetTransactions(state)
+    expect(result.budgetTransactions).toMatchObject([
+      { id: 'a', tags: ['mine'], autoTags: ['COSTCOWHOL'] },
+      { id: 'b', tags: ['mine'], autoTags: ['COSTCOWHOL'] },
+    ])
+  })
+
+  it('removes stale auto tags on recompute (singleton clears prior auto)', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'TOTALLY UNRELATED ALPHA XYZ', categoryId: 'other', amount: -50, tags: ['mine'], autoTags: ['STALE'] },
+      ],
+    }
+    const result = autoTagBudgetTransactions(state)
+    expect(result.budgetTransactions[0]).toMatchObject({ id: 'a', tags: ['mine'] })
+    expect(result.budgetTransactions[0]).not.toHaveProperty('autoTags')
   })
 
   it('leaves isolated descriptions unchanged', () => {
@@ -430,11 +460,87 @@ describe('clearBudgetTransactionTags', () => {
   })
 })
 
+describe('clearBudgetTransactionTags / clearBudgetTransactionAutoTags scope split', () => {
+  const both = (id: string) => ({
+    id,
+    date: '2025-01-01',
+    description: `Tx ${id}`,
+    categoryId: 'other',
+    amount: -10,
+    tags: ['Mine'],
+    autoTags: ['AUTO'],
+  })
+
+  it('clear-user preserves auto tags', () => {
+    const state = { ...initialState(), budgetTransactions: [both('a')] }
+    const result = clearBudgetTransactionTags(state)
+    expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
+    expect(result.budgetTransactions[0].autoTags).toEqual(['AUTO'])
+  })
+
+  it('clear-auto preserves user tags', () => {
+    const state = { ...initialState(), budgetTransactions: [both('a')] }
+    const result = clearBudgetTransactionAutoTags(state)
+    expect(result.budgetTransactions[0]).not.toHaveProperty('autoTags')
+    expect(result.budgetTransactions[0].tags).toEqual(['Mine'])
+  })
+
+  it('clear-auto omits the autoTags key (never autoTags: []) and leaves untagged records alone', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        both('a'),
+        { id: 'b', date: '2025-01-01', description: 'Tx b', categoryId: 'other', amount: -10, tags: ['Mine'] },
+      ],
+    }
+    const result = clearBudgetTransactionAutoTags(state)
+    expect(result.budgetTransactions[0]).not.toHaveProperty('autoTags')
+    expect(result.budgetTransactions[1]).toEqual(state.budgetTransactions[1])
+  })
+})
+
+describe('updateBudgetTransactionsBulk merged-set guards', () => {
+  const btx = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    date: '2026-01-01',
+    description: `Tx ${id}`,
+    categoryId: 'other',
+    amount: -10,
+    ...extra,
+  })
+
+  it('refuses tagsToAdd duplicating an auto tag (case-insensitive)', () => {
+    const state = { ...initialState(), budgetTransactions: [btx('a', { autoTags: ['COSTCOWHOL'] })] }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'other', tagsToAdd: ['costcowhol', 'Fresh'] })
+    expect(result.budgetTransactions[0].tags).toEqual(['Fresh'])
+    expect(result.budgetTransactions[0].autoTags).toEqual(['COSTCOWHOL'])
+  })
+
+  it('refuses tagsToAdd when the combined user+auto count is already at cap', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [btx('a', { tags: ['t1', 't2', 't3', 't4'], autoTags: ['a1'] })],
+    }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'other', tagsToAdd: ['sixth'] })
+    expect(result.budgetTransactions[0].tags).toEqual(['t1', 't2', 't3', 't4'])
+    expect(result.budgetTransactions[0].autoTags).toEqual(['a1'])
+  })
+
+  it('fills only remaining combined-cap slots, in order given', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [btx('a', { tags: ['t1', 't2', 't3'], autoTags: ['a1'] })],
+    }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'other', tagsToAdd: ['n1', 'n2'] })
+    expect(result.budgetTransactions[0].tags).toEqual(['t1', 't2', 't3', 'n1'])
+  })
+})
+
 describe('importBudgetTransactions auto-tag', () => {
   const categories = [{ id: 'other', name: 'Other', updatedAt: '' }]
   const convention = { accountName: 'Checking', statementConvention: 'negativeSpend' as const }
 
-  it('tags batch-internal clusters on import', () => {
+  it('tags batch-internal clusters on import into autoTags (user tags untouched)', () => {
     const result = importBudgetTransactions(
       initialState(),
       [
@@ -447,9 +553,49 @@ describe('importBudgetTransactions auto-tag', () => {
       convention
     )
     expect(result.budgetTransactions).toMatchObject([
+      { description: 'COSTCO WHOLESALE #101', autoTags: ['COSTCOWHOL'] },
+      { description: 'COSTCO WHOLESALE #202', autoTags: ['COSTCOWHOL'] },
+    ])
+    expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
+    expect(result.budgetTransactions[1]).not.toHaveProperty('tags')
+  })
+
+  it('keeps CSV-parsed batch tags as user tags alongside cluster auto tags', () => {
+    const result = importBudgetTransactions(
+      initialState(),
+      [
+        { date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50, tags: ['receipt'] },
+        { date: '2026-01-02', description: 'COSTCO WHOLESALE #202', amount: -60, tags: ['receipt'] },
+      ],
+      categories,
+      [],
+      [],
+      convention
+    )
+    expect(result.budgetTransactions).toMatchObject([
+      { description: 'COSTCO WHOLESALE #101', tags: ['receipt'], autoTags: ['COSTCOWHOL'] },
+      { description: 'COSTCO WHOLESALE #202', tags: ['receipt'], autoTags: ['COSTCOWHOL'] },
+    ])
+  })
+
+  it('skips the cluster auto tag when it clashes with an existing user tag (user casing wins)', () => {
+    const result = importBudgetTransactions(
+      initialState(),
+      [
+        { date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50, tags: ['COSTCOWHOL'] },
+        { date: '2026-01-02', description: 'COSTCO WHOLESALE #202', amount: -60, tags: ['COSTCOWHOL'] },
+      ],
+      categories,
+      [],
+      [],
+      convention
+    )
+    expect(result.budgetTransactions).toMatchObject([
       { description: 'COSTCO WHOLESALE #101', tags: ['COSTCOWHOL'] },
       { description: 'COSTCO WHOLESALE #202', tags: ['COSTCOWHOL'] },
     ])
+    expect(result.budgetTransactions[0]).not.toHaveProperty('autoTags')
+    expect(result.budgetTransactions[1]).not.toHaveProperty('autoTags')
   })
 
   it('never clusters an incoming row with pre-existing records', () => {
@@ -471,6 +617,7 @@ describe('importBudgetTransactions auto-tag', () => {
     expect(result.budgetTransactions[0]).toEqual(state.budgetTransactions[0])
     expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
     expect(result.budgetTransactions[1]).not.toHaveProperty('tags')
+    expect(result.budgetTransactions[1]).not.toHaveProperty('autoTags')
   })
 
   it('dedup still drops identical rows even though auto-tag would tag both', () => {
@@ -486,7 +633,7 @@ describe('importBudgetTransactions auto-tag', () => {
       convention
     )
     expect(result.budgetTransactions).toHaveLength(1)
-    expect(result.budgetTransactions[0].tags).toEqual(['COSTCOWHOL'])
+    expect(result.budgetTransactions[0].autoTags).toEqual(['COSTCOWHOL'])
   })
 
   it('resolveBudgetImportRows called directly does not auto-tag', () => {

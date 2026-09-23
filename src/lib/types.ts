@@ -102,7 +102,8 @@ export interface BudgetTransaction {
   categoryId: string
   spendExpenseId?: string
   accountName?: string // Source account name; canonical matching is trimmed and case-insensitive.
-  tags?: string[]
+  tags?: string[] // User-only by convention (system auto-tags live in autoTags).
+  autoTags?: string[] // System-only; omitted when empty like `tags`.
   amount: number
 }
 
