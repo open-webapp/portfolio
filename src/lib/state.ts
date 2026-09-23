@@ -1024,6 +1024,19 @@ export function autoTagBudgetTransactions(state: AppState): AppState {
   return { ...state, budgetTransactions: transactions }
 }
 
+/** Clear tags on ALL budget transactions (manual trigger). Pure AppState -> AppState transform. */
+export function clearBudgetTransactionTags(state: AppState): AppState {
+  return {
+    ...state,
+    budgetTransactions: state.budgetTransactions.map((t) => {
+      if (!t.tags || t.tags.length === 0) return t
+      const cleared = { ...t, tags: undefined }
+      delete cleared.tags
+      return cleared
+    }),
+  }
+}
+
 /** Delete a budget transaction by ID. No-op if the ID isn't found. */
 export function deleteBudgetTransaction(state: AppState, id: string): AppState {
   return { ...state, budgetTransactions: state.budgetTransactions.filter((t) => t.id !== id) }

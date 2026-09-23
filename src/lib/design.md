@@ -35,7 +35,8 @@ Spend only: `spendBudgetYears(budgetTransactions)` returns newest-first transact
 - Two triggers, different pools: manual `AUTO_TAG_BUDGET_TRANSACTIONS` (no payload) → `autoTagBudgetTransactions` (`state.ts`) clusters ALL `budgetTransactions` regardless of Spend scope; import path → `importBudgetTransactions` auto-tags just the imported batch pre-dedup, never pre-existing records.
 - Clustering lives in `autoTag.ts` (zero imports; `state.ts` → `autoTag.ts` acyclic): LCP clustering with min-4-char trimmed threshold (`MIN_TAG_LENGTH`), whitespace never counts toward the minimum, singleton clusters untagged. Generic `applyAutoTags<T extends { description: string; tags?: string[] }>` reused by both triggers (manual passes `BudgetTransaction[]`, import passes raw rows).
 - Tag merge is shared exported pure `unionTags` (`autoTag.ts`, also called by refactored `updateBudgetTransactionsBulk`): additive union with existing bulk-tag-apply dedupe + cap-5/record rule, never replaces.
-- `BudgetPage.tsx` header left-group holds title + Auto-tag button + transient ~4s feedback text; no tag-filter combobox.
+- `BudgetPage.tsx` header left-group holds title + Auto-tag + Clear-all-tags buttons + shared transient ~4s feedback span; no tag-filter combobox.
+- `CLEAR_BUDGET_TRANSACTION_TAGS` (no payload) → `clearBudgetTransactionTags` (`state.ts`): strips the `tags` key from every `budgetTransaction` (omitted, never `[]`), including manual tags. Component pre-computes the tagged count for the confirm dialog + feedback text.
 
 ### Undo Closed Position
 

@@ -395,6 +395,21 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     autoTagFeedbackTimer.current = setTimeout(() => setAutoTagFeedback(null), 4000)
   }
 
+  const handleClearTags = () => {
+    const taggedCount = state.budgetTransactions.filter((t) => (t.tags ?? []).length > 0).length
+    if (taggedCount === 0) {
+      setAutoTagFeedback('No tags to clear')
+      if (autoTagFeedbackTimer.current) clearTimeout(autoTagFeedbackTimer.current)
+      autoTagFeedbackTimer.current = setTimeout(() => setAutoTagFeedback(null), 4000)
+      return
+    }
+    if (!window.confirm(`Remove all tags from ${taggedCount} tagged record(s)? This cannot be undone.`)) return
+    dispatch({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+    setAutoTagFeedback(`Cleared tags from ${taggedCount} record(s)`)
+    if (autoTagFeedbackTimer.current) clearTimeout(autoTagFeedbackTimer.current)
+    autoTagFeedbackTimer.current = setTimeout(() => setAutoTagFeedback(null), 4000)
+  }
+
   // Clears row selection whenever the visible set/order of Spend records can
   // change out from under it (paging, sorting, searching, or switching
   // period/year) so stale selections never point at rows no longer shown.
@@ -796,6 +811,9 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
             <div className="card-title">Spend records ({rangeLabel})</div>
             <button type="button" className="btn" onClick={handleAutoTag}>
               Auto-tag records
+            </button>
+            <button type="button" className="btn" onClick={handleClearTags}>
+              Clear all tags
             </button>
             {autoTagFeedback && (
               <span className="text-muted" style={{ fontSize: '12px' }}>

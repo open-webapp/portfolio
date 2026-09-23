@@ -1303,3 +1303,145 @@ describe('BudgetPage auto-tag records', () => {
     expect(button.parentElement).toBe(title?.parentElement)
   })
 })
+
+describe('BudgetPage clear all tags', () => {
+  const clearTagCategories = [{ id: 'food', name: 'Food', updatedAt: '' }]
+
+  const taggedTransactions = [
+    { id: 'a', date: '2025-01-01', description: 'Tagged market', categoryId: 'food', amount: 10, tags: ['grocery'] },
+    { id: 'b', date: '2025-01-02', description: 'Tagged diner', categoryId: 'food', amount: 12, tags: ['dining'] },
+  ]
+
+  const renderClearTags = (transactions: typeof taggedTransactions) => {
+    const actions: unknown[] = []
+    const Harness = () => {
+      const [appState, dispatch] = useReducer(appReducer, {
+        ...initialState(),
+        budgetTransactions: transactions,
+      })
+      return (
+        <BudgetPage
+          state={appState}
+          dispatch={(action) => {
+            actions.push(action)
+            dispatch(action)
+          }}
+          categories={clearTagCategories}
+          categoryMappings={[]}
+          categoryDispatch={vi.fn()}
+          categoriesHydrated
+          {...periodProps}
+        />
+      )
+    }
+    render(<Harness />)
+    return actions
+  }
+
+  it('clears tags from all tagged records after confirm and shows the cleared count', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      const actions = renderClearTags(taggedTransactions)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+
+      expect(confirm).toHaveBeenCalledWith(
+        'Remove all tags from 2 tagged record(s)? This cannot be undone.'
+      )
+      expect(actions).toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+      expect(screen.getByText('Cleared tags from 2 record(s)')).toBeTruthy()
+      expect(screen.queryByText('grocery')).toBeNull()
+      expect(screen.queryByText('dining')).toBeNull()
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('shows "No tags to clear" without confirming or dispatching when nothing is tagged', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      const actions = renderClearTags([
+        { id: 'solo', date: '2025-01-01', description: 'Untagged row', categoryId: 'food', amount: 10 },
+      ])
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+
+      expect(confirm).not.toHaveBeenCalled()
+      expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+      expect(screen.getByText('No tags to clear')).toBeTruthy()
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('keeps tags and shows no feedback when the confirm is cancelled', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      const actions = renderClearTags(taggedTransactions)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+
+      expect(confirm).toHaveBeenCalledWith(
+        'Remove all tags from 2 tagged record(s)? This cannot be undone.'
+      )
+      expect(actions).not.toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+      expect(screen.getByText('grocery')).toBeTruthy()
+      expect(screen.getByText('dining')).toBeTruthy()
+      expect(screen.queryByText('Cleared tags from 2 record(s)')).toBeNull()
+      expect(screen.queryByText('No tags to clear')).toBeNull()
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('clears tags across years with one click while scoped to a concrete year', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      const actions = renderClearTags([
+        { id: 'old', date: '2024-06-01', description: 'Old tagged row', categoryId: 'food', amount: 10, tags: ['grocery'] },
+        { id: 'new', date: '2025-06-01', description: 'New tagged row', categoryId: 'food', amount: 12, tags: ['dining'] },
+      ])
+
+      // Harness defaults to the newest concrete year, hiding the 2024 record.
+      expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2025')
+      expect(screen.queryByText('Old tagged row')).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all tags' }))
+
+      expect(confirm).toHaveBeenCalledWith(
+        'Remove all tags from 2 tagged record(s)? This cannot be undone.'
+      )
+      expect(actions).toContainEqual({ type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+      expect(screen.getByText('Cleared tags from 2 record(s)')).toBeTruthy()
+
+      fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2024' } })
+      expect(screen.getByText('Old tagged row')).toBeTruthy()
+      expect(screen.queryByText('grocery')).toBeNull()
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('renders the button in the left-hand group alongside the title and auto-tag button', () => {
+    const { container } = render(
+      <BudgetPage
+        state={{ ...initialState(), budgetTransactions: taggedTransactions }}
+        dispatch={vi.fn()}
+        categories={clearTagCategories}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        categoriesHydrated
+        {...periodProps}
+      />
+    )
+
+    const clearButton = screen.getByRole('button', { name: 'Clear all tags' })
+    const autoTagButton = screen.getByRole('button', { name: 'Auto-tag records' })
+    const title = Array.from(container.querySelectorAll('.card-title')).find((el) =>
+      el.textContent?.includes('Spend records')
+    )
+    expect(title?.textContent).toContain('Spend records')
+    expect(clearButton.parentElement).toBe(title?.parentElement)
+    expect(autoTagButton.parentElement).toBe(title?.parentElement)
+  })
+})

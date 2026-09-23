@@ -220,6 +220,8 @@ Restore-from-file moved to the pre-unlock password gate's Restore tab, "Backup f
 - Spend header left-group holds title + `Auto-tag records` button + transient feedback text; no tag-filter combobox. Feedback auto-clears after ~4s.
 - Manual `Auto-tag records` pools ALL budget transactions across all years regardless of selected Spend-tab scope. Algorithm is LCP clustering with min-4-char trimmed threshold; singleton clusters stay untagged. Tags are additive, never replacing existing tags, capped at 5 per record.
 - Every Paste/Upload import (CSV and OFX/QFX) auto-tags automatically, scoped to just the imported batch, before dedup. Pre-existing records are never touched.
+- `Clear all tags` button pools ALL budget transactions across all years regardless of selected Spend-tab scope. Strips every tag including manual ones — tag key omitted, never `[]`.
+- Clear confirms with the tagged count; skipped when zero. Cancel aborts silently. Feedback shares the auto-tag transient text + ~4s auto-clear.
 
 ### Expense CSV Download
 
