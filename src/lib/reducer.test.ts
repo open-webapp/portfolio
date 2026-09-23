@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { appReducer } from './reducer'
-import { autoTagBudgetTransactions, initialState } from './state'
+import { autoTagBudgetTransactions, clearBudgetTransactionTags, initialState } from './state'
 
 describe('budget reducer', () => {
   it('ensures an expense snapshot without any manual-income action', () => {
@@ -52,5 +52,19 @@ describe('budget reducer', () => {
       { id: 'a', tags: ['COSTCO WHOLESALE #'] },
       { id: 'b', tags: ['COSTCO WHOLESALE #'] },
     ])
+  })
+
+  it('CLEAR_BUDGET_TRANSACTION_TAGS delegates to clearBudgetTransactionTags', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50, tags: ['COSTCO WHOLESALE #'] },
+        { id: 'b', date: '2025-06-01', description: 'COSTCO WHOLESALE #202', categoryId: 'other', amount: -60, tags: ['COSTCO WHOLESALE #'] },
+      ],
+    }
+    const viaReducer = appReducer(state, { type: 'CLEAR_BUDGET_TRANSACTION_TAGS' })
+    const direct = clearBudgetTransactionTags(state)
+    expect(viaReducer).toEqual(direct)
+    expect(viaReducer.budgetTransactions.every((t) => !t.tags || t.tags.length === 0)).toBe(true)
   })
 })

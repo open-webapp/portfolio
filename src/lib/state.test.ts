@@ -4,6 +4,7 @@ import {
   addExpenseDefinition,
   addCategoryMapping,
   autoTagBudgetTransactions,
+  clearBudgetTransactionTags,
   deleteCategoryMapping,
   deleteExpenseDefinition,
   ensureExpenseAmountsSnapshotForYear,
@@ -367,6 +368,65 @@ describe('autoTagBudgetTransactions', () => {
     const result = autoTagBudgetTransactions(state)
     expect(result.budgetTransactions.find((t) => t.id === 'solo')).toEqual(state.budgetTransactions[2])
     expect(result.budgetTransactions.find((t) => t.id === 'solo')).not.toHaveProperty('tags')
+  })
+})
+
+describe('clearBudgetTransactionTags', () => {
+  it('strips tags across years, leaving untagged records alone', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50, tags: ['COSTCO'] },
+        { id: 'b', date: '2025-06-01', description: 'COSTCO WHOLESALE #202', categoryId: 'other', amount: -60, tags: ['COSTCO'] },
+        { id: 'solo', date: '2025-01-01', description: 'UNIQUE ONE-OFF ZZZ QQQ', categoryId: 'other', amount: -10 },
+      ],
+    }
+    const result = clearBudgetTransactionTags(state)
+    expect(result.budgetTransactions.find((t) => t.id === 'a')).not.toHaveProperty('tags')
+    expect(result.budgetTransactions.find((t) => t.id === 'b')).not.toHaveProperty('tags')
+    expect(result.budgetTransactions.find((t) => t.id === 'solo')).toEqual(state.budgetTransactions[2])
+    expect(result.budgetTransactions.find((t) => t.id === 'solo')).not.toHaveProperty('tags')
+  })
+
+  it('cleared records omit the tags key (never tags: [])', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2025-01-01', description: 'COFFEE SHOP', categoryId: 'other', amount: -5, tags: ['CAFE'] },
+      ],
+    }
+    const result = clearBudgetTransactionTags(state)
+    expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
+  })
+
+  it('zero-tag state returns transactions unchanged in content', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50 },
+        { id: 'b', date: '2025-06-01', description: 'UNIQUE ONE-OFF ZZZ QQQ', categoryId: 'other', amount: -10 },
+      ],
+    }
+    const result = clearBudgetTransactionTags(state)
+    expect(result.budgetTransactions).toHaveLength(state.budgetTransactions.length)
+    result.budgetTransactions.forEach((t, i) => expect(t).toEqual(state.budgetTransactions[i]))
+  })
+
+  it('leaves other fields untouched on cleared records', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2025-03-15', description: 'TRADER JOES #12', categoryId: 'groceries', amount: -42.5, tags: ['GROCERY'] },
+      ],
+    }
+    const result = clearBudgetTransactionTags(state)
+    expect(result.budgetTransactions[0]).toMatchObject({
+      id: 'a',
+      date: '2025-03-15',
+      description: 'TRADER JOES #12',
+      categoryId: 'groceries',
+      amount: -42.5,
+    })
   })
 })
 
