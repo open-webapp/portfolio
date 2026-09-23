@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { appReducer } from './reducer'
-import { initialState } from './state'
+import { autoTagBudgetTransactions, initialState } from './state'
 
 describe('budget reducer', () => {
   it('ensures an expense snapshot without any manual-income action', () => {
@@ -35,5 +35,22 @@ describe('budget reducer', () => {
 
     expect(result.budgetTransactions[0].amount).toBe(10)
     expect(result.budgetAccountAppliedConventions).toEqual({ checking: 'negativeSpend' })
+  })
+
+  it('AUTO_TAG_BUDGET_TRANSACTIONS delegates to autoTagBudgetTransactions', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50 },
+        { id: 'b', date: '2025-06-01', description: 'COSTCO WHOLESALE #202', categoryId: 'other', amount: -60 },
+      ],
+    }
+    const viaReducer = appReducer(state, { type: 'AUTO_TAG_BUDGET_TRANSACTIONS' })
+    const direct = autoTagBudgetTransactions(state)
+    expect(viaReducer).toEqual(direct)
+    expect(viaReducer.budgetTransactions).toMatchObject([
+      { id: 'a', tags: ['COSTCO WHOLESALE #'] },
+      { id: 'b', tags: ['COSTCO WHOLESALE #'] },
+    ])
   })
 })

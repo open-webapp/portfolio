@@ -1,5 +1,5 @@
 import { useReducer, useState } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BudgetPage as BudgetPageUnderTest, type BudgetPageProps } from './BudgetPage'
 import { initialState } from '../lib/state'
@@ -1186,5 +1186,101 @@ describe('BudgetPage Tags column per-cell editor', () => {
     const cell = screen.getByText('Untagged row').closest('tr')!.querySelectorAll('td')[5]!
     expect(cell.textContent).not.toContain('undefined')
     expect(cell.textContent?.trim()).not.toBe('')
+  })
+})
+
+describe('BudgetPage auto-tag records', () => {
+  const autoTagCategories = [{ id: 'food', name: 'Food', updatedAt: '' }]
+
+  const clusteringTransactions = [
+    { id: 'a', date: '2025-01-01', description: 'TRADER JOES #123', categoryId: 'food', amount: 10 },
+    { id: 'b', date: '2025-01-02', description: 'TRADER JOES #456', categoryId: 'food', amount: 12 },
+  ]
+
+  const renderAutoTag = (transactions: typeof clusteringTransactions) => {
+    const actions: unknown[] = []
+    const Harness = () => {
+      const [appState, dispatch] = useReducer(appReducer, {
+        ...initialState(),
+        budgetTransactions: transactions,
+      })
+      return (
+        <BudgetPage
+          state={appState}
+          dispatch={(action) => {
+            actions.push(action)
+            dispatch(action)
+          }}
+          categories={autoTagCategories}
+          categoryMappings={[]}
+          categoryDispatch={vi.fn()}
+          categoriesHydrated
+          {...periodProps}
+        />
+      )
+    }
+    render(<Harness />)
+    return actions
+  }
+
+  it('tags clustered records, dispatches the auto-tag action, and shows the tagged count', () => {
+    const actions = renderAutoTag(clusteringTransactions)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-tag records' }))
+
+    expect(actions).toContainEqual({ type: 'AUTO_TAG_BUDGET_TRANSACTIONS' })
+    expect(screen.getByText('Tagged 2 record(s)')).toBeTruthy()
+    expect(screen.getAllByText('TRADER JOES #')).toHaveLength(2)
+  })
+
+  it('shows "No new tags found" when nothing clusters', () => {
+    const actions = renderAutoTag([
+      { id: 'solo', date: '2025-01-01', description: 'Unique coffee shop', categoryId: 'food', amount: 10 },
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Auto-tag records' }))
+
+    expect(actions).toContainEqual({ type: 'AUTO_TAG_BUDGET_TRANSACTIONS' })
+    expect(screen.getByText('No new tags found')).toBeTruthy()
+  })
+
+  it('clears the feedback after 4 seconds', () => {
+    vi.useFakeTimers()
+    try {
+      renderAutoTag(clusteringTransactions)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Auto-tag records' }))
+      expect(screen.getByText('Tagged 2 record(s)')).toBeTruthy()
+
+      vi.advanceTimersByTime(3999)
+      expect(screen.getByText('Tagged 2 record(s)')).toBeTruthy()
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+      expect(screen.queryByText('Tagged 2 record(s)')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders the button in the left-hand group alongside the Spend records title', () => {
+    const { container } = render(
+      <BudgetPage
+        state={{ ...initialState(), budgetTransactions: clusteringTransactions }}
+        dispatch={vi.fn()}
+        categories={autoTagCategories}
+        categoryMappings={[]}
+        categoryDispatch={vi.fn()}
+        categoriesHydrated
+        {...periodProps}
+      />
+    )
+
+    const button = screen.getByRole('button', { name: 'Auto-tag records' })
+    const title = Array.from(container.querySelectorAll('.card-title')).find((el) =>
+      el.textContent?.includes('Spend records')
+    )
+    expect(title?.textContent).toContain('Spend records')
+    expect(button.parentElement).toBe(title?.parentElement)
   })
 })

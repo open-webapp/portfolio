@@ -22,6 +22,7 @@ import { uid } from './seed'
 import type { ExportableState } from './importExport'
 import { resolveSpendExpenseIdForDescription, reapplyMappingsToTransactions } from './categoryStore'
 import { normalizeBudgetAccountName, reconcileBudgetAccountRules } from './budgetAccountRules'
+import { applyAutoTags, unionTags } from './autoTag'
 
 export interface AppState {
   // Data collections
@@ -1010,18 +1011,17 @@ export function updateBudgetTransactionsBulk(
     budgetTransactions: state.budgetTransactions.map((t) => {
       if (!ids.includes(t.id)) return t
       if (!hasTagsToAdd) return { ...t, ...rest }
-      const merged = [...(t.tags ?? [])]
-      const seen = new Set(merged.map((tag) => tag.toLowerCase()))
-      for (const tag of tagsToAdd!) {
-        if (merged.length >= 5) break
-        if (seen.has(tag.toLowerCase())) continue
-        seen.add(tag.toLowerCase())
-        merged.push(tag)
-      }
-      if (merged.length === 0) return { ...t, ...rest }
+      const merged = unionTags(t.tags, tagsToAdd!)
+      if (merged === undefined) return { ...t, ...rest }
       return { ...t, ...rest, tags: merged }
     }),
   }
+}
+
+/** Auto-tag ALL budget transactions by LCP-clustering descriptions (manual trigger). Pure AppState -> AppState transform. */
+export function autoTagBudgetTransactions(state: AppState): AppState {
+  const { transactions } = applyAutoTags(state.budgetTransactions)
+  return { ...state, budgetTransactions: transactions }
 }
 
 /** Delete a budget transaction by ID. No-op if the ID isn't found. */
@@ -1090,9 +1090,10 @@ export function importBudgetTransactions(
   budgetExpenseDefinitions: ExpenseDefinition[],
   appliedConvention: { accountName: string; statementConvention: StatementConvention },
 ): AppState {
+  const { transactions: taggedRows } = applyAutoTags(rows)
   const { toAdd } = resolveBudgetImportRows(
     state.budgetTransactions,
-    rows,
+    taggedRows,
     categories,
     categoryMappings,
     budgetExpenseDefinitions

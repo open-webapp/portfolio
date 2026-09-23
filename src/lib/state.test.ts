@@ -3,6 +3,7 @@ import {
   addBudgetTransaction,
   addExpenseDefinition,
   addCategoryMapping,
+  autoTagBudgetTransactions,
   deleteCategoryMapping,
   deleteExpenseDefinition,
   ensureExpenseAmountsSnapshotForYear,
@@ -335,5 +336,112 @@ describe('budget transaction tags passthrough', () => {
     const id = added.budgetTransactions[0].id
     const result = updateBudgetTransaction(added, id, { tags: undefined })
     expect(result.budgetTransactions[0].tags).toBeUndefined()
+  })
+})
+
+describe('autoTagBudgetTransactions', () => {
+  it('tags clusters spanning different years (scope is ALL budgetTransactions)', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50 },
+        { id: 'b', date: '2025-06-01', description: 'COSTCO WHOLESALE #202', categoryId: 'other', amount: -60 },
+      ],
+    }
+    const result = autoTagBudgetTransactions(state)
+    expect(result.budgetTransactions).toMatchObject([
+      { id: 'a', tags: ['COSTCO WHOLESALE #'] },
+      { id: 'b', tags: ['COSTCO WHOLESALE #'] },
+    ])
+  })
+
+  it('leaves isolated descriptions unchanged', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'a', date: '2024-06-01', description: 'COSTCO WHOLESALE #101', categoryId: 'other', amount: -50 },
+        { id: 'b', date: '2025-06-01', description: 'COSTCO WHOLESALE #202', categoryId: 'other', amount: -60 },
+        { id: 'solo', date: '2025-01-01', description: 'UNIQUE ONE-OFF ZZZ QQQ', categoryId: 'other', amount: -10 },
+      ],
+    }
+    const result = autoTagBudgetTransactions(state)
+    expect(result.budgetTransactions.find((t) => t.id === 'solo')).toEqual(state.budgetTransactions[2])
+    expect(result.budgetTransactions.find((t) => t.id === 'solo')).not.toHaveProperty('tags')
+  })
+})
+
+describe('importBudgetTransactions auto-tag', () => {
+  const categories = [{ id: 'other', name: 'Other', updatedAt: '' }]
+  const convention = { accountName: 'Checking', statementConvention: 'negativeSpend' as const }
+
+  it('tags batch-internal clusters on import', () => {
+    const result = importBudgetTransactions(
+      initialState(),
+      [
+        { date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50 },
+        { date: '2026-01-02', description: 'COSTCO WHOLESALE #202', amount: -60 },
+      ],
+      categories,
+      [],
+      [],
+      convention
+    )
+    expect(result.budgetTransactions).toMatchObject([
+      { description: 'COSTCO WHOLESALE #101', tags: ['COSTCO WHOLESALE #'] },
+      { description: 'COSTCO WHOLESALE #202', tags: ['COSTCO WHOLESALE #'] },
+    ])
+  })
+
+  it('never clusters an incoming row with pre-existing records', () => {
+    const state = {
+      ...initialState(),
+      budgetTransactions: [
+        { id: 'existing', date: '2025-01-01', description: 'COSTCO WHOLESALE #999', categoryId: 'other', amount: -10 },
+      ],
+    }
+    const result = importBudgetTransactions(
+      state,
+      [{ date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50 }],
+      categories,
+      [],
+      [],
+      convention
+    )
+    expect(result.budgetTransactions).toHaveLength(2)
+    expect(result.budgetTransactions[0]).toEqual(state.budgetTransactions[0])
+    expect(result.budgetTransactions[0]).not.toHaveProperty('tags')
+    expect(result.budgetTransactions[1]).not.toHaveProperty('tags')
+  })
+
+  it('dedup still drops identical rows even though auto-tag would tag both', () => {
+    const result = importBudgetTransactions(
+      initialState(),
+      [
+        { date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50 },
+        { date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50 },
+      ],
+      categories,
+      [],
+      [],
+      convention
+    )
+    expect(result.budgetTransactions).toHaveLength(1)
+    expect(result.budgetTransactions[0].tags).toEqual(['COSTCO WHOLESALE #101'])
+  })
+
+  it('resolveBudgetImportRows called directly does not auto-tag', () => {
+    const { toAdd } = resolveBudgetImportRows(
+      [],
+      [
+        { date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50 },
+        { date: '2026-01-02', description: 'COSTCO WHOLESALE #202', amount: -60 },
+      ],
+      categories,
+      [],
+      []
+    )
+    expect(toAdd).toHaveLength(2)
+    expect(toAdd[0]).not.toHaveProperty('tags')
+    expect(toAdd[1]).not.toHaveProperty('tags')
   })
 })
