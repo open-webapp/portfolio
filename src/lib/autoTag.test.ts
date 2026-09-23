@@ -14,20 +14,37 @@ describe('clusterDescriptions', () => {
     expect(solo.tag).toBeNull()
   })
 
-  it('clusters on LCP of exactly 3 chars', () => {
-    const result = clusterDescriptions(['ABCDEF', 'ABCXYZ'])
+  it('clusters on LCP of exactly 4 chars', () => {
+    const result = clusterDescriptions(['ABCDEF', 'ABCDXYZ'])
     expect(result).toHaveLength(1)
     expect(result[0].indices).toHaveLength(2)
-    expect(result[0].tag).toBe('ABC')
+    expect(result[0].tag).toBe('ABCD')
   })
 
-  it('does not cluster on LCP of only 2 chars', () => {
-    const result = clusterDescriptions(['ABDEF', 'ABXYZ'])
+  it('does not cluster on LCP of only 3 chars', () => {
+    const result = clusterDescriptions(['ABCEF', 'ABCXYZ'])
     expect(result).toHaveLength(2)
     for (const c of result) {
       expect(c.indices).toHaveLength(1)
       expect(c.tag).toBeNull()
     }
+  })
+
+  it('does not count trailing whitespace toward the min length', () => {
+    // Raw LCP is 4 chars ("ABC ") but trimmed is only 3 — must not cluster.
+    const result = clusterDescriptions(['ABC 1', 'ABC 2'])
+    expect(result).toHaveLength(2)
+    for (const c of result) {
+      expect(c.indices).toHaveLength(1)
+      expect(c.tag).toBeNull()
+    }
+  })
+
+  it('clusters when trimmed LCP meets min 4', () => {
+    const result = clusterDescriptions(['ABCD 1', 'ABCD 2'])
+    expect(result).toHaveLength(1)
+    expect(result[0].indices).toHaveLength(2)
+    expect(result[0].tag).toBe('ABCD')
   })
 
   it('clusters case-insensitively', () => {
