@@ -3,6 +3,13 @@ import { useState } from 'react'
 export interface TagInputProps {
   value: string[]
   onChange: (tags: string[]) => void
+  /**
+   * Called synchronously with the next array on chip removal (× click or
+   * Backspace on empty input), alongside `onChange`. Lets hosts persist
+   * removals immediately instead of waiting for blur — removing a chip
+   * unmounts the focused button, so a blur-commit may never fire.
+   */
+  onRemove?: (tags: string[]) => void
   ariaLabel?: string
   disabled?: boolean
 }
@@ -21,7 +28,7 @@ function sanitizeToken(raw: string): string {
  * case-insensitive dedup, first-casing wins), Backspace on empty input
  * removes the last chip.
  */
-export function TagInput({ value, onChange, ariaLabel = 'Tags', disabled = false }: TagInputProps) {
+export function TagInput({ value, onChange, onRemove, ariaLabel = 'Tags', disabled = false }: TagInputProps) {
   const [draft, setDraft] = useState('')
 
   const commit = (token: string) => {
@@ -37,7 +44,9 @@ export function TagInput({ value, onChange, ariaLabel = 'Tags', disabled = false
   }
 
   const removeAt = (index: number) => {
-    onChange(value.filter((_, i) => i !== index))
+    const next = value.filter((_, i) => i !== index)
+    onChange(next)
+    onRemove?.(next)
   }
 
   return (
@@ -62,7 +71,7 @@ export function TagInput({ value, onChange, ariaLabel = 'Tags', disabled = false
             commit(draft)
           } else if (e.key === 'Backspace' && draft === '' && value.length > 0) {
             e.preventDefault()
-            onChange(value.slice(0, -1))
+            removeAt(value.length - 1)
           }
         }}
       />

@@ -1161,6 +1161,25 @@ describe('BudgetPage Tags column per-cell editor', () => {
     expect(updateAction.patch.tags).not.toEqual([])
   })
 
+  it('persists an × removal when navigating to another row without blur', () => {
+    const dispatch = renderTagCells([
+      { id: 'a', date: '2025-01-01', description: 'First row', categoryId: 'food', amount: 10, tags: ['food', 'weekly'] },
+      { id: 'b', date: '2025-01-02', description: 'Second row', categoryId: 'food', amount: 12, tags: ['other'] },
+    ])
+
+    clickTagsCell('First row')
+    fireEvent.click(screen.getByLabelText('Remove weekly'))
+    // No blur: × unmounts the focused button, so the cell's blur-commit
+    // path never fires. Navigating straight to another row must not drop
+    // the removal.
+    clickTagsCell('Second row')
+
+    const updateAction = findUpdateAction(dispatch)
+    expect(updateAction).toBeTruthy()
+    expect(updateAction.id).toBe('a')
+    expect(updateAction.patch).toEqual({ tags: ['food'] })
+  })
+
   it('reverts without dispatching on Escape after typing', () => {
     const dispatch = renderTagCells([
       { id: 'a', date: '2025-01-01', description: 'Escape row', categoryId: 'food', amount: 10, tags: ['food'] },

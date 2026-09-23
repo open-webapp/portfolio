@@ -1077,6 +1077,14 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                         <TagInput
                           value={cellTagsDraft}
                           onChange={setCellTagsDraft}
+                          onRemove={(tags) => {
+                            // × persists immediately: removing the chip unmounts the
+                            // focused button, so this cell's blur-commit never fires
+                            // and navigating away would drop the removal. The editor
+                            // stays open so multiple tags can be removed in one pass.
+                            dispatch({ type: 'UPDATE_BUDGET_TRANSACTION', id: row.id, patch: { tags: tags.length ? tags : undefined } })
+                            setCellTagsDraft(tags)
+                          }}
                           ariaLabel="Edit record tags"
                         />
                       ) : (row.tags ?? []).length === 0 ? (
