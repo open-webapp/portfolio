@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent, type MouseEvent, type SetStateAction } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent, type MouseEvent, type SetStateAction } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetImportRows } from '../lib/state'
 import {
@@ -209,8 +209,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const [recPage, setRecPage] = useState(0)
   const [showExcludedRecords, setShowExcludedRecords] = useState(false)
   const [showRecurringOnly, setShowRecurringOnly] = useState(false)
-  const [tagFilter, setTagFilter] = useState<string[]>([])
-  const [tagFilterQuery, setTagFilterQuery] = useState('')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null)
   const selectionCellRefs = useRef<Record<string, HTMLTableCellElement | null>>({})
@@ -303,38 +301,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     : periodFilteredTransactions.filter(
         (t) => !isIncomeOrExcludedTransaction(t, categories, state.budgetExpenseDefinitions)
       )
-  // Distinct tags in the show-excluded-scoped set (before search), for the
-  // tag filter. Case-insensitive dedupe, first-seen casing kept, alpha-sorted.
-  const distinctRecordTags = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const t of recordSourceTransactions) {
-      for (const tag of t.tags ?? []) {
-        const lower = tag.toLowerCase()
-        if (!seen.has(lower)) seen.set(lower, tag)
-      }
-    }
-    return [...seen.values()].sort((a, b) => a.localeCompare(b))
-  }, [recordSourceTransactions])
-  // Suggestions for the tag-filter combobox: the T6 distinct-tags-in-scope
-  // list filtered as-you-type (case-insensitive substring), excluding
-  // already-selected tags. Typing alone never creates tags — tagFilter only
-  // changes by picking a suggestion (click/Enter) or removing a chip.
-  const tagFilterSuggestions = distinctRecordTags.filter(
-    (tag) =>
-      tag.toLowerCase().includes(tagFilterQuery.trim().toLowerCase()) &&
-      !tagFilter.some((selected) => selected.toLowerCase() === tag.toLowerCase())
-  )
-  const selectTagFilter = (tag: string) => {
-    setTagFilter((prev) =>
-      prev.some((selected) => selected.toLowerCase() === tag.toLowerCase()) ? prev : [...prev, tag]
-    )
-    setTagFilterQuery('')
-    setRecPage(0)
-  }
-  const removeTagFilter = (tag: string) => {
-    setTagFilter((prev) => prev.filter((selected) => selected.toLowerCase() !== tag.toLowerCase()))
-    setRecPage(0)
-  }
   const filteredRecords = recordSearch.trim()
     ? recordSourceTransactions.filter((t) => {
         const searchLower = recordSearch.toLowerCase()
@@ -352,15 +318,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         )
       })
     : recordSourceTransactions
-  // Tag-AND-filter: every selected tag must be present on the row
-  // (case-insensitive). Empty selection narrows nothing.
-  const tagFilteredRecords = tagFilter.length === 0
-    ? filteredRecords
-    : filteredRecords.filter((t) => {
-        const rowTagsLower = new Set((t.tags ?? []).map((tag) => tag.toLowerCase()))
-        return tagFilter.every((selected) => rowTagsLower.has(selected.toLowerCase()))
-      })
-  const recurringFilteredRecords = showRecurringOnly ? tagFilteredRecords.filter((t) => recurringIds.has(t.id)) : tagFilteredRecords
+  const recurringFilteredRecords = showRecurringOnly ? filteredRecords.filter((t) => recurringIds.has(t.id)) : filteredRecords
   const toggleRecSort = (field: 'date' | 'description' | 'category' | 'account' | 'amount') => {
     if (recSortBy === field) {
       setRecSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -423,11 +381,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   // Clears row selection whenever the visible set/order of Spend records can
   // change out from under it (paging, sorting, searching, or switching
   // period/year) so stale selections never point at rows no longer shown.
-  // The tag-filter selection shares this same trigger set: changing page,
-  // sort, search text, or year clears it. A tag-filter change itself only
-  // resets page/selection (via setRecPage(0) at the select/remove sites) —
-  // when tagFilter changed in the same commit the clear is skipped so the
-  // just-made selection survives its own page reset.
   const prevSpendResetKeys = useRef<{
     recPage: number
     recSortBy: string
@@ -436,32 +389,16 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     showRecurringOnly: boolean
     period: string
     selectedScope: SpendScope
-    tagFilter: string[]
   } | null>(null)
   useEffect(() => {
     setSelectedRowIds(new Set())
     setSelectionAnchorId(null)
     setBulkCategoryId('')
     const prev = prevSpendResetKeys.current
-    prevSpendResetKeys.current = { recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope, tagFilter }
+    prevSpendResetKeys.current = { recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope }
     if (!prev) return
-    const tagFilterChanged =
-      prev.tagFilter.length !== tagFilter.length ||
-      prev.tagFilter.some((tag, i) => tag.toLowerCase() !== (tagFilter[i] ?? '').toLowerCase())
-    const otherChanged =
-      prev.recPage !== recPage ||
-      prev.recSortBy !== recSortBy ||
-      prev.recSortDir !== recSortDir ||
-      prev.recordSearch !== recordSearch ||
-      prev.showRecurringOnly !== showRecurringOnly ||
-      prev.period !== period ||
-      prev.selectedScope !== selectedScope
-    if (otherChanged && !tagFilterChanged) {
-      setTagFilter((current) => (current.length ? [] : current))
-      setTagFilterQuery((current) => (current ? '' : current))
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope, tagFilter])
+  }, [recPage, recSortBy, recSortDir, recordSearch, showRecurringOnly, period, selectedScope])
 
   const selectionRangeIds = (anchorId: string, targetIdx: number): Set<string> => {
     const anchorIdx = pagedRecords.findIndex((r) => r.id === anchorId)
@@ -864,7 +801,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               />
               Show recurring only
             </label>
-            <div className="field" style={{ margin: 0, width: '220px' }}>
+            <div className="field" style={{ margin: 0, width: '220px', flex: 1 }}>
               <input
                 className="input"
                 aria-label="Search records"
@@ -875,68 +812,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                   setRecPage(0)
                 }}
               />
-            </div>
-            <div className="field" style={{ margin: 0, width: '220px' }}>
-              <input
-                className="input"
-                aria-label="Filter tags"
-                placeholder="Filter tags"
-                role="combobox"
-                aria-expanded="true"
-                aria-controls="tag-filter-suggestions"
-                aria-autocomplete="list"
-                value={tagFilterQuery}
-                onChange={(e) => setTagFilterQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const firstMatch = tagFilterSuggestions[0]
-                    if (firstMatch) {
-                      e.preventDefault()
-                      selectTagFilter(firstMatch)
-                    }
-                  } else if (e.key === 'Escape') {
-                    setTagFilterQuery('')
-                  }
-                }}
-              />
-              {tagFilter.length > 0 && (
-                <div data-testid="tag-filter-selected" style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', marginTop: 'var(--space-1)' }}>
-                  {tagFilter.map((tag) => (
-                    <span key={tag.toLowerCase()} className="tag tag-outline">
-                      {tag}
-                      <button
-                        type="button"
-                        aria-label={`Remove tag filter ${tag}`}
-                        onClick={() => removeTagFilter(tag)}
-                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, marginLeft: '2px' }}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div data-testid="tag-filter-suggestions" role="listbox" aria-label="Tag suggestions" id="tag-filter-suggestions" style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: 'var(--space-1)' }}>
-                {tagFilterSuggestions.length === 0 ? (
-                  <div data-testid="tag-filter-no-match" className="text-muted" style={{ fontSize: '12px' }}>
-                    No matching tags
-                  </div>
-                ) : (
-                  tagFilterSuggestions.map((tag) => (
-                    <button
-                      key={tag.toLowerCase()}
-                      type="button"
-                      role="option"
-                      aria-selected="false"
-                      data-testid={`tag-filter-suggestion-${tag.toLowerCase()}`}
-                      onClick={() => selectTagFilter(tag)}
-                      style={{ ...textBtnAccent, color: 'inherit', fontWeight: 400, textAlign: 'left' }}
-                    >
-                      {tag}
-                    </button>
-                  ))
-                )}
-              </div>
             </div>
           </div>
         </div>

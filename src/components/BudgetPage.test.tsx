@@ -864,12 +864,6 @@ describe('BudgetPage spend record tag filter', () => {
     tags?: string[]
   }
 
-  // Drives the tag-filter combobox: types a query, then picks a suggestion.
-  const selectTagFilter = (query: string, suggestionKey?: string) => {
-    fireEvent.change(screen.getByLabelText('Filter tags'), { target: { value: query } })
-    fireEvent.click(screen.getByTestId(`tag-filter-suggestion-${(suggestionKey ?? query).toLowerCase()}`))
-  }
-
   const renderTagSpend = (budgetTransactions: TagRow[], categories = tagCategories) => {
     const dispatch = vi.fn()
     render(
@@ -886,126 +880,6 @@ describe('BudgetPage spend record tag filter', () => {
     return dispatch
   }
 
-  it('narrows the table to rows tagged work, matching case-insensitively', () => {
-    renderTagSpend([
-      { id: 'a', date: '2025-01-01', description: 'Office supplies', categoryId: 'food', amount: 10, tags: ['Work'] },
-      { id: 'b', date: '2025-01-02', description: 'Client dinner', categoryId: 'food', amount: 12, tags: ['WORK'] },
-      { id: 'c', date: '2025-01-03', description: 'Lunch', categoryId: 'food', amount: 8, tags: ['personal'] },
-    ])
-
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.getByText('Client dinner')).toBeTruthy()
-    expect(screen.getByText('Lunch')).toBeTruthy()
-
-    // Typing filters the suggestions but does not filter the table.
-    fireEvent.change(screen.getByLabelText('Filter tags'), { target: { value: 'wor' } })
-    expect(screen.getByTestId('tag-filter-suggestion-work')).toBeTruthy()
-    expect(screen.queryByTestId('tag-filter-suggestion-personal')).toBeNull()
-    expect(screen.getByText('Lunch')).toBeTruthy()
-
-    fireEvent.click(screen.getByTestId('tag-filter-suggestion-work'))
-
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.getByText('Client dinner')).toBeTruthy()
-    expect(screen.queryByText('Lunch')).toBeNull()
-    expect(screen.getByLabelText('Remove tag filter Work')).toBeTruthy()
-  })
-
-  it('requires every selected tag (AND semantics)', () => {
-    renderTagSpend([
-      { id: 'a', date: '2025-01-01', description: 'Urgent work bill', categoryId: 'food', amount: 10, tags: ['work', 'urgent'] },
-      { id: 'b', date: '2025-01-02', description: 'Routine work', categoryId: 'food', amount: 12, tags: ['work'] },
-      { id: 'c', date: '2025-01-03', description: 'Urgent personal', categoryId: 'food', amount: 8, tags: ['urgent'] },
-    ])
-
-    selectTagFilter('work')
-    expect(screen.getByText('Urgent work bill')).toBeTruthy()
-    expect(screen.getByText('Routine work')).toBeTruthy()
-    expect(screen.queryByText('Urgent personal')).toBeNull()
-
-    selectTagFilter('urgent')
-    expect(screen.getByText('Urgent work bill')).toBeTruthy()
-    expect(screen.queryByText('Routine work')).toBeNull()
-    expect(screen.queryByText('Urgent personal')).toBeNull()
-  })
-
-  it('narrows together with search text and the Show excluded toggle', () => {
-    const categories = [
-      { id: 'food', name: 'Food', updatedAt: '' },
-      { id: 'excluded', name: 'Excluded', updatedAt: '', excludeFromSpend: true },
-    ]
-    renderTagSpend(
-      [
-        { id: 'a', date: '2025-01-01', description: 'Alpha office', categoryId: 'food', amount: 10, tags: ['work'] },
-        { id: 'b', date: '2025-01-02', description: 'Alpha lunch', categoryId: 'food', amount: 12, tags: ['personal'] },
-        { id: 'c', date: '2025-01-03', description: 'Alpha retreat', categoryId: 'excluded', amount: 8, tags: ['work'] },
-      ],
-      categories
-    )
-
-    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'alpha' } })
-    expect(screen.getByText('Alpha office')).toBeTruthy()
-    expect(screen.getByText('Alpha lunch')).toBeTruthy()
-    expect(screen.queryByText('Alpha retreat')).toBeNull()
-
-    selectTagFilter('work')
-    expect(screen.getByText('Alpha office')).toBeTruthy()
-    expect(screen.queryByText('Alpha lunch')).toBeNull()
-    expect(screen.queryByText('Alpha retreat')).toBeNull()
-
-    fireEvent.click(screen.getByLabelText('Show excluded'))
-    expect(screen.getByText('Alpha office')).toBeTruthy()
-    expect(screen.getByText('Alpha retreat')).toBeTruthy()
-    expect(screen.queryByText('Alpha lunch')).toBeNull()
-  })
-
-  it('dedupes distinct tags case-insensitively keeping first-seen casing', () => {
-    renderTagSpend([
-      { id: 'a', date: '2025-01-01', description: 'Groceries', categoryId: 'food', amount: 10, tags: ['Food'] },
-      { id: 'b', date: '2025-01-02', description: 'Takeout', categoryId: 'food', amount: 12, tags: ['food', 'travel'] },
-    ])
-
-    expect(screen.getAllByTestId('tag-filter-suggestion-food')).toHaveLength(1)
-    expect(screen.getByTestId('tag-filter-suggestion-food').textContent).toBe('Food')
-    expect(screen.getByTestId('tag-filter-suggestion-travel')).toBeTruthy()
-  })
-
-  it('resets to page 1 and clears row selection when the tag filter changes', () => {
-    const rows: TagRow[] = [
-      ...Array.from({ length: 52 }, (_, index) => ({
-        id: `work-${index}`,
-        date: '2025-06-01',
-        description: `Work ${String(index).padStart(2, '0')}`,
-        categoryId: 'food',
-        amount: index + 1,
-        tags: ['work'],
-      })),
-      ...Array.from({ length: 3 }, (_, index) => ({
-        id: `other-${index}`,
-        date: '2025-06-01',
-        description: `Other ${index}`,
-        categoryId: 'food',
-        amount: 100 + index,
-        tags: ['other'],
-      })),
-    ]
-    renderTagSpend(rows)
-
-    fireEvent.click(screen.getByText('Next'))
-    expect(screen.getByTestId('records-pagination').textContent).toContain('Page 2 of 2')
-
-    fireEvent.click(screen.getAllByTestId(/^row-select-/)[0]!)
-    expect(screen.getByTestId('bulk-action-bar')).toBeTruthy()
-
-    selectTagFilter('other')
-
-    expect(screen.getByText('Other 0')).toBeTruthy()
-    expect(screen.getByText('Other 2')).toBeTruthy()
-    expect(screen.queryByText('Work 00')).toBeNull()
-    expect(screen.queryByTestId('bulk-action-bar')).toBeNull()
-    expect(screen.queryByTestId('records-pagination')).toBeNull()
-  })
-
   it('finds spend records with matching tags via the search box', () => {
     renderTagSpend([
       { id: 'a', date: '2025-01-01', description: 'Office supplies', categoryId: 'food', amount: 10, tags: ['Work'] },
@@ -1019,132 +893,15 @@ describe('BudgetPage spend record tag filter', () => {
     fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'WORK' } })
     expect(screen.getByText('Office supplies')).toBeTruthy()
     expect(screen.queryByText('Team lunch')).toBeNull()
-  })
-})
 
-describe('BudgetPage tag filter combobox', () => {
-  const comboCategories = [{ id: 'food', name: 'Food', updatedAt: '' }]
-
-  type ComboRow = {
-    id: string
-    date: string
-    description: string
-    categoryId: string
-    amount: number
-    tags?: string[]
-  }
-
-  const comboRows: ComboRow[] = [
-    { id: 'a', date: '2025-01-01', description: 'Office supplies', categoryId: 'food', amount: 10, tags: ['work'] },
-    { id: 'b', date: '2025-01-02', description: 'Team lunch', categoryId: 'food', amount: 12, tags: ['personal'] },
-  ]
-
-  const renderComboSpend = (budgetTransactions: ComboRow[]) => {
-    const dispatch = vi.fn()
-    render(
-      <BudgetPage
-        state={{ ...initialState(), budgetTransactions }}
-        dispatch={dispatch}
-        categories={comboCategories}
-        categoryMappings={[]}
-        categoryDispatch={vi.fn()}
-        categoriesHydrated
-        {...periodProps}
-      />
-    )
-    return dispatch
-  }
-
-  it('shows matching suggestions as you type and filters the table on select', () => {
-    renderComboSpend(comboRows)
-
-    const input = screen.getByLabelText('Filter tags') as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'wo' } })
-
-    expect(screen.getByTestId('tag-filter-suggestion-work')).toBeTruthy()
-    expect(screen.queryByTestId('tag-filter-suggestion-personal')).toBeNull()
-    // Typing alone never filters rows or creates tags.
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.getByText('Team lunch')).toBeTruthy()
-    expect(screen.queryByTestId('tag-filter-selected')).toBeNull()
-
-    fireEvent.click(screen.getByTestId('tag-filter-suggestion-work'))
-
+    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'WoRk' } })
     expect(screen.getByText('Office supplies')).toBeTruthy()
     expect(screen.queryByText('Team lunch')).toBeNull()
-    // Selected tag renders as a removable chip and the query clears.
-    expect(screen.getByLabelText('Remove tag filter work')).toBeTruthy()
-    expect(input.value).toBe('')
 
-    // Removing the chip lifts the filter again.
-    fireEvent.click(screen.getByLabelText('Remove tag filter work'))
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.getByText('Team lunch')).toBeTruthy()
-
-    // Enter picks the first matching suggestion.
-    fireEvent.change(input, { target: { value: 'pers' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'zzz-no-such-tag' } })
     expect(screen.queryByText('Office supplies')).toBeNull()
-    expect(screen.getByText('Team lunch')).toBeTruthy()
-  })
-
-  it('clears the tag filter selection when the selected year changes', () => {
-    renderComboSpend([
-      { id: 'a', date: '2025-01-01', description: 'Work lunch 2025', categoryId: 'food', amount: 10, tags: ['work'] },
-      { id: 'b', date: '2025-01-02', description: 'Personal 2025', categoryId: 'food', amount: 12, tags: ['personal'] },
-      { id: 'c', date: '2024-01-01', description: 'Work lunch 2024', categoryId: 'food', amount: 8, tags: ['work'] },
-      { id: 'd', date: '2024-01-02', description: 'Personal 2024', categoryId: 'food', amount: 9, tags: ['personal'] },
-    ])
-
-    fireEvent.change(screen.getByLabelText('Filter tags'), { target: { value: 'wor' } })
-    fireEvent.click(screen.getByTestId('tag-filter-suggestion-work'))
-    expect(screen.getByText('Work lunch 2025')).toBeTruthy()
-    expect(screen.queryByText('Personal 2025')).toBeNull()
-    expect(screen.getByLabelText('Remove tag filter work')).toBeTruthy()
-
-    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2024' } })
-
-    expect(screen.queryByLabelText('Remove tag filter work')).toBeNull()
-    expect(screen.getByText('Work lunch 2024')).toBeTruthy()
-    expect(screen.getByText('Personal 2024')).toBeTruthy()
-    expect(screen.queryByText('Work lunch 2025')).toBeNull()
-  })
-
-  it('clears the tag filter selection when the sort column changes', () => {
-    renderComboSpend(comboRows)
-
-    fireEvent.change(screen.getByLabelText('Filter tags'), { target: { value: 'wor' } })
-    fireEvent.click(screen.getByTestId('tag-filter-suggestion-work'))
     expect(screen.queryByText('Team lunch')).toBeNull()
-    expect(screen.getByLabelText('Remove tag filter work')).toBeTruthy()
-
-    fireEvent.click(screen.getByLabelText('Sort by description'))
-
-    expect(screen.queryByLabelText('Remove tag filter work')).toBeNull()
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.getByText('Team lunch')).toBeTruthy()
-  })
-
-  it('shows an empty dropdown without error when nothing matches', () => {
-    renderComboSpend(comboRows)
-
-    const input = screen.getByLabelText('Filter tags') as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'zzz-no-such-tag' } })
-
-    expect(screen.getByTestId('tag-filter-no-match')).toBeTruthy()
-    const suggestionsBox = screen.getByTestId('tag-filter-suggestions')
-    expect(suggestionsBox.textContent).toBe('No matching tags')
-    expect(suggestionsBox.querySelector('[role="option"]')).toBeNull()
-    // No error, no filtering, no selection.
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.getByText('Team lunch')).toBeTruthy()
-    expect(screen.queryByTestId('tag-filter-selected')).toBeNull()
-
-    // Enter with no match is a no-op — typing never creates tags.
-    fireEvent.keyDown(input, { key: 'Enter' })
-    expect(screen.queryByTestId('tag-filter-selected')).toBeNull()
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.getByText('Team lunch')).toBeTruthy()
+    expect(screen.getByText('No records for this period.')).toBeTruthy()
   })
 })
 
