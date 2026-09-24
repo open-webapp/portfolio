@@ -6,7 +6,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; [ -z \"$f\" ] && exit 0; b=$(basename \"$f\"); case \"$b\" in design.md|product-behavior.md|schema-spec.md) d=$(cd \"$(dirname \"$f\")\" 2>/dev/null && pwd); if [ \"$d\" != \"/home/mohan/owa/portfolio\" ]; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"These reference docs live only at repo root (/home/mohan/owa/portfolio/design.md, product-behavior.md, schema-spec.md) per CLAUDE.md. Edit the matching section in the root file instead of creating a new one here.\\\"}}\"; fi ;; esac; }"
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; [ -z \"$f\" ] && exit 0; b=$(basename \"$f\"); case \"$b\" in design.md|product-behavior.md|schema-spec.md) d=$(cd \"$(dirname \"$f\")\" 2>/dev/null && pwd); t=$(cd \"$d\" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null); if [ -z \"$d\" ] || [ \"$d\" != \"$t\" ]; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"These reference docs live only at repo root (design.md, product-behavior.md, schema-spec.md) per CLAUDE.md. Edit the matching section in the root file instead of creating a new one here.\\\"}}\"; fi ;; esac; }"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '(.tool_input.command // empty) + \"\\u0001\" + (.tool_input.cwd // empty)' | { IFS=$'\\x01' read -r cmd cwd; [ -z \"$cmd\" ] && exit 0; case \"$cmd\" in *design.md*|*product-behavior.md*|*schema-spec.md*) : ;; *) exit 0 ;; esac; case \"$cmd\" in *cp\\ *|*mv\\ *|*'>'*|*tee*) : ;; *) exit 0 ;; esac; for b in design.md product-behavior.md schema-spec.md; do case \"$cmd\" in *\"$b\"*) target=\"$b\" ;; esac; done; path=$(printf '%s' \"$cmd\" | grep -oE '(^|[^>])>{1,2}[[:space:]]*[^[:space:];|&]+' | tail -1 | sed -E 's/^.*>{1,2}[[:space:]]*//'); if [ -z \"$path\" ]; then path=$(printf '%s' \"$cmd\" | grep -oE '\\btee\\b[^|;&]*' | tail -1 | awk '{for(i=2;i<=NF;i++) if ($i !~ /^-/) {print $i; exit}}'); fi; if [ -z \"$path\" ]; then case \"$cmd\" in *cp\\ *|*mv\\ *) path=$(printf '%s' \"$cmd\" | grep -oE '\\b(cp|mv)\\b.*' | tail -1 | awk '{print $NF}') ;; esac; fi; [ -z \"$path\" ] && exit 0; case \"$path\" in *\"$target\"*) : ;; *) exit 0 ;; esac; case \"$path\" in */*) d=$(cd \"$(dirname \"$path\")\" 2>/dev/null && pwd) ;; *) d=$(cd \"$cwd\" 2>/dev/null && pwd) ;; esac; t=$(cd \"$d\" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null); if [ -z \"$d\" ] || [ \"$d\" != \"$t\" ]; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"These reference docs live only at repo root (design.md, product-behavior.md, schema-spec.md) per CLAUDE.md. Edit the matching section in the root file instead of creating a new one here.\\\"}}\"; fi; }"
           }
         ]
       }

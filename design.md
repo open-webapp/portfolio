@@ -10,18 +10,30 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 ## Budget
 
-- `App.tsx` owns the non-persisted Budget period (`expenses`, `spend`, `analytics`; default: `spend`) and renders its control in `TopBar`; `BudgetPage` receives it as props.
+- `App.tsx` owns the non-persisted Budget period (`expenses`, `spend`, `analytics`; default: `spend`) and renders its control in `TopBar`; `BudgetPage` receives it as props. Top-bar control is three tabs (Expenses/Spend/Analytics).
+- `App.tsx` also owns non-persisted Spend `selectedScope` (init: newest transaction year, else `SPEND_ALL_YEARS` sentinel), passed to `BudgetPage`; Spend's All/year selector renders as a second row under the period tabs.
 - `BudgetAccountsTab` mounts from Settings' Spend Accounts tab. It receives current-portfolio transactions and visible global `budgetAccountRules`. It confirms configure/remove actions and then dispatches `RECONCILE_BUDGET_ACCOUNT_CONVENTIONS` for the active portfolio.
 - Budget imports require an existing canonical account or a new account name. `convertBudgetAccountImportRows` canonicalizes the selected account name and converts a `positiveSpend` statement to canonical negative spend before `IMPORT_BUDGET_TRANSACTIONS` deduplication.
 - `negativeSpend` is the permanent default when no rule exists. Import persists an applied-convention marker even if all rows are duplicates.
 - CSV/OFX/QFX parsers are unchanged; they return raw parsed rows only.
 - `categoryBreakdown()` returns additive, non-breaking drilldown fields for existing callers: `categoryId`, `drillLines`, and `unlinkedActual`.
+- Income derivation: an active `Category` with an exact `Income` match resolves through `selectors.ts` into `BudgetPage` summary cards and savings-rate, gated by `effectiveCategoryId`/`excludedCategoryIdSet`. Spend selectors negate debit amounts for display. Legacy manual-income keys are dropped on hydration/import.
+- Spend-scope selectors: `spendBudgetYears`, `SPEND_ALL_YEARS` sentinel, `spendTransactionsForScope`; `spendCardTotals` aggregates per exact-year snapshot (no nearest-year fallback). `ENSURE_BUDGET_YEAR_SNAPSHOT` dispatch creates a year's snapshot on demand. `availableBudgetYears` definition is unaffected by scope work.
+- `BudgetSankey`/`sankeyFlowData` layout constants: 32px node gap, 460px min height, 720px scroll viewport.
+- Auto-tag vs user tag (`src/lib/autoTag.ts`): parallel-array model on `BudgetTransaction` — `tags` (user-only) and `autoTags` (system-only), both omitted when empty. `unionTags` dedupes/caps/merges the two; `applyAutoTags` recomputes `autoTags` from current rules. Two triggers with different candidate pools: manual "Auto-tag" action vs. CSV/OFX import. Clearing is split (`CLEAR_BUDGET_TRANSACTION_TAGS` user-only vs `CLEAR_BUDGET_TRANSACTION_AUTO_TAGS` auto-only). Chip render order: gray auto chips first, then red user chips, with cross-list dedup suppression; `TagInput` supports `blockedTags`. Header exposes Auto-tag/Clear-all-tags actions and a tag-chooser dialog.
+- `propagateSpendLinksByAutoTag` (see Global Categories) also runs on manual add/update/bulk-update of budget transactions, not just import/auto-tag-rerun.
+
+## Budget Expense CSV Export
+
+- `expenseExport.ts`: `buildExpenseCsv` builds an RFC4180-escaped CSV of expense rows, prefixing a leading apostrophe on values that would otherwise be read as a spreadsheet formula.
+- `BudgetExpensesTab.tsx` wires build + browser download; filename pattern `expenses-YYYY-MM-DD.csv`.
 
 ## Shell Navigation
 
 - `App.tsx` renders `RailNav` and `TopBar` for every hydrated, unlocked portfolio view.
-- `RailNav` is a fixed left icon rail: Ledger mark; Budget, Positions, Register, Quotes; flexible spacer; Settings. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the mark/spacer.
+- `RailNav` is a fixed left icon rail: Ledger mark; Budget, Positions, Register, Quotes; flexible spacer; Sync (when connected/syncing); Settings. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the mark/spacer.
 - `TopBar` is a flex row containing the accent-colored portfolio-switch button, optional Budget period control, and right-aligned accent Sync button. Sync is disabled while disconnected or syncing.
+- `router.ts` recognizes `#/categories` and renders `ManageCategoriesPage` without requiring an unlocked portfolio session.
 
 ## Global Categories
 
@@ -43,6 +55,71 @@ interface GlobalCategoryState {
 - `PortfolioPicker` uses a centered 520px landing layout with a full-width `Open` (default) / `Create` / `Google Drive` segment. Only the selected top-level panel mounts. The Drive card renders sequential My-portfolios and Shared-portfolio sections separated by `.hr`. Local file import remains inside Create; switching modes preserves component-local state.
 - `ManageCategoriesPage` is rendered at `#/categories` for global category management. `router.ts` adds the `categories` `Route` variant and `navigateToCategories()` helper.
 - `App.tsx` prop-drills global categories, rules, hydration state, and `categoryDispatch` into `BudgetPage`; no context.
+
+## Settings
+
+- `Settings.tsx` tabs: Backup, Encryption, Quotes API Key, Spend Accounts — no categories/mappings props (moved to global category store).
+- Quotes API Key tab has two sub-blocks in one card, separated by a border: Polygon (Equity/ETF) and Alphavantage (Mutual Fund).
+  - Polygon: masked key input (commits on blur, `SET_PRICE_SYNC_API_KEY`), "Fetch prices now" button + date input (disabled while fetching), last-run status (`state.priceSync.lastRun`), `tickerOverviewErrors` list (`{symbol}: {message}`). Shares orchestration with `App.tsx`'s on-load/on-focus effect via a lifted `runPriceSyncTrigger` callback prop; the button wraps it with local `fetchingPrices` state and an optional override date.
+  - Alphavantage: masked key input (`SET_MUTUAL_FUND_SYNC_API_KEY`), "Fetch mutual fund prices now" button (no date input), last-run status (`state.mutualFundSync.lastRun`), independent `mutualFundSyncErrors` map (never merged with Polygon's). Mirrors the Polygon wiring via `runMutualFundSyncTrigger` prop + local `fetchingMutualFunds` state.
+
+## Quotes Page
+
+- `QuotesPage.tsx`: rendered when `state.view === 'quotes'`, sibling of `AccountsPage`/`Settings`. Props: `{state, dispatch, tickerOverviewErrors}`.
+- Rows = union of held Equity/ETF and Mutual Fund symbols, sorted/merged by symbol. Asset Class: Equity/ETF looks up `assetClassManualOverride || assetClass`; Mutual Fund rows are hardcoded `'Mutual Fund'`.
+- Loads `marketDataDb.getAllBars()` + `getAllTickerOverviews()` in a `useEffect` keyed on `priceSync.lastRun?.at` / `mutualFundSync.lastRun?.at`.
+- Columns: Ticker, Asset Class, Name (cached `TickerOverview.name`, `—` if uncached), Status, Price (`fmtUSD`; Equity/ETF falls back to cached bar close, Mutual Fund reads `mutualFundSync.heldPrices` only, no bar fallback), Held (always Yes), Last Updated (UTC from `DailyBar.t`), SIC Description (`overview?.sicDescription || '—'`, `||` not `??` so empty string also shows `—`).
+- Status: Equity/ETF = OK / Not found (`priceSync.heldPrices`/`lastRun.notFound`); Mutual Fund = Not found (`mutualFundSync.lastRun.notFound`), else OK (priced today) or Pending.
+- Live search filters ticker/name/status/SIC/asset-class. Empty state: "No holdings to show." Failure banner when `tickerOverviewErrors` non-empty: "Could not fetch name for: X, Y".
+
+## Price Sync
+
+- Trigger chain: `App.tsx` `runPriceSyncTrigger` → `priceSync.ts` `runPriceSync` → `fetchGroupedDailyBars` → `marketDataDb.putBars` + `RECORD_PRICE_SYNC_RUN` → `UPDATE_POSITION` → `tickerOverview.ts` `syncTickerOverviews`.
+- Uses Polygon's Ticker Overview endpoint; `TickerOverviewNotFoundError` caches `notFound: true`. Paced by `REQUEST_SPACING_MS` (12.5s). `TickerOverviewRateLimitError` retries in a loop until success, backed off by `RATE_LIMIT_BACKOFF_MS` (60s). `tickerSyncInFlightRef` guards concurrent runs.
+- Edge cases: no API key set, manual date override, empty/malformed response, 403-today-special-case vs 403-other-date, CSV-import price precedence over synced price.
+
+## Mutual Fund Price Sync
+
+- Trigger chain: `runMutualFundSyncTrigger` → `mutualFundSync.ts` `runMutualFundSync`, using Alphavantage `SYMBOL_SEARCH`/`TIME_SERIES_DAILY`. Reuses the `ticker_overviews` store for name caching (shared with Polygon).
+- `ALPHAVANTAGE_DAILY_CALL_CAP` = 25/day; `callBudget: {date, callsUsed}` tracked and pre-incremented before each call.
+- Per-symbol error handling includes `AlphavantageRateLimitError`, which does NOT retry-loop (unlike Polygon). Paced by `ALPHAVANTAGE_REQUEST_SPACING_MS` (12.5s).
+- Both syncs share a 60s retry interval (`SYNC_RETRY_POLL_INTERVAL_MS`) driving `shouldRetryPolygonSync`/`shouldRetryMutualFundSync`. `mutualFundSyncInFlightRef` guards concurrency. Never writes `Position.price`.
+
+## Positions
+
+- `ClosedPositionsTable.tsx` takes a `positions` prop; reused by `PositionsTable.tsx` (`state.closedPositions`) and `AccountsPage.tsx` (`acctFilteredClosedPositions(state)`).
+- Undo Closed Position flow: table Undo click → `findMatchingOpenPosition`/`isExactLotMatch` → confirm dialog only if an exact-lot match exists → `RESTORE_CLOSED_POSITION` dispatch → `restoreClosedPosition` (three outcome branches: no match/partial match/exact match); account selection is cleared via `CLEAR_ACCOUNT_SELECTION`/`clearAccountSelection` as part of the restore.
+- Account Selection flow: `SELECT_ACCOUNT` → `selectAccount`, with toggle (reselect clears)/replace/null semantics for single-account filtering.
+
+## Balance Register
+
+- `register.ts` pure functions: `ACTIVITY_TYPES`, `ACTIVITY_SIGN`, `BALANCE_FIELD_HINTS`, `accountLedger`, `latestBalance`, `scopeLedger`, `registerChartSeries`, `matchAccountId`, `matchActivityType`, `normalizeDateInput`, `emptyDraftRow`, `isDraftRowValid`, `DraftActivity` type.
+- `selectors.ts`/`RegisterPage.tsx` consume these for ledger rows and chart series. `updateBalanceEntry` upserts by id, dropping on id collision.
+
+## Import/Export
+
+- `importExport.ts`: `ExportableState` type (field list + exclusions), `buildExportableState`, `exportBackup`, `downloadEnvelopeAsFile`, `downloadCsvAsFile`.
+- `UnencryptedPortfolioExport`/`buildUnencryptedPortfolioExport` (blanks API keys), `buildUnencryptedCategoriesExport`, `localDateStamp`, `downloadPrettyJsonAsFile` (used by Settings Download card filenames).
+- `ImportDecryptError`/`ImportMalformedFileError`, `parseImportFile`, `getEnvelopeSaltBytes`, `decryptImportEnvelope`.
+- `state.ts`'s `replaceImportedState` is orphaned — no production caller, exercised only by `state.test.ts`.
+
+## Drive Connection Persistence
+
+- `getDriveAuthFor(portfolio)` caches/keys a `DriveAuthHandle` per portfolio; `driveProjectIdFor` derives the Drive project id. `createDriveSync`/`createDriveAuth` wire `@open-webapp/drive-connect` 0.2.0.
+- `DriveAuthHandle` exposes only `{connect, disconnect, ensureFresh, activate}`; connection status comes from the `useDriveConnection` hook, not the handle. `connectInFlight` guards duplicate connect attempts.
+- Status is split across two sources: `@open-webapp/drive-sync` (backup/sync state) vs `@open-webapp/drive-connect` (auth/connection state). `NO_ACTIVE_PORTFOLIO` is the placeholder id used before a portfolio is open.
+- `getConnectionSnapshot()` in `src/lib/drive.ts` is the single call site reading the current `Connection` snapshot. A post-unlock effect calls `activate()`. `onDriveConnected`/`onDriveDisconnected` handlers exist for the four content-op signatures (backup/restore/list/status). `migrateLegacyDriveFolderIfNeeded` migrates pre-existing per-portfolio folders.
+- Orphaned: a drive-compat wrapper and `pickFile` helper have no remaining callers. Widget CSS vars are mapped through `--owa-drive-*` custom properties.
+
+## Drive Restore
+
+- Three live restore paths: existing-portfolio conflict flow, new-portfolio-from-Drive-folder, new-portfolio-from-local-file. `DriveRestorePanel` and `GateRestoreFromFilePanel` have been removed and are not part of the current component tree.
+- Picker-scoped Drive access (used before a portfolio session exists): `getPickerDriveAuth()`, `listPortfolioFoldersOnDrive()`, `decryptDriveFolderBackup()`; `DriveMalformedBackupError` vs `DriveDecryptError` distinguish corrupt-format from wrong-key/undecryptable backups.
+
+## Drive Sync Conflict
+
+- `handleSync` → `syncBackup` throws `RemoteChangedError` on conflict → `SyncConflictDialog` (Overwrite local / Overwrite remote / Cancel), including a spurious-version-drift auto-recovery path and separate handling for `DriveDecryptError` vs generic errors.
+- `drive.ts` exports: `getBackupFileStatus`, `overwriteLocalWithRemote`, `overwriteRemoteWithLocal`, `getPortfolioDriveFolderUrl` (plus `syncBackup`/`getBackupFileId` above).
 
 ## Account Sign Reconciliation
 
