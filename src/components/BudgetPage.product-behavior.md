@@ -4,7 +4,7 @@ Sibling: `BudgetPage.design.md`.
 
 ## Tabs
 
-- Four App-owned tabs: Expenses, Spend, Analytics, Category Mapping (grid icon). The selector appears in the Budget top bar, not in BudgetPage; the tab strip scrolls horizontally where needed.
+- Three App-owned tabs: Expenses, Spend, Analytics. The selector appears in the Budget top bar, not in BudgetPage; the tab strip scrolls horizontally where needed.
 - Spend is the App-session default. Tab and All/year scope selection remain when navigating away from and back to Budget, but are not persisted across app reloads.
 - When Spend is selected, the top-bar year selector shares the tab row, right-aligned, and offers `All` plus transaction years. Selecting a concrete year without an expense snapshot creates that year's snapshot; `All` does not.
 - The Category Mapping tab groups portfolio-scoped expense-name + category -> substring mappings by category and expense definition (`<expense name> (<category>)`), with an `+ add substring` input per definition. Empty categories render no mapping rows. Definitions with no matching global category appear under `Unmatched expenses`; mappings with no matching definition appear under `Orphaned substrings`. Mapping edits save on Enter; blank substrings are ignored. Deleting a mapping requires native confirmation.

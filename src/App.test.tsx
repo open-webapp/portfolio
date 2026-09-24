@@ -1643,7 +1643,7 @@ describe('multi-portfolio routing', () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Manage categories' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Budget Categories' })).toBeTruthy()
     })
     expect(screen.queryByText('MockUnlock')).toBeFalsy()
     expect(screen.queryByText('Loading...')).toBeFalsy()

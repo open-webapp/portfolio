@@ -206,14 +206,14 @@ describe('PortfolioPicker', () => {
       expect(gear.checked).toBe(false)
       fireEvent.click(gear)
       expect(gear.checked).toBe(true)
-      expect(screen.getByRole('heading', { name: 'Settings — Category mapping' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Settings — Budget Categories' })).toBeTruthy()
     })
 
     it('opens the category mapping settings panel while keeping the picker modes visible', () => {
       renderPicker()
       openSettings()
 
-      expect(screen.getByRole('heading', { name: 'Settings — Category mapping' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Settings — Budget Categories' })).toBeTruthy()
       expect(screen.getByRole('radio', { name: 'Open' })).toBeTruthy()
       expect(screen.getByRole('radio', { name: 'Create' })).toBeTruthy()
       expect(screen.getByRole('radio', { name: 'Google Drive' })).toBeTruthy()
@@ -224,7 +224,7 @@ describe('PortfolioPicker', () => {
       renderPicker()
       openSettings()
 
-      const heading = screen.getByRole('heading', { name: 'Settings — Category mapping' })
+      const heading = screen.getByRole('heading', { name: 'Settings — Budget Categories' })
       const importMapping = screen.getByRole('button', { name: 'Import mapping file' })
       const downloadMapping = screen.getByRole('button', { name: 'Download mapping file' }) as HTMLButtonElement
       expect(screen.queryByRole('button', { name: 'Close settings' })).toBeFalsy()
@@ -243,7 +243,7 @@ describe('PortfolioPicker', () => {
 
       selectPickerMode('Create')
 
-      expect(screen.queryByRole('heading', { name: 'Settings — Category mapping' })).toBeFalsy()
+      expect(screen.queryByRole('heading', { name: 'Settings — Budget Categories' })).toBeFalsy()
       expect((screen.getByRole('radio', { name: 'Create' }) as HTMLInputElement).checked).toBe(true)
     })
 

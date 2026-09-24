@@ -660,7 +660,7 @@ export function PortfolioPicker({
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
               <h2 className="card-title" style={{ fontSize: 18, margin: 0 }}>
-                Settings — Category mapping
+                Settings — Budget Categories
               </h2>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--space-2)' }}>
                 <button type="button" className="btn btn-secondary btn-icon" aria-label="Import mapping file" title="Import mapping file" onClick={() => categoryMappingInputRef.current?.click()}>
