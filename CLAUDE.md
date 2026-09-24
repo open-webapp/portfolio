@@ -56,9 +56,9 @@ For the full original task breakdown and data-model rationale, see `plans/portfo
 
 ### Reference Docs
 
-Maintains agent-optimized reference docs in the module root — canonical source of truth for current behavior and design.
+Maintains agent-optimized reference docs **at the repo root only** — `design.md`, `product-behavior.md`, `schema-spec.md` live in `/home/mohan/owa/portfolio/`, never colocated in `src/`, `src/lib/`, `src/components/`, or any other subdirectory. This is the repo's established convention and overrides any generic "module root" framing below — "module root" means the repo root, not each module's own directory. When a module changes, find and update the relevant *section* of the existing root doc; never create a new doc file next to the code you're editing.
 
-**Files (in `{name}`):**
+**Files (in repo root):**
 
 | File | Required | Purpose |
 |------|----------|---------|
