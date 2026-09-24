@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent, type MouseEvent, type SetStateAction } from 'react'
 import type { AppState } from '../lib/state'
 import { resolveBudgetImportRows } from '../lib/state'
-import {
-  resolveSpendExpenseIdForDescription,
-  type CategoryAction,
-} from '../lib/categoryStore'
-import type { BudgetAccountRule, Category, CategoryMapping } from '../lib/types'
+import type { CategoryAction } from '../lib/categoryStore'
+import type { BudgetAccountRule, Category } from '../lib/types'
 import {
   budgetAccountViewRows,
   canonicalBudgetAccountName,
@@ -15,7 +12,6 @@ import {
 import { BudgetAnalytics } from './BudgetAnalytics'
 import { BudgetSankey } from './BudgetSankey'
 import { BudgetExpensesTab } from './BudgetExpensesTab'
-import { CategoryMappingTab } from './CategoryMappingTab'
 import { SpendCategoryPicker } from './SpendCategoryPicker'
 import { TagInput } from './TagInput'
 import { fmtUSD, GAIN_COLOR, LOSS_COLOR, parseBudgetTransactionsCsv, parseOfxTransactions, countBudgetCsvDataRows } from '../lib/computations'
@@ -40,12 +36,11 @@ export interface BudgetPageProps {
   state: AppState
   dispatch: (action: any) => void
   categories: Category[]
-  categoryMappings: CategoryMapping[]
   categoryDispatch: (action: CategoryAction) => void
   categoriesHydrated: boolean
   budgetAccountRules?: BudgetAccountRule[]
-  period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping'
-  setPeriod: (period: 'expenses' | 'spend' | 'analytics' | 'categoryMapping') => void
+  period: 'expenses' | 'spend' | 'analytics'
+  setPeriod: (period: 'expenses' | 'spend' | 'analytics') => void
   selectedScope: SpendScope
   setSelectedScope: Dispatch<SetStateAction<SpendScope>>
 }
@@ -91,82 +86,6 @@ function visibleAutoTags(row: { tags?: string[]; autoTags?: string[] }): string[
   return (row.autoTags ?? []).filter((auto) => !userLower.has(auto.toLowerCase()))
 }
 
-export interface CategoryMappingsDialogProps {
-  mappings: CategoryMapping[]
-  onUpdate: (mapping: CategoryMapping, substring: string) => void | Promise<void>
-  onDelete: (mapping: CategoryMapping) => void | Promise<void>
-  onClose: () => void
-}
-
-export function CategoryMappingsDialog({ mappings, onUpdate, onDelete, onClose }: CategoryMappingsDialogProps) {
-  const [editingMappingSubstringId, setEditingMappingSubstringId] = useState<string | null>(null)
-  const [mappingSubstringDraft, setMappingSubstringDraft] = useState('')
-
-  const close = () => {
-    setEditingMappingSubstringId(null)
-    setMappingSubstringDraft('')
-    onClose()
-  }
-
-  useEffect(() => {
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      if (editingMappingSubstringId) {
-        setEditingMappingSubstringId(null)
-        setMappingSubstringDraft('')
-      } else {
-        close()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editingMappingSubstringId])
-
-  const save = (mapping: CategoryMapping) => {
-    const substring = mappingSubstringDraft.trim()
-    if (!substring || substring === mapping.substring) return
-    void onUpdate(mapping, substring)
-    setEditingMappingSubstringId(null)
-    setMappingSubstringDraft('')
-  }
-
-  const remove = (mapping: CategoryMapping) => {
-    if (!window.confirm('Delete this mapping? This cannot be undone.')) return
-    void onDelete(mapping)
-  }
-
-  return (
-    <div className="dialog-backdrop">
-      <div className="dialog blueprint category-mapping-dialog" role="dialog" aria-modal="true" aria-label="Category mappings" data-mapping-substring-draft={mappingSubstringDraft}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="dialog-title">Category mappings</div>
-          <button type="button" style={iconBtn} aria-label="Close" onClick={close}>×</button>
-        </div>
-        <div className="dialog-body">
-          {mappings.length === 0 ? (
-            <div className="text-muted">No category mappings.</div>
-          ) : (
-            mappings.map((mapping) => (
-              <div key={mapping.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                {editingMappingSubstringId === mapping.id ? (
-                  <input type="text" className="input" aria-label="Edit category mapping substring" autoFocus value={mappingSubstringDraft} onChange={(event) => setMappingSubstringDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save(mapping) }} />
-                ) : (
-                  <button type="button" style={{ ...textBtnAccent, color: 'inherit', fontWeight: 400 }} aria-label={`Edit category mapping ${mapping.substring}`} onClick={() => { setEditingMappingSubstringId(mapping.id); setMappingSubstringDraft(mapping.substring) }}>
-                    {mapping.substring}
-                  </button>
-                )}
-                <button type="button" style={{ ...iconBtn, color: LOSS_COLOR }} aria-label={`Delete category mapping ${mapping.substring}`} title="Delete category mapping" onClick={() => remove(mapping)}>
-                  <TrashIcon />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function RepeatIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
@@ -194,26 +113,17 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
   )
 }
 
-function MappingIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15"></path>
-      <path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 12 20l1.15-1.15"></path>
-    </svg>
-  )
-}
-
 /**
- * Budget page: Expenses/Spend/Analytics/Category Mapping tab toggle.
+ * Budget page: Expenses/Spend/Analytics tab toggle.
  * - Expenses tab (BudgetExpensesTab): Category Breakdown (own independent
  *   year selector) + a multi-year Expense table of global ExpenseDefinitions.
  * - Spend tab: scope selector, summary cards, and the Spend records table.
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
- * - Category Mapping tab (CategoryMappingTab): category CRUD plus every
- *   portfolio-scoped expense-name + category -> substring mapping,
- *   grouped by category and expense definition.
+ * Spend-expense links propagate via auto-tag clusters in the state layer
+ * (propagateSpendLinksByAutoTag); per-cell and bulk spend pickers dispatch
+ * plain UPDATE actions and the cascade happens in state.
  */
-export function BudgetPage({ state, dispatch, categories, categoryMappings, categoryDispatch, categoriesHydrated, budgetAccountRules = [], period, selectedScope, setSelectedScope }: BudgetPageProps) {
+export function BudgetPage({ state, dispatch, categories, categoryDispatch, budgetAccountRules = [], period, selectedScope, setSelectedScope }: BudgetPageProps) {
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -232,14 +142,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     rowId: string
     field: 'date' | 'description' | 'category' | 'account' | 'amount' | 'tags'
   } | null>(null)
-  const [editingMappingId, setEditingMappingId] = useState<string | null>(null)
   const [cellDraft, setCellDraft] = useState('')
   const [cellTagsDraft, setCellTagsDraft] = useState<string[]>([])
   const skipBlurCommitRef = useRef(false)
   const [recDate, setRecDate] = useState('')
   const [recDescription, setRecDescription] = useState('')
   const [recCategoryId, setRecCategoryId] = useState(categories[0]?.id ?? '')
-  const [recCategoryTouchedManually, setRecCategoryTouchedManually] = useState(false)
   const [recExpenseId, setRecExpenseId] = useState('')
   const [recTags, setRecTags] = useState<string[]>([])
   const [recAmount, setRecAmount] = useState('')
@@ -378,26 +286,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
   const recPaginationActive = searchedRecords.length > RECORDS_PAGE_SIZE
   const recPageCount = Math.ceil(searchedRecords.length / RECORDS_PAGE_SIZE)
   const pagedRecords = searchedRecords.slice(recPage * RECORDS_PAGE_SIZE, recPage * RECORDS_PAGE_SIZE + RECORDS_PAGE_SIZE)
-  const mappingsForExpense = (expenseId: string) =>
-    categoryMappings.filter((mapping) => mapping.spendExpenseId === expenseId)
-  const editingMappingRow = editingMappingId
-    ? state.budgetTransactions.find((transaction) => transaction.id === editingMappingId)
-    : undefined
-  const editingMappingExpense = editingMappingRow?.spendExpenseId
-    ? state.budgetExpenseDefinitions.find((definition) => definition.id === editingMappingRow.spendExpenseId)
-    : undefined
-  const editingMappings = editingMappingExpense
-    ? mappingsForExpense(editingMappingExpense.id)
-    : []
-
-  const saveMappingSubstring = (mapping: CategoryMapping, substring: string) => {
-    dispatch({ type: 'UPDATE_CATEGORY_MAPPING', id: mapping.id, patch: { substring } })
-  }
-
-  const deleteMapping = (mapping: CategoryMapping) => {
-    if (!window.confirm('Delete this mapping? This cannot be undone.')) return
-    dispatch({ type: 'DELETE_CATEGORY_MAPPING', id: mapping.id })
-  }
 
   const handleAutoTag = () => {
     const { taggedCount } = applyAutoTags(state.budgetTransactions)
@@ -645,7 +533,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
         tags: recTags.length ? recTags : undefined,
       },
     })
-    dispatch({ type: 'UPSERT_CATEGORY_MAPPING', description, spendExpenseId: recExpenseId })
     const recordYear = recDate.slice(0, 4)
     if (selectedScope !== SPEND_ALL_YEARS) {
       setSelectedScope(recordYear)
@@ -657,7 +544,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
     setRecDate('')
     setRecDescription('')
     setRecAmount('')
-    setRecCategoryTouchedManually(false)
     setRecExpenseId('')
     setRecTags([])
   }
@@ -686,14 +572,12 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
       state.budgetTransactions,
       convertedRows,
       categories,
-      categoryMappings,
       state.budgetExpenseDefinitions
     )
     dispatch({
       type: 'IMPORT_BUDGET_TRANSACTIONS',
       rows: convertedRows,
       categories,
-      categoryMappings,
       appliedConvention: {
         accountName: selectedImportAccountName,
         statementConvention: desiredBudgetAccountConvention(budgetAccountRules, selectedImportAccountName),
@@ -759,16 +643,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      {period === 'categoryMapping' ? (
-        <CategoryMappingTab
-          state={state}
-          dispatch={dispatch}
-          categories={categories}
-          categoryMappings={categoryMappings}
-          categoryDispatch={categoryDispatch}
-          categoriesHydrated={categoriesHydrated}
-        />
-      ) : period === 'analytics' ? (
+      {period === 'analytics' ? (
         <BudgetAnalytics state={state} categories={categories} />
       ) : period === 'expenses' ? (
         <BudgetExpensesTab state={state} dispatch={dispatch} categories={categories} categoryDispatch={categoryDispatch} />
@@ -1120,25 +995,7 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                           onBlur={() => handleCellInputBlur(row.id, 'description')}
                         />
                       ) : (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-                          {row.description}
-                          {row.spendExpenseId &&
-                            state.budgetExpenseDefinitions.some((definition) => definition.id === row.spendExpenseId) &&
-                            mappingsForExpense(row.spendExpenseId).length > 0 && (
-                              <button
-                                type="button"
-                                style={iconBtn}
-                                aria-label={`Edit category mappings for ${row.description}`}
-                                title="Edit category mappings"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  setEditingMappingId(row.id)
-                                }}
-                              >
-                                <MappingIcon />
-                              </button>
-                            )}
-                        </span>
+                        row.description
                       )}
                     </td>
                     <td onClick={() => startCellEdit(row.id, 'category', row.spendExpenseId ?? '')}>
@@ -1154,11 +1011,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
                               type: 'UPDATE_BUDGET_TRANSACTION',
                               id: row.id,
                               patch: { spendExpenseId: expenseId || undefined, categoryId },
-                            })
-                            dispatch({
-                              type: 'UPSERT_CATEGORY_MAPPING',
-                              description: row.description,
-                              spendExpenseId: expenseId,
                             })
                             setEditingCell(null)
                             setCellDraft('')
@@ -1346,17 +1198,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               value={recDescription}
               onChange={(e) => {
                 setRecDescription(e.target.value)
-                setRecCategoryTouchedManually(false)
-                if (!recCategoryTouchedManually) {
-                  const match = resolveSpendExpenseIdForDescription(categoryMappings, e.target.value)
-                  if (match) {
-                    const foundExpense = state.budgetExpenseDefinitions.find((d) => d.id === match)
-                    if (foundExpense) {
-                      setRecExpenseId(match)
-                      setRecCategoryId(foundExpense.categoryId)
-                    }
-                  }
-                }
               }}
             />
           </div>
@@ -1371,7 +1212,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
               onChange={(expenseId, categoryId) => {
                 setRecExpenseId(expenseId)
                 setRecCategoryId(categoryId)
-                setRecCategoryTouchedManually(true)
               }}
             />
           </div>
@@ -1551,8 +1391,6 @@ export function BudgetPage({ state, dispatch, categories, categoryMappings, cate
           </div>
         </div>
       )}
-
-      {editingMappingId && <CategoryMappingsDialog mappings={editingMappings} onUpdate={saveMappingSubstring} onDelete={deleteMapping} onClose={() => setEditingMappingId(null)} />}
     </div>
   )
 }

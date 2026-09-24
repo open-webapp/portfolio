@@ -182,7 +182,7 @@ vi.mock('./hooks/useGlobalCategories', () => ({
 // BudgetPage/SettingsPage are rendered for real (many tests below assert on
 // their actual rendered content, e.g. "Add Expense" / "Google Drive Sync"),
 // but wrapped here so tests can also assert exactly which props App.tsx
-// passed them (the 3 new categories/categoryMappings/categoryDispatch props,
+// passed them (the categories/categoryDispatch props,
 // plus categoriesHydrated for Settings).
 const { budgetPagePropsCapture, settingsPagePropsCapture } = vi.hoisted(() => ({
   budgetPagePropsCapture: { current: undefined as unknown },
@@ -191,10 +191,9 @@ const { budgetPagePropsCapture, settingsPagePropsCapture } = vi.hoisted(() => ({
 
 // Swallows a render error from the wrapped real component (used below for
 // BudgetPage, which as of this task still reads the now-removed
-// `state.categories`/`state.categoryMappings` fields pending T13's prop-
-// threading sweep — a pre-existing, already-red intermediate state per this
-// plan's own T9 acceptance note, not something this task's tests need to
-// route around by asserting on rendered content).
+// `state.categories` field pending T13's prop-threading sweep — a pre-existing,
+// already-red intermediate state per this plan's own T9 acceptance note, not
+// something this task's tests need to route around by asserting on rendered content).
 class SwallowRenderErrors extends (await import('react')).Component<{ children: React.ReactNode }, { errored: boolean }> {
   state = { errored: false }
   static getDerivedStateFromError() {
@@ -381,16 +380,14 @@ describe('navigation shell title and controls', () => {
     const [spendTab, expensesTab, analyticsTab] = ['Spend', 'Expenses', 'Analytics'].map((tab) => screen.getByText(tab))
     expect(spendTab.compareDocumentPosition(expensesTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(expensesTab.compareDocumentPosition(analyticsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const categoriesTab = screen.getByText('Category Mapping')
-    expect(analyticsTab.compareDocumentPosition(categoriesTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText('Category Mapping')).toBeNull()
     expect(screen.getByLabelText('Select year')).toBeTruthy()
 
     fireEvent.click(screen.getByText('Expenses'))
     expect(screen.queryByLabelText('Select year')).toBeNull()
 
-    fireEvent.click(screen.getByText('Category Mapping'))
+    fireEvent.click(screen.getByText('Analytics'))
     expect(screen.queryByLabelText('Select year')).toBeNull()
-    expect(screen.getAllByText('Category Mapping').length).toBeGreaterThanOrEqual(2)
   })
 
   it('uses Ledger Dashboard without a portfolio title for the gate and picker', async () => {
@@ -1003,19 +1000,13 @@ describe('global categories wiring', () => {
     mockUnlockLoadedState.current = undefined
   })
 
-  it('passes global categories and portfolio category mappings to BudgetPage', async () => {
+  it('passes global categories to BudgetPage', async () => {
     // BudgetPage itself hasn't been migrated off `state.categories` yet (T13,
     // not this task) so it currently throws on render — a pre-existing,
     // already-red intermediate state per plan T9's own acceptance note.
     // SwallowRenderErrors above keeps that from failing this test, which only
     // cares about what App.tsx handed it as props, not what it renders.
     const state = initialState()
-    state.categoryMappings = [{
-      id: 'portfolio-map-1',
-      substring: 'trader joes',
-      spendExpenseId: 'exp-1',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    }]
     mockUnlockLoadedState.current = state
 
     await renderUnlockedApp()
@@ -1027,7 +1018,7 @@ describe('global categories wiring', () => {
 
     const props = budgetPagePropsCapture.current as Record<string, unknown>
     expect(props.categories).toBe(mockGlobalCategoriesFixture.current.categories)
-    expect(props.categoryMappings).toBe(state.categoryMappings)
+    expect(props).not.toHaveProperty('categoryMappings')
     expect(props.categoryDispatch).toBe(mockGlobalCategoriesFixture.current.dispatch)
     expect(props.categoriesHydrated).toBe(true)
     expect(props.budgetAccountRules).toBe(mockGlobalCategoriesFixture.current.budgetAccountRules)

@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import * as StateActions from './state'
 import { importPositions } from './positionsImport'
 import { importTransactions } from './transactionsImport'
-import type { BalanceEntry, BudgetAccountRule, BudgetTransaction, Category, CategoryMapping, ExpenseDefinition, StatementConvention } from './types'
+import type { BalanceEntry, BudgetAccountRule, BudgetTransaction, Category, ExpenseDefinition, StatementConvention } from './types'
 import type { ExpensePasteImportRow } from './state'
 
 export type AppAction =
@@ -43,10 +43,6 @@ export type AppAction =
   | { type: 'IMPORT_EXPENSE_PASTE'; year: string; uncategorizedCategoryId: string; rows: ExpensePasteImportRow[] }
   | { type: 'UPDATE_EXPENSE_DEFINITION'; id: string; patch: Partial<Omit<ExpenseDefinition, 'id'>> }
   | { type: 'DELETE_EXPENSE_DEFINITION'; id: string }
-  | { type: 'UPSERT_CATEGORY_MAPPING'; description: string; spendExpenseId: string }
-  | { type: 'UPDATE_CATEGORY_MAPPING'; id: string; patch: Partial<Pick<CategoryMapping, 'substring' | 'spendExpenseId'>> }
-  | { type: 'ADD_CATEGORY_MAPPING'; spendExpenseId: string; substring: string }
-  | { type: 'DELETE_CATEGORY_MAPPING'; id: string }
   | { type: 'SET_EXPENSE_AMOUNT'; year: string; expenseId: string; amount: number }
   | { type: 'CLEAR_EXPENSE_AMOUNT'; year: string; expenseId: string }
   | { type: 'ROLLOVER_BUDGET_EXPENSE_AMOUNTS_IF_NEEDED' }
@@ -62,11 +58,9 @@ export type AppAction =
       type: 'IMPORT_BUDGET_TRANSACTIONS'
       rows: { date: string; description: string; amount: number; accountName?: string }[]
       categories: Category[]
-      categoryMappings: CategoryMapping[]
       appliedConvention: { accountName: string; statementConvention: StatementConvention }
     }
   | { type: 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS'; rules: BudgetAccountRule[] }
-  | { type: 'REAPPLY_CATEGORY_MAPPINGS'; categoryMappings: CategoryMapping[] }
 
 /**
  * Reducer function that handles all state mutations.
@@ -201,18 +195,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'DELETE_EXPENSE_DEFINITION':
       return StateActions.deleteExpenseDefinition(state, action.id)
 
-    case 'UPSERT_CATEGORY_MAPPING':
-      return StateActions.upsertCategoryMapping(state, action.description, action.spendExpenseId)
-
-    case 'UPDATE_CATEGORY_MAPPING':
-      return StateActions.updateCategoryMapping(state, action.id, action.patch)
-
-    case 'ADD_CATEGORY_MAPPING':
-      return StateActions.addCategoryMapping(state, action.spendExpenseId, action.substring)
-
-    case 'DELETE_CATEGORY_MAPPING':
-      return StateActions.deleteCategoryMapping(state, action.id)
-
     case 'SET_EXPENSE_AMOUNT':
       return StateActions.setExpenseAmount(state, action.year, action.expenseId, action.amount)
 
@@ -255,16 +237,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         state,
         action.rows,
         action.categories,
-        action.categoryMappings,
         state.budgetExpenseDefinitions,
         action.appliedConvention,
       )
 
     case 'RECONCILE_BUDGET_ACCOUNT_CONVENTIONS':
       return StateActions.reconcileBudgetAccountConventions(state, action.rules)
-
-    case 'REAPPLY_CATEGORY_MAPPINGS':
-      return StateActions.reapplyCategoryMappingsToState(state, action.categoryMappings)
 
     default:
       return state

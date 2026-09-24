@@ -63,7 +63,6 @@ describe('BudgetPage derived income', () => {
         state={{ ...initialState(), budgetExpenseDefinitions: definitions, budgetExpenseAmountsByYear: amounts, budgetTransactions: transactions }}
         dispatch={vi.fn()}
         categories={categories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         {...periodProps}
       />
@@ -79,7 +78,7 @@ describe('BudgetPage derived income', () => {
   })
 
   it('shows an empty budget-flow state with no scoped categories', () => {
-    render(<BudgetPage state={initialState()} dispatch={vi.fn()} categories={[]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    render(<BudgetPage state={initialState()} dispatch={vi.fn()} categories={[]} categoryDispatch={vi.fn()} {...periodProps} />)
 
     expect(screen.getByTestId('budget-sankey').textContent).toContain('No budget flow for this period.')
     expect(screen.getByTestId('budget-sankey').querySelector('svg')).toBeNull()
@@ -97,7 +96,6 @@ describe('BudgetPage derived income', () => {
         }}
         dispatch={vi.fn()}
         categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         {...periodProps}
       />
@@ -122,7 +120,7 @@ describe('BudgetPage derived income', () => {
         { id: 'rent', date: `${new Date().getFullYear()}-01-02`, description: 'Rent', categoryId: 'housing', amount: 500 },
       ],
     }
-    render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'income', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'income', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
     const cards = screen.getByTestId('summary-cards')
     expect(cards.querySelectorAll('.card')).toHaveLength(3)
     expect(screen.getByText(`Spend vs budget (${new Date().getFullYear()})`)).toBeTruthy()
@@ -141,12 +139,12 @@ describe('BudgetPage derived income', () => {
       budgetExpenseAmountsByYear: { '2026': { rent: 200 } },
       budgetTransactions: [{ id: 'rent', date: '2026-01-02', description: 'Rent', categoryId: 'housing', amount: -100 }],
     }
-    const { rerender } = render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    const { rerender } = render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
 
     expect((screen.getByText('49.9% under budget') as HTMLElement).style.color).toBe('rgb(31, 169, 113)')
 
     vi.setSystemTime(new Date('2026-01-02T12:00:00'))
-    rerender(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    rerender(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
     expect((screen.getByText('18150.0% over budget') as HTMLElement).style.color).toBe('rgb(226, 87, 76)')
     vi.useRealTimers()
   })
@@ -160,7 +158,7 @@ describe('BudgetPage derived income', () => {
       budgetExpenseAmountsByYear: { [year]: { income: 1000 } },
       budgetTransactions: [{ id: 'spend', date: `${year}-01-01`, description: 'Rent', categoryId: 'housing', amount: -50 }],
     }
-    render(<BudgetPage state={state} dispatch={dispatch} categories={[{ id: 'income-category', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    render(<BudgetPage state={state} dispatch={dispatch} categories={[{ id: 'income-category', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
 
     fireEvent.click(screen.getByLabelText('Edit income'))
     fireEvent.change(screen.getByLabelText('Income amount'), { target: { value: '1500' } })
@@ -180,7 +178,7 @@ describe('BudgetPage derived income', () => {
       ...initialState(),
       budgetTransactions: [{ id: 'spend', date: `${year}-01-01`, description: 'Rent', categoryId: 'housing', amount: -50 }],
     }
-    render(<BudgetPage state={state} dispatch={dispatch} categories={[{ id: 'income-category', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryMappings={[]} categoryDispatch={vi.fn()} {...periodProps} />)
+    render(<BudgetPage state={state} dispatch={dispatch} categories={[{ id: 'income-category', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
 
     fireEvent.click(screen.getByLabelText('Edit income'))
     fireEvent.change(screen.getByLabelText('Income amount'), { target: { value: '2000' } })
@@ -206,7 +204,6 @@ describe('BudgetPage derived income', () => {
         state={state}
         dispatch={vi.fn()}
         categories={[{ id: 'food', name: 'Food', updatedAt: '' }]}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         {...periodProps}
       />
@@ -224,7 +221,6 @@ describe('BudgetPage period props', () => {
     state: initialState(),
     dispatch: vi.fn(),
     categories: [],
-    categoryMappings: [],
     categoryDispatch: vi.fn(),
     categoriesHydrated: true,
     setPeriod: vi.fn(),
@@ -236,34 +232,13 @@ describe('BudgetPage period props', () => {
     contents.add(container.textContent ?? '')
     expect(screen.getByTestId('summary-cards')).toBeTruthy()
 
-    for (const period of ['expenses', 'analytics', 'categoryMapping'] as const) {
+    for (const period of ['expenses', 'analytics'] as const) {
       rerender(<BudgetPage {...props} period={period} />)
       expect(screen.queryByTestId('summary-cards')).toBeNull()
       contents.add(container.textContent ?? '')
     }
 
-    expect(contents.size).toBe(4)
-  })
-
-  it('renders the category-plus-substring mapping table on the categoryMapping tab', () => {
-    render(
-      <BudgetPage
-        {...props}
-        period="categoryMapping"
-        state={{
-          ...initialState(),
-          budgetExpenseDefinitions: [{ id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' as const }],
-          budgetTransactions: [],
-        }}
-        dispatch={vi.fn()}
-        categories={[{ id: 'food', name: 'Food', updatedAt: '' }]}
-        categoryMappings={[{ id: 'm1', substring: 'WHOLEFDS', spendExpenseId: 'groceries', updatedAt: '' }]}
-      />
-    )
-
-    expect(screen.getByText('Groceries (Food)')).toBeTruthy()
-    expect(screen.getByText('WHOLEFDS')).toBeTruthy()
-    expect(screen.getByLabelText('Add substring to Groceries (Food)')).toBeTruthy()
+    expect(contents.size).toBe(3)
   })
 
   it('does not render the App-owned year scope selector', () => {
@@ -306,7 +281,7 @@ describe('BudgetPage Spend scopes', () => {
 
   const renderSpend = (state = spendState()) => {
     const dispatch = vi.fn()
-    render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated {...periodProps} />)
+    render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated {...periodProps} />)
     return dispatch
   }
 
@@ -320,7 +295,6 @@ describe('BudgetPage Spend scopes', () => {
           dispatch(action)
         }}
         categories={categories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -374,7 +348,6 @@ describe('BudgetPage Spend scopes', () => {
       state: spendState(),
       dispatch: vi.fn(),
       categories,
-      categoryMappings: [],
       categoryDispatch: vi.fn(),
       categoriesHydrated: true,
       ...periodProps,
@@ -548,7 +521,6 @@ describe('BudgetPage budget account imports and signed amounts', () => {
         state={state}
         dispatch={dispatch}
         categories={categories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         budgetAccountRules={rules}
@@ -662,7 +634,7 @@ describe('BudgetPage budget account imports and signed amounts', () => {
     const state = initialState()
     const Harness = () => {
       const [appState, dispatch] = useReducer(appReducer, state)
-      return <BudgetPage state={appState} dispatch={(action) => { actions(action); dispatch(action) }} categories={categories} categoryMappings={[]} categoryDispatch={vi.fn()} categoriesHydrated budgetAccountRules={[positiveRule]} {...periodProps} />
+      return <BudgetPage state={appState} dispatch={(action) => { actions(action); dispatch(action) }} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated budgetAccountRules={[positiveRule]} {...periodProps} />
     }
     render(<Harness />)
 
@@ -690,7 +662,6 @@ describe('BudgetPage period control', () => {
         state={initialState()}
         dispatch={vi.fn()}
         categories={[]}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -702,153 +673,44 @@ describe('BudgetPage period control', () => {
   })
 })
 
-describe('BudgetPage category mapping overlay', () => {
+describe('BudgetPage spend record description edits', () => {
   const year = new Date().getFullYear()
   const categories = [{ id: 'food', name: 'Food', updatedAt: '' }]
-  const mappings = [{ id: 'market', substring: 'Market', spendExpenseId: 'groceries', updatedAt: '' }]
   const state = {
     ...initialState(),
     budgetExpenseDefinitions: [{ id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' as const }],
     budgetTransactions: [{ id: 'market-row', date: `${year}-01-01`, description: 'Market run', categoryId: 'food', amount: 42, spendExpenseId: 'groceries' }],
   }
 
-  const renderOverlay = () => {
+  const renderDescriptionRow = () => {
     const dispatch = vi.fn()
-    const categoryDispatch = vi.fn()
-    const view = render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={mappings} categoryDispatch={categoryDispatch} categoriesHydrated {...periodProps} />)
-    fireEvent.click(screen.getByLabelText('Edit category mappings for Market run'))
-    return { ...view, dispatch, categoryDispatch }
+    render(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated {...periodProps} />)
+    return dispatch
   }
 
-  it('uses the scrollable dialog variant for category mappings', () => {
-    renderOverlay()
+  it('commits a Description inline edit on Enter with one update action', () => {
+    const dispatch = renderDescriptionRow()
 
-    expect(screen.getByRole('dialog', { name: 'Category mappings' }).className).toContain('category-mapping-dialog')
-  })
-
-  const ReapplyHarness = ({ mappings: initialMappings }: { mappings: typeof mappings }) => {
-    const [appState, dispatch] = useReducer(appReducer, {
-      ...state,
-      budgetExpenseDefinitions: [
-        { id: 'expense-a', name: 'Expense A', categoryId: 'food', frequency: 'monthly' as const },
-        { id: 'expense-b', name: 'Expense B', categoryId: 'food', frequency: 'monthly' as const },
-      ],
-      budgetTransactions: [{ id: 'market-row', date: `${year}-01-01`, description: 'Market run', categoryId: 'food', amount: 42, spendExpenseId: 'expense-a' }],
-      categoryMappings: initialMappings,
-    })
-
-    return <BudgetPage state={appState} dispatch={dispatch} categories={categories} categoryMappings={appState.categoryMappings} categoryDispatch={vi.fn()} categoriesHydrated {...periodProps} />
-  }
-
-  it('edits a mapping substring on Enter with one main-state action', () => {
-    const { dispatch, categoryDispatch } = renderOverlay()
-
-    fireEvent.click(screen.getByText('Market'))
-    const input = screen.getByLabelText('Edit category mapping substring')
-    fireEvent.change(input, { target: { value: ' Grocery ' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    expect(categoryDispatch).not.toHaveBeenCalled()
-    expect(dispatch).toHaveBeenCalledTimes(1)
-    expect(dispatch).toHaveBeenCalledWith({ type: 'UPDATE_CATEGORY_MAPPING', id: 'market', patch: { substring: 'Grocery' } })
-    expect(screen.queryByLabelText('Edit category mapping substring')).toBeNull()
-    expect(screen.getByText('Market')).toBeTruthy()
-  })
-
-  it('keeps invalid mapping edits open, cancels them before closing the dialog, and ignores declined deletion', () => {
-    const { dispatch, categoryDispatch } = renderOverlay()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-
-    fireEvent.click(screen.getByText('Market'))
-    const input = screen.getByLabelText('Edit category mapping substring')
-    fireEvent.blur(input)
-    expect(screen.getByLabelText('Edit category mapping substring')).toBeTruthy()
-    fireEvent.change(input, { target: { value: '   ' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    expect(categoryDispatch).not.toHaveBeenCalled()
-    expect(dispatch).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('Edit category mapping substring')).toBeTruthy()
-
-    fireEvent.keyDown(input, { key: 'Escape' })
-    expect(screen.queryByLabelText('Edit category mapping substring')).toBeNull()
-    expect(screen.getByRole('dialog', { name: 'Category mappings' })).toBeTruthy()
-    fireEvent.keyDown(window, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Category mappings' })).toBeNull()
-
-    fireEvent.click(screen.getByLabelText('Edit category mappings for Market run'))
-    fireEvent.click(screen.getByLabelText('Delete category mapping Market'))
-    expect(confirm).toHaveBeenCalledWith('Delete this mapping? This cannot be undone.')
-    expect(categoryDispatch).not.toHaveBeenCalled()
-    expect(dispatch).not.toHaveBeenCalled()
-    confirm.mockRestore()
-  })
-
-  it('deletes a confirmed mapping with one main-state action and leaves the empty dialog open', () => {
-    const { dispatch, categoryDispatch, rerender } = renderOverlay()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-
-    fireEvent.click(screen.getByLabelText('Delete category mapping Market'))
-
-    expect(categoryDispatch).not.toHaveBeenCalled()
-    expect(dispatch).toHaveBeenCalledTimes(1)
-    expect(dispatch).toHaveBeenCalledWith({ type: 'DELETE_CATEGORY_MAPPING', id: 'market' })
-    rerender(<BudgetPage state={state} dispatch={dispatch} categories={categories} categoryMappings={[]} categoryDispatch={categoryDispatch} categoriesHydrated {...periodProps} />)
-    expect(screen.getByRole('dialog', { name: 'Category mappings' })).toBeTruthy()
-    expect(screen.getByText('No category mappings.')).toBeTruthy()
-    confirm.mockRestore()
-  })
-
-  it('updates the open dialog to the row’s live expense scope after reapplying an edited mapping', () => {
-    render(<ReapplyHarness mappings={[
-      { id: 'expense-b-map', substring: 'Market', spendExpenseId: 'expense-b', updatedAt: '' },
-      { id: 'expense-a-map', substring: 'Market run', spendExpenseId: 'expense-a', updatedAt: '' },
-    ]} />)
-
-    fireEvent.click(screen.getByLabelText('Edit category mappings for Market run'))
-    expect(screen.getByLabelText('Edit category mapping Market run')).toBeTruthy()
-    fireEvent.click(screen.getByLabelText('Edit category mapping Market run'))
-    const input = screen.getByLabelText('Edit category mapping substring')
-    fireEvent.change(input, { target: { value: 'Market run again' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    expect(screen.getByRole('dialog', { name: 'Category mappings' })).toBeTruthy()
-    expect(screen.getByText('Market')).toBeTruthy()
-    expect(screen.getAllByLabelText(/^Edit category mapping /)).toHaveLength(1)
-    expect(screen.queryByText('Market run again')).toBeNull()
-  })
-
-  it('keeps the dialog open on only the new scope mappings when deletion reapplies the row', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<ReapplyHarness mappings={[
-      { id: 'expense-b-map', substring: 'Market', spendExpenseId: 'expense-b', updatedAt: '' },
-      { id: 'expense-a-map', substring: 'Market run', spendExpenseId: 'expense-a', updatedAt: '' },
-    ]} />)
-
-    fireEvent.click(screen.getByLabelText('Edit category mappings for Market run'))
-    fireEvent.click(screen.getByLabelText('Delete category mapping Market run'))
-
-    expect(screen.getByRole('dialog', { name: 'Category mappings' })).toBeTruthy()
-    expect(screen.getByText('Market')).toBeTruthy()
-    expect(screen.getAllByLabelText(/^Edit category mapping /)).toHaveLength(1)
-    expect(screen.queryByLabelText('Delete category mapping Market run')).toBeNull()
-    confirm.mockRestore()
-  })
-
-  it('leaves ordinary Description inline edits able to commit or cancel', () => {
-    render(<ReapplyHarness mappings={[]} />)
-
-    fireEvent.click(screen.getByText('Market run', { selector: 'span' }))
+    fireEvent.click(screen.getByText('Market run'))
     const input = screen.getByDisplayValue('Market run')
     fireEvent.change(input, { target: { value: 'Fresh market run' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(screen.getByText('Fresh market run')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Fresh market run', { selector: 'span' }))
-    const secondInput = screen.getByDisplayValue('Fresh market run')
-    fireEvent.change(secondInput, { target: { value: 'Discarded market run' } })
-    fireEvent.keyDown(secondInput, { key: 'Escape' })
-    expect(screen.getByText('Fresh market run')).toBeTruthy()
-    expect(screen.queryByText('Discarded market run')).toBeNull()
+    expect(dispatch).toHaveBeenCalledWith({ type: 'UPDATE_BUDGET_TRANSACTION', id: 'market-row', patch: { description: 'Fresh market run' } })
+    expect(screen.queryByDisplayValue('Fresh market run')).toBeNull()
+  })
+
+  it('cancels a Description inline edit on Escape without dispatching', () => {
+    const dispatch = renderDescriptionRow()
+
+    fireEvent.click(screen.getByText('Market run'))
+    const input = screen.getByDisplayValue('Market run')
+    fireEvent.change(input, { target: { value: 'Discarded market run' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPDATE_BUDGET_TRANSACTION' }))
+    expect(screen.queryByDisplayValue('Discarded market run')).toBeNull()
+    expect(screen.getByText('Market run')).toBeTruthy()
   })
 })
 
@@ -871,7 +733,6 @@ describe('BudgetPage spend record tag filter', () => {
         state={{ ...initialState(), budgetTransactions }}
         dispatch={dispatch}
         categories={categories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -915,7 +776,6 @@ describe('BudgetPage Add Record tags', () => {
         state={initialState()}
         dispatch={dispatch}
         categories={addCategories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -994,7 +854,6 @@ describe('BudgetPage bulk-edit tags', () => {
         state={{ ...initialState(), budgetExpenseDefinitions: bulkDefinitions, budgetTransactions: bulkTransactions }}
         dispatch={dispatch}
         categories={bulkCategories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -1089,7 +948,6 @@ describe('BudgetPage Tags column per-cell editor', () => {
         state={{ ...initialState(), budgetTransactions }}
         dispatch={dispatch}
         categories={tagCellCategories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -1231,8 +1089,7 @@ describe('BudgetPage auto-tag records', () => {
             dispatch(action)
           }}
           categories={autoTagCategories}
-          categoryMappings={[]}
-          categoryDispatch={vi.fn()}
+            categoryDispatch={vi.fn()}
           categoriesHydrated
           {...periodProps}
         />
@@ -1288,7 +1145,6 @@ describe('BudgetPage auto-tag records', () => {
         state={{ ...initialState(), budgetTransactions: clusteringTransactions }}
         dispatch={vi.fn()}
         categories={autoTagCategories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -1337,8 +1193,7 @@ describe('BudgetPage clear all tags', () => {
             dispatch(action)
           }}
           categories={clearTagCategories}
-          categoryMappings={[]}
-          categoryDispatch={vi.fn()}
+            categoryDispatch={vi.fn()}
           categoriesHydrated
           {...periodProps}
         />
@@ -1502,7 +1357,6 @@ describe('BudgetPage clear all tags', () => {
         state={{ ...initialState(), budgetTransactions: taggedTransactions }}
         dispatch={vi.fn()}
         categories={clearTagCategories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}
@@ -1540,7 +1394,6 @@ describe('BudgetPage auto vs user tags (T5)', () => {
         state={{ ...initialState(), budgetTransactions }}
         dispatch={dispatch}
         categories={provenanceCategories}
-        categoryMappings={[]}
         categoryDispatch={vi.fn()}
         categoriesHydrated
         {...periodProps}

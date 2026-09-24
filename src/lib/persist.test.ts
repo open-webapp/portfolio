@@ -14,9 +14,11 @@ describe('budget persistence migration', () => {
     expect(coalesceWithDefaults({ budgetTransactions: [] }).budgetAccountAppliedConventions).toEqual({})
   })
 
-  it('defaults missing category mappings while preserving an existing empty collection', () => {
-    expect(coalesceWithDefaults({}).categoryMappings).toEqual([])
-    expect(coalesceWithDefaults({ categoryMappings: [] }).categoryMappings).toEqual([])
+  it('ignores stray categoryMappings key without crashing', () => {
+    const coalesced = coalesceWithDefaults({ categoryMappings: [{ id: 'x' }] } as unknown as Parameters<typeof coalesceWithDefaults>[0])
+    expect(coalesced).not.toHaveProperty('categoryMappings')
+    const roundTripped = coalesceWithDefaults(JSON.parse(JSON.stringify(coalesced)))
+    expect(roundTripped).not.toHaveProperty('categoryMappings')
   })
 
   it('loads tags-only records with autoTags absent and tags intact (no guessing)', () => {

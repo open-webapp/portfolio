@@ -1079,7 +1079,6 @@ describe('SettingsPage', () => {
       const state = {
         ...initialState(),
         accounts: [{ id: 'a1', name: 'Checking', institution: 'Bank', accountNumber: '123', type: 'checking' as const }],
-        categoryMappings: [{ id: 'm1', pattern: 'STORE', categoryId: 'c1', spendExpenseId: 'groceries' }],
         priceSync: { ...initialState().priceSync, apiKey: 'secret-poly' },
       }
       renderSettings({ state, settingsSection: 'backup' })
@@ -1088,7 +1087,8 @@ describe('SettingsPage', () => {
 
       expect(importExportModule.downloadPrettyJsonAsFile).toHaveBeenCalledTimes(1)
       const [data, filename] = vi.mocked(importExportModule.downloadPrettyJsonAsFile).mock.calls[0] as [any, string]
-      expect(data).toMatchObject({ accounts: expect.any(Array), categoryMappings: expect.any(Array) })
+      expect(data).toMatchObject({ accounts: expect.any(Array) })
+      expect(data).not.toHaveProperty('categoryMappings')
       expect(data.priceSync.apiKey).toBe('')
       expect(filename).toMatch(/^ledger-portfolio-\d{4}-\d{2}-\d{2}\.json$/)
     })

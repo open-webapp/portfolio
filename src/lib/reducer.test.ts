@@ -82,4 +82,17 @@ describe('budget reducer', () => {
     expect(viaReducer.budgetTransactions.every((t) => !t.autoTags || t.autoTags.length === 0)).toBe(true)
     expect(viaReducer.budgetTransactions[0].tags).toEqual(['Mine'])
   })
+
+  it('IMPORT_BUDGET_TRANSACTIONS imports without categoryMappings', () => {
+    const state = initialState()
+    const categories = [{ id: 'other', name: 'Other' }]
+    const result = appReducer(state, {
+      type: 'IMPORT_BUDGET_TRANSACTIONS',
+      rows: [{ date: '2026-09-20', description: 'Store', amount: -25, accountName: 'Checking' }],
+      categories,
+      appliedConvention: { accountName: 'Checking', statementConvention: 'negativeSpend' },
+    })
+    expect(result.budgetTransactions).toHaveLength(1)
+    expect(result.budgetTransactions[0]).toMatchObject({ description: 'Store', categoryId: 'other' })
+  })
 })

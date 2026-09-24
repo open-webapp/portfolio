@@ -1,6 +1,6 @@
 import type { AppState } from './state'
 import { resolveExpenseAmountsForAnalyticsYear } from './state'
-import type { Position, ClosedPosition, Transaction, TaxCategory, ExpenseDefinition, BudgetTransaction, Category, CategoryMapping } from './types'
+import type { Position, ClosedPosition, Transaction, TaxCategory, ExpenseDefinition, BudgetTransaction, Category } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod, GAIN_COLOR, LOSS_COLOR } from './computations'
 import { latestBalance } from './register'
@@ -1166,15 +1166,6 @@ export function categoryBreakdown(
         unlinkedActual: unlinkedSum !== 0 ? unlinkedSum : null
       }
     })
-}
-
-/**
- * Category mappings for a given expense, sorted alphabetically by substring.
- */
-export function mappingsForExpense(mappings: CategoryMapping[], spendExpenseId: string): CategoryMapping[] {
-  return mappings
-    .filter((m) => m.spendExpenseId === spendExpenseId)
-    .sort((a, b) => a.substring.localeCompare(b.substring))
 }
 
 /**

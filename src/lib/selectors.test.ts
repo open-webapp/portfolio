@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, mappingsForExpense, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
-import type { BudgetTransaction, Category, CategoryMapping, ExpenseDefinition } from './types'
+import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import type { BudgetTransaction, Category, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
   { id: 'income', name: ' Income ', updatedAt: '' },
@@ -433,19 +433,6 @@ describe('sankeyFlowData', () => {
 
     expect(result.nodes.filter((node) => node.column === 'actual').every((node) => node.height === 0)).toBe(true)
     expect(() => sankeyFlowData(sankeyDefinitions, {}, [], sankeyCategories, '2025')).not.toThrow()
-  })
-})
-
-describe('mappingsForExpense', () => {
-  it('preserves substring sort within an expense', () => {
-    const mappings = [
-      { id: 'zebra', spendExpenseId: 'groceries', substring: 'zebra' },
-      { id: 'apple', spendExpenseId: 'groceries', substring: 'apple' },
-      { id: 'alpha', spendExpenseId: 'groceries', substring: 'alpha' },
-      { id: 'other', spendExpenseId: 'salary', substring: 'aardvark' }
-    ] as CategoryMapping[]
-
-    expect(mappingsForExpense(mappings, 'groceries').map((mapping) => mapping.id)).toEqual(['alpha', 'apple', 'zebra'])
   })
 })
 

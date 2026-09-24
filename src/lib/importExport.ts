@@ -12,7 +12,6 @@ import type {
   BalanceEntry,
   BudgetAccountRule,
   Category,
-  CategoryMapping,
   PriceSyncLastRun,
   ExpenseDefinition,
   BudgetTransaction,
@@ -77,23 +76,20 @@ export function buildExportableState(state: AppState): ExportableState {
 }
 
 /**
- * Unencrypted portfolio export shape: everything in ExportableState plus
- * the per-user category mappings, with API keys blanked (lastRun kept).
+ * Unencrypted portfolio export shape: everything in ExportableState, with
+ * API keys blanked (lastRun kept).
  */
-export type UnencryptedPortfolioExport = ExportableState & {
-  categoryMappings: CategoryMapping[]
-}
+export type UnencryptedPortfolioExport = ExportableState
 
 /**
  * Pure builder for the unencrypted portfolio download. Spreads
- * buildExportableState, adds categoryMappings, and blanks both sync API
- * keys while keeping lastRun. Never mutates the input state.
+ * buildExportableState and blanks both sync API keys while keeping lastRun.
+ * Never mutates the input state.
  */
 export function buildUnencryptedPortfolioExport(state: AppState): UnencryptedPortfolioExport {
   const base = buildExportableState(state)
   return {
     ...base,
-    categoryMappings: state.categoryMappings,
     priceSync: {
       apiKey: '',
       lastRun: state.priceSync.lastRun,

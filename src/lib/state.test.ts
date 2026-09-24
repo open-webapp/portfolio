@@ -2,27 +2,23 @@ import { describe, expect, it } from 'vitest'
 import {
   addBudgetTransaction,
   addExpenseDefinition,
-  addCategoryMapping,
   autoTagBudgetTransactions,
   clearBudgetTransactionAutoTags,
   clearBudgetTransactionTags,
-  deleteCategoryMapping,
   deleteExpenseDefinition,
   ensureExpenseAmountsSnapshotForYear,
   importBudgetTransactions,
   initialState,
+  propagateSpendLinksByAutoTag,
   reconcileBudgetAccountConventions,
   resolveBudgetImportRows,
   rolloverBudgetExpenseAmountsIfNeeded,
   stripEmptyBudgetSnapshots,
   updateBudgetTransaction,
   updateBudgetTransactionsBulk,
-  updateCategoryMapping,
   updateExpenseDefinition,
-  upsertCategoryMapping,
 } from './state'
 import type { BudgetAccountRule, StatementConvention } from './types'
-import { appReducer, type AppAction } from './reducer'
 
 describe('budget state', () => {
   it('has no manual income state', () => {
@@ -67,111 +63,89 @@ describe('budget state', () => {
     expect(updateExpenseDefinition(state, 'utilities', { name: ' rent ' })).toBe(state)
   })
 
-  it('hard-deletes mappings for a deleted expense definition', () => {
+  it('deleteExpenseDefinition no longer touches mappings', () => {
     const state = {
       ...initialState(),
       budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' as const }],
-      categoryMappings: [
-        { id: 'rent-map', substring: 'Landlord', spendExpenseId: 'rent', updatedAt: '' },
-        { id: 'other-map', substring: 'Store', spendExpenseId: 'other', updatedAt: '' },
-      ],
+      budgetExpenseAmountsByYear: { '2026': { rent: 1000 } },
     }
 
+    expect(state).not.toHaveProperty('categoryMappings')
     const result = deleteExpenseDefinition(state, 'rent')
-    expect(result.categoryMappings.find((mapping) => mapping.id === 'rent-map')).toBeUndefined()
-    expect(result.categoryMappings).toEqual([state.categoryMappings[1]])
-  })
-
-  it('leaves mappings untouched when deleting an expense without mappings', () => {
-    const state = {
-      ...initialState(),
-      categoryMappings: [{ id: 'other-map', substring: 'Store', spendExpenseId: 'other', updatedAt: '' }],
-    }
-
-    expect(deleteExpenseDefinition(state, 'rent').categoryMappings).toBe(state.categoryMappings)
+    expect(result).not.toHaveProperty('categoryMappings')
+    expect(result.budgetExpenseDefinitions).toEqual([])
+    expect(result.budgetExpenseAmountsByYear).toEqual({ '2026': {} })
   })
 })
 
-describe('category mappings', () => {
-  it('upserts by case-insensitive substring without tombstoning', () => {
-    const once = upsertCategoryMapping(initialState(), ' Grocery ', 'groceries')
-    const twice = upsertCategoryMapping(once, 'gRoCeRy', 'food')
-
-    expect(twice.categoryMappings).toHaveLength(1)
-    expect(twice.categoryMappings[0]).toMatchObject({ substring: 'Grocery', spendExpenseId: 'food' })
-    expect(twice.categoryMappings[0]).not.toHaveProperty('deletedAt')
+describe('propagateSpendLinksByAutoTag', () => {
+  const defs = [
+    { id: 'expA', name: 'A', categoryId: 'catA', frequency: 'monthly' as const },
+    { id: 'expB', name: 'B', categoryId: 'catB', frequency: 'monthly' as const },
+  ]
+  const btx = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    date: '2026-01-01',
+    description: `Tx ${id}`,
+    categoryId: 'other',
+    amount: -10,
+    ...extra,
   })
 
-  it('updates a mapping by ID', () => {
-    const state = {
-      ...initialState(),
-      budgetExpenseDefinitions: [
-        { id: 'other-expense', name: 'Other', categoryId: 'other', frequency: 'monthly' as const },
-        { id: 'food-expense', name: 'Food', categoryId: 'food', frequency: 'monthly' as const },
-      ],
-      categoryMappings: [{ id: 'map', substring: 'Store', spendExpenseId: 'other', updatedAt: '' }],
-      budgetTransactions: [
-        { id: 'store', date: '2026-01-01', description: 'Store run', categoryId: 'other', amount: 10, spendExpenseId: 'other-expense' },
-        { id: 'market', date: '2026-01-02', description: 'Market run', categoryId: 'other', amount: 20 },
-      ],
+  it('most-common-wins across carriers of the same tag', () => {
+    const txs = [
+      btx('a', { autoTags: ['COSTCO'], spendExpenseId: 'expA', categoryId: 'catA' }),
+      btx('b', { autoTags: ['COSTCO'], spendExpenseId: 'expA', categoryId: 'catA' }),
+      btx('c', { autoTags: ['COSTCO'], spendExpenseId: 'expB', categoryId: 'catB' }),
+      btx('d', { autoTags: ['COSTCO'], categoryId: 'other' }),
+    ]
+    const result = propagateSpendLinksByAutoTag(txs, defs)
+    for (const t of result) {
+      expect(t.spendExpenseId).toBe('expA')
+      expect(t.categoryId).toBe('catA')
     }
-
-    const result = updateCategoryMapping(state, 'map', { substring: 'Market', spendExpenseId: 'food-expense' })
-    expect(result.categoryMappings[0])
-      .toMatchObject({ id: 'map', substring: 'Market', spendExpenseId: 'food-expense' })
-    expect(result.budgetTransactions).toMatchObject([
-      { id: 'store', categoryId: 'other', spendExpenseId: 'other-expense' },
-      { id: 'market', categoryId: 'food', spendExpenseId: 'food-expense' },
-    ])
   })
 
-  it('does not add mappings with blank substrings', () => {
-    const state = initialState()
-    expect(addCategoryMapping(state, 'food', '   ')).toBe(state)
-    expect(upsertCategoryMapping(state, '   ', 'food')).toBe(state)
-  })
-
-  it('hard-deletes a mapping and no-ops for an unknown ID', () => {
-    const state = {
-      ...initialState(),
-      categoryMappings: [{ id: 'map', substring: 'Store', spendExpenseId: 'food', updatedAt: '' }],
+  it('ties resolve to first in input order', () => {
+    const txs = [
+      btx('a', { autoTags: ['TAG'], spendExpenseId: 'expB', categoryId: 'catB' }),
+      btx('b', { autoTags: ['TAG'], spendExpenseId: 'expA', categoryId: 'catA' }),
+      btx('c', { autoTags: ['TAG'], categoryId: 'other' }),
+    ]
+    const result = propagateSpendLinksByAutoTag(txs, defs)
+    for (const t of result) {
+      expect(t.spendExpenseId).toBe('expB')
+      expect(t.categoryId).toBe('catB')
     }
-    const deleted = deleteCategoryMapping(state, 'map')
-
-    expect(deleted.categoryMappings.find((mapping) => mapping.id === 'map')).toBeUndefined()
-    expect(deleteCategoryMapping(state, 'missing')).toBe(state)
   })
 
-  it('handles mapping mutations through the app reducer', () => {
-    const state = {
-      ...initialState(),
-      categoryMappings: [{ id: 'existing', substring: 'Store', spendExpenseId: 'other', updatedAt: '' }],
-    }
-    const upserted = appReducer(state, {
-      type: 'UPSERT_CATEGORY_MAPPING', description: ' Grocery ', spendExpenseId: 'groceries',
-    })
-    const updated = appReducer(upserted, {
-      type: 'UPDATE_CATEGORY_MAPPING', id: 'existing', patch: { spendExpenseId: 'food' },
-    })
-    const added = appReducer(updated, {
-      type: 'ADD_CATEGORY_MAPPING', spendExpenseId: 'food', substring: ' Market ',
-    })
-    const deleted = appReducer(added, { type: 'DELETE_CATEGORY_MAPPING', id: 'existing' })
-
-    expect(upserted.categoryMappings).toHaveLength(2)
-    expect(upserted.categoryMappings[1]).toMatchObject({ substring: 'Grocery', spendExpenseId: 'groceries' })
-    expect(updated.categoryMappings[0]).toMatchObject({ id: 'existing', spendExpenseId: 'food' })
-    expect(added.categoryMappings[2]).toMatchObject({ substring: 'Market', spendExpenseId: 'food' })
-    expect(deleted.categoryMappings.map((mapping) => mapping.id)).not.toContain('existing')
+  it('multi-autoTag carriers overwrite in sorted tag order', () => {
+    const txs = [
+      btx('a', { autoTags: ['AAA'], spendExpenseId: 'expA', categoryId: 'catA' }),
+      btx('b', { autoTags: ['ZZZ'], spendExpenseId: 'expB', categoryId: 'catB' }),
+      btx('multi', { autoTags: ['AAA', 'ZZZ'], categoryId: 'other' }),
+    ]
+    const result = propagateSpendLinksByAutoTag(txs, defs)
+    // Sorted tags: AAA first sets multi→expA, then ZZZ overwrites multi→expB.
+    expect(result.find((t) => t.id === 'multi')).toMatchObject({ spendExpenseId: 'expB', categoryId: 'catB' })
+    expect(result.find((t) => t.id === 'a')).toMatchObject({ spendExpenseId: 'expA', categoryId: 'catA' })
+    expect(result.find((t) => t.id === 'b')).toMatchObject({ spendExpenseId: 'expB', categoryId: 'catB' })
   })
 
-  it('returns the original state for an unknown mapping-shaped action', () => {
-    const state = initialState()
-    const action = {
-      type: 'UPSERT_CATEGORY_MAPING', description: 'Grocery', spendExpenseId: 'groceries',
-    } as unknown as AppAction
+  it('singleton without a link is untouched', () => {
+    const txs = [btx('solo', { autoTags: ['SOLO'], categoryId: 'other' })]
+    const result = propagateSpendLinksByAutoTag(txs, defs)
+    expect(result[0]).toEqual(txs[0])
+    expect(result[0]).not.toHaveProperty('spendExpenseId')
+  })
 
-    expect(appReducer(state, action)).toBe(state)
+  it('dangling winner leaves carriers untouched', () => {
+    const txs = [
+      btx('a', { autoTags: ['TAG'], spendExpenseId: 'missing', categoryId: 'catX' }),
+      btx('b', { autoTags: ['TAG'], categoryId: 'other' }),
+    ]
+    const result = propagateSpendLinksByAutoTag(txs, defs)
+    expect(result).toEqual(txs)
   })
 })
 
@@ -186,7 +160,7 @@ describe('budget account conventions', () => {
 
   it('records the selected import convention even when every converted row deduplicates', () => {
     const state = { ...initialState(), budgetTransactions: [{ id: 'existing', categoryId: 'other', ...row }] }
-    const result = importBudgetTransactions(state, [row], [{ id: 'other', name: 'Other', updatedAt: '' }], [], [], {
+    const result = importBudgetTransactions(state, [row], [{ id: 'other', name: 'Other', updatedAt: '' }], [], {
       accountName: ' Checking ',
       statementConvention: 'positiveSpend',
     })
@@ -211,7 +185,7 @@ describe('budget account conventions', () => {
 
   it('does not add an invalid import marker for an unassigned account', () => {
     const state = initialState()
-    const result = importBudgetTransactions(state, [], [], [], [], {
+    const result = importBudgetTransactions(state, [], [], [], {
       accountName: 'Unassigned',
       statementConvention: 'invalid' as StatementConvention,
     })
@@ -233,7 +207,6 @@ describe('budget import tags passthrough', () => {
       [],
       [{ date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['food', 'weekly'] }],
       categories,
-      [],
       []
     )
     expect(duplicateCount).toBe(0)
@@ -249,7 +222,6 @@ describe('budget import tags passthrough', () => {
         { date: '2026-01-01', description: 'Groceries', amount: -50, tags: ['weekly'] },
       ],
       categories,
-      [],
       []
     )
     expect(toAdd).toHaveLength(1)
@@ -549,7 +521,6 @@ describe('importBudgetTransactions auto-tag', () => {
       ],
       categories,
       [],
-      [],
       convention
     )
     expect(result.budgetTransactions).toMatchObject([
@@ -569,7 +540,6 @@ describe('importBudgetTransactions auto-tag', () => {
       ],
       categories,
       [],
-      [],
       convention
     )
     expect(result.budgetTransactions).toMatchObject([
@@ -586,7 +556,6 @@ describe('importBudgetTransactions auto-tag', () => {
         { date: '2026-01-02', description: 'COSTCO WHOLESALE #202', amount: -60, tags: ['COSTCOWHOL'] },
       ],
       categories,
-      [],
       [],
       convention
     )
@@ -610,7 +579,6 @@ describe('importBudgetTransactions auto-tag', () => {
       [{ date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50 }],
       categories,
       [],
-      [],
       convention
     )
     expect(result.budgetTransactions).toHaveLength(2)
@@ -629,7 +597,6 @@ describe('importBudgetTransactions auto-tag', () => {
       ],
       categories,
       [],
-      [],
       convention
     )
     expect(result.budgetTransactions).toHaveLength(1)
@@ -644,11 +611,71 @@ describe('importBudgetTransactions auto-tag', () => {
         { date: '2026-01-02', description: 'COSTCO WHOLESALE #202', amount: -60 },
       ],
       categories,
-      [],
       []
     )
     expect(toAdd).toHaveLength(2)
     expect(toAdd[0]).not.toHaveProperty('tags')
     expect(toAdd[1]).not.toHaveProperty('tags')
+  })
+
+  it('import batch links via existing tag', () => {
+    const defs = [{ id: 'expA', name: 'A', categoryId: 'catA', frequency: 'monthly' as const }]
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: defs,
+      budgetTransactions: [
+        {
+          id: 'existing',
+          date: '2025-01-01',
+          description: 'COSTCO WHOLESALE #999',
+          categoryId: 'catA',
+          amount: -10,
+          spendExpenseId: 'expA',
+          autoTags: ['COSTCOWHOL'],
+        },
+      ],
+    }
+    const result = importBudgetTransactions(
+      state,
+      [
+        { date: '2026-01-01', description: 'COSTCO WHOLESALE #101', amount: -50, autoTags: ['COSTCOWHOL'] },
+        { date: '2026-01-02', description: 'COSTCO WHOLESALE #202', amount: -60, autoTags: ['COSTCOWHOL'] },
+      ],
+      [...categories, { id: 'catA', name: 'CatA', updatedAt: '' }],
+      defs,
+      convention
+    )
+    // applyAutoTags(rows) recomputes batch tags from descriptions; both rows
+    // cluster to COSTCOWHOL which matches the existing carrier's tag.
+    const added = result.budgetTransactions.slice(1)
+    expect(added).toHaveLength(2)
+    for (const t of added) {
+      expect(t.spendExpenseId).toBe('expA')
+      expect(t.categoryId).toBe('catA')
+    }
+  })
+})
+
+describe('updateBudgetTransactionsBulk spend-link cascade', () => {
+  it('bulk explicit wins then cascades to autoTag siblings', () => {
+    const defs = [
+      { id: 'expA', name: 'A', categoryId: 'catA', frequency: 'monthly' as const },
+      { id: 'expB', name: 'B', categoryId: 'catB', frequency: 'monthly' as const },
+    ]
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: defs,
+      budgetTransactions: [
+        { id: 'a', date: '2026-01-01', description: 'Tx a', categoryId: 'other', amount: -10, autoTags: ['SHARED'] },
+        { id: 'b', date: '2026-01-02', description: 'Tx b', categoryId: 'other', amount: -20, autoTags: ['SHARED'] },
+      ],
+    }
+    const result = updateBudgetTransactionsBulk(state, ['a'], { categoryId: 'catB', spendExpenseId: 'expB' })
+    // Explicit patch applies to selected row first, then propagation
+    // overwrites ALL carriers (overwrite-all-siblings).
+    expect(result.budgetTransactions).toMatchObject([
+      { id: 'a', spendExpenseId: 'expB', categoryId: 'catB' },
+      { id: 'b', spendExpenseId: 'expB', categoryId: 'catB' },
+    ])
   })
 })

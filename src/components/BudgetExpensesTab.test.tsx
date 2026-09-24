@@ -165,24 +165,20 @@ describe('BudgetExpensesTab expense downloads', () => {
 })
 
 describe('BudgetExpensesTab expense deletion', () => {
-  it('dispatches once and cascades matching category mappings from the resulting state', () => {
+  it('dispatches once and removes the definition plus its amounts only', () => {
     const actions: AppAction[] = []
     const view = renderTab({
       ...initialState(),
       budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' }],
-      categoryMappings: [
-        { id: 'rent-map', substring: 'landlord', spendExpenseId: 'rent', updatedAt: '' },
-        { id: 'food-map', substring: 'market', spendExpenseId: 'groceries', updatedAt: '' },
-      ],
+      budgetExpenseAmountsByYear: { '2024': { rent: 100 }, '2025': { rent: 200 } },
     }, actions)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete expense' }))
 
     expect(actions).toEqual([{ type: 'DELETE_EXPENSE_DEFINITION', id: 'rent' }])
-    expect(view.getState().categoryMappings).toEqual([
-      { id: 'food-map', substring: 'market', spendExpenseId: 'groceries', updatedAt: '' },
-    ])
+    expect(view.getState().budgetExpenseDefinitions).toEqual([])
+    expect(view.getState().budgetExpenseAmountsByYear).toEqual({ '2024': {}, '2025': {} })
   })
 
   it('dispatches once when the definition has no category mappings', () => {

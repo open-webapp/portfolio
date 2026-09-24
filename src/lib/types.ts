@@ -125,13 +125,6 @@ export interface Category {
   excludeFromSpend?: boolean
 }
 
-export interface CategoryMapping {
-  id: string
-  substring: string
-  spendExpenseId: string
-  updatedAt: string  // ISO
-}
-
 export const POSITIONS_REQUIRED_FIELDS = [
   'symbol',
   'assetClass',

@@ -14,13 +14,11 @@ import type {
   ExpenseDefinition,
   BudgetTransaction,
   Category,
-  CategoryMapping,
   BudgetAccountRule,
   StatementConvention,
 } from './types'
 import { uid } from './seed'
 import type { ExportableState } from './importExport'
-import { resolveSpendExpenseIdForDescription, reapplyMappingsToTransactions } from './categoryStore'
 import { normalizeBudgetAccountName, reconcileBudgetAccountRules } from './budgetAccountRules'
 import { applyAutoTags, unionTags } from './autoTag'
 
@@ -37,7 +35,6 @@ export interface AppState {
   mutualFundSync: MutualFundSyncState
   balanceEntries: BalanceEntry[]
   budgetExpenseDefinitions: ExpenseDefinition[]
-  categoryMappings: CategoryMapping[]
   budgetExpenseAmountsByYear: Record<string, Record<string, number>>
   budgetTransactions: BudgetTransaction[]
   budgetAccountAppliedConventions: Record<string, StatementConvention>
@@ -86,7 +83,6 @@ export function initialState(): AppState {
     mutualFundSync: { apiKey: '', heldPrices: {}, lastRun: null, callBudget: { date: '', callsUsed: 0 } },
     balanceEntries: [],
     budgetExpenseDefinitions: [],
-    categoryMappings: [],
     budgetExpenseAmountsByYear: {},
     budgetTransactions: [],
     budgetAccountAppliedConventions: {},
@@ -855,85 +851,6 @@ export function updateExpenseDefinition(
 }
 
 /**
- * Create or update a category mapping by description substring,
- * case-insensitively. Blank descriptions are ignored.
- */
-export function upsertCategoryMapping(
-  state: AppState,
-  description: string,
-  spendExpenseId: string
-): AppState {
-  const substring = description.trim()
-  if (!substring) return state
-  const existing = state.categoryMappings.find(
-    (mapping) => mapping.substring.toLowerCase() === substring.toLowerCase()
-  )
-  const updatedAt = new Date().toISOString()
-  if (existing) {
-    const nextState = {
-      ...state,
-      categoryMappings: state.categoryMappings.map((mapping) =>
-        mapping.id === existing.id ? { ...mapping, spendExpenseId, updatedAt } : mapping
-      ),
-    }
-    return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
-  }
-  const nextState = {
-    ...state,
-    categoryMappings: [
-      ...state.categoryMappings,
-      { id: uid('catmap'), substring, spendExpenseId, updatedAt },
-    ],
-  }
-  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
-}
-
-/** Patch an existing category mapping by ID, stamping updatedAt. */
-export function updateCategoryMapping(
-  state: AppState,
-  id: string,
-  patch: Partial<Pick<CategoryMapping, 'substring' | 'spendExpenseId'>>
-): AppState {
-  if (!state.categoryMappings.some((mapping) => mapping.id === id)) return state
-  const updatedAt = new Date().toISOString()
-  const nextState = {
-    ...state,
-    categoryMappings: state.categoryMappings.map((mapping) =>
-      mapping.id === id ? { ...mapping, ...patch, updatedAt } : mapping
-    ),
-  }
-  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
-}
-
-/** Add a category mapping. Blank or whitespace-only substrings are ignored. */
-export function addCategoryMapping(
-  state: AppState,
-  spendExpenseId: string,
-  substring: string
-): AppState {
-  const trimmed = substring.trim()
-  if (!trimmed) return state
-  const nextState = {
-    ...state,
-    categoryMappings: [
-      ...state.categoryMappings,
-      { id: uid('catmap'), substring: trimmed, spendExpenseId, updatedAt: new Date().toISOString() },
-    ],
-  }
-  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
-}
-
-/** Hard-delete a category mapping by ID. */
-export function deleteCategoryMapping(state: AppState, id: string): AppState {
-  if (!state.categoryMappings.some((mapping) => mapping.id === id)) return state
-  const nextState = {
-    ...state,
-    categoryMappings: state.categoryMappings.filter((mapping) => mapping.id !== id),
-  }
-  return reapplyCategoryMappingsToState(nextState, nextState.categoryMappings)
-}
-
-/**
  * Pure predicate: true if any budget transaction, in any year, references
  * this expense definition id as its `spendExpenseId`.
  */
@@ -959,9 +876,6 @@ export function deleteExpenseDefinition(state: AppState, id: string): AppState {
   return {
     ...state,
     budgetExpenseDefinitions: state.budgetExpenseDefinitions.filter((d) => d.id !== id),
-    categoryMappings: state.categoryMappings.some((mapping) => mapping.spendExpenseId === id)
-      ? state.categoryMappings.filter((mapping) => mapping.spendExpenseId !== id)
-      : state.categoryMappings,
     budgetExpenseAmountsByYear,
   }
 }
@@ -990,12 +904,14 @@ export function clearExpenseAmount(state: AppState, year: string, expenseId: str
 
 /** Add a new budget transaction to the Budget page's transaction list. Generates its id. */
 export function addBudgetTransaction(state: AppState, tx: Omit<BudgetTransaction, 'id'>): AppState {
-  return { ...state, budgetTransactions: [...state.budgetTransactions, { ...tx, id: uid('budgettx') }] }
+  const budgetTransactions = [...state.budgetTransactions, { ...tx, id: uid('budgettx') }]
+  return { ...state, budgetTransactions: propagateSpendLinksByAutoTag(budgetTransactions, state.budgetExpenseDefinitions) }
 }
 
 /** Patch an existing budget transaction by ID. No-op if the ID isn't found. */
 export function updateBudgetTransaction(state: AppState, id: string, patch: Partial<Omit<BudgetTransaction, 'id'>>): AppState {
-  return { ...state, budgetTransactions: state.budgetTransactions.map((t) => (t.id === id ? { ...t, ...patch } : t)) }
+  const budgetTransactions = state.budgetTransactions.map((t) => (t.id === id ? { ...t, ...patch } : t))
+  return { ...state, budgetTransactions: propagateSpendLinksByAutoTag(budgetTransactions, state.budgetExpenseDefinitions) }
 }
 
 /** Patch categoryId (and optionally spendExpenseId) on multiple budget transactions by ID in one pass. IDs not found are ignored. `tagsToAdd` (if non-empty) unions case-insensitively into each row's user tags (existing casing wins), appended in order given, checked against the merged (`tags` + `autoTags`) set for case-insensitive dup + combined cap of 5 total — candidates duplicating an auto tag or exceeding the combined cap are refused (dropped, not added). */
@@ -1006,22 +922,92 @@ export function updateBudgetTransactionsBulk(
 ): AppState {
   const { tagsToAdd, ...rest } = patch
   const hasTagsToAdd = !!tagsToAdd && tagsToAdd.length > 0
-  return {
-    ...state,
-    budgetTransactions: state.budgetTransactions.map((t) => {
+  const budgetTransactions = propagateSpendLinksByAutoTag(
+    state.budgetTransactions.map((t) => {
       if (!ids.includes(t.id)) return t
       if (!hasTagsToAdd) return { ...t, ...rest }
       const merged = unionTags(t.tags, t.autoTags, tagsToAdd!, 'user')
       if (merged === undefined) return { ...t, ...rest }
       return { ...t, ...rest, tags: merged }
     }),
+    state.budgetExpenseDefinitions
+  )
+  return {
+    ...state,
+    budgetTransactions,
   }
+}
+
+/**
+ * Pure: propagate `spendExpenseId` links across transactions sharing an
+ * `autoTag`. Group indices by each distinct `autoTag` string; per tag
+ * (sorted tag order), the most-common `spendExpenseId` among carriers wins
+ * (ties → first in input order); set ALL carriers to the winner +
+ * definition's `categoryId`. Skip tags with no linked carrier or a dangling
+ * winner (no matching definition). Multi-tag carriers are overwritten in
+ * sorted tag order (last sorted tag with a valid winner wins).
+ */
+export function propagateSpendLinksByAutoTag(
+  transactions: BudgetTransaction[],
+  definitions: ExpenseDefinition[]
+): BudgetTransaction[] {
+  const defById = new Map(definitions.map((d) => [d.id, d]))
+  const groups = new Map<string, number[]>()
+  transactions.forEach((t, idx) => {
+    for (const tag of t.autoTags ?? []) {
+      const list = groups.get(tag)
+      if (list) list.push(idx)
+      else groups.set(tag, [idx])
+    }
+  })
+  if (groups.size === 0) return transactions.slice()
+  // Snapshot votes from the original input so sequential overwrites don't
+  // contaminate other tags' winner elections.
+  const snapshotLinks = transactions.map((t) => t.spendExpenseId)
+  const sortedTags = [...groups.keys()].sort()
+  const next = transactions.slice()
+  for (const tag of sortedTags) {
+    const carriers = groups.get(tag)!
+    const counts = new Map<string, number>()
+    const firstSeen = new Map<string, number>()
+    for (const idx of carriers) {
+      const link = snapshotLinks[idx]
+      if (!link) continue
+      counts.set(link, (counts.get(link) ?? 0) + 1)
+      if (!firstSeen.has(link)) firstSeen.set(link, idx)
+    }
+    if (counts.size === 0) continue
+    let winner: string | null = null
+    let bestCount = -1
+    let bestFirst = Infinity
+    for (const [link, count] of counts) {
+      const first = firstSeen.get(link)!
+      if (count > bestCount || (count === bestCount && first < bestFirst)) {
+        winner = link
+        bestCount = count
+        bestFirst = first
+      }
+    }
+    if (!winner) continue
+    const definition = defById.get(winner)
+    if (!definition) continue
+    for (const idx of carriers) {
+      const current = next[idx]
+      if (current.spendExpenseId === winner && current.categoryId === definition.categoryId) continue
+      next[idx] = { ...current, spendExpenseId: winner, categoryId: definition.categoryId }
+    }
+    // Keep snapshot in sync so later sorted tags overwrite from the latest
+    // state for multi-tag carriers (sorted-order overwrite), while winner
+    // elections stay anchored to evolving links.
+    for (const idx of carriers) snapshotLinks[idx] = winner
+  }
+  return next
 }
 
 /** Auto-tag ALL budget transactions by LCP-clustering descriptions (manual trigger). Recomputes `autoTags` (overwrite — stale auto tags removed, singletons cleared), never touching user `tags`. Pure AppState -> AppState transform. */
 export function autoTagBudgetTransactions(state: AppState): AppState {
   const { transactions } = applyAutoTags(state.budgetTransactions)
-  return { ...state, budgetTransactions: transactions }
+  return { ...state, budgetTransactions: propagateSpendLinksByAutoTag(transactions, state.budgetExpenseDefinitions) }
 }
 
 /** Clear user tags on ALL budget transactions (manual trigger). Preserves `autoTags`. Pure AppState -> AppState transform. */
@@ -1056,38 +1042,74 @@ export function deleteBudgetTransaction(state: AppState, id: string): AppState {
 }
 
 /**
- * Import budget transactions, resolving each row's categoryId from category mappings
- * (falling back to the 'Other' category), then deduping on natural key
- * (date|description|amount|accountName) against existing transactions AND
- * within the same import batch (accumulating Set).
- */
-/**
- * Resolves spendExpenseId for each row via category mappings, deriving categoryId
+ * Resolves spendExpenseId for each row via auto-tag lookup, deriving categoryId
  * from the matched expense definition (falling back to the 'Other' category
  * with spendExpenseId unset), and dedupes against `existing` + within the
  * batch itself, without touching AppState. Shared by `importBudgetTransactions`
  * and by import-UI callers that need added/duplicate counts before dispatch.
+ *
+ * Tag-lookup rule (batch rows already carry `autoTags` from the caller):
+ * for each row, for each of its `autoTags` (sorted), find existing+batch
+ * carriers of that tag with a link, take the most-common link (ties → first
+ * in existing order), set `spendExpenseId` + definition's `categoryId`;
+ * else `Other` id with no link. Unresolvable `spendExpenseId` (no matching
+ * definition) falls back to `Other` with no link.
  */
 export function resolveBudgetImportRows(
   existing: BudgetTransaction[],
   rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[]; autoTags?: string[] }>,
   categories: Category[],
-  categoryMappings: CategoryMapping[],
   budgetExpenseDefinitions: ExpenseDefinition[]
 ): { toAdd: BudgetTransaction[]; duplicateCount: number } {
   const otherId = categories.find((c) => c.name === 'Other')?.id ?? categories[0]?.id ?? ''
-  const withCategory = rows.map((r) => {
-    const spendExpenseId = resolveSpendExpenseIdForDescription(categoryMappings, r.description)
-    const definition = spendExpenseId
-      ? budgetExpenseDefinitions.find((d) => d.id === spendExpenseId)
-      : undefined
-    if (spendExpenseId && definition) {
+  const defById = new Map(budgetExpenseDefinitions.map((d) => [d.id, d]))
+  // Sequentially resolve so "existing+batch" literally includes previously
+  // resolved batch rows as voters for later rows.
+  const resolvedLinks: Array<string | undefined> = new Array(rows.length).fill(undefined)
+  const withCategory = rows.map((r, rowIdx) => {
+    const sortedTags = [...(r.autoTags ?? [])].sort()
+    let chosen: string | undefined
+    for (const tag of sortedTags) {
+      const counts = new Map<string, number>()
+      const firstSeen = new Map<string, number>()
+      const consider = (link: string | undefined, order: number) => {
+        if (!link) return
+        counts.set(link, (counts.get(link) ?? 0) + 1)
+        if (!firstSeen.has(link)) firstSeen.set(link, order)
+      }
+      existing.forEach((t, i) => {
+        if (t.autoTags?.includes(tag)) consider(t.spendExpenseId, i)
+      })
+      rows.forEach((other, j) => {
+        if (j >= rowIdx) return
+        if (other.autoTags?.includes(tag)) consider(resolvedLinks[j], existing.length + j)
+      })
+      if (counts.size === 0) continue
+      let winner: string | null = null
+      let bestCount = -1
+      let bestFirst = Infinity
+      for (const [link, count] of counts) {
+        const first = firstSeen.get(link)!
+        if (count > bestCount || (count === bestCount && first < bestFirst)) {
+          winner = link
+          bestCount = count
+          bestFirst = first
+        }
+      }
+      if (!winner) continue
+      if (!defById.get(winner)) continue
+      chosen = winner
+    }
+    if (chosen) {
+      const definition = defById.get(chosen)!
+      resolvedLinks[rowIdx] = chosen
       return {
         ...r,
         categoryId: definition.categoryId,
-        spendExpenseId,
+        spendExpenseId: chosen,
       }
     }
+    resolvedLinks[rowIdx] = undefined
     return {
       ...r,
       categoryId: otherId,
@@ -1112,7 +1134,6 @@ export function importBudgetTransactions(
   state: AppState,
   rows: Array<{ date: string; description: string; amount: number; accountName?: string; tags?: string[]; autoTags?: string[] }>,
   categories: Category[],
-  categoryMappings: CategoryMapping[],
   budgetExpenseDefinitions: ExpenseDefinition[],
   appliedConvention: { accountName: string; statementConvention: StatementConvention },
 ): AppState {
@@ -1121,7 +1142,6 @@ export function importBudgetTransactions(
     state.budgetTransactions,
     taggedRows,
     categories,
-    categoryMappings,
     budgetExpenseDefinitions
   )
   const normalizedName = normalizeBudgetAccountName(appliedConvention.accountName)
@@ -1156,13 +1176,5 @@ export function reconcileBudgetAccountConventions(state: AppState, rules: Budget
     ...state,
     budgetTransactions: reconciled.transactions,
     budgetAccountAppliedConventions: reconciled.markers,
-  }
-}
-
-/** Rewrite budgetTransactions' categoryId/spendExpenseId per the given category mappings. */
-export function reapplyCategoryMappingsToState(state: AppState, categoryMappings: CategoryMapping[]): AppState {
-  return {
-    ...state,
-    budgetTransactions: reapplyMappingsToTransactions(state.budgetTransactions, categoryMappings, state.budgetExpenseDefinitions),
   }
 }

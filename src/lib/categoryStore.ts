@@ -1,4 +1,4 @@
-import type { BudgetAccountRule, Category, CategoryMapping, BudgetTransaction, ExpenseDefinition, StatementConvention } from './types'
+import type { BudgetAccountRule, Category, StatementConvention } from './types'
 import { mergeCategoryState } from './categoryMerge'
 import { normalizeBudgetAccountName } from './budgetAccountRules'
 
@@ -80,18 +80,6 @@ export function deleteBudgetAccountRule(s: GlobalCategoryState, normalizedName: 
   }
 }
 
-/**
- * Resolve the spendExpenseId for a transaction description by finding all mappings whose
- * substring (case-insensitive) appears in the description, and returning
- * the spendExpenseId of the one with the latest updatedAt. Returns null if no mapping matches.
- */
-export function resolveSpendExpenseIdForDescription(mappings: CategoryMapping[], description: string): string | null {
-  const lower = description.toLowerCase()
-  const matches = mappings.filter((m) => m.substring && lower.includes(m.substring.toLowerCase()))
-  if (matches.length === 0) return null
-  return matches.reduce((latest, m) => (m.updatedAt > latest.updatedAt ? m : latest)).spendExpenseId
-}
-
 /** Non-tombstoned categories, in original order. */
 export function visibleCategories(s: GlobalCategoryState): Category[] {
   return s.categories.filter((c) => !c.deletedAt)
@@ -100,50 +88,6 @@ export function visibleCategories(s: GlobalCategoryState): Category[] {
 /** Non-tombstoned budget-account rules, in original order. */
 export function visibleBudgetAccountRules(s: GlobalCategoryState): BudgetAccountRule[] {
   return s.budgetAccountRules.filter((rule) => !rule.deletedAt)
-}
-
-/**
- * First array-order ExpenseDefinition in `budgetExpenseDefinitions` whose categoryId
- * matches `categoryId`, or undefined if none match. Shared by resolveBudgetImportRows
- * (state.ts) and reapplyMappingsToTransactions (this file) for auto-linking a
- * transaction's spendExpenseId to a same-category expense definition.
- */
-export function resolveSpendExpenseForCategory(
-  budgetExpenseDefinitions: ExpenseDefinition[],
-  categoryId: string
-): ExpenseDefinition | undefined {
-  return budgetExpenseDefinitions.find((e) => e.categoryId === categoryId)
-}
-
-/**
- * Re-run category mapping resolution against a list of budget transactions, applying
- * matches by direct lookup: for each transaction, resolveSpendExpenseIdForDescription
- * finds the latest-updated mapping whose substring appears in the
- * description. On a match, the mapping's spendExpenseId is looked up in
- * `budgetExpenseDefinitions`; if a definition is found, the transaction's categoryId
- * is set to the definition's categoryId and spendExpenseId to the matched
- * spendExpenseId — no guessing, no category-based inference.
- *
- * A match that resolves to a spendExpenseId whose definition no longer exists
- * (dangling), and a description with no match at all, both leave the transaction
- * untouched: reapply never clears or overwrites without a confirmed definition
- * lookup. (The import-time fallback-to-Other only applies at resolve time for fresh
- * transactions, never here.)
- *
- * Pure; callers provide the mappings to evaluate.
- */
-export function reapplyMappingsToTransactions(
-  transactions: BudgetTransaction[],
-  mappings: CategoryMapping[],
-  budgetExpenseDefinitions: ExpenseDefinition[] = []
-): BudgetTransaction[] {
-  return transactions.map((t) => {
-    const resolvedSpendExpenseId = resolveSpendExpenseIdForDescription(mappings, t.description)
-    if (resolvedSpendExpenseId === null) return t
-    const definition = budgetExpenseDefinitions.find((d) => d.id === resolvedSpendExpenseId)
-    if (!definition) return t
-    return { ...t, categoryId: definition.categoryId, spendExpenseId: resolvedSpendExpenseId }
-  })
 }
 
 export type CategoryAction =

@@ -8,7 +8,7 @@ import {
   exportBackup,
   localDateStamp,
 } from './importExport'
-import { deriveKey, generateSalt } from './crypto'
+import { deriveKey, encryptState, generateSalt } from './crypto'
 import { initialState } from './state'
 
 afterEach(() => {
@@ -32,19 +32,18 @@ describe('budget backup export', () => {
 })
 
 describe('buildUnencryptedPortfolioExport', () => {
-  it('includes all fields + categoryMappings, blanks apiKeys, keeps lastRuns', () => {
+  it('includes all fields, blanks apiKeys, keeps lastRuns, omits categoryMappings', () => {
     const priceLastRun = { at: '2026-08-22T12:00:00.000Z', updatedCount: 3, notFound: [] as string[] }
     const mfLastRun = { at: '2026-08-23T12:00:00.000Z', updatedCount: 1, notFound: ['VTSAX'] }
     const state = {
       ...initialState(),
       accounts: [{ id: 'a1', name: 'Checking', institution: 'Bank', accountNumber: '123', type: 'checking' as const }],
-      categoryMappings: [{ id: 'm1', pattern: 'STORE', categoryId: 'c1', spendExpenseId: 'groceries' }],
       priceSync: { ...initialState().priceSync, apiKey: 'secret-poly', lastRun: priceLastRun },
       mutualFundSync: { ...initialState().mutualFundSync, apiKey: 'secret-av', lastRun: mfLastRun },
     }
     const exported = buildUnencryptedPortfolioExport(state)
     expect(exported.accounts).toEqual(state.accounts)
-    expect(exported.categoryMappings).toEqual(state.categoryMappings)
+    expect(exported).not.toHaveProperty('categoryMappings')
     expect(exported.priceSync.apiKey).toBe('')
     expect(exported.priceSync.lastRun).toEqual(priceLastRun)
     expect(exported.mutualFundSync.apiKey).toBe('')
@@ -59,7 +58,7 @@ describe('buildUnencryptedPortfolioExport', () => {
     const state = initialState()
     const exported = buildUnencryptedPortfolioExport(state)
     expect(exported.accounts).toEqual([])
-    expect(exported.categoryMappings).toEqual([])
+    expect(exported).not.toHaveProperty('categoryMappings')
     expect(exported.priceSync).toEqual({ apiKey: '', lastRun: null })
     expect(exported.mutualFundSync).toEqual({ apiKey: '', lastRun: null })
   })
@@ -73,7 +72,6 @@ describe('buildUnencryptedPortfolioExport', () => {
     const before = JSON.parse(JSON.stringify({
       priceSync: state.priceSync,
       mutualFundSync: state.mutualFundSync,
-      categoryMappings: state.categoryMappings,
     }))
     buildUnencryptedPortfolioExport(state)
     expect(state.priceSync.apiKey).toBe('secret-poly')
@@ -81,8 +79,25 @@ describe('buildUnencryptedPortfolioExport', () => {
     expect({
       priceSync: state.priceSync,
       mutualFundSync: state.mutualFundSync,
-      categoryMappings: state.categoryMappings,
     }).toEqual(before)
+  })
+
+  it('old file with categoryMappings key restores ignoring it', async () => {
+    const state = {
+      ...initialState(),
+      accounts: [{ id: 'a1', name: 'Checking', institution: 'Bank', accountNumber: '123', type: 'checking' as const }],
+    }
+    const legacyPayload = {
+      ...buildUnencryptedPortfolioExport(state),
+      categoryMappings: [{ id: 'm1', pattern: 'STORE', categoryId: 'c1', spendExpenseId: 'groceries' }],
+    }
+    const password = 'test-password'
+    const salt = generateSalt()
+    const key = await deriveKey(password, salt)
+    const envelope = await encryptState(legacyPayload as unknown as Parameters<typeof encryptState>[0], key, salt)
+    const restored = await decryptImportEnvelope(envelope, password)
+    expect(restored).not.toHaveProperty('categoryMappings')
+    expect(restored.accounts).toEqual(state.accounts)
   })
 })
 
