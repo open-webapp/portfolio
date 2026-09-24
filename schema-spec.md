@@ -339,7 +339,9 @@ Note: global `Category` CRUD (`ADD_CATEGORY`, `RENAME_CATEGORY`, `DELETE_CATEGOR
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
-`view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'` (defaults to `'accounts'`), `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `txTypeFilter: string`, `txSearch: string`, `selectedAccountId: string | null`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`, `expandedCategories: Record<string, boolean>`, `acctAssetClassFilter: string`, `acctPosSearch: string`, `regAccountId: string | null` (selected account on RegisterPage), `regExpanded: Record<string, boolean>` (category expansion state on RegisterPage), `regActivityFilter: 'All' | 'With Activity'`.
+`view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'` (defaults to `'accounts'`; `'quotes'` is unreachable — Quotes is now a Positions-page tab, not a separate view — but the value stays in the union for persisted-state compatibility), `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `txTypeFilter: string`, `txSearch: string`, `selectedAccountId: string | null`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`, `acctAssetClassFilter: string`, `acctPosSearch: string`, `regAccountId: string | null` (selected account on RegisterPage), `regExpanded: Record<string, boolean>` (category expansion state on RegisterPage), `regActivityFilter: 'All' | 'With Activity'`.
+
+Positions-page active tab (`PositionsTab`) is component-local `useState` in `App.tsx`, not part of `AppState`.
 
 On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'`/`'budget'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 

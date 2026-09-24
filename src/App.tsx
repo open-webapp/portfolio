@@ -111,18 +111,22 @@ function PositionsTabSegControl({
   setPositionsTab: (tab: PositionsTab) => void
 }) {
   return (
-    <div className="seg">
-      {POSITIONS_TAB_OPTIONS.map((option) => (
-        <label key={option.value} className="seg-opt">
-          <input
-            type="radio"
-            name="positionsTab"
-            checked={positionsTab === option.value}
-            onChange={() => setPositionsTab(option.value)}
-          />
-          <span>{option.label}</span>
-        </label>
-      ))}
+    <div className="budget-controls" style={{ width: '100%' }}>
+      <div className="budget-tabs">
+        <div className="seg">
+          {POSITIONS_TAB_OPTIONS.map((option) => (
+            <label key={option.value} className="seg-opt">
+              <input
+                type="radio"
+                name="positionsTab"
+                checked={positionsTab === option.value}
+                onChange={() => setPositionsTab(option.value)}
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
