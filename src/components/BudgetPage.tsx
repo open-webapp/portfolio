@@ -27,7 +27,6 @@ import {
   spendCardTotals,
   projectedSpendForScope,
   savingsRateByYear,
-  sankeyFlowData,
   incomeCategoryIdSet,
   type SpendScope,
 } from '../lib/selectors'
@@ -216,13 +215,6 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
 
   const periodFilteredTransactions = spendTransactionsForScope(state.budgetTransactions, selectedScope)
   const rangeLabel = selectedScope === SPEND_ALL_YEARS ? 'All years' : selectedScope
-  const sankey = sankeyFlowData(
-    state.budgetExpenseDefinitions,
-    state.budgetExpenseAmountsByYear,
-    state.budgetTransactions,
-    categories,
-    selectedScope
-  )
 
   const recordSourceTransactions = showExcludedRecords
     ? periodFilteredTransactions
@@ -720,7 +712,13 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
         </div>
        </div>
 
-       <BudgetSankey nodes={sankey.nodes} links={sankey.links} />
+       <BudgetSankey
+          definitions={state.budgetExpenseDefinitions}
+          amountsByYear={state.budgetExpenseAmountsByYear}
+          transactions={state.budgetTransactions}
+          categories={categories}
+          scope={selectedScope}
+        />
 
        <div className="card blueprint elev-sm">
         <div

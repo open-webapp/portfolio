@@ -1,19 +1,61 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { fmtUSD } from '../lib/computations'
-import type { SankeyLink, SankeyNode } from '../lib/selectors'
+import { sankeyFlowData } from '../lib/selectors'
+import type { SpendScope } from '../lib/selectors'
+import type { BudgetTransaction, Category, ExpenseDefinition } from '../lib/types'
 
 export interface BudgetSankeyProps {
-  nodes: SankeyNode[]
-  links: SankeyLink[]
+  definitions: ExpenseDefinition[]
+  amountsByYear: Record<string, Record<string, number>>
+  transactions: BudgetTransaction[]
+  categories: Category[]
+  scope: SpendScope
 }
 
-const chartWidth = 1200
 const minChartHeight = 460
 const chartBottomPadding = 40
 
-export function BudgetSankey({ nodes, links }: BudgetSankeyProps) {
+export function BudgetSankey({ definitions, amountsByYear, transactions, categories, scope }: BudgetSankeyProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const resizeTimeoutRef = useRef<number | undefined>(undefined)
+  const [measuredWidth, setMeasuredWidth] = useState(1200)
+
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return
+    const el = wrapperRef.current
+    if (!el) return
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      if (resizeTimeoutRef.current !== undefined) {
+        window.clearTimeout(resizeTimeoutRef.current)
+      }
+      resizeTimeoutRef.current = window.setTimeout(() => {
+        setMeasuredWidth(entry.contentRect.width)
+      }, 120)
+    })
+    observer.observe(el)
+
+    return () => {
+      observer.disconnect()
+      if (resizeTimeoutRef.current !== undefined) {
+        window.clearTimeout(resizeTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const width = Math.min(1600, Math.max(640, measuredWidth))
+  const chartWidth = width
+
+  const { nodes, links } = useMemo(
+    () => sankeyFlowData(definitions, amountsByYear, transactions, categories, scope, width),
+    [definitions, amountsByYear, transactions, categories, scope, width]
+  )
+
   if (nodes.length === 0) {
     return (
-      <div className="card blueprint elev-sm" data-testid="budget-sankey">
+      <div className="card blueprint elev-sm" data-testid="budget-sankey" ref={wrapperRef}>
         <div className="card-title">Budget flow</div>
         <div className="text-muted" style={{ fontSize: '12px', paddingTop: 'var(--space-3)' }}>
           No budget flow for this period.
@@ -25,7 +67,7 @@ export function BudgetSankey({ nodes, links }: BudgetSankeyProps) {
   const chartHeight = Math.max(minChartHeight, ...nodes.map((node) => node.y + node.height + chartBottomPadding))
 
   return (
-    <div className="card blueprint elev-sm" data-testid="budget-sankey">
+    <div className="card blueprint elev-sm" data-testid="budget-sankey" ref={wrapperRef}>
       <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>Budget flow</div>
       <div style={{ maxHeight: '720px', overflow: 'auto' }}>
         <div style={{ position: 'relative', width: `${chartWidth}px`, height: `${chartHeight}px` }}>

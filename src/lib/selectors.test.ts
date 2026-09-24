@@ -434,6 +434,52 @@ describe('sankeyFlowData', () => {
     expect(result.nodes.filter((node) => node.column === 'actual').every((node) => node.height === 0)).toBe(true)
     expect(() => sankeyFlowData(sankeyDefinitions, {}, [], sankeyCategories, '2025')).not.toThrow()
   })
+
+  it('places the budget node at x=545 by default (width=1200)', () => {
+    const result = sankeyFlowData(
+      sankeyDefinitions,
+      { '2025': { 'food-budget': 100, 'rent-budget': 300 } },
+      [tx({ id: 'food', amount: -100 }), tx({ id: 'rent', categoryId: 'rent', amount: -300 })],
+      sankeyCategories,
+      '2025'
+    )
+
+    expect(result.nodes.find((node) => node.id === 'budget:food')?.x).toBe(545)
+  })
+
+  it('scales node x positions proportionally for width=640 (floor)', () => {
+    const result = sankeyFlowData(
+      sankeyDefinitions,
+      { '2025': { 'food-budget': 100, 'rent-budget': 300 } },
+      [tx({ id: 'food', amount: -100 }), tx({ id: 'rent', categoryId: 'rent', amount: -300 })],
+      sankeyCategories,
+      '2025',
+      640
+    )
+
+    expect(result.nodes.find((node) => node.id === 'budget:food')?.x).toBeCloseTo(545 * (640 / 1200))
+    expect([...result.nodes, ...result.links].every((item) => !JSON.stringify(item).includes('NaN') && !JSON.stringify(item).includes('Infinity'))).toBe(true)
+  })
+
+  it('scales node x positions proportionally for width=1600 (cap)', () => {
+    const result = sankeyFlowData(
+      sankeyDefinitions,
+      { '2025': { 'food-budget': 100, 'rent-budget': 300 } },
+      [tx({ id: 'food', amount: -100 }), tx({ id: 'rent', categoryId: 'rent', amount: -300 })],
+      sankeyCategories,
+      '2025',
+      1600
+    )
+
+    expect(result.nodes.find((node) => node.id === 'budget:food')?.x).toBeCloseTo(545 * (1600 / 1200))
+    expect([...result.nodes, ...result.links].every((item) => !JSON.stringify(item).includes('NaN') && !JSON.stringify(item).includes('Infinity'))).toBe(true)
+  })
+
+  it('ignores width on the empty-input early-return path', () => {
+    const result = sankeyFlowData([], {}, [], [], '2025', 640)
+
+    expect(result).toEqual({ nodes: [], links: [] })
+  })
 })
 
 describe('computeRecurringSpendIds', () => {

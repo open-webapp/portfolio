@@ -877,7 +877,7 @@ function perCategoryBudgetActual(
 }
 
 /**
- * Budget-to-actual Sankey geometry for the Spend page's 1200px-wide viewBox.
+ * Budget-to-actual Sankey geometry for the Spend page's viewBox, scaled to `width` (default 1200px).
  * Budget definitions and actual transactions are aggregated by category within
  * the selected scope; unused budget flows to the actual-column Unspent node.
  */
@@ -886,7 +886,8 @@ export function sankeyFlowData(
   amountsByYear: Record<string, Record<string, number>>,
   transactions: BudgetTransaction[],
   categories: Category[],
-  scope: SpendScope
+  scope: SpendScope,
+  width: number = 1200
 ): { nodes: SankeyNode[]; links: SankeyLink[] } {
   const rows = perCategoryBudgetActual(definitions, amountsByYear, transactions, categories, scope)
     .map((row) => ({ ...row, id: row.categoryId }))
@@ -899,9 +900,9 @@ export function sankeyFlowData(
   const unspent = rows.reduce((sum, row) => sum + Math.max(0, row.budget - row.actual), 0)
   const scale = 360 / Math.max(totalBudget, totalActual, 1)
   const nodeWidth = 18
-  const incomeX = 70
-  const budgetX = 545
-  const actualX = 1010
+  const incomeX = width * (70 / 1200)
+  const budgetX = width * (545 / 1200)
+  const actualX = width * (1010 / 1200)
   const top = 40
   const gap = 32
   const nodes: SankeyNode[] = []
