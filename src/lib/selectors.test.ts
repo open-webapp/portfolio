@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
-import type { BudgetTransaction, Category, ExpenseDefinition } from './types'
+import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { initialState } from './state'
+import type { Account, BudgetTransaction, Category, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
   { id: 'income', name: ' Income ', updatedAt: '' },
@@ -597,5 +598,133 @@ describe('computeRecurringSpendIds', () => {
     expect(fullHistory).toEqual(new Set(['nov', 'dec', 'jan', 'feb']))
     expect(only2025).toEqual(new Set())
     expect(only2025).not.toEqual(fullHistory)
+  })
+})
+
+describe('categoryCards / closedPositionsCard', () => {
+  const account = (patch: Partial<Account>): Account => ({
+    id: patch.id ?? 'acct',
+    accountNumber: '1234',
+    name: 'Account',
+    institution: 'Bank',
+    taxCategory: 'taxable',
+    retirement: false,
+    createdAt: '2025-01-01',
+    ...patch,
+  })
+
+  it('categoryCards output has no expanded key', () => {
+    const state = initialState()
+    state.accounts = [account({ id: 'a1' })]
+
+    const cards = categoryCards(state)
+    expect(cards.length).toBeGreaterThan(0)
+    cards.forEach((card) => {
+      expect(card).not.toHaveProperty('expanded')
+    })
+  })
+
+  it('closedPositionsCard output has no expanded key', () => {
+    const state = initialState()
+    expect(closedPositionsCard(state)).not.toHaveProperty('expanded')
+  })
+
+  it('groups accounts into correct category cards with per-account totals and accountCount', () => {
+    const state = initialState()
+    state.accounts = [
+      account({ id: 'a1', taxCategory: 'taxable' }),
+      account({ id: 'a2', taxCategory: 'taxable' }),
+      account({ id: 'a3', taxCategory: 'nonTaxable' }),
+    ]
+    state.positions = [
+      { id: 'p1', accountId: 'a1', symbol: 'AAPL', shares: 10, price: 100, assetClass: 'Equity', lastImportedAt: '2025-01-01' } as never,
+      { id: 'p2', accountId: 'a3', symbol: 'MSFT', shares: 5, price: 200, assetClass: 'Equity', lastImportedAt: '2025-01-01' } as never,
+    ]
+
+    const cards = categoryCards(state)
+    expect(cards).toHaveLength(3)
+
+    const taxable = cards.find((c) => c.key === 'taxable')!
+    expect(taxable.accounts).toHaveLength(2)
+    expect(taxable.accountCount).toBe(2)
+    expect(taxable.totalStr).toBe('$1,000.00')
+
+    const nonTaxable = cards.find((c) => c.key === 'nonTaxable')!
+    expect(nonTaxable.accounts).toHaveLength(1)
+    expect(nonTaxable.accountCount).toBe(1)
+    expect(nonTaxable.totalStr).toBe('$1,000.00')
+
+    const taxDeferred = cards.find((c) => c.key === 'taxDeferred')!
+    expect(taxDeferred.accounts).toHaveLength(0)
+    expect(taxDeferred.accountCount).toBe(0)
+  })
+})
+
+describe('tab-scoped position selectors (tabAccountIds)', () => {
+  const account = (patch: Partial<Account>): Account => ({
+    id: patch.id ?? 'acct',
+    accountNumber: '1234',
+    name: 'Account',
+    institution: 'Bank',
+    taxCategory: 'taxable',
+    retirement: false,
+    createdAt: '2025-01-01',
+    ...patch,
+  })
+
+  function buildState() {
+    const state = initialState()
+    state.accounts = [
+      account({ id: 'a1', taxCategory: 'taxable' }),
+      account({ id: 'a2', taxCategory: 'taxable' }),
+      account({ id: 'a3', taxCategory: 'nonTaxable' }),
+    ]
+    state.positions = [
+      { id: 'p1', accountId: 'a1', symbol: 'AAPL', shares: 10, price: 100, assetClass: 'Equity', lastImportedAt: '2025-01-01' } as never,
+      { id: 'p2', accountId: 'a2', symbol: 'VTI', shares: 5, price: 200, assetClass: 'ETF', lastImportedAt: '2025-01-01' } as never,
+      { id: 'p3', accountId: 'a3', symbol: 'MSFT', shares: 5, price: 200, assetClass: 'Equity', lastImportedAt: '2025-01-01' } as never,
+    ]
+    state.closedPositions = [
+      {
+        id: 'cp1',
+        accountId: 'a1',
+        symbol: 'GOOG',
+        shares: 1,
+        assetClass: 'Equity',
+        realizedGL: 100,
+        realizedGLBasis: 'transactions',
+        lastImportedAt: '2025-01-01',
+      } as never,
+    ]
+    return state
+  }
+
+  it('returns only positions in the active tab accounts when no account selected', () => {
+    const state = buildState()
+    const tabAccountIds = ['a1', 'a2']
+    const results = acctFilteredPositions(state, tabAccountIds)
+    expect(results.map((p) => p.id).sort()).toEqual(['p1', 'p2'])
+  })
+
+  it('stays scoped to the selected account even within a tab', () => {
+    const state = buildState()
+    state.selectedAccountId = 'a1'
+    state.selectedCategoryKey = 'taxable'
+    const results = acctScopedPositions(state, ['a1', 'a2'])
+    expect(results.map((p) => p.id)).toEqual(['p1'])
+  })
+
+  it('returns an empty list with no crash for a tab with zero accounts', () => {
+    const state = buildState()
+    const results = acctFilteredPositions(state, [])
+    expect(results).toEqual([])
+  })
+
+  it('scopes closed positions to the selected account within the closedPositions tab', () => {
+    const state = buildState()
+    state.selectedAccountId = 'a1'
+    state.selectedCategoryKey = 'closedPositions'
+    const results = acctFilteredClosedPositions(state, ['a1'])
+    expect(results.map((cp) => cp.id)).toEqual(['cp1'])
   })
 })

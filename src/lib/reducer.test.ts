@@ -95,4 +95,23 @@ describe('budget reducer', () => {
     expect(result.budgetTransactions).toHaveLength(1)
     expect(result.budgetTransactions[0]).toMatchObject({ description: 'Store', categoryId: 'other' })
   })
+
+  it('SELECT_ACCOUNT toggles selectedAccountId/selectedCategoryKey', () => {
+    const state = initialState()
+    const selected = appReducer(state, { type: 'SELECT_ACCOUNT', accountId: 'acct-1', categoryKey: 'equity' })
+    expect(selected.selectedAccountId).toBe('acct-1')
+    expect(selected.selectedCategoryKey).toBe('equity')
+
+    // Selecting the same account/category again toggles it off
+    const toggledOff = appReducer(selected, { type: 'SELECT_ACCOUNT', accountId: 'acct-1', categoryKey: 'equity' })
+    expect(toggledOff.selectedAccountId).toBeNull()
+    expect(toggledOff.selectedCategoryKey).toBeNull()
+  })
+
+  it('CLEAR_ACCOUNT_SELECTION resets selectedAccountId/selectedCategoryKey to null', () => {
+    const state = { ...initialState(), selectedAccountId: 'acct-1', selectedCategoryKey: 'equity' as const }
+    const result = appReducer(state, { type: 'CLEAR_ACCOUNT_SELECTION' })
+    expect(result.selectedAccountId).toBeNull()
+    expect(result.selectedCategoryKey).toBeNull()
+  })
 })

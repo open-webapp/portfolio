@@ -62,7 +62,6 @@ describe('RailNav', () => {
     ['Budget', 'budget'],
     ['Positions', 'accounts'],
     ['Register', 'register'],
-    ['Quotes', 'quotes'],
   ])('dispatches SET_VIEW for %s', (label, view) => {
     const props = makeRailProps()
     render(<RailNav {...props} />)

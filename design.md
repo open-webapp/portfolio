@@ -32,7 +32,7 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 ## Shell Navigation
 
 - `App.tsx` renders `RailNav` and `TopBar` for every hydrated, unlocked portfolio view.
-- `RailNav` is a fixed left icon rail: Ledger mark; Budget, Positions, Register, Quotes; flexible spacer; Sync (when connected/syncing); Settings. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the mark/spacer.
+- `RailNav` is a fixed left icon rail: Ledger mark; Budget, Positions, Register (3 main items — Quotes is not a rail item, see Positions); flexible spacer; Sync (when connected/syncing); Settings. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the mark/spacer.
 - `TopBar` is a flex row containing the accent-colored portfolio-switch button, optional Budget period control, and right-aligned accent Sync button. Sync is disabled while disconnected or syncing.
 - `router.ts` recognizes `#/categories` and renders `ManageCategoriesPage` without requiring an unlocked portfolio session.
 
@@ -66,7 +66,7 @@ interface GlobalCategoryState {
 
 ## Quotes Page
 
-- `QuotesPage.tsx`: rendered when `state.view === 'quotes'`, sibling of `AccountsPage`/`Settings`. Props: `{state, dispatch, tickerOverviewErrors}`.
+- `QuotesPage.tsx`: rendered as the 5th tab (`'quotes'`) inside `AccountsPage`, full width, no left nav — not a standalone rail-navigable view. Props: `{state, dispatch, tickerOverviewErrors}`.
 - Rows = union of held Equity/ETF and Mutual Fund symbols, sorted/merged by symbol. Asset Class: Equity/ETF looks up `assetClassManualOverride || assetClass`; Mutual Fund rows are hardcoded `'Mutual Fund'`.
 - Loads `marketDataDb.getAllBars()` + `getAllTickerOverviews()` in a `useEffect` keyed on `priceSync.lastRun?.at` / `mutualFundSync.lastRun?.at`.
 - Columns: Ticker, Asset Class, Name (cached `TickerOverview.name`, `—` if uncached), Status, Price (`fmtUSD`; Equity/ETF falls back to cached bar close, Mutual Fund reads `mutualFundSync.heldPrices` only, no bar fallback), Held (always Yes), Last Updated (UTC from `DailyBar.t`), SIC Description (`overview?.sicDescription || '—'`, `||` not `??` so empty string also shows `—`).
@@ -88,9 +88,20 @@ interface GlobalCategoryState {
 
 ## Positions
 
-- `ClosedPositionsTable.tsx` takes a `positions` prop; reused by `PositionsTable.tsx` (`state.closedPositions`) and `AccountsPage.tsx` (`acctFilteredClosedPositions(state)`).
+- `AccountsPage.tsx` renders a 5-tab top strip: Taxable, Non-Taxable, Tax-Deferred, Closed Positions, Quotes. Active tab is `PositionsTab` (`src/lib/state.ts`), held as local `useState` in `App.tsx` — not persisted, not part of `AppState`/reducer. Switching tabs dispatches `CLEAR_ACCOUNT_SELECTION`.
+- No "All Accounts" pill; category collapse/expand (chevrons, `expandedCategories`, `TOGGLE_CATEGORY_EXPANDED`) is removed — category blocks are always static/expanded.
+- Left nav per tab:
+  - Taxable/Non-Taxable/Tax-Deferred: exactly one category block — accounts in that tax category, per-account totals, category sum.
+  - Closed Positions: accounts with closed positions + realized G/L totals.
+  - Quotes: none; right panel is `QuotesPage` full width.
+- Right panel per tab:
+  - Taxable/Non-Taxable/Tax-Deferred: allocation chart, filter row, aggregate table, scoped to the active tab's accounts even with no account selected (selectors take `tabAccountIds?: string[]`: `acctScopedPositions`, `acctFilteredPositions`, `acctScopedClosedPositions`, `acctFilteredClosedPositions`; `acctAllocationTitle` takes optional `tabLabel?: string`).
+  - Closed Positions: always renders `ClosedPositionsTable` (`acctFilteredClosedPositions(state)`), not conditional on selection.
+  - Quotes: `QuotesPage`.
+- `ClosedPositionsTable.tsx` takes a `positions` prop; reused by `PositionsTable.tsx` (`state.closedPositions`) and `AccountsPage.tsx`.
 - Undo Closed Position flow: table Undo click → `findMatchingOpenPosition`/`isExactLotMatch` → confirm dialog only if an exact-lot match exists → `RESTORE_CLOSED_POSITION` dispatch → `restoreClosedPosition` (three outcome branches: no match/partial match/exact match); account selection is cleared via `CLEAR_ACCOUNT_SELECTION`/`clearAccountSelection` as part of the restore.
 - Account Selection flow: `SELECT_ACCOUNT` → `selectAccount`, with toggle (reselect clears)/replace/null semantics for single-account filtering.
+- `acctAllAccountsTotal` deleted (dead code after pill removal).
 
 ## Balance Register
 

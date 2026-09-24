@@ -1,21 +1,38 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { useReducer } from 'react'
-import { AccountsPage } from './AccountsPage'
+import { AccountsPage, type AccountsPageProps } from './AccountsPage'
 import { appReducer, type AppAction } from '../lib/reducer'
-import { initialState, type AppState } from '../lib/state'
-import { acctAllAccountsTotal } from '../lib/selectors'
+import { initialState, type AppState, type PositionsTab } from '../lib/state'
 
 afterEach(cleanup)
 
 /**
  * Renders AccountsPage wired to a real reducer, so clicks that dispatch
- * actions (expand category, select account, filter, search) actually
- * update the rendered UI.
+ * actions (select account, filter, search) actually update the rendered UI.
  */
-function AccountsPageHarness({ initial }: { initial: AppState }) {
+function AccountsPageHarness({
+  initial,
+  positionsTab,
+  tickerOverviewErrors = {},
+}: {
+  initial: AppState
+  positionsTab: PositionsTab
+  tickerOverviewErrors?: Record<string, string>
+}) {
   const [state, dispatch] = useReducer(appReducer, initial)
-  return <AccountsPage state={state} dispatch={dispatch as (action: AppAction) => void} />
+  return (
+    <AccountsPage
+      state={state}
+      dispatch={dispatch as (action: AppAction) => void}
+      positionsTab={positionsTab}
+      tickerOverviewErrors={tickerOverviewErrors}
+    />
+  )
+}
+
+function renderPage(props: Omit<AccountsPageProps, 'tickerOverviewErrors'> & { tickerOverviewErrors?: Record<string, string> }) {
+  return render(<AccountsPage tickerOverviewErrors={{}} {...props} />)
 }
 
 function buildAppStateWithAccounts(options?: {
@@ -71,33 +88,40 @@ function buildAppStateWithAccounts(options?: {
 }
 
 describe('AccountsPage', () => {
-  describe('category cards', () => {
-    it('renders Taxable, Non-Taxable, Tax-Deferred labels in that order, collapsed by default', () => {
+  describe('category card (left nav, single tab)', () => {
+    it('renders only the Taxable category block when positionsTab is taxable, and its accounts are always visible', () => {
       const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 1 })
-      render(<AccountsPage state={state} dispatch={vi.fn()} />)
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxable' })
 
-      const labels = ['Taxable', 'Non-Taxable', 'Tax-Deferred']
-      labels.forEach((label) => expect(screen.getByText(label)).toBeTruthy())
+      expect(screen.getByText('Taxable')).toBeTruthy()
+      expect(screen.queryByText('Non-Taxable')).toBeNull()
+      expect(screen.queryByText('Tax-Deferred')).toBeNull()
 
-      // Collapsed: account row text not present yet
-      expect(screen.queryByText(/Brokerage Account 1/)).toBeNull()
-    })
-
-    it('clicking a category header expands it and shows account rows', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      render(<AccountsPageHarness initial={state} />)
-
-      fireEvent.click(screen.getByText('Taxable'))
-
+      // Accounts always show, no expand click needed
       expect(screen.getByText(/Brokerage Account 1/)).toBeTruthy()
-      expect(screen.getByText('#1000')).toBeTruthy()
     })
 
-    it('a category with 0 accounts shows "No accounts in this category." when expanded', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 0, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      render(<AccountsPageHarness initial={state} />)
+    it('renders only the Non-Taxable category block when positionsTab is nonTaxable', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 1 })
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'nonTaxable' })
 
-      fireEvent.click(screen.getByText('Taxable'))
+      expect(screen.getByText('Non-Taxable')).toBeTruthy()
+      expect(screen.queryByText('Taxable')).toBeNull()
+      expect(screen.getByText(/HSA Account 1/)).toBeTruthy()
+    })
+
+    it('renders only the Tax-Deferred category block when positionsTab is taxDeferred', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 1 })
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxDeferred' })
+
+      expect(screen.getByText('Tax-Deferred')).toBeTruthy()
+      expect(screen.queryByText('Taxable')).toBeNull()
+      expect(screen.getByText(/IRA Account 1/)).toBeTruthy()
+    })
+
+    it('a category with 0 accounts shows "No accounts in this category."', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 0, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxable' })
 
       expect(screen.getByText('No accounts in this category.')).toBeTruthy()
     })
@@ -113,16 +137,13 @@ describe('AccountsPage', () => {
         retirement: false,
         createdAt: '2024-01-01',
       })
-      render(<AccountsPageHarness initial={state} />)
-      fireEvent.click(screen.getByText('Taxable'))
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxable' })
       expect(screen.getByText('Updated —')).toBeTruthy()
     })
 
-    it('clicking an account row selects it, clicking again deselects it', () => {
+    it('clicking an account row dispatches SELECT_ACCOUNT and highlights it, clicking again deselects it', () => {
       const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      render(<AccountsPageHarness initial={state} />)
-
-      fireEvent.click(screen.getByText('Taxable'))
+      render(<AccountsPageHarness initial={state} positionsTab="taxable" />)
 
       // Selecting scopes the allocation title to the account name
       fireEvent.click(screen.getByText('#1000').closest('div[style*="cursor: pointer"]')!)
@@ -130,30 +151,12 @@ describe('AccountsPage', () => {
 
       // Clicking again deselects
       fireEvent.click(screen.getByText('#1000').closest('div[style*="cursor: pointer"]')!)
-      expect(screen.getByText('Allocation — All Accounts')).toBeTruthy()
+      expect(screen.getByText(/Allocation —/)).toBeTruthy()
     })
+  })
 
-    it('renders Taxable, Non-Taxable, Tax-Deferred, and Closed Positions labels in that order', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 1 })
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: 1000,
-        realizedGLBasis: 'known',
-        lastImportedAt: '2024-01-15',
-      })
-      render(<AccountsPage state={state} dispatch={vi.fn()} />)
-
-      const labels = ['Taxable', 'Non-Taxable', 'Tax-Deferred', 'Closed Positions']
-      labels.forEach((label) => expect(screen.getByText(label)).toBeTruthy())
-    })
-
-    it('Closed Positions card only lists accounts with >= 1 closed position', () => {
+  describe('closed positions tab', () => {
+    it('renders the Closed Positions block when positionsTab is closedPositions, with its accounts always visible', () => {
       const state = buildAppStateWithAccounts({ taxableAccounts: 2, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
       state.closedPositions.push({
         id: 'cp-1',
@@ -167,12 +170,9 @@ describe('AccountsPage', () => {
         realizedGLBasis: 'known',
         lastImportedAt: '2024-01-15',
       })
-      render(<AccountsPageHarness initial={state} />)
+      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
 
-      // Expand Closed Positions card
-      const closedPositionsHeader = screen.getByText('Closed Positions').closest('div[style*="cursor: pointer"]')!
-      fireEvent.click(closedPositionsHeader)
-
+      expect(screen.getByText('Closed Positions')).toBeTruthy()
       // acc-1 has a closed position, so should appear
       expect(screen.getByText(/Brokerage Account 1/)).toBeTruthy()
       // acc-2 has no closed positions, so should not appear
@@ -193,17 +193,14 @@ describe('AccountsPage', () => {
         realizedGLBasis: 'unknown',
         lastImportedAt: '2024-01-15',
       })
-      render(<AccountsPageHarness initial={state} />)
+      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
 
-      fireEvent.click(screen.getByText('Closed Positions'))
-
-      // Account total should show "—"
       const accountRow = screen.getByText(/Brokerage Account 1/).closest('div[style*="cursor: pointer"]')!
       const totalStr = accountRow.querySelector('div:last-child')?.textContent
       expect(totalStr).toMatch(/—/)
     })
 
-    it('clicking an account row in Closed Positions card sets selectedCategoryKey: closedPositions', () => {
+    it('clicking an account row in Closed Positions card selects it (highlighted)', () => {
       const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
       state.closedPositions.push({
         id: 'cp-1',
@@ -217,148 +214,15 @@ describe('AccountsPage', () => {
         realizedGLBasis: 'known',
         lastImportedAt: '2024-01-15',
       })
-      render(<AccountsPageHarness initial={state} />)
+      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
 
-      // Expand Closed Positions card
-      fireEvent.click(screen.getByText('Closed Positions').closest('div[style*="cursor: pointer"]')!)
+      const accountRow = screen.getByText(/Brokerage Account 1/).closest('div[style*="cursor: pointer"]')!
+      fireEvent.click(accountRow)
 
-      // Click on account in Closed Positions card
-      const accountRows = screen.getAllByText(/Brokerage Account 1/).map((el) => el.closest('div[style*="cursor: pointer"]')!)
-      const closedPositionsRow = accountRows[accountRows.length - 1] // Last one is in Closed Positions card
-      fireEvent.click(closedPositionsRow)
-
-      // Verify that the row in Closed Positions card is now highlighted (selected: true)
-      // by checking that it has the accent background
-      const rowStyle = closedPositionsRow.getAttribute('style')
+      const rowStyle = accountRow.getAttribute('style')
       expect(rowStyle).toContain('--color-accent-100')
     })
 
-    it('account with both open and closed positions: row in tax-category card NOT highlighted when selected under Closed Positions', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      // acc-1 has both an open position (from buildAppStateWithAccounts) and a closed position
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: 1000,
-        realizedGLBasis: 'known',
-        lastImportedAt: '2024-01-15',
-      })
-      const stateWithClosedSelection = { ...state, selectedAccountId: 'acc-1', selectedCategoryKey: 'closedPositions' }
-      render(<AccountsPage state={stateWithClosedSelection} dispatch={vi.fn()} />)
-
-      // Expand Taxable card by clicking its header
-      const taxableHeader = screen.getAllByText('Taxable')[0].closest('div[style*="cursor: pointer"]')!
-      fireEvent.click(taxableHeader)
-
-      // The account row should NOT have the selected background color when selectedCategoryKey is 'closedPositions'
-      const accountElement = screen.getByText(/Brokerage Account 1/)
-      const accountRow = accountElement.closest('div')?.parentElement
-      const rowStyle = accountRow?.getAttribute('style')
-
-      // When not selected for this category, background should NOT include accent-100
-      if (rowStyle) {
-        expect(rowStyle).not.toContain('--color-accent-100')
-      } else {
-        // No style attribute means no background, which is correct
-        expect(rowStyle).toBeFalsy()
-      }
-    })
-  })
-
-  describe('allocation, filter, search, table', () => {
-    it('no account selected: title is "Allocation — All Accounts", table shows all positions', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 0 })
-      render(<AccountsPage state={state} dispatch={vi.fn()} />)
-
-      expect(screen.getByText('Allocation — All Accounts')).toBeTruthy()
-      expect(screen.getByText('% of Selection')).toBeTruthy()
-      expect(screen.queryByText('% of Portfolio')).toBeNull()
-
-      const table = screen.getByRole('table')
-      const bodyRows = table.querySelectorAll('tbody tr')
-      expect(bodyRows).toHaveLength(1) // both accounts hold AAPL, grouped into one aggregate row
-    })
-
-    it('typing in search filters rows by symbol/name, case-insensitively', () => {
-      const state = initialState()
-      state.accounts.push({
-        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
-        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
-      })
-      state.positions.push(
-        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
-        { id: 'p2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
-      )
-      render(<AccountsPageHarness initial={state} />)
-
-      const search = screen.getByPlaceholderText('Search symbol or name')
-      fireEvent.change(search, { target: { value: 'apple' } })
-
-      expect(screen.getByText('AAPL')).toBeTruthy()
-      expect(screen.queryByText('MSFT')).toBeNull()
-    })
-
-    it('asset-class filter narrows rows', () => {
-      const state = initialState()
-      state.accounts.push({
-        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
-        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
-      })
-      state.positions.push(
-        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
-        { id: 'p2', accountId: 'acc-1', symbol: 'BND', name: 'Bond ETF', assetClass: 'Bonds', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
-      )
-      render(<AccountsPageHarness initial={state} />)
-
-      const bondsOption = screen.getAllByText('Bonds').find((el) => el.closest('label.seg-opt'))!
-      fireEvent.click(bondsOption.closest('label')!)
-
-      expect(screen.getByText('BND')).toBeTruthy()
-      expect(screen.queryByText('AAPL')).toBeNull()
-    })
-
-    it('filtered-to-zero-rows state shows "No positions to show." below a table that still renders headers', () => {
-      const state = initialState()
-      state.accounts.push({
-        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
-        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
-      })
-      state.positions.push(
-        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
-      )
-      render(<AccountsPageHarness initial={state} />)
-
-      const search = screen.getByPlaceholderText('Search symbol or name')
-      fireEvent.change(search, { target: { value: 'zzz-no-match' } })
-
-      expect(screen.getByRole('table')).toBeTruthy()
-      expect(screen.getByText((_, el) => el?.tagName === 'TH' && !!el.textContent?.startsWith('Symbol'))).toBeTruthy()
-      expect(screen.getByText('No positions to show.')).toBeTruthy()
-    })
-
-    it('clicking an aggregate row opens PositionGroupOverlay with correct title and positions', async () => {
-      const state = initialState()
-      state.accounts.push({
-        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
-        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
-      })
-      state.positions.push(
-        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
-      )
-      render(<AccountsPage state={state} dispatch={vi.fn()} />)
-
-      fireEvent.click(screen.getByText('AAPL').closest('tr')!)
-
-      expect(await screen.findByText('AAPL — Apple Inc. — Tech')).toBeTruthy()
-    })
-  })
-
-  describe('closed positions view', () => {
     it('selecting an account under Closed Positions renders ClosedPositionsTable instead of aggregate table', () => {
       const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
       state.closedPositions.push({
@@ -374,13 +238,7 @@ describe('AccountsPage', () => {
         lastImportedAt: '2024-01-15',
         closedDate: '2024-01-10',
       })
-      // Start with selectedCategoryKey === 'closedPositions' and selectedAccountId set
-      const stateWithSelection = {
-        ...state,
-        selectedAccountId: 'acc-1',
-        selectedCategoryKey: 'closedPositions'
-      }
-      render(<AccountsPage state={stateWithSelection} dispatch={vi.fn()} />)
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'closedPositions' })
 
       // ClosedPositionsTable should render with the specific columns: Symbol, Closed, Realized G/L
       expect(screen.getByText('Closed')).toBeTruthy()
@@ -408,12 +266,7 @@ describe('AccountsPage', () => {
           shares: 50, avgCost: 100, realizedGL: 100, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
         },
       )
-      const stateWithClosedSelection = {
-        ...state,
-        selectedAccountId: 'acc-1',
-        selectedCategoryKey: 'closedPositions'
-      }
-      render(<AccountsPageHarness initial={stateWithClosedSelection} />)
+      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
 
       // Initially both symbols should be visible
       expect(screen.getByText('OLD')).toBeTruthy()
@@ -444,12 +297,7 @@ describe('AccountsPage', () => {
           shares: 50, avgCost: 100, realizedGL: 500, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
         },
       )
-      const stateWithClosedSelection = {
-        ...state,
-        selectedAccountId: 'acc-1',
-        selectedCategoryKey: 'closedPositions'
-      }
-      render(<AccountsPageHarness initial={stateWithClosedSelection} />)
+      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
 
       // Initially both symbols should be visible
       expect(screen.getByText('OLD')).toBeTruthy()
@@ -464,52 +312,9 @@ describe('AccountsPage', () => {
       expect(screen.queryByText('MSFT')).toBeNull()
     })
 
-    it('deselecting an account in closed view returns to default open-positions view', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: 1000,
-        realizedGLBasis: 'known',
-        lastImportedAt: '2024-01-15',
-        closedDate: '2024-01-10',
-      })
-      const stateWithSelection = {
-        ...state,
-        selectedAccountId: 'acc-1',
-        selectedCategoryKey: 'closedPositions'
-      }
-      render(<AccountsPageHarness initial={stateWithSelection} />)
-
-      // Verify closed view is shown
-      expect(screen.getByText('Closed')).toBeTruthy()
-      expect(screen.getByText('OLD')).toBeTruthy()
-
-      // Create a new render with deselected state to simulate clicking the account again
-      cleanup()
-      const deselectedState = {
-        ...state,
-        selectedAccountId: null,
-        selectedCategoryKey: null
-      }
-      render(<AccountsPageHarness initial={deselectedState} />)
-
-      // After deselect, open positions table should be shown again
-      // The allocation title should be "All Accounts"
-      expect(screen.getByText('Allocation — All Accounts')).toBeTruthy()
-
-      // Open positions table headers should be visible
-      expect(screen.getByText('Amount Invested')).toBeTruthy()
-    })
-
-    it('switching from closed view to open view shows correct table', () => {
+    it('switching positionsTab from closedPositions to taxable shows the open-positions table for that tab', () => {
       const state = buildAppStateWithAccounts({ taxableAccounts: 2, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      // acc-1 is taxable, acc-2 is also taxable
+      // acc-1 and acc-2 are both taxable
       state.closedPositions.push({
         id: 'cp-1',
         accountId: 'acc-1',
@@ -523,32 +328,15 @@ describe('AccountsPage', () => {
         lastImportedAt: '2024-01-15',
         closedDate: '2024-01-10',
       })
-      // Start with closed view selection
-      const stateWithClosedSelection = {
-        ...state,
-        selectedAccountId: 'acc-1',
-        selectedCategoryKey: 'closedPositions'
-      }
-      render(<AccountsPageHarness initial={stateWithClosedSelection} />)
 
-      // Verify closed view is shown
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'closedPositions' })
       expect(screen.getByText('Closed')).toBeTruthy()
       expect(screen.getByText('OLD')).toBeTruthy()
-
-      // Clean up and render with open view selection (different account, different category)
       cleanup()
-      const stateWithOpenSelection = {
-        ...state,
-        selectedAccountId: 'acc-2',
-        selectedCategoryKey: 'taxable'
-      }
-      render(<AccountsPageHarness initial={stateWithOpenSelection} />)
 
-      // Should now show open positions table for acc-2
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxable' })
       expect(screen.getByText('Amount Invested')).toBeTruthy()
-      // acc-2 has AAPL position from buildAppStateWithAccounts
       expect(screen.getByText('AAPL')).toBeTruthy()
-      // OLD should not be visible anymore
       expect(screen.queryByText('OLD')).toBeNull()
     })
 
@@ -562,12 +350,7 @@ describe('AccountsPage', () => {
         id: 'cp-1', accountId: 'acc-1', symbol: 'OLD', name: 'Old Stock', assetClass: 'Equities',
         shares: 100, avgCost: 100, realizedGL: 1000, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
       })
-      const stateWithClosedSelection = {
-        ...state,
-        selectedAccountId: 'acc-1',
-        selectedCategoryKey: 'closedPositions'
-      }
-      render(<AccountsPageHarness initial={stateWithClosedSelection} />)
+      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
 
       // Search for non-matching symbol
       const search = screen.getByPlaceholderText('Search symbol or name')
@@ -578,45 +361,112 @@ describe('AccountsPage', () => {
     })
   })
 
-  describe('All Accounts pill', () => {
-    it('renders highlighted with the correct total when no account is selected', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 1 })
-      state.selectedAccountId = null
-      render(<AccountsPage state={state} dispatch={vi.fn()} />)
+  describe('allocation, filter, search, table', () => {
+    it('no account selected: title includes tab label, table shows all positions scoped to that tab', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 0 })
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxable' })
 
-      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
-      expect(pill.getAttribute('style')).toContain('--color-accent-100')
-      expect(within(pill).getByText(acctAllAccountsTotal(state))).toBeTruthy()
+      expect(screen.getByText('% of Selection')).toBeTruthy()
+      expect(screen.queryByText('% of Portfolio')).toBeNull()
+
+      const table = screen.getByRole('table')
+      const bodyRows = table.querySelectorAll('tbody tr')
+      // Only the taxable account's AAPL position is in scope
+      expect(bodyRows).toHaveLength(1)
     })
 
-    it('is not highlighted when an account is selected', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      state.selectedAccountId = 'acc-1'
-      render(<AccountsPage state={state} dispatch={vi.fn()} />)
-
-      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
-      expect(pill.getAttribute('style')).not.toContain('--color-accent-100')
-    })
-
-    it('clicking it dispatches CLEAR_ACCOUNT_SELECTION', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      state.selectedAccountId = 'acc-1'
-      const dispatch = vi.fn()
-      render(<AccountsPage state={state} dispatch={dispatch} />)
-
-      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
-      fireEvent.click(pill)
-
-      expect(dispatch).toHaveBeenCalledTimes(1)
-      expect(dispatch).toHaveBeenCalledWith({ type: 'CLEAR_ACCOUNT_SELECTION' })
-    })
-
-    it('renders with zero-USD total and no crash when portfolio is empty', () => {
+    it('typing in search filters rows by symbol/name, case-insensitively', () => {
       const state = initialState()
-      render(<AccountsPage state={state} dispatch={vi.fn()} />)
+      state.accounts.push({
+        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
+        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
+      })
+      state.positions.push(
+        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
+        { id: 'p2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
+      )
+      render(<AccountsPageHarness initial={state} positionsTab="taxable" />)
 
-      const pill = screen.getByText('All Accounts').closest('div[style*="cursor: pointer"]')!
-      expect(within(pill).getByText('$0.00')).toBeTruthy()
+      const search = screen.getByPlaceholderText('Search symbol or name')
+      fireEvent.change(search, { target: { value: 'apple' } })
+
+      expect(screen.getByText('AAPL')).toBeTruthy()
+      expect(screen.queryByText('MSFT')).toBeNull()
+    })
+
+    it('asset-class filter narrows rows', () => {
+      const state = initialState()
+      state.accounts.push({
+        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
+        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
+      })
+      state.positions.push(
+        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
+        { id: 'p2', accountId: 'acc-1', symbol: 'BND', name: 'Bond ETF', assetClass: 'Bonds', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
+      )
+      render(<AccountsPageHarness initial={state} positionsTab="taxable" />)
+
+      const bondsOption = screen.getAllByText('Bonds').find((el) => el.closest('label.seg-opt'))!
+      fireEvent.click(bondsOption.closest('label')!)
+
+      expect(screen.getByText('BND')).toBeTruthy()
+      expect(screen.queryByText('AAPL')).toBeNull()
+    })
+
+    it('filtered-to-zero-rows state shows "No positions to show." below a table that still renders headers', () => {
+      const state = initialState()
+      state.accounts.push({
+        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
+        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
+      })
+      state.positions.push(
+        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
+      )
+      render(<AccountsPageHarness initial={state} positionsTab="taxable" />)
+
+      const search = screen.getByPlaceholderText('Search symbol or name')
+      fireEvent.change(search, { target: { value: 'zzz-no-match' } })
+
+      expect(screen.getByRole('table')).toBeTruthy()
+      expect(screen.getByText((_, el) => el?.tagName === 'TH' && !!el.textContent?.startsWith('Symbol'))).toBeTruthy()
+      expect(screen.getByText('No positions to show.')).toBeTruthy()
+    })
+
+    it('clicking an aggregate row opens PositionGroupOverlay with correct title and positions', async () => {
+      const state = initialState()
+      state.accounts.push({
+        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
+        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
+      })
+      state.positions.push(
+        { id: 'p1', accountId: 'acc-1', symbol: 'AAPL', name: 'Apple Inc.', assetClass: 'Tech', shares: 1, avgCost: 100, price: 100, lastImportedAt: '2024-01-01' },
+      )
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxable' })
+
+      fireEvent.click(screen.getByText('AAPL').closest('tr')!)
+
+      expect(await screen.findByText('AAPL — Apple Inc. — Tech')).toBeTruthy()
+    })
+  })
+
+  describe('quotes tab', () => {
+    it('renders QuotesPage full-width with no left nav when positionsTab is quotes', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 1 })
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'quotes' })
+
+      // No category labels from the left nav
+      expect(screen.queryByText('Taxable')).toBeNull()
+      expect(screen.queryByText('Non-Taxable')).toBeNull()
+      expect(screen.queryByText('Tax-Deferred')).toBeNull()
+      expect(screen.queryByText('Closed Positions')).toBeNull()
+    })
+
+    it('passes tickerOverviewErrors through to QuotesPage without crashing', () => {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
+      renderPage({ state, dispatch: vi.fn(), positionsTab: 'quotes', tickerOverviewErrors: { AAPL: 'Quote fetch failed' } })
+
+      // No crash; left-nav categories still absent
+      expect(screen.queryByText('Taxable')).toBeNull()
     })
   })
 })

@@ -26,7 +26,6 @@ export type AppAction =
   | { type: 'ADD_CUSTOM_INSTITUTION'; name: string }
   | { type: 'SELECT_ACCOUNT'; accountId: string; categoryKey: string }
   | { type: 'CLEAR_ACCOUNT_SELECTION' }
-  | { type: 'TOGGLE_CATEGORY_EXPANDED'; categoryKey: string }
   | { type: 'SET_ACCT_ASSET_CLASS_FILTER'; filter: string }
   | { type: 'SET_ACCT_POS_SEARCH'; search: string }
   | { type: 'SET_PRICE_SYNC_API_KEY'; apiKey: string }
@@ -140,9 +139,6 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'CLEAR_ACCOUNT_SELECTION':
       return StateActions.clearAccountSelection(state)
-
-    case 'TOGGLE_CATEGORY_EXPANDED':
-      return StateActions.toggleCategoryExpanded(state, action.categoryKey)
 
     case 'SET_ACCT_ASSET_CLASS_FILTER':
       return StateActions.setAcctAssetClassFilter(state, action.filter)

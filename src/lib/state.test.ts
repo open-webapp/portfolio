@@ -25,6 +25,10 @@ describe('budget state', () => {
     expect(initialState()).not.toHaveProperty('budgetIncomeByYear')
   })
 
+  it('has no expandedCategories state', () => {
+    expect(initialState()).not.toHaveProperty('expandedCategories')
+  })
+
   it('strips empty expense snapshots only', () => {
     const state = { ...initialState(), budgetExpenseAmountsByYear: { '2024': {}, '2025': { rent: 1000 } } }
     expect(stripEmptyBudgetSnapshots(state).budgetExpenseAmountsByYear).toEqual({ '2025': { rent: 1000 } })

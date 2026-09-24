@@ -41,11 +41,6 @@ const mainNavTabs = [
     label: 'Register',
     icon: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8" /><path d="M8 12h8" /><path d="M8 16h5" /></>,
   },
-  {
-    value: 'quotes',
-    label: 'Quotes',
-    icon: <><path d="M3 17l6-6 4 4 8-9" /><path d="M16 6h5v5" /></>,
-  },
 ] as const
 
 export function RailNav({ state, dispatch, connected, syncing, handleSync, onOpenSettings, onSwitchPortfolio }: RailNavProps) {

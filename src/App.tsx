@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useRef, useState, useCallback } from 'react'
-import { initialState, reconcileBudgetAccountConventions, type AppState } from './lib/state'
+import { initialState, reconcileBudgetAccountConventions, type AppState, type PositionsTab } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { savePersistedApp, peekEnvelopeShape, setActivePortfolioDb } from './lib/persist'
 import { useGlobalCategories } from './hooks/useGlobalCategories'
@@ -7,7 +7,6 @@ import { RailNav, TopBar } from './components/Nav'
 import { SettingsPage } from './components/Settings'
 import { AccountsPage } from './components/AccountsPage'
 import { RegisterPage } from './components/RegisterPage'
-import { QuotesPage } from './components/QuotesPage'
 import { BudgetPage } from './components/BudgetPage'
 import { PasswordGate } from './components/PasswordGate'
 import { SyncConflictDialog } from './components/SyncConflictDialog'
@@ -53,6 +52,7 @@ const LOCK_CHECK_INTERVAL_MS = 30_000 // 30s
 
 type BudgetPeriod = 'spend' | 'expenses' | 'analytics'
 
+
 function PeriodSegControl({
   period,
   setPeriod,
@@ -95,6 +95,38 @@ function PeriodSegControl({
   )
 }
 
+const POSITIONS_TAB_OPTIONS: { value: PositionsTab; label: string }[] = [
+  { value: 'taxable', label: 'Taxable' },
+  { value: 'nonTaxable', label: 'Non-Taxable' },
+  { value: 'taxDeferred', label: 'Tax-Deferred' },
+  { value: 'closedPositions', label: 'Closed Positions' },
+  { value: 'quotes', label: 'Quotes' },
+]
+
+function PositionsTabSegControl({
+  positionsTab,
+  setPositionsTab,
+}: {
+  positionsTab: PositionsTab
+  setPositionsTab: (tab: PositionsTab) => void
+}) {
+  return (
+    <div className="seg">
+      {POSITIONS_TAB_OPTIONS.map((option) => (
+        <label key={option.value} className="seg-opt">
+          <input
+            type="radio"
+            name="positionsTab"
+            checked={positionsTab === option.value}
+            onChange={() => setPositionsTab(option.value)}
+          />
+          <span>{option.label}</span>
+        </label>
+      ))}
+    </div>
+  )
+}
+
 // Placeholder portfolio passed to useDriveConnection before a real portfolio
 // is active (picker route, or portfolio not yet resolved). useDriveConnection
 // requires a non-null DriveAuthHandle on every render (React hooks can't be
@@ -122,6 +154,7 @@ function App() {
   const [hydrationError, setHydrationError] = useState<string | null>(null)
   const [state, dispatch] = useReducer(appReducer, initialState())
   const [period, setPeriod] = useState<BudgetPeriod>('spend')
+  const [positionsTab, setPositionsTab] = useState<PositionsTab>('taxable')
   const [selectedScope, setSelectedScope] = useState<SpendScope>(
     () => spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
   )
@@ -921,6 +954,14 @@ function App() {
               onScopeChange={handleScopeChange}
               availableYears={spendBudgetYears(state.budgetTransactions)}
             />
+          ) : state.view === 'accounts' ? (
+            <PositionsTabSegControl
+              positionsTab={positionsTab}
+              setPositionsTab={(tab) => {
+                setPositionsTab(tab)
+                dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })
+              }}
+            />
           ) : undefined}
         />
 
@@ -946,17 +987,12 @@ function App() {
         ) : state.view === 'accounts' ? (
           /* Accounts page view */
           <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
-            <AccountsPage state={state} dispatch={dispatch} />
+            <AccountsPage state={state} dispatch={dispatch} positionsTab={positionsTab} tickerOverviewErrors={tickerOverviewErrors} />
           </div>
         ) : state.view === 'register' ? (
           /* Register page view */
           <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
             <RegisterPage state={state} dispatch={dispatch} />
-          </div>
-        ) : state.view === 'quotes' ? (
-          /* Quotes page view */
-          <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
-            <QuotesPage state={state} dispatch={dispatch} tickerOverviewErrors={tickerOverviewErrors} />
           </div>
         ) : (
           /* Settings page view */

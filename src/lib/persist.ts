@@ -211,7 +211,6 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
     txSearch: loaded.txSearch ?? defaults.txSearch,
     selectedAccountId: loaded.selectedAccountId ?? defaults.selectedAccountId,
     selectedCategoryKey: loaded.selectedCategoryKey ?? defaults.selectedCategoryKey,
-    expandedCategories: loaded.expandedCategories ?? defaults.expandedCategories,
     acctAssetClassFilter: loaded.acctAssetClassFilter ?? defaults.acctAssetClassFilter,
     acctPosSearch: loaded.acctPosSearch ?? defaults.acctPosSearch,
     regAccountId: loaded.regAccountId ?? defaults.regAccountId,

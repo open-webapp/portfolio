@@ -99,7 +99,6 @@ export function categoryCards(state: AppState): Array<{
   label: string
   totalStr: string
   accountCount: number
-  expanded: boolean
   accounts: Array<{
     id: string
     institution: string
@@ -145,7 +144,6 @@ export function categoryCards(state: AppState): Array<{
       label: CATEGORY_LABEL[catKey],
       totalStr: fmtUSD(categoryTotal),
       accountCount: accounts.length,
-      expanded: !!state.expandedCategories[catKey],
       accounts,
       hasAccounts: accounts.length > 0,
       noAccounts: accounts.length === 0
@@ -238,16 +236,6 @@ export function registerAllAccountsTotal(state: AppState): string {
 }
 
 /**
- * Sum of shares*price across every open position, regardless of any account/category
- * filter state, for the Positions/Accounts page's "All Accounts" pill total.
- * Unscoped: ignores selectedAccountId/selectedCategoryKey and never includes closedPositions.
- */
-export function acctAllAccountsTotal(state: AppState): string {
-  const total = state.positions.reduce((sum, p) => sum + p.shares * p.price, 0)
-  return fmtUSD(total)
-}
-
-/**
  * Generate closed-positions card data for the Accounts page's left column.
  * Mirrors categoryCards structure but shows closed positions across all accounts.
  * One card labeled "Closed Positions", listing only accounts with ≥1 closed position,
@@ -258,7 +246,6 @@ export function closedPositionsCard(state: AppState): {
   label: string
   totalStr: string
   accountCount: number
-  expanded: boolean
   accounts: Array<{
     id: string
     institution: string
@@ -325,7 +312,6 @@ export function closedPositionsCard(state: AppState): {
     label: 'Closed Positions',
     totalStr: cardTotalStr,
     accountCount: accounts.length,
-    expanded: !!state.expandedCategories['closedPositions'],
     accounts,
     hasAccounts: accounts.length > 0,
     noAccounts: accounts.length === 0
@@ -334,11 +320,16 @@ export function closedPositionsCard(state: AppState): {
 
 /**
  * Positions scoped to the currently-selected account on the Accounts page,
- * or all positions when no account is selected.
+ * or, when no account is selected, scoped to `tabAccountIds` (the active tab's
+ * accounts) if given, else all positions.
  */
-export function acctScopedPositions(state: AppState): Position[] {
+export function acctScopedPositions(state: AppState, tabAccountIds?: string[]): Position[] {
   if (state.selectedAccountId) {
     return state.positions.filter((p) => p.accountId === state.selectedAccountId)
+  }
+  if (tabAccountIds) {
+    const idSet = new Set(tabAccountIds)
+    return state.positions.filter((p) => idSet.has(p.accountId))
   }
   return state.positions
 }
@@ -392,8 +383,8 @@ export function heldMutualFundSymbols(state: AppState): string[] {
 /**
  * Accounts page positions further filtered by acctAssetClassFilter and acctPosSearch.
  */
-export function acctFilteredPositions(state: AppState): Position[] {
-  let results = acctScopedPositions(state)
+export function acctFilteredPositions(state: AppState, tabAccountIds?: string[]): Position[] {
+  let results = acctScopedPositions(state, tabAccountIds)
 
   if (state.acctAssetClassFilter !== 'All') {
     results = results.filter((p) => {
@@ -419,9 +410,13 @@ export function acctFilteredPositions(state: AppState): Position[] {
  * Closed positions scoped to the currently-selected account on the Accounts page,
  * or all closed positions when no account is selected.
  */
-export function acctScopedClosedPositions(state: AppState): ClosedPosition[] {
+export function acctScopedClosedPositions(state: AppState, tabAccountIds?: string[]): ClosedPosition[] {
   if (state.selectedAccountId) {
     return state.closedPositions.filter((cp) => cp.accountId === state.selectedAccountId)
+  }
+  if (tabAccountIds) {
+    const idSet = new Set(tabAccountIds)
+    return state.closedPositions.filter((cp) => idSet.has(cp.accountId))
   }
   return state.closedPositions
 }
@@ -429,8 +424,8 @@ export function acctScopedClosedPositions(state: AppState): ClosedPosition[] {
 /**
  * Accounts page closed positions further filtered by acctAssetClassFilter and acctPosSearch.
  */
-export function acctFilteredClosedPositions(state: AppState): ClosedPosition[] {
-  let results = acctScopedClosedPositions(state)
+export function acctFilteredClosedPositions(state: AppState, tabAccountIds?: string[]): ClosedPosition[] {
+  let results = acctScopedClosedPositions(state, tabAccountIds)
 
   if (state.acctAssetClassFilter !== 'All') {
     results = results.filter((cp) => {
@@ -454,12 +449,12 @@ export function acctFilteredClosedPositions(state: AppState): ClosedPosition[] {
 /**
  * Title for the Accounts page's allocation card, reflecting the current account selection.
  */
-export function acctAllocationTitle(state: AppState): string {
+export function acctAllocationTitle(state: AppState, tabLabel?: string): string {
   if (state.selectedAccountId) {
     const account = state.accounts.find((a) => a.id === state.selectedAccountId)
     return `Allocation — ${account?.name ?? ''}`
   }
-  return 'Allocation — All Accounts'
+  return `Allocation — ${tabLabel ?? 'All Accounts'}`
 }
 
 export const ALPHAVANTAGE_DAILY_CALL_CAP = 25

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AppState } from '../lib/state'
+import type { AppState, PositionsTab } from '../lib/state'
 import type { Position } from '../lib/types'
 import {
   categoryCards,
@@ -11,7 +11,6 @@ import {
   acctAssetClassOptions,
   acctAllocationTitle,
   assetClassOptions,
-  acctAllAccountsTotal,
 } from '../lib/selectors'
 import { buildAggregateRows, AGGREGATE_SORT_FIELD, type AggregateRow } from '../lib/aggregateRows'
 import { sortBy } from '../lib/sort'
@@ -20,24 +19,38 @@ import { AllocationChart } from './AllocationChart'
 import { ImportDialog } from './import/ImportDialog'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
 import { ClosedPositionsTable } from './ClosedPositionsTable'
+import { QuotesPage } from './QuotesPage'
 
 export interface AccountsPageProps {
   state: AppState
   dispatch: (action: any) => void
+  positionsTab: PositionsTab
+  tickerOverviewErrors: Record<string, string>
 }
 
 /**
- * Two-column Accounts page: left column of expandable category cards for
- * account selection, right column with allocation, asset-class filter,
- * search, and an aggregate positions table scoped to the selection.
+ * Two-column Accounts page: left column of category cards (scoped to the active
+ * positions tab) for account selection, right column with allocation, asset-class
+ * filter, search, and an aggregate positions table scoped to the selection.
  */
-export function AccountsPage({ state, dispatch }: AccountsPageProps) {
+export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErrors }: AccountsPageProps) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
 
-  const isClosedView = state.selectedCategoryKey === 'closedPositions'
-  const cards = [...categoryCards(state), closedPositionsCard(state)]
-  const scopedPositions = acctScopedPositions(state)
-  const filteredPositions = acctFilteredPositions(state)
+  if (positionsTab === 'quotes') {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-6)', alignItems: 'start' }}>
+        <QuotesPage state={state} dispatch={dispatch} tickerOverviewErrors={tickerOverviewErrors} />
+      </div>
+    )
+  }
+
+  const isClosedView = positionsTab === 'closedPositions'
+  const cards = categoryCards(state)
+  const activeCard = isClosedView ? closedPositionsCard(state) : cards.find((c) => c.key === positionsTab)
+  const tabAccountIds = activeCard ? activeCard.accounts.map((a) => a.id) : []
+
+  const scopedPositions = acctScopedPositions(state, tabAccountIds)
+  const filteredPositions = acctFilteredPositions(state, tabAccountIds)
   const acctPortfolioTotal = filteredPositions.reduce((s, p) => s + p.shares * p.price, 0)
 
   const aggregateRows = buildAggregateRows(filteredPositions)
@@ -63,63 +76,20 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 'var(--space-6)', alignItems: 'start' }}>
-      {/* Category cards */}
+      {/* Category card */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        <div
-          className="card blueprint elev-sm"
-          onClick={() => dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })}
-          style={{
-            padding: 'var(--space-4)',
-            cursor: 'pointer',
-            background: state.selectedAccountId ? undefined : 'var(--color-accent-100)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-            <span style={{
-              fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '13px',
-              padding: '6px 14px', borderRadius: '999px',
-              background: 'var(--color-accent)', color: '#fff',
-            }}>
-              All Accounts
-            </span>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '15px', whiteSpace: 'nowrap' }}>
-              {acctAllAccountsTotal(state)}
-            </span>
-          </div>
-        </div>
-
-        {cards.map((cat) => (
-          <div key={cat.key} className="card blueprint elev-sm" style={{ padding: 0 }}>
+        {activeCard && (
+          <div key={activeCard.key} className="card blueprint elev-sm" style={{ padding: 0 }}>
             <div
-              onClick={() => dispatch({ type: 'TOGGLE_CATEGORY_EXPANDED', categoryKey: cat.key })}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: 'var(--space-3)',
                 padding: 'var(--space-4)',
-                cursor: 'pointer',
-                userSelect: 'none',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  width="14"
-                  height="14"
-                  style={{
-                    flexShrink: 0,
-                    transform: cat.expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.15s',
-                  }}
-                >
-                  <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
                 <span
                   style={{
                     fontFamily: 'var(--font-heading)',
@@ -132,67 +102,65 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
                     color: '#fff',
                   }}
                 >
-                  {cat.label}
+                  {activeCard.label}
                 </span>
-                <span className="tag tag-neutral">{cat.accountCount}</span>
+                <span className="tag tag-neutral">{activeCard.accountCount}</span>
               </div>
               <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '15px', whiteSpace: 'nowrap' }}>
-                {cat.totalStr}
+                {activeCard.totalStr}
               </span>
             </div>
 
-            {cat.expanded && (
-              <div style={{ borderTop: '1px solid var(--color-divider)' }}>
-                {cat.hasAccounts ? (
-                  cat.accounts.map((acc) => (
-                    <div
-                      key={acc.id}
-                      onClick={() => dispatch({ type: 'SELECT_ACCOUNT', accountId: acc.id, categoryKey: cat.key })}
-                      style={{
-                        padding: 'var(--space-3) var(--space-4)',
-                        borderBottom: '1px solid var(--color-divider)',
-                        cursor: 'pointer',
-                        background: acc.selected ? 'var(--color-accent-100)' : undefined,
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            fontWeight: 600,
-                            minWidth: 0,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {acc.institution} <span className="text-muted" style={{ fontWeight: 400 }}>—</span> {acc.name}
-                        </div>
-                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap' }}>
-                          {acc.totalStr}
-                        </div>
+            <div style={{ borderTop: '1px solid var(--color-divider)' }}>
+              {activeCard.hasAccounts ? (
+                activeCard.accounts.map((acc) => (
+                  <div
+                    key={acc.id}
+                    onClick={() => dispatch({ type: 'SELECT_ACCOUNT', accountId: acc.id, categoryKey: activeCard.key })}
+                    style={{
+                      padding: 'var(--space-3) var(--space-4)',
+                      borderBottom: '1px solid var(--color-divider)',
+                      cursor: 'pointer',
+                      background: acc.selected ? 'var(--color-accent-100)' : undefined,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {acc.institution} <span className="text-muted" style={{ fontWeight: 400 }}>—</span> {acc.name}
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                        <span className="tag tag-outline" style={{ fontSize: '10px' }}>#{acc.accountNumber}</span>
-                        <span className="tag tag-outline" style={{ fontSize: '10px' }}>Updated {acc.updatedStr}</span>
+                      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap' }}>
+                        {acc.totalStr}
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-3) var(--space-4)' }}>
-                    No accounts in this category.
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                      <span className="tag tag-outline" style={{ fontSize: '10px' }}>#{acc.accountNumber}</span>
+                      <span className="tag tag-outline" style={{ fontSize: '10px' }}>Updated {acc.updatedStr}</span>
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
+                ))
+              ) : (
+                <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-3) var(--space-4)' }}>
+                  No accounts in this category.
+                </div>
+              )}
+            </div>
           </div>
-        ))}
+        )}
       </div>
 
       {/* Positions for selection */}
       <div>
         <div style={{ marginBottom: 'var(--space-5)' }}>
-          <AllocationChart positions={scopedPositions} title={acctAllocationTitle(state)} />
+          <AllocationChart positions={scopedPositions} title={acctAllocationTitle(state, activeCard?.label)} />
         </div>
 
         <div style={{ background: 'var(--color-divider)', margin: 'var(--space-6) 0' }} />
@@ -208,7 +176,7 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
           }}
         >
           <div className="seg">
-            {['All', ...(isClosedView ? acctAssetClassOptions(acctScopedClosedPositions(state)) : acctAssetClassOptions(scopedPositions))].map((opt) => (
+            {['All', ...(isClosedView ? acctAssetClassOptions(acctScopedClosedPositions(state, tabAccountIds)) : acctAssetClassOptions(scopedPositions))].map((opt) => (
               <label key={opt} className="seg-opt" onClick={() => dispatch({ type: 'SET_ACCT_ASSET_CLASS_FILTER', filter: opt })}>
                 <input type="radio" name="acctAssetClassFilter" checked={state.acctAssetClassFilter === opt} readOnly />
                 <span>{opt}</span>
@@ -256,8 +224,8 @@ export function AccountsPage({ state, dispatch }: AccountsPageProps) {
 
         {isClosedView ? (
           <>
-            <ClosedPositionsTable state={state} dispatch={dispatch} positions={acctFilteredClosedPositions(state)} />
-            {acctFilteredClosedPositions(state).length === 0 && (
+            <ClosedPositionsTable state={state} dispatch={dispatch} positions={acctFilteredClosedPositions(state, tabAccountIds)} />
+            {acctFilteredClosedPositions(state, tabAccountIds).length === 0 && (
               <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
                 No positions to show.
               </div>

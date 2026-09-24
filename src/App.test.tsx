@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import 'fake-indexeddb/auto'
-import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent, act, within } from '@testing-library/react'
 import { initialState } from './lib/state'
 import { appReducer } from './lib/reducer'
 import { importPositions } from './lib/positionsImport'
@@ -328,7 +328,7 @@ describe('app shell layout', () => {
       expect(page?.style.padding.split(' ')[0]).not.toBe('0')
     }
 
-    for (const view of ['Budget', 'Positions', 'Register', 'Quotes'] as const) {
+    for (const view of ['Budget', 'Positions', 'Register'] as const) {
       fireEvent.click(navTab(view))
       expectPageHasTopPadding()
     }
@@ -364,7 +364,7 @@ describe('navigation shell title and controls', () => {
     await waitFor(() => expect(document.title).toBe('Ledger Dashboard | Test Portfolio'))
     expect(document.querySelector('header.top-bar')).toBeTruthy()
 
-    for (const view of ['Budget', 'Positions', 'Register', 'Quotes'] as const) {
+    for (const view of ['Budget', 'Positions', 'Register'] as const) {
       fireEvent.click(navTab(view))
       expect(document.querySelector('header.top-bar')).toBeTruthy()
     }
@@ -540,10 +540,12 @@ describe('view switching (accounts vs settings)', () => {
   it('should render the Positions page by default', async () => {
     await renderUnlockedApp()
 
-    // AccountsPage left column renders one card per tax category plus Closed Positions.
-    expect(screen.getByText('Taxable')).toBeTruthy()
-    expect(screen.getByText('Non-Taxable')).toBeTruthy()
-    expect(screen.getByText('Tax-Deferred')).toBeTruthy()
+    // The Positions page renders a tab per tax category plus Closed Positions and Quotes.
+    const segControl = document.querySelector('.seg')
+    expect(segControl).toBeTruthy()
+    expect(within(segControl as HTMLElement).getByText('Taxable')).toBeTruthy()
+    expect(within(segControl as HTMLElement).getByText('Non-Taxable')).toBeTruthy()
+    expect(within(segControl as HTMLElement).getByText('Tax-Deferred')).toBeTruthy()
 
     // The Positions nav tab is active.
     expect(navTab('Positions').getAttribute('aria-pressed')).toBe('true')
@@ -555,12 +557,12 @@ describe('view switching (accounts vs settings)', () => {
   it('renders the expected main nav tabs (no Dashboard tab)', async () => {
     await renderUnlockedApp()
 
-    // The Nav renders exactly the expected main tabs (Budget, Positions, Register, Quotes)
-    // and nothing else (no Dashboard tab).
+    // The Nav renders exactly the expected main tabs (Budget, Positions, Register)
+    // and nothing else (no Dashboard tab, no separate Quotes rail entry — Quotes is
+    // now a tab inside the Positions page).
     expect(screen.getByRole('button', { name: 'Budget' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Register' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Quotes' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Dashboard' })).toBeFalsy()
   })
 
@@ -650,15 +652,15 @@ describe('password gate', () => {
 
     // Trigger a state-changing action (mirrors the debounce-save pattern used elsewhere
     // in this file: dispatch a change, then wait for the 500ms-debounced save to fire).
-    // Clicking a category header dispatches TOGGLE_CATEGORY_EXPANDED.
-    fireEvent.click(screen.getByText('Taxable'))
+    // Clicking the Register nav tab dispatches SET_VIEW.
+    fireEvent.click(navTab('Register'))
 
     await waitFor(() => {
       expect(savePersistedApp).toHaveBeenCalled()
     })
 
     const [savedState, savedKey, savedSalt] = vi.mocked(savePersistedApp).mock.calls[0]
-    expect(savedState.expandedCategories.taxable).toBe(true)
+    expect(savedState.view).toBe('register')
     expect(savedKey).toBe(mockSessionKey)
     expect(savedSalt).toBe(mockSessionSalt)
   })
@@ -690,8 +692,8 @@ describe('persistence on unmount within the debounce window', () => {
 
     vi.mocked(savePersistedApp).mockClear()
 
-    // Change state (TOGGLE_CATEGORY_EXPANDED) — schedules a debounced save
-    fireEvent.click(screen.getByText('Taxable'))
+    // Change state (SET_VIEW) — schedules a debounced save
+    fireEvent.click(navTab('Register'))
 
     // Unmount immediately, simulating a refresh/reload within the debounce window
     unmount()
@@ -701,7 +703,7 @@ describe('persistence on unmount within the debounce window', () => {
       expect(savePersistedApp).toHaveBeenCalled()
     })
     const lastCall = vi.mocked(savePersistedApp).mock.calls.at(-1)!
-    expect(lastCall[0].expandedCategories.taxable).toBe(true)
+    expect(lastCall[0].view).toBe('register')
     expect(lastCall[1]).toBe(mockSessionKey)
     expect(lastCall[2]).toBe(mockSessionSalt)
   })
@@ -1257,13 +1259,13 @@ describe('auto-lock on inactivity', () => {
 
     vi.mocked(savePersistedApp).mockClear()
 
-    // Dispatch a state change (TOGGLE_CATEGORY_EXPANDED) — schedules the
+    // Dispatch a state change (SET_VIEW) — schedules the
     // 500ms-debounced save, matching the pattern used elsewhere in this file.
     // Advance the lock-triggering time immediately afterward, without first
     // letting the debounce timer run to completion on its own, so a flush
     // during lockNow() is the thing under test.
     act(() => {
-      fireEvent.click(screen.getByText('Taxable'))
+      fireEvent.click(navTab('Register'))
     })
 
     act(() => {
@@ -1283,7 +1285,7 @@ describe('auto-lock on inactivity', () => {
     }
     // The latest flushed state reflects the pending change.
     const lastCall = calls.at(-1)!
-    expect(lastCall[0].expandedCategories.taxable).toBe(true)
+    expect(lastCall[0].view).toBe('register')
   })
 
   it('resets state to initialState() on lock, while gateShape stays "encrypted" (not "absent"/first-run)', async () => {
@@ -1301,8 +1303,6 @@ describe('auto-lock on inactivity', () => {
         createdAt: '2024-01-01T00:00:00Z',
       },
     })
-    // Expand the Taxable category card so the account row (and its name) renders.
-    state = appReducer(state, { type: 'TOGGLE_CATEGORY_EXPANDED', categoryKey: 'taxable' })
     mockUnlockLoadedState.current = state
 
     await renderUnlockedApp()

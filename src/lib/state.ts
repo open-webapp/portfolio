@@ -18,6 +18,8 @@ import type {
   StatementConvention,
 } from './types'
 import { uid } from './seed'
+
+export type PositionsTab = 'taxable' | 'nonTaxable' | 'taxDeferred' | 'closedPositions' | 'quotes'
 import type { ExportableState } from './importExport'
 import { normalizeBudgetAccountName, reconcileBudgetAccountRules } from './budgetAccountRules'
 import { applyAutoTags, unionTags } from './autoTag'
@@ -47,7 +49,6 @@ export interface AppState {
   txSearch: string // search text for transactions
   selectedAccountId: string | null // selected account on AccountsPage
   selectedCategoryKey: TaxCategory | 'closedPositions' | null // selected category on AccountsPage
-  expandedCategories: Record<string, boolean> // category expansion state
   acctAssetClassFilter: string // asset class filter on AccountsPage
   acctPosSearch: string // position search text on AccountsPage
   regAccountId: string | null // selected account on RegisterPage
@@ -95,7 +96,6 @@ export function initialState(): AppState {
     txSearch: '',
     selectedAccountId: null,
     selectedCategoryKey: null,
-    expandedCategories: {},
     acctAssetClassFilter: 'All',
     acctPosSearch: '',
     regAccountId: null,
@@ -445,19 +445,6 @@ export function selectAccount(state: AppState, accountId: string, categoryKey: T
  */
 export function clearAccountSelection(state: AppState): AppState {
   return { ...state, selectedAccountId: null, selectedCategoryKey: null }
-}
-
-/**
- * Toggle category expansion state on AccountsPage.
- */
-export function toggleCategoryExpanded(state: AppState, categoryKey: string): AppState {
-  return {
-    ...state,
-    expandedCategories: {
-      ...state.expandedCategories,
-      [categoryKey]: !state.expandedCategories[categoryKey],
-    },
-  }
 }
 
 /**
