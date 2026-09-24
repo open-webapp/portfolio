@@ -192,7 +192,7 @@ Seven sections, in fixed order:
 
 Categories are shared across portfolios. Category CRUD lives on the standalone `#/categories` **Manage categories** page. A `BudgetTransaction`'s `spendExpenseId` link is portfolio-scoped and derived automatically by autoTag-cluster propagation (see Import auto-categorization above), not by a stored mapping table.
 
-**Manage categories** is available at `#/categories`, including before a portfolio is opened. It lists active categories, supports rename, an `Exclude from spend` toggle, and adding a trimmed non-empty name. `Other` cannot be deleted: clicking its delete button shows a native alert. Every other category requires native confirmation before dispatching `DELETE_CATEGORY`; deletion tombstones the category (`deletedAt`/`updatedAt`) rather than physically removing it. `#/categories` is the only category-delete surface.
+**Manage categories** is available at `#/categories`, including before a portfolio is opened. It lists active categories, supports rename (standard **Editable cells** click-to-edit convention: click the name to edit, Enter/blur commits, Escape reverts, empty/whitespace-only reverts silently), an `Exclude from spend` toggle, and adding a trimmed non-empty name. `Other` cannot be deleted: clicking its delete button shows a native alert. Every other category requires native confirmation before dispatching `DELETE_CATEGORY`; deletion tombstones the category (`deletedAt`/`updatedAt`) rather than physically removing it. `#/categories` is the only category-delete surface.
 
 ## CSV import (Positions / Transactions)
 

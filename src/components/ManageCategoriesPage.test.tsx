@@ -47,14 +47,46 @@ describe('ManageCategoriesPage', () => {
     expect(navigateToPicker).toHaveBeenCalledOnce()
   })
 
-  it('renames a category', () => {
+  it('renames a category via click-to-edit, committing on blur', () => {
     const categoryDispatch = renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Food' }))
+    fireEvent.click(screen.getByText('Food'))
     fireEvent.change(screen.getByLabelText('Category name for Food'), { target: { value: 'Groceries' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    fireEvent.blur(screen.getByLabelText('Category name for Food'))
 
     expect(categoryDispatch).toHaveBeenCalledWith({ type: 'RENAME_CATEGORY', id: 'food', name: 'Groceries' })
+  })
+
+  it('commits a rename on Enter', () => {
+    const categoryDispatch = renderPage()
+
+    fireEvent.click(screen.getByText('Food'))
+    fireEvent.change(screen.getByLabelText('Category name for Food'), { target: { value: 'Groceries' } })
+    fireEvent.keyDown(screen.getByLabelText('Category name for Food'), { key: 'Enter' })
+
+    expect(categoryDispatch).toHaveBeenCalledWith({ type: 'RENAME_CATEGORY', id: 'food', name: 'Groceries' })
+  })
+
+  it('reverts a rename with no dispatch on Escape', () => {
+    const categoryDispatch = renderPage()
+
+    fireEvent.click(screen.getByText('Food'))
+    fireEvent.change(screen.getByLabelText('Category name for Food'), { target: { value: 'Groceries' } })
+    fireEvent.keyDown(screen.getByLabelText('Category name for Food'), { key: 'Escape' })
+
+    expect(categoryDispatch).not.toHaveBeenCalled()
+    expect(screen.getByText('Food')).toBeTruthy()
+  })
+
+  it('reverts silently on empty/whitespace-only commit', () => {
+    const categoryDispatch = renderPage()
+
+    fireEvent.click(screen.getByText('Food'))
+    fireEvent.change(screen.getByLabelText('Category name for Food'), { target: { value: '   ' } })
+    fireEvent.blur(screen.getByLabelText('Category name for Food'))
+
+    expect(categoryDispatch).not.toHaveBeenCalled()
+    expect(screen.getByText('Food')).toBeTruthy()
   })
 
   it('sets exclude-from-spend based on the checkbox toggle direction', () => {

@@ -16,20 +16,12 @@ export function ManageCategoriesPage({
   categoriesHydrated,
 }: ManageCategoriesPageProps) {
   const [newCategoryName, setNewCategoryName] = useState('')
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState('')
 
   function addCategory() {
     const name = newCategoryName.trim()
     if (!name) return
     categoryDispatch({ type: 'ADD_CATEGORY', id: uid('category'), name })
     setNewCategoryName('')
-  }
-
-  function saveRename(category: Category) {
-    const name = editingName.trim()
-    if (name) categoryDispatch({ type: 'RENAME_CATEGORY', id: category.id, name })
-    setEditingCategoryId(null)
   }
 
   if (!categoriesHydrated) {
@@ -66,19 +58,7 @@ export function ManageCategoriesPage({
           {visible.map((category) => (
             <tr key={category.id}>
               <td>
-                {editingCategoryId === category.id ? (
-                  <div className="field">
-                    <input
-                      className="input"
-                      aria-label={`Category name for ${category.name}`}
-                      value={editingName}
-                      onChange={(event) => setEditingName(event.target.value)}
-                    />
-                    <button type="button" onClick={() => saveRename(category)}>Done</button>
-                  </div>
-                ) : (
-                  <span>{category.name}</span>
-                )}
+                <EditableCategoryName category={category} categoryDispatch={categoryDispatch} />
               </td>
               <td>
                 <label>
@@ -94,20 +74,6 @@ export function ManageCategoriesPage({
                 </label>
               </td>
               <td>
-                {editingCategoryId !== category.id && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-icon"
-                    aria-label={`Rename ${category.name}`}
-                    title={`Rename ${category.name}`}
-                    onClick={() => {
-                      setEditingCategoryId(category.id)
-                      setEditingName(category.name)
-                    }}
-                  >
-                    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
-                  </button>
-                )}
                 <button
                   type="button"
                   className="btn btn-secondary btn-icon"
@@ -146,5 +112,64 @@ export function ManageCategoriesPage({
         </div>
       </div>
     </main>
+  )
+}
+
+function EditableCategoryName({
+  category,
+  categoryDispatch,
+}: {
+  category: Category
+  categoryDispatch: (action: CategoryAction) => void
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(category.name)
+
+  const commit = () => {
+    const trimmed = draft.trim()
+    if (trimmed === '') {
+      setIsEditing(false)
+      return
+    }
+    if (trimmed !== category.name) {
+      categoryDispatch({ type: 'RENAME_CATEGORY', id: category.id, name: trimmed })
+    }
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      commit()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        type="text"
+        className="input"
+        aria-label={`Category name for ${category.name}`}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        autoFocus
+        style={{ width: '100%' }}
+      />
+    )
+  }
+
+  return (
+    <span
+      onClick={() => {
+        setDraft(category.name)
+        setIsEditing(true)
+      }}
+      style={{ display: 'block', minHeight: '1.5em', cursor: 'pointer' }}
+    >
+      {category.name}
+    </span>
   )
 }
