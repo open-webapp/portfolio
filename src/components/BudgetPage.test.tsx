@@ -1,14 +1,21 @@
 import { useReducer, useState } from 'react'
-import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, act, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BudgetPage as BudgetPageUnderTest, type BudgetPageProps } from './BudgetPage'
 import { initialState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
-import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, type SpendScope } from '../lib/selectors'
+import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, expenseSummaryForScope, overBudgetCategoriesForScope, type SpendScope } from '../lib/selectors'
+import { fmtUSD } from '../lib/computations'
 
 afterEach(() => cleanup())
 
 const periodProps = { period: 'spend' as const, setPeriod: vi.fn() }
+
+// The Expense Summary card's "Largest transaction" tile renders a
+// category tag + the largest transaction's description, which can collide
+// with the same description text in the records table when queried with a
+// bare screen.getByText. Scope row/description lookups to the table.
+const recordsTable = () => screen.getByTestId('records-table')
 
 // BudgetPage's production owner is App. This host supplies the controlled
 // scope and retains the legacy test suite's direct-page interaction coverage.
@@ -107,7 +114,7 @@ describe('BudgetPage derived income', () => {
     expect(chart.querySelectorAll('path')).toHaveLength(3)
   })
 
-  it('renders three summary cards with spend progress and a savings-rate income editor', () => {
+  it('renders five summary cards with spend progress and a savings-rate income editor', () => {
     const state = {
       ...initialState(),
       budgetExpenseDefinitions: [
@@ -122,7 +129,7 @@ describe('BudgetPage derived income', () => {
     }
     render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'income', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
     const cards = screen.getByTestId('summary-cards')
-    expect(cards.querySelectorAll('.card')).toHaveLength(3)
+    expect(cards.querySelectorAll('.card')).toHaveLength(5)
     expect(screen.getByText(`Spend vs budget (${new Date().getFullYear()})`)).toBeTruthy()
     expect(cards.textContent).toContain('-100.0%')
     expect(cards.textContent).toContain('Spent -$500.00 of $500.00 budget')
@@ -211,8 +218,8 @@ describe('BudgetPage derived income', () => {
 
     fireEvent.change(screen.getAllByLabelText('Search records').at(-1)!, { target: { value: 'Uncategorized' } })
 
-    expect(screen.getByText('Market run')).toBeTruthy()
-    expect(screen.getByText('Uncategorized (Food)')).toBeTruthy()
+    expect(within(recordsTable()).getByText('Market run')).toBeTruthy()
+    expect(within(recordsTable()).getByText('Uncategorized (Food)')).toBeTruthy()
   })
 })
 
@@ -325,7 +332,7 @@ describe('BudgetPage Spend scopes', () => {
     const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
     expect(Array.from(yearSelect.options, (option) => option.text)).toEqual(['All'])
     expect(screen.getByText('Spend vs budget (All years)')).toBeTruthy()
-    expect(screen.getByTestId('summary-cards').querySelectorAll('.card')).toHaveLength(3)
+    expect(screen.getByTestId('summary-cards').querySelectorAll('.card')).toHaveLength(5)
     expect(screen.getAllByText('N/A')).toHaveLength(2)
     expect(dispatch).not.toHaveBeenCalled()
   })
@@ -441,7 +448,7 @@ describe('BudgetPage Spend scopes', () => {
     fireEvent.click(screen.getByText('Add Record'))
 
     expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2026')
-    expect(screen.getByText('Concrete scope add')).toBeTruthy()
+    expect(within(recordsTable()).getByText('Concrete scope add')).toBeTruthy()
     expect(actions).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2026' })
   })
 
@@ -503,6 +510,78 @@ describe('BudgetPage Spend scopes', () => {
 
     expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('__spend_all_years__')
     expect(actions).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' }))
+  })
+
+  it('shows Expense Summary and Action items scoped to the selected concrete year', () => {
+    renderSpend()
+
+    const expected = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, '2025')
+    expect(screen.getByTestId('expense-summary-spend').textContent).toContain(fmtUSD(expected.totalSpend))
+    expect(screen.getByTestId('expense-summary-average').textContent).toContain(fmtUSD(expected.averageTransaction))
+    expect(screen.getByTestId('expense-summary-largest').textContent).toContain(expected.largestTransaction!.description)
+    expect(screen.getByTestId('expense-summary-top-category').textContent).toContain(fmtUSD(expected.topCategory![1]))
+
+    // 2024's figures must not leak into the 2025-scoped card.
+    const otherYearExpected = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, '2024')
+    expect(otherYearExpected.totalSpend).not.toBe(expected.totalSpend)
+  })
+
+  it('aggregates Expense Summary and Action items across all years under SPEND_ALL_YEARS', () => {
+    renderSpend()
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+
+    const expectedSummary = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, SPEND_ALL_YEARS)
+    expect(screen.getByTestId('expense-summary-spend').textContent).toContain(fmtUSD(expectedSummary.totalSpend))
+    expect(screen.getByTestId('expense-summary-average').textContent).toContain(fmtUSD(expectedSummary.averageTransaction))
+
+    const expectedActionItems = overBudgetCategoriesForScope(definitions, spendState().budgetExpenseAmountsByYear, transactions, categories, SPEND_ALL_YEARS)
+    const actionItemCards = screen.queryAllByTestId('expense-action-item')
+    expect(actionItemCards).toHaveLength(expectedActionItems.length)
+    for (const item of expectedActionItems) {
+      expect(screen.getByTestId('expense-action-items').textContent).toContain(item.label)
+    }
+  })
+
+  it('updates Expense Summary dollar figures when the Year select changes', () => {
+    renderSpend()
+
+    const initialSpend = screen.getByTestId('expense-summary-spend').textContent
+
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2024' } })
+
+    const expected2024 = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, '2024')
+    expect(screen.getByTestId('expense-summary-spend').textContent).toContain(fmtUSD(expected2024.totalSpend))
+    expect(screen.getByTestId('expense-summary-spend').textContent).not.toBe(initialSpend)
+  })
+
+  it('flags a category as over budget in Action items under All only when years are summed', () => {
+    // 2025 alone: budget 100, actual 90 -> under. 2024 alone: budget clamps to 0, actual 0 -> not over.
+    // Summed raw budget (100 + -80 = 20) is what's compared against summed actual (90), so combined is over.
+    const overBudgetCategories = [{ id: 'food', name: 'Food', updatedAt: '' }]
+    const overBudgetDefinitions = [{ id: 'groceries', name: 'Food', categoryId: 'food', frequency: 'yearly' as const }]
+    const overBudgetAmounts = { '2025': { groceries: 100 }, '2024': { groceries: -80 } }
+    const overBudgetTransactions = [
+      { id: 'food-2025', date: '2025-06-01', description: 'Food 2025', categoryId: 'food', amount: -90 },
+      { id: 'food-2024', date: '2024-01-01', description: 'Food 2024', categoryId: 'food', amount: 0 },
+    ]
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: overBudgetDefinitions,
+      budgetExpenseAmountsByYear: overBudgetAmounts,
+      budgetTransactions: overBudgetTransactions,
+    }
+    renderSpend(state)
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
+
+    const expectedActionItems = overBudgetCategoriesForScope(overBudgetDefinitions, overBudgetAmounts, overBudgetTransactions, overBudgetCategories, SPEND_ALL_YEARS)
+    expect(expectedActionItems).toHaveLength(1)
+    expect(expectedActionItems[0].categoryId).toBe('food')
+    expect(screen.getByTestId('expense-action-items').textContent).toContain(expectedActionItems[0].label)
+    expect(screen.getByTestId('expense-action-items').textContent).toContain('over budget')
+
+    // Confirm each single year alone would NOT have flagged this category.
+    expect(overBudgetCategoriesForScope(overBudgetDefinitions, overBudgetAmounts, overBudgetTransactions, overBudgetCategories, '2024')).toHaveLength(0)
+    expect(overBudgetCategoriesForScope(overBudgetDefinitions, overBudgetAmounts, overBudgetTransactions, overBudgetCategories, '2025')).toHaveLength(0)
   })
 })
 
@@ -691,7 +770,7 @@ describe('BudgetPage spend record description edits', () => {
   it('commits a Description inline edit on Enter with one update action', () => {
     const dispatch = renderDescriptionRow()
 
-    fireEvent.click(screen.getByText('Market run'))
+    fireEvent.click(within(recordsTable()).getByText('Market run'))
     const input = screen.getByDisplayValue('Market run')
     fireEvent.change(input, { target: { value: 'Fresh market run' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -703,14 +782,14 @@ describe('BudgetPage spend record description edits', () => {
   it('cancels a Description inline edit on Escape without dispatching', () => {
     const dispatch = renderDescriptionRow()
 
-    fireEvent.click(screen.getByText('Market run'))
+    fireEvent.click(within(recordsTable()).getByText('Market run'))
     const input = screen.getByDisplayValue('Market run')
     fireEvent.change(input, { target: { value: 'Discarded market run' } })
     fireEvent.keyDown(input, { key: 'Escape' })
 
     expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPDATE_BUDGET_TRANSACTION' }))
     expect(screen.queryByDisplayValue('Discarded market run')).toBeNull()
-    expect(screen.getByText('Market run')).toBeTruthy()
+    expect(within(recordsTable()).getByText('Market run')).toBeTruthy()
   })
 })
 
@@ -748,20 +827,19 @@ describe('BudgetPage spend record tag filter', () => {
     ])
 
     fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'work' } })
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.queryByText('Team lunch')).toBeNull()
+    expect(within(recordsTable()).getByText('Office supplies')).toBeTruthy()
+    expect(within(recordsTable()).queryByText('Team lunch')).toBeNull()
 
     fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'WORK' } })
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.queryByText('Team lunch')).toBeNull()
+    expect(within(recordsTable()).getByText('Office supplies')).toBeTruthy()
+    expect(within(recordsTable()).queryByText('Team lunch')).toBeNull()
 
     fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'WoRk' } })
-    expect(screen.getByText('Office supplies')).toBeTruthy()
-    expect(screen.queryByText('Team lunch')).toBeNull()
+    expect(within(recordsTable()).getByText('Office supplies')).toBeTruthy()
+    expect(within(recordsTable()).queryByText('Team lunch')).toBeNull()
 
     fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'zzz-no-such-tag' } })
-    expect(screen.queryByText('Office supplies')).toBeNull()
-    expect(screen.queryByText('Team lunch')).toBeNull()
+    expect(screen.queryByTestId('records-table')).toBeNull()
     expect(screen.getByText('No records for this period.')).toBeTruthy()
   })
 })
@@ -960,7 +1038,7 @@ describe('BudgetPage Tags column per-cell editor', () => {
     dispatch.mock.calls.map((call) => call[0]).find((action) => action?.type === 'UPDATE_BUDGET_TRANSACTION')
 
   const clickTagsCell = (description: string) => {
-    const cell = screen.getByText(description).closest('tr')!.querySelectorAll('td')[5]!
+    const cell = within(recordsTable()).getByText(description).closest('tr')!.querySelectorAll('td')[5]!
     fireEvent.click(cell)
     return cell
   }
@@ -979,7 +1057,7 @@ describe('BudgetPage Tags column per-cell editor', () => {
 
     const input = screen.getByLabelText('Edit record tags') as HTMLInputElement
     expect(input).toBeTruthy()
-    const tagsCell = screen.getByText('Tagged row').closest('tr')!.querySelectorAll('td')[5]!
+    const tagsCell = within(recordsTable()).getByText('Tagged row').closest('tr')!.querySelectorAll('td')[5]!
     expect(tagsCell.textContent).toContain('food')
     expect(tagsCell.textContent).toContain('weekly')
   })
@@ -1050,7 +1128,7 @@ describe('BudgetPage Tags column per-cell editor', () => {
 
     expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UPDATE_BUDGET_TRANSACTION' }))
     expect(screen.queryByLabelText('Edit record tags')).toBeNull()
-    const tagsCell = screen.getByText('Escape row').closest('tr')!.querySelectorAll('td')[5]!
+    const tagsCell = within(recordsTable()).getByText('Escape row').closest('tr')!.querySelectorAll('td')[5]!
     expect(tagsCell.textContent).toContain('food')
     expect(tagsCell.textContent).not.toContain('scratch')
   })
@@ -1060,7 +1138,7 @@ describe('BudgetPage Tags column per-cell editor', () => {
       { id: 'a', date: '2025-01-01', description: 'Untagged row', categoryId: 'food', amount: 10 },
     ])
 
-    const cell = screen.getByText('Untagged row').closest('tr')!.querySelectorAll('td')[5]!
+    const cell = within(recordsTable()).getByText('Untagged row').closest('tr')!.querySelectorAll('td')[5]!
     expect(cell.textContent).not.toContain('undefined')
     expect(cell.textContent?.trim()).not.toBe('')
   })
@@ -1347,7 +1425,7 @@ describe('BudgetPage clear all tags', () => {
     expect(screen.getByText('Cleared user tags from 2 record(s)')).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2024' } })
-    expect(screen.getByText('Old tagged row')).toBeTruthy()
+    expect(within(recordsTable()).getByText('Old tagged row')).toBeTruthy()
     expect(screen.queryByText('grocery')).toBeNull()
   })
 
@@ -1403,7 +1481,7 @@ describe('BudgetPage auto vs user tags (T5)', () => {
   }
 
   const tagsCell = (description: string) =>
-    screen.getByText(description).closest('tr')!.querySelectorAll('td')[5]!
+    within(recordsTable()).getByText(description).closest('tr')!.querySelectorAll('td')[5]!
 
   const clickTagsCell = (description: string) => {
     fireEvent.click(tagsCell(description))
@@ -1454,8 +1532,8 @@ describe('BudgetPage auto vs user tags (T5)', () => {
     ])
 
     fireEvent.change(screen.getByLabelText('Search records'), { target: { value: 'costcowhol' } })
-    expect(screen.getByText('Auto match')).toBeTruthy()
-    expect(screen.queryByText('No match here')).toBeNull()
+    expect(within(recordsTable()).getByText('Auto match')).toBeTruthy()
+    expect(within(recordsTable()).queryByText('No match here')).toBeNull()
   })
 
   it('editor shows read-only gray chips with no × and refuses a user dupe of an auto tag', () => {

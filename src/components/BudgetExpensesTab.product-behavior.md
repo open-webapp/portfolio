@@ -2,16 +2,10 @@
 
 Component behavior reference. Sibling: `BudgetExpensesTab.design.md`.
 
-## Actual-Spend Overview
+## Category Breakdown & Expenses Table
 
-- Above the existing Expenses table, the tab shows four summary cards, Category Breakdown, and action items. The table and drilldown retain their existing behavior.
-- Summary cards and action items use the Category Breakdown's selected year. It initially selects the first available budget year; changing its Year control refreshes those sections and the breakdown.
-- **Spend** is the sum of absolute transaction amounts for that year, shown against the sum of configured expense amounts for that year.
-- **Average transaction** is spend divided by transaction count, shown against the largest absolute transaction.
-- **Largest transaction** shows its absolute amount, category, and description; with no transactions it shows `$0` and `No transactions`.
-- **Top category by spend** shows the largest summed absolute transaction amount by category; with no transactions it shows `$0` and `No transactions`.
-- Progress bars never exceed 100%; zero denominators render an empty bar.
-- **Action items** lists each category whose selected-year actual exceeds its budget, highest dollar overage first. Each item shows category, dollar overage, percentage over budget, and review guidance. A category with actual spend and no budget shows `∞%`; no overages shows `No categories over budget`.
+- The tab shows only Category Breakdown and the Expenses table; both retain their existing behavior, scoped by the breakdown's own selected year.
+- Expense Summary and Action items cards moved to the Spend tab (scoped by that tab's Year/All selector) — see root `product-behavior.md`'s Spend tab section.
 
 ## Expense CSV Download
 

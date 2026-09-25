@@ -377,16 +377,17 @@ describe('navigation shell title and controls', () => {
     await renderUnlockedApp()
     fireEvent.click(navTab('Budget'))
 
-    const [spendTab, expensesTab, analyticsTab] = ['Spend', 'Expenses', 'Analytics'].map((tab) => screen.getByText(tab))
+    const budgetTabs = within(document.querySelector('.budget-tabs') as HTMLElement)
+    const [spendTab, expensesTab, analyticsTab] = ['Spend', 'Expenses', 'Analytics'].map((tab) => budgetTabs.getByText(tab))
     expect(spendTab.compareDocumentPosition(expensesTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(expensesTab.compareDocumentPosition(analyticsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText('Category Mapping')).toBeNull()
     expect(screen.getByLabelText('Select year')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Expenses'))
+    fireEvent.click(budgetTabs.getByText('Expenses'))
     expect(screen.queryByLabelText('Select year')).toBeNull()
 
-    fireEvent.click(screen.getByText('Analytics'))
+    fireEvent.click(budgetTabs.getByText('Analytics'))
     expect(screen.queryByLabelText('Select year')).toBeNull()
   })
 

@@ -18,14 +18,11 @@ type BudgetExpensesTabProps = {
 - `categories` supplies category labels and locates `Uncategorized`.
 - `categoryDispatch` creates `Uncategorized` when absent.
 
-## Actual-Spend Overview
+## Category Breakdown & Expenses Table
 
-- Render order: `Expense Summary`, unchanged `Category Breakdown` drilldown, `Action items`, unchanged `Expenses` table.
-- `breakdownYear` is initialized from the first `availableBudgetYears(...)` result and drives the summary, action items, and breakdown; only the breakdown selector changes it.
-- Summary transactions are all transactions dated in `breakdownYear`, with `magnitude: Math.abs(amount)`.
-- `Expense Summary` renders four cards: total spend / selected-year configured amount total; average transaction / largest transaction; largest transaction with category label and description; highest-spend category / total spend.
-- Cards use guarded, capped-at-100 percentage bars. Empty transactions yield zero totals and `No transactions` for the largest/top-category detail.
-- `Action items` consumes `overBudgetCategories(...)` for `breakdownYear`: categories with actual above budget, sorted by overage descending then label. Zero-budget overages expose `Infinity` for the UI's infinity percentage label.
+- Render order: `Category Breakdown` drilldown, then the `Expenses` table.
+- `breakdownYear` is initialized from the first `availableBudgetYears(...)` result and drives the `Category Breakdown` card only.
+- Expense Summary and Action items cards moved to `BudgetPage.tsx` (Spend tab, keyed off `selectedScope`) — see root `design.md` Budget section.
 
 ## Expense CSV Download
 

@@ -5,7 +5,7 @@ import type { CategoryAction } from '../lib/categoryStore'
 import type { Category } from '../lib/types'
 import { fmtUSD, LOSS_COLOR } from '../lib/computations'
 import { uid } from '../lib/seed'
-import { categoryBreakdown, availableBudgetYears, expenseTableYears, overBudgetCategories, visibleExpenses } from '../lib/selectors'
+import { categoryBreakdown, availableBudgetYears, expenseTableYears, visibleExpenses } from '../lib/selectors'
 import { parseExpensePaste } from '../lib/expensePasteImport'
 import { planExpensePasteImport } from '../lib/state'
 import { buildExpenseCsv } from '../lib/expenseExport'
@@ -70,42 +70,6 @@ function ChevronIcon({ direction }: { direction: 'right' | 'down' }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="12" height="12">
       {direction === 'right' ? <path d="m9 18 6-6-6-6"></path> : <path d="m6 9 6 6 6-6"></path>}
-    </svg>
-  )
-}
-
-function FileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-      <path d="M14 2v6h6"></path>
-    </svg>
-  )
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <circle cx="11" cy="11" r="6"></circle>
-      <path d="m16 16 4 4"></path>
-    </svg>
-  )
-}
-
-function AlertTriangleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path>
-      <path d="M12 9v4"></path>
-      <path d="M12 17h.01"></path>
-    </svg>
-  )
-}
-
-function ChevronRightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="m9 18 6-6-6-6"></path>
     </svg>
   )
 }
@@ -178,34 +142,6 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
     breakdownTransactions,
     categories
   )
-  const actionItems = overBudgetCategories(
-    state.budgetExpenseDefinitions,
-    state.budgetExpenseAmountsByYear,
-    state.budgetTransactions,
-    categories,
-    breakdownYear
-  )
-  const summaryTransactions = breakdownTransactions.map((transaction) => ({
-    ...transaction,
-    magnitude: Math.abs(transaction.amount),
-  }))
-  const totalSpend = summaryTransactions.reduce((total, transaction) => total + transaction.magnitude, 0)
-  const totalBudget = Object.values(state.budgetExpenseAmountsByYear[breakdownYear] ?? {}).reduce((total, amount) => total + Math.abs(amount), 0)
-  const averageTransaction = summaryTransactions.length === 0 ? 0 : totalSpend / summaryTransactions.length
-  const largestTransaction = summaryTransactions.reduce<typeof summaryTransactions[number] | null>(
-    (largest, transaction) => largest === null || transaction.magnitude > largest.magnitude ? transaction : largest,
-    null
-  )
-  const categoryTotals = new Map<string, number>()
-  for (const transaction of summaryTransactions) {
-    categoryTotals.set(transaction.categoryId, (categoryTotals.get(transaction.categoryId) ?? 0) + transaction.magnitude)
-  }
-  const topCategory = [...categoryTotals.entries()].reduce<[string, number] | null>(
-    (top, entry) => top === null || entry[1] > top[1] ? entry : top,
-    null
-  )
-  const percentOf = (value: number, total: number) => total === 0 ? 0 : Math.min(100, (value / total) * 100)
-
   const years = expenseTableYears(state.budgetTransactions, state.budgetExpenseAmountsByYear, new Date())
 
   const sortedDefinitions = visibleExpenses(state.budgetExpenseDefinitions, {}, filterCategoryId, sortBy, categoriesById)
@@ -272,46 +208,6 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
 
   return (
     <>
-      <div className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-4)' }}>
-        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>Expense Summary</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)' }}>
-          <div data-testid="expense-summary-spend">
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-              <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-accent-soft, #eef5ff)', color: 'var(--color-accent, #2563eb)' }}><FileIcon /></span>
-              <div className="text-muted" style={{ fontSize: '12px' }}>Spend</div>
-            </div>
-            <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(totalSpend)}</div>
-            <div style={{ position: 'relative', height: '6px', marginTop: 'var(--space-2)', background: 'var(--color-border, #e5e5e5)', borderRadius: '3px' }}><div data-testid="expense-summary-spend-bar" style={{ width: `${percentOf(totalSpend, totalBudget)}%`, height: '100%', borderRadius: '3px', background: 'var(--color-accent, #2563eb)' }} /></div>
-            <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>of {fmtUSD(totalBudget)} budget</div>
-          </div>
-          <div data-testid="expense-summary-average">
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-              <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-accent-soft, #eef5ff)', color: 'var(--color-accent, #2563eb)' }}><SearchIcon /></span>
-              <div className="text-muted" style={{ fontSize: '12px' }}>Average transaction</div>
-            </div>
-            <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(averageTransaction)}</div>
-            <div style={{ position: 'relative', height: '6px', marginTop: 'var(--space-2)', background: 'var(--color-border, #e5e5e5)', borderRadius: '3px' }}><div data-testid="expense-summary-average-bar" style={{ width: `${percentOf(averageTransaction, largestTransaction?.magnitude ?? 0)}%`, height: '100%', borderRadius: '3px', background: 'var(--color-accent, #2563eb)' }} /></div>
-            <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>vs largest transaction</div>
-          </div>
-          <div data-testid="expense-summary-largest">
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-              <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-warning-soft, #fff7ed)', color: 'var(--color-warning, #c2410c)' }}><AlertTriangleIcon /></span>
-              <div className="text-muted" style={{ fontSize: '12px' }}>Largest transaction</div>
-            </div>
-            <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(largestTransaction?.magnitude ?? 0)}</div>
-            {largestTransaction ? <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}><span className="tag tag-neutral">{categoriesById.get(largestTransaction.categoryId) ?? largestTransaction.categoryId}</span> {largestTransaction.description}</div> : <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>No transactions</div>}
-          </div>
-          <div data-testid="expense-summary-top-category">
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-              <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-accent-soft, #eef5ff)', color: 'var(--color-accent, #2563eb)' }}><ChevronRightIcon /></span>
-              <div className="text-muted" style={{ fontSize: '12px' }}>Top category by spend</div>
-            </div>
-            <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(topCategory?.[1] ?? 0)}</div>
-            <div style={{ position: 'relative', height: '6px', marginTop: 'var(--space-2)', background: 'var(--color-border, #e5e5e5)', borderRadius: '3px' }}><div data-testid="expense-summary-top-category-bar" style={{ width: `${percentOf(topCategory?.[1] ?? 0, totalSpend)}%`, height: '100%', borderRadius: '3px', background: 'var(--color-accent, #2563eb)' }} /></div>
-            <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>{topCategory ? `${categoriesById.get(topCategory[0]) ?? topCategory[0]} · ${fmtUSD(topCategory[1])}` : 'No transactions'}</div>
-          </div>
-        </div>
-      </div>
       <div className="card blueprint elev-sm" data-testid="category-breakdown" style={{ marginBottom: 'var(--space-4)' }}>
         <div
           style={{
@@ -427,28 +323,6 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
                     )}
                   </div>
                 )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="card blueprint elev-sm" data-testid="expense-action-items" style={{ marginBottom: 'var(--space-4)' }}>
-        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>Action items</div>
-        {actionItems.length === 0 ? (
-          <div className="text-muted" style={{ fontSize: '12px' }}>No categories over budget</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            {actionItems.map((item) => (
-              <div
-                key={item.categoryId}
-                data-testid="expense-action-item"
-                style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', padding: 'var(--space-3)', borderRadius: 'var(--radius, 6px)', background: 'var(--color-warning-soft, #fff7ed)', color: 'var(--color-warning, #c2410c)' }}
-              >
-                <span aria-hidden="true"><AlertTriangleIcon /></span>
-                <div>
-                  <div>{item.label} is {fmtUSD(item.overageAmount)} over budget ({Number.isFinite(item.pctOver) ? item.pctOver.toFixed(1) : '∞'}%)</div>
-                  <div className="text-muted" style={{ fontSize: '12px' }}>Review recent transactions in this category</div>
-                </div>
               </div>
             ))}
           </div>

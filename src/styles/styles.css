@@ -120,6 +120,9 @@ textarea.input { min-height: 90px; resize: vertical; }
 
 /* — cards — */
 .card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-divider); }
+/* Deliberate reusable compact-card variant (not an inline-style override) */
+.card-compact { padding: var(--space-3); gap: var(--space-2); }
+.card-compact .card-title { font-size: 14px; }
 .card-kicker { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-accent); font-weight: 600; }
 .card-title { font-family: var(--font-heading); font-weight: 600; font-size: 17px; line-height: 1.2; }
 .card-body { margin: 0; font-size: 13px; opacity: 0.8; flex: 1; }
