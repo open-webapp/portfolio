@@ -25,10 +25,11 @@ import {
   spendBudgetYears,
   spendTransactionsForScope,
   spendCardTotals,
+  spendScopeKind,
+  spendPaceForScope,
   projectedSpendForScope,
-  savingsRateByYear,
+  savingsRateForScope,
   incomeCategoryIdSet,
-  expenseSummaryForScope,
   overBudgetCategoriesForScope,
   type SpendScope,
 } from '../lib/selectors'
@@ -114,42 +115,6 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
   )
 }
 
-function FileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-      <path d="M14 2v6h6"></path>
-    </svg>
-  )
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <circle cx="11" cy="11" r="6"></circle>
-      <path d="m16 16 4 4"></path>
-    </svg>
-  )
-}
-
-function AlertTriangleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path>
-      <path d="M12 9v4"></path>
-      <path d="M12 17h.01"></path>
-    </svg>
-  )
-}
-
-function ChevronRightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-      <path d="m9 18 6-6-6-6"></path>
-    </svg>
-  )
-}
-
 /**
  * Budget page: Expenses/Spend/Analytics tab toggle.
  * - Expenses tab (BudgetExpensesTab): Category Breakdown (own independent
@@ -205,6 +170,7 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
   const [autoTagFeedback, setAutoTagFeedback] = useState<string | null>(null)
   const autoTagFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [clearScope, setClearScope] = useState<'user' | 'auto' | 'both' | null>(null)
+  const spendRecordsRef = useRef<HTMLDivElement>(null)
 
   const { budgetedSpend: totalExpense, actualSpend: totalActual } = spendCardTotals(
     state.budgetExpenseDefinitions,
@@ -218,18 +184,34 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
   const incomeCategoryIds = incomeCategoryIdSet(categories)
   const incomeDefinition = state.budgetExpenseDefinitions.find((definition) => incomeCategoryIds.has(definition.categoryId))
   const incomeCategoryId = categories.find((category) => incomeCategoryIds.has(category.id))?.id
+  const asOf = new Date()
+  const scopeKind = spendScopeKind(selectedScope, asOf)
+  const pace = spendPaceForScope(
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear,
+    state.budgetTransactions,
+    categories,
+    selectedScope,
+    asOf
+  )
   const projectedSpend = projectedSpendForScope(
     state.budgetExpenseDefinitions,
     state.budgetExpenseAmountsByYear,
     state.budgetTransactions,
     categories,
     selectedScope,
-    new Date()
+    asOf
   )
-  const savingsRate = selectedScope === SPEND_ALL_YEARS
-    ? null
-    : savingsRateByYear([selectedScope], state.budgetTransactions, categories, state.budgetExpenseDefinitions)[0]
-  const spendPct = totalExpense > 0 ? (totalActual / totalExpense) * 100 : 0
+  const savingsRate = savingsRateForScope(state.budgetTransactions, categories, state.budgetExpenseDefinitions, selectedScope)
+  const overRows = overBudgetCategoriesForScope(
+    state.budgetExpenseDefinitions,
+    state.budgetExpenseAmountsByYear,
+    state.budgetTransactions,
+    categories,
+    selectedScope,
+    asOf
+  )
+  const yearsInScope = spendBudgetYears(spendTransactionsForScope(state.budgetTransactions, selectedScope)).length
   const importAccounts = budgetAccountViewRows(budgetAccountRules, state.budgetTransactions)
   const selectedImportAccountName = importAccountSelection === '__new__'
     ? importAccountName.trim()
@@ -671,20 +653,6 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
     setIsEditingIncome(false)
   }
 
-  const expenseSummary = expenseSummaryForScope(
-    state.budgetExpenseAmountsByYear,
-    state.budgetTransactions,
-    selectedScope
-  )
-  const actionItems = overBudgetCategoriesForScope(
-    state.budgetExpenseDefinitions,
-    state.budgetExpenseAmountsByYear,
-    state.budgetTransactions,
-    categories,
-    selectedScope
-  )
-  const percentOf = (value: number, total: number) => (total === 0 ? 0 : Math.min(100, (value / total) * 100))
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {period === 'analytics' ? (
@@ -693,41 +661,59 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
         <BudgetExpensesTab state={state} dispatch={dispatch} categories={categories} categoryDispatch={categoryDispatch} />
       ) : (
       <>
-      <div
-        data-testid="summary-cards"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: 'var(--space-3)',
-          marginBottom: 'var(--space-4)',
-        }}
-      >
-        <div className="card card-compact blueprint elev-sm">
-          <div className="text-muted">Spend vs budget ({rangeLabel})</div>
-          <div style={{ fontSize: '1.5rem' }}>{spendPct.toFixed(1)}%</div>
-          <div style={{ height: '6px', background: 'var(--color-divider)', marginTop: 'var(--space-2)' }}>
-            <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, spendPct))}%`, background: totalActual <= totalExpense ? GAIN_COLOR : LOSS_COLOR }} />
+      <div data-testid="summary-cards" className="kpi-grid">
+        <div className="card card-compact blueprint elev-sm kpi" data-testid="kpi-spend">
+          <div className="kpi-label">Spend vs budget ({rangeLabel})</div>
+          <div className="kpi-value">{fmtUSD(pace.actual)}</div>
+          <div className="kpi-bar">
+            <div
+              className={`kpi-bar-fill ${pace.isOnTrack ? 'is-gain' : 'is-loss'}`}
+              style={{ width: `${Math.min(100, Math.max(0, pace.pctOfBudget))}%` }}
+            />
+            {scopeKind === 'current' && (
+              <div
+                data-testid="kpi-pace-marker"
+                className="kpi-bar-marker"
+                style={{ left: `${pace.budget === 0 ? 0 : Math.min(100, Math.max(0, ((pace.expectedByToday ?? 0) / pace.budget) * 100))}%` }}
+              />
+            )}
           </div>
-          <div className="text-muted" style={{ fontSize: '12px', marginTop: 'var(--space-2)' }}>
-            Spent {fmtUSD(totalActual)} of {fmtUSD(totalExpense)} budget
-          </div>
+          <div className="kpi-context">{fmtUSD(pace.actual)} of {fmtUSD(pace.budget)} budget</div>
         </div>
-        <div className="card card-compact blueprint elev-sm">
-          <div className="text-muted">Projected spend</div>
-          {projectedSpend ? (
+
+        <div className="card card-compact blueprint elev-sm kpi" data-testid="kpi-projected">
+          {scopeKind === 'current' ? (
             <>
-              <div style={{ fontSize: '1.5rem' }}>{fmtUSD(projectedSpend.projectedTotal)}</div>
-              <div style={{ color: projectedSpend.isOverBudget ? LOSS_COLOR : GAIN_COLOR, fontSize: '12px', marginTop: 'var(--space-2)' }}>
-                {Math.abs(projectedSpend.pctOver).toFixed(1)}% {projectedSpend.isOverBudget ? 'over' : 'under'} budget
+              <div className="kpi-label">Projected year-end</div>
+              <div className="kpi-value">{projectedSpend ? fmtUSD(projectedSpend.projectedTotal) : 'N/A'}</div>
+              <div className={`kpi-context ${projectedSpend && projectedSpend.budgetTotal !== 0 ? (projectedSpend.isOverBudget ? 'kpi-loss' : 'kpi-gain') : ''}`}>
+                {!projectedSpend || projectedSpend.budgetTotal === 0
+                  ? 'No budget set'
+                  : `${Math.abs(projectedSpend.pctOver).toFixed(1)}% ${projectedSpend.isOverBudget ? 'over' : 'under'} budget`}
+              </div>
+            </>
+          ) : scopeKind === 'all' ? (
+            <>
+              <div className="kpi-label">Avg yearly spend</div>
+              <div className="kpi-value">{yearsInScope === 0 ? '$0.00' : fmtUSD(totalActual / yearsInScope)}</div>
+              <div className="kpi-context">
+                vs {yearsInScope === 0 ? '$0.00' : fmtUSD(totalExpense / yearsInScope)} avg yearly budget
               </div>
             </>
           ) : (
-            <div className="text-muted" style={{ fontSize: '1.5rem' }}>N/A</div>
+            <>
+              <div className="kpi-label">Final vs budget</div>
+              <div className="kpi-value">{fmtUSD(Math.abs(pace.budget - pace.actual))}</div>
+              <div className={pace.actual === pace.budget ? 'kpi-context' : `kpi-context ${pace.actual < pace.budget ? 'kpi-gain' : 'kpi-loss'}`}>
+                {pace.actual === pace.budget ? 'on budget' : pace.actual < pace.budget ? 'under budget' : 'over budget'}
+              </div>
+            </>
           )}
         </div>
-        <div className="card card-compact blueprint elev-sm">
+
+        <div className="card card-compact blueprint elev-sm kpi" data-testid="kpi-savings">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="text-muted">Savings rate</div>
+            <div className="kpi-label">Savings rate</div>
             {selectedScope !== SPEND_ALL_YEARS && incomeCategoryId && !isEditingIncome && (
               <button
                 type="button"
@@ -757,70 +743,46 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
               onBlur={commitIncome}
             />
           ) : (
-            <div style={{ fontSize: '1.5rem', color: savingsRate?.isPositive ? GAIN_COLOR : LOSS_COLOR }}>
+            <div className={`kpi-value ${savingsRate ? (savingsRate.isPositive ? 'kpi-gain' : 'kpi-loss') : ''}`}>
               {savingsRate ? `${savingsRate.pct.toFixed(1)}%` : 'N/A'}
             </div>
           )}
-        </div>
-        <div className="card card-compact blueprint elev-sm">
-          <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>Expense Summary</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)' }}>
-            <div data-testid="expense-summary-spend">
-              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-accent-soft, #eef5ff)', color: 'var(--color-accent, #2563eb)' }}><FileIcon /></span>
-                <div className="text-muted" style={{ fontSize: '12px' }}>Spend</div>
-              </div>
-              <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(expenseSummary.totalSpend)}</div>
-              <div style={{ position: 'relative', height: '6px', marginTop: 'var(--space-2)', background: 'var(--color-border, #e5e5e5)', borderRadius: '3px' }}><div data-testid="expense-summary-spend-bar" style={{ width: `${percentOf(expenseSummary.totalSpend, expenseSummary.totalBudget)}%`, height: '100%', borderRadius: '3px', background: 'var(--color-accent, #2563eb)' }} /></div>
-              <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>of {fmtUSD(expenseSummary.totalBudget)} budget</div>
-            </div>
-            <div data-testid="expense-summary-average">
-              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-accent-soft, #eef5ff)', color: 'var(--color-accent, #2563eb)' }}><SearchIcon /></span>
-                <div className="text-muted" style={{ fontSize: '12px' }}>Average transaction</div>
-              </div>
-              <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(expenseSummary.averageTransaction)}</div>
-              <div style={{ position: 'relative', height: '6px', marginTop: 'var(--space-2)', background: 'var(--color-border, #e5e5e5)', borderRadius: '3px' }}><div data-testid="expense-summary-average-bar" style={{ width: `${percentOf(expenseSummary.averageTransaction, expenseSummary.largestTransaction?.magnitude ?? 0)}%`, height: '100%', borderRadius: '3px', background: 'var(--color-accent, #2563eb)' }} /></div>
-              <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>vs largest transaction</div>
-            </div>
-            <div data-testid="expense-summary-largest">
-              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-warning-soft, #fff7ed)', color: 'var(--color-warning, #c2410c)' }}><AlertTriangleIcon /></span>
-                <div className="text-muted" style={{ fontSize: '12px' }}>Largest transaction</div>
-              </div>
-              <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(expenseSummary.largestTransaction?.magnitude ?? 0)}</div>
-              {expenseSummary.largestTransaction ? <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}><span className="tag tag-neutral">{categoriesById.get(expenseSummary.largestTransaction.categoryId) ?? expenseSummary.largestTransaction.categoryId}</span> {expenseSummary.largestTransaction.description}</div> : <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>No transactions</div>}
-            </div>
-            <div data-testid="expense-summary-top-category">
-              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                <span aria-hidden="true" style={{ width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-accent-soft, #eef5ff)', color: 'var(--color-accent, #2563eb)' }}><ChevronRightIcon /></span>
-                <div className="text-muted" style={{ fontSize: '12px' }}>Top category by spend</div>
-              </div>
-              <div style={{ fontSize: '20px', marginTop: 'var(--space-2)' }}>{fmtUSD(expenseSummary.topCategory?.[1] ?? 0)}</div>
-              <div style={{ position: 'relative', height: '6px', marginTop: 'var(--space-2)', background: 'var(--color-border, #e5e5e5)', borderRadius: '3px' }}><div data-testid="expense-summary-top-category-bar" style={{ width: `${percentOf(expenseSummary.topCategory?.[1] ?? 0, expenseSummary.totalSpend)}%`, height: '100%', borderRadius: '3px', background: 'var(--color-accent, #2563eb)' }} /></div>
-              <div className="text-muted" style={{ fontSize: '11px', marginTop: 'var(--space-1)' }}>{expenseSummary.topCategory ? `${categoriesById.get(expenseSummary.topCategory[0]) ?? expenseSummary.topCategory[0]} · ${fmtUSD(expenseSummary.topCategory[1])}` : 'No transactions'}</div>
-            </div>
+          <div className="kpi-context">
+            {savingsRate ? `${fmtUSD(savingsRate.income)} income · ${fmtUSD(savingsRate.spend)} spent` : 'No income recorded'}
           </div>
         </div>
-        <div className="card card-compact blueprint elev-sm" data-testid="expense-action-items">
-          <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>Action items</div>
-          {actionItems.length === 0 ? (
-            <div className="text-muted" style={{ fontSize: '12px' }}>No categories over budget</div>
+
+        <div className="card card-compact blueprint elev-sm kpi" data-testid="kpi-over-budget">
+          <div className="kpi-label">Over budget</div>
+          <div className="kpi-value">{overRows.length}</div>
+          {overRows.length === 0 ? (
+            <div className="kpi-context">All categories on track</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-              {actionItems.map((item) => (
-                <div
-                  key={item.categoryId}
-                  data-testid="expense-action-item"
-                  style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', padding: 'var(--space-3)', borderRadius: 'var(--radius, 6px)', background: 'var(--color-warning-soft, #fff7ed)', color: 'var(--color-warning, #c2410c)' }}
-                >
-                  <span aria-hidden="true"><AlertTriangleIcon /></span>
-                  <div>
-                    <div>{item.label} is {fmtUSD(item.overageAmount)} over budget ({Number.isFinite(item.pctOver) ? item.pctOver.toFixed(1) : '∞'}%)</div>
-                    <div className="text-muted" style={{ fontSize: '12px' }}>Review recent transactions in this category</div>
+            <div className="kpi-context">
+              <div className="kpi-list">
+                {overRows.slice(0, 3).map((row) => (
+                  <div key={row.categoryId} className="kpi-list-item" data-testid="kpi-over-budget-item" data-status={row.status}>
+                    <span className={`kpi-dot ${row.status === 'over' ? 'is-over' : 'is-projected'}`} aria-hidden="true" />
+                    <button
+                      type="button"
+                      className="kpi-link"
+                      onClick={() => {
+                        setRecordSearch(row.label)
+                        setRecPage(0)
+                        spendRecordsRef.current?.scrollIntoView({ block: 'start' })
+                      }}
+                    >
+                      {row.label}
+                    </button>
+                    <span>
+                      +{fmtUSD(row.overageAmount)} ({row.pctOver === Infinity ? '∞' : Math.round(row.pctOver)}%)
+                    </span>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              {overRows.length > 3 && (
+                <div data-testid="kpi-over-budget-more">+{overRows.length - 3} more</div>
+              )}
             </div>
           )}
         </div>
@@ -834,7 +796,7 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
           scope={selectedScope}
         />
 
-       <div className="card blueprint elev-sm">
+       <div className="card blueprint elev-sm" ref={spendRecordsRef}>
         <div
           style={{
             display: 'flex',

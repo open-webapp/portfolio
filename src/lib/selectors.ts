@@ -1024,62 +1024,55 @@ export function overBudgetCategories(
  * `overBudgetCategories` already takes a `SpendScope` and, via `perCategoryBudgetActual`,
  * sums budget/actual across every year in scope before comparing (not per-year, then
  * merged) — so this is a direct delegate for both a concrete year and SPEND_ALL_YEARS.
+ *
+ * With an optional `asOfDate`, and only when `scope` is the current year (per
+ * `spendScopeKind`), also appends "amber" rows for categories that are NOT
+ * already over budget today but whose frequency-aware projected spend (via
+ * `projectedSpendByCategory`) exceeds their annualized budget. Each category
+ * appears at most once, preferring `status: 'over'` when both conditions hold.
+ * Without `asOfDate`, or for past/future/all-years scopes, behavior is
+ * unchanged: only `status: 'over'` rows are returned.
+ *
+ * Sort order: all `'over'` rows first (by `overageAmount` desc, ties by label
+ * asc), then all `'projected'` rows (same ordering within the group).
  */
 export function overBudgetCategoriesForScope(
   definitions: ExpenseDefinition[],
   amountsByYear: Record<string, Record<string, number>>,
   transactions: BudgetTransaction[],
   categories: Category[],
-  scope: SpendScope
-): Array<{ categoryId: string; label: string; overageAmount: number; pctOver: number }> {
-  return overBudgetCategories(definitions, amountsByYear, transactions, categories, scope)
-}
+  scope: SpendScope,
+  asOfDate?: Date
+): Array<{ categoryId: string; label: string; overageAmount: number; pctOver: number; status: 'over' | 'projected' }> {
+  const overRows = overBudgetCategories(definitions, amountsByYear, transactions, categories, scope)
+    .map((row) => ({ ...row, status: 'over' as const }))
 
-type ExpenseSummaryTransaction = BudgetTransaction & { magnitude: number }
-
-/**
- * Expense Summary card totals (Spend tab) for a scope: total/average/largest spend
- * transaction and the top spending category. Budget side uses the exact-year
- * definition amounts for a concrete year, or their sum across every transaction-backed
- * year (`spendBudgetYears`) for SPEND_ALL_YEARS — mirroring `spendCardTotals`'s
- * "sum across years in scope" aggregation shape.
- */
-export function expenseSummaryForScope(
-  amountsByYear: Record<string, Record<string, number>>,
-  transactions: BudgetTransaction[],
-  scope: SpendScope
-): {
-  totalSpend: number
-  totalBudget: number
-  averageTransaction: number
-  largestTransaction: ExpenseSummaryTransaction | null
-  topCategory: [string, number] | null
-} {
-  const scopedTransactions = spendTransactionsForScope(transactions, scope)
-  const summaryTransactions: ExpenseSummaryTransaction[] = scopedTransactions.map((transaction) => ({
-    ...transaction,
-    magnitude: Math.abs(transaction.amount)
-  }))
-  const totalSpend = summaryTransactions.reduce((total, transaction) => total + transaction.magnitude, 0)
-  const budgetForYear = (year: string) =>
-    Object.values(amountsByYear[year] ?? {}).reduce((total, amount) => total + Math.abs(amount), 0)
-  const totalBudget = scope === SPEND_ALL_YEARS
-    ? spendBudgetYears(scopedTransactions).reduce((sum, year) => sum + budgetForYear(year), 0)
-    : budgetForYear(scope)
-  const averageTransaction = summaryTransactions.length === 0 ? 0 : totalSpend / summaryTransactions.length
-  const largestTransaction = summaryTransactions.reduce<ExpenseSummaryTransaction | null>(
-    (largest, transaction) => largest === null || transaction.magnitude > largest.magnitude ? transaction : largest,
-    null
-  )
-  const categoryTotals = new Map<string, number>()
-  for (const transaction of summaryTransactions) {
-    categoryTotals.set(transaction.categoryId, (categoryTotals.get(transaction.categoryId) ?? 0) + transaction.magnitude)
+  if (!asOfDate || spendScopeKind(scope, asOfDate) !== 'current') {
+    return overRows
   }
-  const topCategory = [...categoryTotals.entries()].reduce<[string, number] | null>(
-    (top, entry) => top === null || entry[1] > top[1] ? entry : top,
-    null
-  )
-  return { totalSpend, totalBudget, averageTransaction, largestTransaction, topCategory }
+
+  const overIds = new Set(overRows.map((row) => row.categoryId))
+  const year = Number(scope)
+  const budgetActualRows = perCategoryBudgetActual(definitions, amountsByYear, transactions, categories, scope)
+  const projectedByCategory = projectedSpendByCategory(definitions, transactions, categories, year, asOfDate)
+
+  const projectedRows = budgetActualRows
+    .filter((row) => !overIds.has(row.categoryId))
+    .map((row) => {
+      const projected = projectedByCategory[row.categoryId]?.projected ?? 0
+      return { row, projected }
+    })
+    .filter(({ row, projected }) => projected > row.budget)
+    .map(({ row, projected }) => ({
+      categoryId: row.categoryId,
+      label: row.label,
+      overageAmount: projected - row.budget,
+      pctOver: row.budget === 0 ? Infinity : (projected / row.budget - 1) * 100,
+      status: 'projected' as const
+    }))
+    .sort((a, b) => b.overageAmount - a.overageAmount || a.label.localeCompare(b.label))
+
+  return [...overRows, ...projectedRows]
 }
 
 /** Spend-card totals for exact transaction-backed years in the selected scope. */
@@ -1112,8 +1105,60 @@ export function spendCardTotals(
 }
 
 /**
+ * Per-category actual and projected spend for `year`, keyed by effective category id.
+ * Transactions linked to a yearly-frequency expense definition project at actual
+ * (no extrapolation, since a yearly bill isn't repeated). All other spend (linked to
+ * a monthly-frequency definition, or unlinked) is extrapolated by dividing its actual
+ * by the year's elapsed fraction.
+ */
+function projectedSpendByCategory(
+  definitions: ExpenseDefinition[],
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  year: number,
+  asOf: Date
+): Record<string, { actual: number; projected: number }> {
+  const excludedIds = excludedCategoryIdSet(categories)
+  const yearStr = String(year)
+  const fraction = yearElapsedFraction(year, asOf)
+
+  const yearlyActualByCategory: Record<string, number> = {}
+  const otherActualByCategory: Record<string, number> = {}
+  const totalActualByCategory: Record<string, number> = {}
+
+  transactions.forEach((t) => {
+    if (t.date.slice(0, 4) !== yearStr) return
+    const catId = effectiveCategoryId(t, definitions)
+    if (excludedIds.has(catId)) return
+    const amount = -t.amount
+    totalActualByCategory[catId] = (totalActualByCategory[catId] ?? 0) + amount
+
+    const definition = t.spendExpenseId ? definitions.find((d) => d.id === t.spendExpenseId) : undefined
+    if (definition && definition.frequency === 'yearly') {
+      yearlyActualByCategory[catId] = (yearlyActualByCategory[catId] ?? 0) + amount
+    } else {
+      otherActualByCategory[catId] = (otherActualByCategory[catId] ?? 0) + amount
+    }
+  })
+
+  const out: Record<string, { actual: number; projected: number }> = {}
+  Object.keys(totalActualByCategory).forEach((catId) => {
+    const yearlyActual = yearlyActualByCategory[catId] ?? 0
+    const otherActual = otherActualByCategory[catId] ?? 0
+    out[catId] = {
+      actual: totalActualByCategory[catId],
+      projected: yearlyActual + otherActual / fraction
+    }
+  })
+  return out
+}
+
+/**
  * Project selected-year spend from its actual spend rate through `asOfDate`.
- * All-years has no bounded period and therefore cannot be projected.
+ * Yearly-frequency-linked spend counts at actual (not extrapolated); all other
+ * spend is extrapolated by the year's elapsed fraction. Past/future years use
+ * actual spend as-is (already fully elapsed, or treated as if so). All-years has
+ * no bounded period and therefore cannot be projected.
  */
 export function projectedSpendForScope(
   definitions: ExpenseDefinition[],
@@ -1123,23 +1168,80 @@ export function projectedSpendForScope(
   scope: SpendScope,
   asOfDate: Date
 ): { projectedTotal: number; budgetTotal: number; pctOver: number; isOverBudget: boolean } | null {
-  if (scope === SPEND_ALL_YEARS) return null
+  const kind = spendScopeKind(scope, asOfDate)
+  if (kind === 'all') return null
 
+  const year = Number(scope)
   const totals = spendCardTotals(definitions, amountsByYear, transactions, categories, scope)
-  const periodStart = Date.UTC(Number(scope), 0, 1)
-  const periodEnd = Date.UTC(Number(scope) + 1, 0, 1)
-  const periodDays = (periodEnd - periodStart) / 86_400_000
-  const asOfDay = Date.UTC(asOfDate.getFullYear(), asOfDate.getMonth(), asOfDate.getDate())
-  const elapsedDays = Math.max(0, Math.min(periodDays, (asOfDay - periodStart) / 86_400_000))
-  const projectedTotal = elapsedDays === 0 ? 0 : totals.actualSpend * periodDays / elapsedDays
-  const pctOver = totals.budgetedSpend === 0 ? 0 : (projectedTotal / totals.budgetedSpend - 1) * 100
+  const budgetTotal = totals.budgetedSpend
+
+  let projectedTotal: number
+  if (kind === 'current') {
+    const byCategory = projectedSpendByCategory(definitions, transactions, categories, year, asOfDate)
+    projectedTotal = Object.values(byCategory).reduce((sum, c) => sum + c.projected, 0)
+  } else {
+    projectedTotal = totals.actualSpend
+  }
+
+  const pctOver = budgetTotal === 0 ? 0 : (projectedTotal / budgetTotal - 1) * 100
 
   return {
     projectedTotal,
-    budgetTotal: totals.budgetedSpend,
+    budgetTotal,
     pctOver,
-    isOverBudget: projectedTotal > totals.budgetedSpend
+    isOverBudget: budgetTotal === 0 ? projectedTotal > 0 : projectedTotal > budgetTotal
   }
+}
+
+/**
+ * Scope-aware spend pace: actual/budget from `spendCardTotals`, plus (for the
+ * current year only) `expectedByToday` — what spend "should" be by `asOf` if on
+ * pace — and `isOnTrack`. Monthly-frequency definitions' annualized budget is
+ * prorated by the year's elapsed fraction; yearly-frequency definitions count
+ * at their actual-to-date capped at their own budget (paying a yearly bill
+ * counts fully toward "expected" but never more than its budget). Past/future/
+ * all-years scopes have no `expectedByToday` and compare actual against the
+ * plain annualized budget instead.
+ */
+export function spendPaceForScope(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  scope: SpendScope,
+  asOf: Date
+): { actual: number; budget: number; pctOfBudget: number; expectedByToday: number | null; isOnTrack: boolean } {
+  const totals = spendCardTotals(definitions, amountsByYear, transactions, categories, scope)
+  const actual = totals.actualSpend
+  const budget = totals.budgetedSpend
+  const pctOfBudget = budget === 0 ? 0 : (actual / budget) * 100
+
+  let expectedByToday: number | null = null
+  if (spendScopeKind(scope, asOf) === 'current') {
+    const year = Number(scope)
+    const yearStr = String(year)
+    const fraction = yearElapsedFraction(year, asOf)
+    const excludedIds = excludedCategoryIdSet(categories)
+    const amounts = amountsByYear[yearStr] ?? {}
+
+    expectedByToday = definitions.reduce((sum, definition) => {
+      if (excludedIds.has(definition.categoryId)) return sum
+      const annualizedBudget = toPeriod(amounts[definition.id] ?? 0, definition.frequency, 'yearly')
+      if (definition.frequency === 'monthly') {
+        return sum + annualizedBudget * fraction
+      }
+      if (definition.frequency === 'yearly') {
+        const yearlyDefActual = transactions.reduce((s, t) =>
+          t.date.slice(0, 4) === yearStr && t.spendExpenseId === definition.id ? s + -t.amount : s, 0)
+        return sum + Math.min(yearlyDefActual, annualizedBudget)
+      }
+      return sum
+    }, 0)
+  }
+
+  const isOnTrack = actual <= (expectedByToday ?? budget)
+
+  return { actual, budget, pctOfBudget, expectedByToday, isOnTrack }
 }
 
 /**

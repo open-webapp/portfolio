@@ -1,13 +1,15 @@
 import { useReducer, useState } from 'react'
 import { cleanup, fireEvent, render, screen, act, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BudgetPage as BudgetPageUnderTest, type BudgetPageProps } from './BudgetPage'
 import { initialState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
-import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, expenseSummaryForScope, overBudgetCategoriesForScope, type SpendScope } from '../lib/selectors'
-import { fmtUSD } from '../lib/computations'
+import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, projectedSpendForScope, type SpendScope } from '../lib/selectors'
 
 afterEach(() => cleanup())
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn()
+})
 
 const periodProps = { period: 'spend' as const, setPeriod: vi.fn() }
 
@@ -114,7 +116,7 @@ describe('BudgetPage derived income', () => {
     expect(chart.querySelectorAll('path')).toHaveLength(3)
   })
 
-  it('renders five summary cards with spend progress and a savings-rate income editor', () => {
+  it('renders exactly four KPI tiles with no nested cards, and a savings-rate income editor', () => {
     const state = {
       ...initialState(),
       budgetExpenseDefinitions: [
@@ -129,31 +131,152 @@ describe('BudgetPage derived income', () => {
     }
     render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'income', name: 'Income', updatedAt: '' }, { id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
     const cards = screen.getByTestId('summary-cards')
-    expect(cards.querySelectorAll('.card')).toHaveLength(5)
+    const tiles = cards.querySelectorAll('.kpi')
+    expect(tiles).toHaveLength(4)
+    tiles.forEach((tile) => expect(tile.querySelector('.card')).toBeNull())
+    expect(screen.getByTestId('kpi-spend')).toBeTruthy()
+    expect(screen.getByTestId('kpi-projected')).toBeTruthy()
+    expect(screen.getByTestId('kpi-savings')).toBeTruthy()
+    expect(screen.getByTestId('kpi-over-budget')).toBeTruthy()
     expect(screen.getByText(`Spend vs budget (${new Date().getFullYear()})`)).toBeTruthy()
-    expect(cards.textContent).toContain('-100.0%')
-    expect(cards.textContent).toContain('Spent -$500.00 of $500.00 budget')
+    expect(cards.textContent).toContain('-$500.00 of $6,000.00 budget')
     expect(screen.getByText('Savings rate')).toBeTruthy()
     expect(screen.getByLabelText('Edit income')).toBeTruthy()
   })
 
-  it('uses the projected-spend over-budget color and the configured gain color when under budget', () => {
+  it('spend tile shows an on-pace/over-pace bar-fill class and renders the pace marker only for the current year', () => {
     vi.useFakeTimers()
+    // Dec 31: full year elapsed, so the whole $1,200 annualized budget is "expected" — $300 actual is on pace.
     vi.setSystemTime(new Date('2026-12-31T12:00:00'))
     const state = {
       ...initialState(),
-      budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'yearly' as const }],
-      budgetExpenseAmountsByYear: { '2026': { rent: 200 } },
-      budgetTransactions: [{ id: 'rent', date: '2026-01-02', description: 'Rent', categoryId: 'housing', amount: -100 }],
+      budgetExpenseDefinitions: [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' as const }],
+      budgetExpenseAmountsByYear: { '2026': { rent: 100 } },
+      budgetTransactions: [{ id: 'rent', date: '2026-01-02', description: 'Rent', categoryId: 'housing', amount: -300 }],
     }
     const { rerender } = render(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
 
-    expect((screen.getByText('49.9% under budget') as HTMLElement).style.color).toBe('rgb(31, 169, 113)')
+    let spendTile = screen.getByTestId('kpi-spend')
+    expect(spendTile.querySelector('.kpi-bar-fill')?.classList.contains('is-gain')).toBe(true)
+    expect(within(spendTile).getByTestId('kpi-pace-marker')).toBeTruthy()
 
+    // Jan 2: almost none of the year elapsed, so the prorated expected-by-today is tiny — $300 actual is over pace.
     vi.setSystemTime(new Date('2026-01-02T12:00:00'))
     rerender(<BudgetPage state={state} dispatch={vi.fn()} categories={[{ id: 'housing', name: 'Housing', updatedAt: '' }]} categoryDispatch={vi.fn()} {...periodProps} />)
-    expect((screen.getByText('18150.0% over budget') as HTMLElement).style.color).toBe('rgb(226, 87, 76)')
+    spendTile = screen.getByTestId('kpi-spend')
+    expect(spendTile.querySelector('.kpi-bar-fill')?.classList.contains('is-loss')).toBe(true)
+    expect(within(spendTile).getByTestId('kpi-pace-marker')).toBeTruthy()
     vi.useRealTimers()
+  })
+
+  it('spend tile has no pace marker for a past year or All scope, and bases gain/loss on actual-vs-budget only', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-25T12:00:00'))
+    const definitions = [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'yearly' as const }]
+    const categories = [{ id: 'housing', name: 'Housing', updatedAt: '' }]
+
+    // Past year, under budget: $100 actual vs $200 budget -> is-gain, no marker.
+    const underState = {
+      ...initialState(),
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: { '2024': { rent: 200 } },
+      budgetTransactions: [{ id: 'rent', date: '2024-01-02', description: 'Rent', categoryId: 'housing', amount: -100 }],
+    }
+    const { rerender } = render(<BudgetPage state={underState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+    let spendTile = screen.getByTestId('kpi-spend')
+    expect(spendTile.querySelector('.kpi-bar-fill')?.classList.contains('is-gain')).toBe(true)
+    expect(within(spendTile).queryByTestId('kpi-pace-marker')).toBeNull()
+
+    // Past year, over budget: $300 actual vs $200 budget -> is-loss, no marker.
+    const overState = {
+      ...initialState(),
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: { '2024': { rent: 200 } },
+      budgetTransactions: [{ id: 'rent', date: '2024-01-02', description: 'Rent', categoryId: 'housing', amount: -300 }],
+    }
+    rerender(<BudgetPage state={overState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+    spendTile = screen.getByTestId('kpi-spend')
+    expect(spendTile.querySelector('.kpi-bar-fill')?.classList.contains('is-loss')).toBe(true)
+    expect(within(spendTile).queryByTestId('kpi-pace-marker')).toBeNull()
+
+    // All scope: aggregated actual under aggregated budget -> is-gain, no marker.
+    const allScopeState = {
+      ...initialState(),
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: { '2024': { rent: 200 } },
+      budgetTransactions: [{ id: 'rent', date: '2024-01-02', description: 'Rent', categoryId: 'housing', amount: -100 }],
+    }
+    render(<BudgetPageUnderTest state={allScopeState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} {...periodProps} />)
+    const allScopeTile = screen.getAllByTestId('kpi-spend').at(-1)!
+    expect(allScopeTile.querySelector('.kpi-bar-fill')?.classList.contains('is-gain')).toBe(true)
+    expect(within(allScopeTile).queryByTestId('kpi-pace-marker')).toBeNull()
+
+    vi.useRealTimers()
+  })
+
+  it('projected tile shows year-end projection for the current year without extrapolating a once-paid yearly lump sum', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-02T12:00:00'))
+    const definitions = [{ id: 'ins', name: 'Insurance', categoryId: 'housing', frequency: 'yearly' as const }]
+    const amountsByYear = { '2026': { ins: 2400 } }
+    const transactions = [{ id: 'ins-pay', date: '2026-01-05', description: 'Insurance payment', categoryId: 'housing', amount: -1200, spendExpenseId: 'ins' }]
+    const categories = [{ id: 'housing', name: 'Housing', updatedAt: '' }]
+    const state = { ...initialState(), budgetExpenseDefinitions: definitions, budgetExpenseAmountsByYear: amountsByYear, budgetTransactions: transactions }
+
+    const expected = projectedSpendForScope(definitions, amountsByYear, transactions, categories, '2026', new Date('2026-07-02T12:00:00'))!
+    // Sanity: a naive straight-line extrapolation would inflate this well past the lump amount actually paid.
+    expect(expected.projectedTotal).toBe(1200)
+
+    render(<BudgetPage state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+    const projectedTile = screen.getByTestId('kpi-projected')
+    expect(projectedTile.textContent).toContain('Projected year-end')
+    expect(projectedTile.textContent).toContain('$1,200.00')
+    expect(projectedTile.textContent).toMatch(/% under budget|% over budget/)
+    expect(projectedTile.textContent).toContain('50.0% under budget')
+    vi.useRealTimers()
+  })
+
+  it('projected tile shows final-vs-budget for a past year and avg-yearly for All scope', () => {
+    const definitions = [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'yearly' as const }]
+    const categories = [{ id: 'housing', name: 'Housing', updatedAt: '' }]
+    const pastState = {
+      ...initialState(),
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: { '2024': { rent: 200 } },
+      budgetTransactions: [{ id: 'rent', date: '2024-01-02', description: 'Rent', categoryId: 'housing', amount: -100 }],
+    }
+    render(<BudgetPage state={pastState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+    const pastTile = screen.getByTestId('kpi-projected')
+    expect(pastTile.textContent).toContain('Final vs budget')
+    expect(pastTile.textContent).toContain('$100.00')
+    expect(pastTile.textContent).toContain('under budget')
+
+    cleanup()
+    render(<BudgetPageUnderTest state={pastState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} {...periodProps} />)
+    const allTile = screen.getByTestId('kpi-projected')
+    expect(allTile.textContent).toContain('Avg yearly spend')
+    expect(allTile.textContent).toContain('avg yearly budget')
+  })
+
+  it('savings tile shows the income editor per-year but not for All scope, which shows an aggregate instead', () => {
+    const definitions = [{ id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'yearly' as const }]
+    const categories = [{ id: 'income', name: 'Income', updatedAt: '' }]
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: { '2025': { salary: 1000 } },
+      budgetTransactions: [{ id: 'pay', date: '2025-01-01', description: 'Pay', categoryId: 'income', amount: 1000 }],
+    }
+    render(<BudgetPage state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+    const yearTile = screen.getByTestId('kpi-savings')
+    expect(within(yearTile).getByLabelText('Edit income')).toBeTruthy()
+    expect(yearTile.textContent).toMatch(/%/)
+
+    cleanup()
+    render(<BudgetPageUnderTest state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} {...periodProps} />)
+    const allTile = screen.getByTestId('kpi-savings')
+    expect(within(allTile).queryByLabelText('Edit income')).toBeNull()
+    expect(allTile.textContent).toMatch(/%/)
   })
 
   it('updates an existing Income definition and clamps a negative income amount to zero', () => {
@@ -220,6 +343,107 @@ describe('BudgetPage derived income', () => {
 
     expect(within(recordsTable()).getByText('Market run')).toBeTruthy()
     expect(within(recordsTable()).getByText('Uncategorized (Food)')).toBeTruthy()
+  })
+
+  it('over-budget tile shows at most 3 rows plus a "+N more" line, correct statuses, an infinite % for zero-budget overage, and matches the total count', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-02T12:00:00'))
+    const categories = [
+      { id: 'c1', name: 'Cat One', updatedAt: '' },
+      { id: 'c2', name: 'Cat Two', updatedAt: '' },
+      { id: 'c3', name: 'Cat Three', updatedAt: '' },
+      { id: 'c4', name: 'Cat Four', updatedAt: '' },
+      { id: 'c5', name: 'Cat Five', updatedAt: '' },
+    ]
+    const definitions = [
+      { id: 'd1', name: 'D1', categoryId: 'c1', frequency: 'monthly' as const },
+      { id: 'd2', name: 'D2', categoryId: 'c2', frequency: 'monthly' as const },
+      { id: 'd3', name: 'D3', categoryId: 'c3', frequency: 'monthly' as const },
+      { id: 'd4', name: 'D4', categoryId: 'c4', frequency: 'monthly' as const },
+      { id: 'd5', name: 'D5', categoryId: 'c5', frequency: 'monthly' as const },
+    ]
+    // c1, c2: already over budget today ("over"). c3, c4, c5: under budget today but
+    // their year-end projection (extrapolated from ~50% of the year elapsed) exceeds
+    // budget ("projected"). c2 has a zero budget, exercising the "infinite %" case.
+    const amountsByYear = {
+      '2026': { d1: 80, d2: 0, d3: 100, d4: 200, d5: 50 },
+    }
+    const transactions = [
+      { id: 't1', date: '2026-01-10', description: 'Over one', categoryId: 'c1', amount: -1000 },
+      { id: 't2', date: '2026-01-10', description: 'Over two', categoryId: 'c2', amount: -333 },
+      { id: 't3', date: '2026-01-10', description: 'Proj three', categoryId: 'c3', amount: -700 },
+      { id: 't4', date: '2026-01-10', description: 'Proj four', categoryId: 'c4', amount: -1300 },
+      { id: 't5', date: '2026-01-10', description: 'Proj five', categoryId: 'c5', amount: -350 },
+    ]
+    const state = { ...initialState(), budgetExpenseDefinitions: definitions, budgetExpenseAmountsByYear: amountsByYear, budgetTransactions: transactions }
+    render(<BudgetPage state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+
+    const tile = screen.getByTestId('kpi-over-budget')
+    const items = within(tile).getAllByTestId('kpi-over-budget-item')
+    expect(items).toHaveLength(3)
+    const statuses = items.map((item) => item.getAttribute('data-status'))
+    expect(statuses.filter((s) => s === 'over').length).toBeGreaterThan(0)
+    expect(statuses.filter((s) => s === 'projected').length).toBeGreaterThan(0)
+    expect(tile.textContent).toContain('∞%')
+    const more = within(tile).getByTestId('kpi-over-budget-more')
+    const totalRows = items.length + Number(more.textContent!.match(/\+(\d+) more/)![1])
+    expect(tile.querySelector('.kpi-value')!.textContent).toBe(String(totalRows))
+    vi.useRealTimers()
+  })
+
+  it('over-budget tile shows the on-track empty state with a "0" value when nothing is over budget', () => {
+    const categories = [{ id: 'housing', name: 'Housing', updatedAt: '' }]
+    const definitions = [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' as const }]
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: { '2025': { rent: 100 } },
+      budgetTransactions: [{ id: 'rent', date: '2025-01-02', description: 'Rent', categoryId: 'housing', amount: -50 }],
+    }
+    render(<BudgetPage state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+
+    const tile = screen.getByTestId('kpi-over-budget')
+    expect(tile.textContent).toContain('All categories on track')
+    expect(tile.querySelector('.kpi-value')!.textContent).toBe('0')
+    expect(screen.queryByTestId('kpi-over-budget-item')).toBeNull()
+  })
+
+  it('clicking an over-budget category name searches records for it, resets to page 1, and scrolls the records section into view', () => {
+    const categories = [
+      { id: 'housing', name: 'Housing', updatedAt: '' },
+      { id: 'food', name: 'Food', updatedAt: '' },
+    ]
+    const definitions = [{ id: 'rent', name: 'Rent', categoryId: 'housing', frequency: 'monthly' as const }]
+    const pagedFoodRecords = Array.from({ length: 55 }, (_, index) => ({
+      id: `food-${index}`,
+      date: `2025-02-${String((index % 27) + 1).padStart(2, '0')}`,
+      description: `Food record ${String(index).padStart(2, '0')}`,
+      categoryId: 'food',
+      amount: -1,
+    }))
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: definitions,
+      budgetExpenseAmountsByYear: { '2025': { rent: 2 } },
+      budgetTransactions: [
+        { id: 'rent', date: '2025-01-02', description: 'Rent', categoryId: 'housing', amount: -50 },
+        ...pagedFoodRecords,
+      ],
+    }
+    render(<BudgetPage state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} {...periodProps} />)
+
+    fireEvent.click(screen.getByText('Next'))
+    expect(screen.getByTestId('records-pagination').textContent).toContain('Page 2 of 2')
+
+    const tile = screen.getByTestId('kpi-over-budget')
+    fireEvent.click(within(tile).getByText('Housing'))
+
+    expect((screen.getByLabelText('Search records') as HTMLInputElement).value).toBe('Housing')
+    // The Housing filter narrows results to a single page, so pagination resetting to
+    // page 1 is evidenced by the filtered (first-page) row being visible directly.
+    expect(within(recordsTable()).getByText('Rent')).toBeTruthy()
+    expect(screen.queryByTestId('records-pagination')).toBeNull()
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
   })
 })
 
@@ -332,8 +556,8 @@ describe('BudgetPage Spend scopes', () => {
     const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
     expect(Array.from(yearSelect.options, (option) => option.text)).toEqual(['All'])
     expect(screen.getByText('Spend vs budget (All years)')).toBeTruthy()
-    expect(screen.getByTestId('summary-cards').querySelectorAll('.card')).toHaveLength(5)
-    expect(screen.getAllByText('N/A')).toHaveLength(2)
+    expect(screen.getByTestId('summary-cards').querySelectorAll('.kpi')).toHaveLength(4)
+    expect(screen.getAllByText('N/A')).toHaveLength(1)
     expect(dispatch).not.toHaveBeenCalled()
   })
 
@@ -343,8 +567,7 @@ describe('BudgetPage Spend scopes', () => {
     fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
 
     expect(screen.getByText('Spend vs budget (All years)')).toBeTruthy()
-    expect(screen.getByTestId('summary-cards').textContent).toContain('Spent -$100.00 of $50.00 budget')
-    expect(screen.getByTestId('summary-cards').textContent).toContain('N/A')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('-$100.00 of $600.00 budget')
     expect(screen.getByText('Alpha spend')).toBeTruthy()
     expect(screen.getByText('Zulu spend')).toBeTruthy()
     expect(screen.getByTestId('records-total-row').textContent).toContain('$100.00')
@@ -422,7 +645,7 @@ describe('BudgetPage Spend scopes', () => {
     expect(screen.getByText('Spend vs budget (2025)')).toBeTruthy()
     expect(screen.getByText('Zulu spend')).toBeTruthy()
     expect(screen.queryByText('Alpha spend')).toBeNull()
-    expect(screen.getByTestId('summary-cards').textContent).toContain('Spent -$75.00 of $0.00 budget')
+    expect(screen.getByTestId('summary-cards').textContent).toContain('-$75.00 of $0.00 budget')
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect(dispatch).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: '2025' })
   })
@@ -512,77 +735,6 @@ describe('BudgetPage Spend scopes', () => {
     expect(actions).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' }))
   })
 
-  it('shows Expense Summary and Action items scoped to the selected concrete year', () => {
-    renderSpend()
-
-    const expected = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, '2025')
-    expect(screen.getByTestId('expense-summary-spend').textContent).toContain(fmtUSD(expected.totalSpend))
-    expect(screen.getByTestId('expense-summary-average').textContent).toContain(fmtUSD(expected.averageTransaction))
-    expect(screen.getByTestId('expense-summary-largest').textContent).toContain(expected.largestTransaction!.description)
-    expect(screen.getByTestId('expense-summary-top-category').textContent).toContain(fmtUSD(expected.topCategory![1]))
-
-    // 2024's figures must not leak into the 2025-scoped card.
-    const otherYearExpected = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, '2024')
-    expect(otherYearExpected.totalSpend).not.toBe(expected.totalSpend)
-  })
-
-  it('aggregates Expense Summary and Action items across all years under SPEND_ALL_YEARS', () => {
-    renderSpend()
-    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
-
-    const expectedSummary = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, SPEND_ALL_YEARS)
-    expect(screen.getByTestId('expense-summary-spend').textContent).toContain(fmtUSD(expectedSummary.totalSpend))
-    expect(screen.getByTestId('expense-summary-average').textContent).toContain(fmtUSD(expectedSummary.averageTransaction))
-
-    const expectedActionItems = overBudgetCategoriesForScope(definitions, spendState().budgetExpenseAmountsByYear, transactions, categories, SPEND_ALL_YEARS)
-    const actionItemCards = screen.queryAllByTestId('expense-action-item')
-    expect(actionItemCards).toHaveLength(expectedActionItems.length)
-    for (const item of expectedActionItems) {
-      expect(screen.getByTestId('expense-action-items').textContent).toContain(item.label)
-    }
-  })
-
-  it('updates Expense Summary dollar figures when the Year select changes', () => {
-    renderSpend()
-
-    const initialSpend = screen.getByTestId('expense-summary-spend').textContent
-
-    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2024' } })
-
-    const expected2024 = expenseSummaryForScope(spendState().budgetExpenseAmountsByYear, transactions, '2024')
-    expect(screen.getByTestId('expense-summary-spend').textContent).toContain(fmtUSD(expected2024.totalSpend))
-    expect(screen.getByTestId('expense-summary-spend').textContent).not.toBe(initialSpend)
-  })
-
-  it('flags a category as over budget in Action items under All only when years are summed', () => {
-    // 2025 alone: budget 100, actual 90 -> under. 2024 alone: budget clamps to 0, actual 0 -> not over.
-    // Summed raw budget (100 + -80 = 20) is what's compared against summed actual (90), so combined is over.
-    const overBudgetCategories = [{ id: 'food', name: 'Food', updatedAt: '' }]
-    const overBudgetDefinitions = [{ id: 'groceries', name: 'Food', categoryId: 'food', frequency: 'yearly' as const }]
-    const overBudgetAmounts = { '2025': { groceries: 100 }, '2024': { groceries: -80 } }
-    const overBudgetTransactions = [
-      { id: 'food-2025', date: '2025-06-01', description: 'Food 2025', categoryId: 'food', amount: -90 },
-      { id: 'food-2024', date: '2024-01-01', description: 'Food 2024', categoryId: 'food', amount: 0 },
-    ]
-    const state = {
-      ...initialState(),
-      budgetExpenseDefinitions: overBudgetDefinitions,
-      budgetExpenseAmountsByYear: overBudgetAmounts,
-      budgetTransactions: overBudgetTransactions,
-    }
-    renderSpend(state)
-    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '__spend_all_years__' } })
-
-    const expectedActionItems = overBudgetCategoriesForScope(overBudgetDefinitions, overBudgetAmounts, overBudgetTransactions, overBudgetCategories, SPEND_ALL_YEARS)
-    expect(expectedActionItems).toHaveLength(1)
-    expect(expectedActionItems[0].categoryId).toBe('food')
-    expect(screen.getByTestId('expense-action-items').textContent).toContain(expectedActionItems[0].label)
-    expect(screen.getByTestId('expense-action-items').textContent).toContain('over budget')
-
-    // Confirm each single year alone would NOT have flagged this category.
-    expect(overBudgetCategoriesForScope(overBudgetDefinitions, overBudgetAmounts, overBudgetTransactions, overBudgetCategories, '2024')).toHaveLength(0)
-    expect(overBudgetCategoriesForScope(overBudgetDefinitions, overBudgetAmounts, overBudgetTransactions, overBudgetCategories, '2025')).toHaveLength(0)
-  })
 })
 
 describe('BudgetPage budget account imports and signed amounts', () => {
