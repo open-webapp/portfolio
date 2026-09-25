@@ -823,6 +823,28 @@ export function spendTransactionsForScope(
     : transactions.filter((transaction) => transaction.date.slice(0, 4) === scope)
 }
 
+/** Classifies a Spend scope relative to `asOf`'s year. */
+export function spendScopeKind(scope: SpendScope, asOf: Date): 'all' | 'current' | 'past' | 'future' {
+  if (scope === SPEND_ALL_YEARS) return 'all'
+  const asOfYear = asOf.getFullYear()
+  if (scope === String(asOfYear)) return 'current'
+  return Number(scope) < asOfYear ? 'past' : 'future'
+}
+
+/**
+ * Fraction of `year` elapsed as of `asOf`, using an inclusive-day rule (Jan 1 = 1/daysInYear).
+ * Pure and leap-year aware; uses UTC internally for day-boundary math. Clamped to (0, 1].
+ */
+export function yearElapsedFraction(year: number, asOf: Date): number {
+  const dayMs = 24 * 60 * 60 * 1000
+  const jan1 = Date.UTC(year, 0, 1)
+  const asOfDay = Date.UTC(asOf.getFullYear(), asOf.getMonth(), asOf.getDate())
+  const daysInYear = Math.round((Date.UTC(year + 1, 0, 1) - jan1) / dayMs)
+  const elapsedDays = Math.floor((asOfDay - jan1) / dayMs) + 1
+  const fraction = elapsedDays / daysInYear
+  return Math.min(1, Math.max(1 / daysInYear, fraction))
+}
+
 type PerCategoryBudgetActual = {
   categoryId: string
   label: string
@@ -1076,7 +1098,9 @@ export function spendCardTotals(
       sum.budgetedIncome += budgetedIncomeForYear(definitions, amountsByYear, categories, year)
       sum.actualIncome += actualIncomeForYear(scopedTransactions, categories, definitions, year)
       sum.budgetedSpend += definitions.reduce(
-        (budget, definition) => excludedIds.has(definition.categoryId) ? budget : budget + (amounts[definition.id] ?? 0),
+        (budget, definition) => excludedIds.has(definition.categoryId)
+          ? budget
+          : budget + toPeriod(amounts[definition.id] ?? 0, definition.frequency, 'yearly'),
         0
       )
       sum.actualSpend += yearTotalSpend(scopedTransactions, categories, year, definitions)
@@ -1395,6 +1419,40 @@ export function savingsRateByYear(
     const pct = income > 0 ? ((income - spend) / income) * 100 : 0
     return { year, pct, isPositive: pct >= 0 }
   })
+}
+
+/**
+ * Savings rate (%) for a Spend scope. For a single year, delegates to the same
+ * income/spend figures `savingsRateByYear` uses for that year. For
+ * SPEND_ALL_YEARS, aggregates income and spend across ALL `spendBudgetYears`
+ * and computes a single ratio over the totals (NOT an average of per-year
+ * rates). Returns null when total income <= 0 (caller shows "N/A").
+ */
+export function savingsRateForScope(
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  definitions: ExpenseDefinition[],
+  scope: SpendScope
+): { pct: number; isPositive: boolean; income: number; spend: number } | null {
+  if (scope === SPEND_ALL_YEARS) {
+    const totals = spendBudgetYears(transactions).reduce(
+      (sum, year) => {
+        sum.income += actualIncomeForYear(transactions, categories, definitions, year)
+        sum.spend += yearTotalSpend(transactions, categories, year, definitions)
+        return sum
+      },
+      { income: 0, spend: 0 }
+    )
+    if (totals.income <= 0) return null
+    const pct = ((totals.income - totals.spend) / totals.income) * 100
+    return { pct, isPositive: pct >= 0, income: totals.income, spend: totals.spend }
+  }
+
+  const income = actualIncomeForYear(transactions, categories, definitions, scope)
+  const spend = yearTotalSpend(transactions, categories, scope, definitions)
+  if (income <= 0) return null
+  const pct = ((income - spend) / income) * 100
+  return { pct, isPositive: pct >= 0, income, spend }
 }
 
 /**

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseSummaryForScope, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseSummaryForScope, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, projectedSpendForScope, sankeyFlowData, savingsRateByYear, savingsRateForScope, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendScopeKind, spendTransactionsForScope, yearElapsedFraction, yearTotalSpend } from './selectors'
+import { toPeriod } from './computations'
 import { initialState } from './state'
 import type { Account, BudgetTransaction, Category, ExpenseDefinition } from './types'
 
@@ -37,7 +38,7 @@ describe('derived budget income', () => {
     expect(actualByCategory(transactions, definitions, categories)).toEqual({ food: 527 })
     expect(spendCardTotals(definitions, { '2025': { groceries: 315 } }, transactions, categories, '2025')).toMatchObject({
       actualSpend: 527,
-      variance: -212,
+      variance: 3253,
     })
   })
 })
@@ -211,7 +212,7 @@ describe('Spend scopes', () => {
       }),
       { budgetedIncome: 0, actualIncome: 0, budgetedSpend: 0, actualSpend: 0, variance: 0 }
     ))
-    expect(all).toEqual({ budgetedIncome: 2500, actualIncome: 1000, budgetedSpend: 770, actualSpend: 120, variance: 650 })
+    expect(all).toEqual({ budgetedIncome: 2500, actualIncome: 1000, budgetedSpend: 1540, actualSpend: 120, variance: 1420 })
   })
 
   it('uses zero budgets for missing exact snapshots and ignores snapshot-only years', () => {
@@ -219,7 +220,7 @@ describe('Spend scopes', () => {
     expect(spendCardTotals(spendDefinitions, amountsByYear, transactions, spendCategories, '2024')).toEqual({
       budgetedIncome: 0, actualIncome: 1000, budgetedSpend: 0, actualSpend: 20, variance: -20,
     })
-    expect(spendCardTotals(spendDefinitions, amountsByYear, transactions, spendCategories, SPEND_ALL_YEARS).budgetedSpend).toBe(100)
+    expect(spendCardTotals(spendDefinitions, amountsByYear, transactions, spendCategories, SPEND_ALL_YEARS).budgetedSpend).toBe(1200)
   })
 
   it('uses linked definition categories and preserves signed income', () => {
@@ -239,8 +240,8 @@ describe('Spend scopes', () => {
     expect(totals.budgetedIncome).toBe(budgetedIncomeForYear(spendDefinitions, amountsByYear, spendCategories, '2025'))
     expect(totals.actualIncome).toBe(actualIncomeForYear(transactions, spendCategories, spendDefinitions, '2025'))
     expect(totals.actualSpend).toBe(yearTotalSpend(transactions, spendCategories, '2025', spendDefinitions))
-    expect(totals.budgetedSpend).toBe(340)
-    expect(totals.variance).toBe(240)
+    expect(totals.budgetedSpend).toBe(780)
+    expect(totals.variance).toBe(680)
   })
 })
 
@@ -792,5 +793,153 @@ describe('tab-scoped position selectors (tabAccountIds)', () => {
     state.selectedCategoryKey = 'closedPositions'
     const results = acctFilteredClosedPositions(state, ['a1'])
     expect(results.map((cp) => cp.id)).toEqual(['cp1'])
+  })
+})
+
+describe('spendScopeKind', () => {
+  it('classifies SPEND_ALL_YEARS as all', () => {
+    expect(spendScopeKind(SPEND_ALL_YEARS, new Date(2025, 5, 15))).toBe('all')
+  })
+
+  it('classifies a scope matching asOf year as current', () => {
+    expect(spendScopeKind('2025', new Date(2025, 5, 15))).toBe('current')
+  })
+
+  it('classifies a scope year before asOf year as past', () => {
+    expect(spendScopeKind('2024', new Date(2025, 5, 15))).toBe('past')
+  })
+
+  it('classifies a scope year after asOf year as future', () => {
+    expect(spendScopeKind('2026', new Date(2025, 5, 15))).toBe('future')
+  })
+})
+
+describe('yearElapsedFraction', () => {
+  it('returns 1/365 on Jan 1 of a non-leap year', () => {
+    expect(yearElapsedFraction(2023, new Date(2023, 0, 1))).toBeCloseTo(1 / 365)
+  })
+
+  it('returns 1 on Dec 31 of a non-leap year', () => {
+    expect(yearElapsedFraction(2023, new Date(2023, 11, 31))).toBe(1)
+  })
+
+  it('returns 366/366 = 1 on Dec 31 of a leap year', () => {
+    expect(yearElapsedFraction(2024, new Date(2024, 11, 31))).toBe(1)
+  })
+
+  it('clamps to a value in (0, 1] when asOf is in a later year than the target year', () => {
+    const result = yearElapsedFraction(2023, new Date(2025, 5, 15))
+    expect(result).toBeGreaterThan(0)
+    expect(result).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('spendCardTotals budgetedSpend annualization', () => {
+  const annualizeCategories: Category[] = [
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'ignored', name: 'Ignored', updatedAt: '', excludeFromSpend: true },
+  ]
+  const annualizeDefinitions: ExpenseDefinition[] = [
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
+    { id: 'insurance', name: 'Insurance', categoryId: 'food', frequency: 'yearly' },
+    { id: 'ignored-definition', name: 'Ignored', categoryId: 'ignored', frequency: 'monthly' },
+  ]
+  const annualizeTransactions = [tx({ id: 'food-2025', date: '2025-01-01', categoryId: 'food', amount: -1 })]
+
+  it('annualizes a monthly definition amount into budgetedSpend (500/mo -> 6000/yr)', () => {
+    const totals = spendCardTotals(annualizeDefinitions, { '2025': { groceries: 500 } }, annualizeTransactions, annualizeCategories, '2025')
+    expect(totals.budgetedSpend).toBe(6000)
+  })
+
+  it('leaves a yearly definition amount unchanged in budgetedSpend', () => {
+    const totals = spendCardTotals(annualizeDefinitions, { '2025': { insurance: 500 } }, annualizeTransactions, annualizeCategories, '2025')
+    expect(totals.budgetedSpend).toBe(500)
+  })
+
+  it('skips definitions in excluded categories when annualizing budgetedSpend', () => {
+    const totals = spendCardTotals(annualizeDefinitions, { '2025': { 'ignored-definition': 500 } }, annualizeTransactions, annualizeCategories, '2025')
+    expect(totals.budgetedSpend).toBe(0)
+  })
+
+  it('matches the sum of per-category annualized budgets (cross-check against toPeriod)', () => {
+    const amountsByYear = { '2025': { groceries: 500, insurance: 500, 'ignored-definition': 500 } }
+    const totals = spendCardTotals(annualizeDefinitions, amountsByYear, annualizeTransactions, annualizeCategories, '2025')
+    const expectedBudget = annualizeDefinitions.reduce((sum, definition) => {
+      if (definition.categoryId === 'ignored') return sum
+      return sum + toPeriod(amountsByYear['2025'][definition.id] ?? 0, definition.frequency, 'yearly')
+    }, 0)
+    expect(totals.budgetedSpend).toBe(expectedBudget)
+    expect(totals.budgetedSpend).toBe(6500)
+  })
+})
+
+describe('savingsRateForScope', () => {
+  const rateCategories: Category[] = [
+    { id: 'income', name: ' Income ', updatedAt: '' },
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'ignored', name: 'Ignored', updatedAt: '', excludeFromSpend: true },
+  ]
+  const rateDefinitions: ExpenseDefinition[] = [
+    { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'monthly' },
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
+  ]
+
+  it('matches savingsRateByYear for a single-year scope', () => {
+    const transactions = [
+      tx({ id: 'income-2025', date: '2025-01-01', categoryId: 'income', amount: 1000 }),
+      tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -400 }),
+    ]
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, '2025')
+    const expected = savingsRateByYear(['2025'], transactions, rateCategories, rateDefinitions)[0]
+    expect(result?.pct).toBe(expected.pct)
+    expect(result?.isPositive).toBe(expected.isPositive)
+  })
+
+  it('aggregates income and spend across all years rather than averaging per-year rates', () => {
+    const transactions = [
+      tx({ id: 'income-a', date: '2024-01-01', categoryId: 'income', amount: 1000 }),
+      tx({ id: 'food-a', date: '2024-02-01', categoryId: 'food', amount: -500 }),
+      tx({ id: 'income-b', date: '2025-01-01', categoryId: 'income', amount: 5000 }),
+      tx({ id: 'food-b', date: '2025-02-01', categoryId: 'food', amount: -500 }),
+    ]
+    const perYear = savingsRateByYear(['2024', '2025'], transactions, rateCategories, rateDefinitions)
+    expect(perYear[0].pct).toBe(50)
+    expect(perYear[1].pct).toBe(90)
+    const average = (perYear[0].pct + perYear[1].pct) / 2
+    expect(average).toBe(70)
+
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, SPEND_ALL_YEARS)
+    expect(result?.income).toBe(6000)
+    expect(result?.spend).toBe(1000)
+    expect(result?.pct).toBeCloseTo((6000 - 1000) / 6000 * 100, 10)
+    expect(result?.pct).not.toBe(average)
+  })
+
+  it('reports isPositive false when spend exceeds income for a year', () => {
+    const transactions = [
+      tx({ id: 'income-2025', date: '2025-01-01', categoryId: 'income', amount: 500 }),
+      tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -900 }),
+    ]
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, '2025')
+    expect(result?.isPositive).toBe(false)
+    expect(result?.pct).toBeLessThan(0)
+  })
+
+  it('returns null when income is zero or negative', () => {
+    const noIncomeYear = [tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -900 })]
+    expect(savingsRateForScope(noIncomeYear, rateCategories, rateDefinitions, '2025')).toBeNull()
+    expect(savingsRateForScope(noIncomeYear, rateCategories, rateDefinitions, SPEND_ALL_YEARS)).toBeNull()
+  })
+
+  it('excludes excludeFromSpend categories from income/spend totals', () => {
+    const transactions = [
+      tx({ id: 'income-2025', date: '2025-01-01', categoryId: 'income', amount: 1000 }),
+      tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -400 }),
+      tx({ id: 'ignored-2025', date: '2025-03-01', categoryId: 'ignored', amount: -9999 }),
+    ]
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, '2025')
+    expect(result?.income).toBe(1000)
+    expect(result?.spend).toBe(400)
+    expect(result?.pct).toBe(60)
   })
 })
