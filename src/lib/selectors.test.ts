@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseSummaryForScope, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, projectedSpendForScope, sankeyFlowData, savingsRateByYear, savingsRateForScope, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendPaceForScope, spendScopeKind, spendTransactionsForScope, yearElapsedFraction, yearTotalSpend } from './selectors'
+import { toPeriod } from './computations'
 import { initialState } from './state'
 import type { Account, BudgetTransaction, Category, ExpenseDefinition } from './types'
 
@@ -37,7 +38,7 @@ describe('derived budget income', () => {
     expect(actualByCategory(transactions, definitions, categories)).toEqual({ food: 527 })
     expect(spendCardTotals(definitions, { '2025': { groceries: 315 } }, transactions, categories, '2025')).toMatchObject({
       actualSpend: 527,
-      variance: -212,
+      variance: 3253,
     })
   })
 })
@@ -211,7 +212,7 @@ describe('Spend scopes', () => {
       }),
       { budgetedIncome: 0, actualIncome: 0, budgetedSpend: 0, actualSpend: 0, variance: 0 }
     ))
-    expect(all).toEqual({ budgetedIncome: 2500, actualIncome: 1000, budgetedSpend: 770, actualSpend: 120, variance: 650 })
+    expect(all).toEqual({ budgetedIncome: 2500, actualIncome: 1000, budgetedSpend: 1540, actualSpend: 120, variance: 1420 })
   })
 
   it('uses zero budgets for missing exact snapshots and ignores snapshot-only years', () => {
@@ -219,7 +220,7 @@ describe('Spend scopes', () => {
     expect(spendCardTotals(spendDefinitions, amountsByYear, transactions, spendCategories, '2024')).toEqual({
       budgetedIncome: 0, actualIncome: 1000, budgetedSpend: 0, actualSpend: 20, variance: -20,
     })
-    expect(spendCardTotals(spendDefinitions, amountsByYear, transactions, spendCategories, SPEND_ALL_YEARS).budgetedSpend).toBe(100)
+    expect(spendCardTotals(spendDefinitions, amountsByYear, transactions, spendCategories, SPEND_ALL_YEARS).budgetedSpend).toBe(1200)
   })
 
   it('uses linked definition categories and preserves signed income', () => {
@@ -239,67 +240,152 @@ describe('Spend scopes', () => {
     expect(totals.budgetedIncome).toBe(budgetedIncomeForYear(spendDefinitions, amountsByYear, spendCategories, '2025'))
     expect(totals.actualIncome).toBe(actualIncomeForYear(transactions, spendCategories, spendDefinitions, '2025'))
     expect(totals.actualSpend).toBe(yearTotalSpend(transactions, spendCategories, '2025', spendDefinitions))
-    expect(totals.budgetedSpend).toBe(340)
-    expect(totals.variance).toBe(240)
+    expect(totals.budgetedSpend).toBe(780)
+    expect(totals.variance).toBe(680)
   })
 })
 
 describe('projectedSpendForScope', () => {
   const foodCategory: Category[] = [{ id: 'food', name: 'Food', updatedAt: '' }]
-  const foodDefinition: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'yearly' }]
+  const yearlyFoodDefinition: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'yearly' }]
+  const monthlyFoodDefinition: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'monthly' }]
+  const midYear = new Date(2025, 6, 1) // fraction = 0.5 (181/365, ~mid-year; exact value from yearElapsedFraction)
 
-  it('extrapolates mid-year actual spend and flags projected overages', () => {
+  it('counts a yearly-linked expense at actual, never extrapolated', () => {
+    const fraction = yearElapsedFraction(2025, midYear)
     const result = projectedSpendForScope(
-      foodDefinition,
-      { '2025': { 'food-budget': 700 } },
-      [tx({ amount: -728, date: '2025-06-30' })],
+      yearlyFoodDefinition,
+      { '2025': { 'food-budget': 1200 } },
+      [tx({ amount: -1200, date: '2025-01-15', spendExpenseId: 'food-budget' })],
       foodCategory,
       '2025',
-      new Date(2025, 6, 2)
+      midYear
     )
-
-    expect(result).toEqual({ projectedTotal: 1460, budgetTotal: 700, pctOver: 108.57142857142858, isOverBudget: true })
+    expect(fraction).toBeLessThan(1)
+    expect(result?.projectedTotal).toBe(1200)
+    expect(result?.budgetTotal).toBe(1200)
   })
 
-  it('does not flag projections at or below budget', () => {
-    expect(projectedSpendForScope(
-      foodDefinition,
-      { '2025': { 'food-budget': 1500 } },
-      [tx({ amount: -728, date: '2025-06-30' })],
+  it('extrapolates a monthly-linked expense by the elapsed fraction', () => {
+    const fraction = yearElapsedFraction(2025, midYear)
+    const result = projectedSpendForScope(
+      monthlyFoodDefinition,
+      { '2025': { 'food-budget': 100 } },
+      [tx({ amount: -600, date: '2025-03-01', spendExpenseId: 'food-budget' })],
       foodCategory,
       '2025',
-      new Date(2025, 6, 2)
-    )?.isOverBudget).toBe(false)
+      midYear
+    )
+    expect(result?.projectedTotal).toBeCloseTo(600 / fraction)
+  })
+
+  it('extrapolates unlinked spend the same way as monthly-linked spend', () => {
+    const fraction = yearElapsedFraction(2025, midYear)
+    const result = projectedSpendForScope(
+      [],
+      {},
+      [tx({ amount: -600, date: '2025-03-01' })],
+      foodCategory,
+      '2025',
+      midYear
+    )
+    expect(result?.projectedTotal).toBeCloseTo(600 / fraction)
+  })
+
+  it('sums yearly-actual plus extrapolated-other within the same category', () => {
+    const fraction = yearElapsedFraction(2025, midYear)
+    const mixedDefinitions: ExpenseDefinition[] = [
+      { id: 'yearly-bill', name: 'Yearly Bill', categoryId: 'food', frequency: 'yearly' },
+      { id: 'monthly-bill', name: 'Monthly Bill', categoryId: 'food', frequency: 'monthly' },
+    ]
+    const result = projectedSpendForScope(
+      mixedDefinitions,
+      { '2025': { 'yearly-bill': 1200, 'monthly-bill': 100 } },
+      [
+        tx({ id: 'y', amount: -1200, date: '2025-01-15', spendExpenseId: 'yearly-bill' }),
+        tx({ id: 'm', amount: -300, date: '2025-03-01', spendExpenseId: 'monthly-bill' }),
+      ],
+      foodCategory,
+      '2025',
+      midYear
+    )
+    expect(result?.projectedTotal).toBeCloseTo(1200 + 300 / fraction)
+  })
+
+  it('never divides by zero or produces Infinity/NaN on the first day of the year', () => {
+    const asOf = new Date(2025, 0, 1)
+    const fraction = yearElapsedFraction(2025, asOf)
+    const result = projectedSpendForScope(
+      [],
+      {},
+      [tx({ amount: -100, date: '2025-01-01' })],
+      foodCategory,
+      '2025',
+      asOf
+    )
+    expect(fraction).toBeGreaterThan(0)
+    expect(result?.projectedTotal).toBeCloseTo(100 / fraction)
+    expect(Number.isFinite(result?.projectedTotal)).toBe(true)
+    expect(result?.projectedTotal).not.toBe(0)
+  })
+
+  it('excludes income/excluded category spend from projections', () => {
+    const incomeCategories: Category[] = [{ id: 'income', name: 'Income', updatedAt: '' }]
+    const result = projectedSpendForScope(
+      [],
+      {},
+      [tx({ amount: -1000, date: '2025-03-01', categoryId: 'income' })],
+      incomeCategories,
+      '2025',
+      midYear
+    )
+    expect(result?.projectedTotal).toBe(0)
   })
 
   it('returns null for the unbounded all-years scope', () => {
-    expect(projectedSpendForScope(foodDefinition, {}, [], foodCategory, SPEND_ALL_YEARS, new Date(2025, 6, 2))).toBeNull()
+    expect(projectedSpendForScope(yearlyFoodDefinition, {}, [], foodCategory, SPEND_ALL_YEARS, midYear)).toBeNull()
   })
 
-  it('returns zero projection on the first day of the period', () => {
-    expect(projectedSpendForScope(
-      foodDefinition,
-      { '2025': { 'food-budget': 700 } },
-      [tx({ amount: -100 })],
+  it('uses actual spend as-is (no extrapolation) for a past year', () => {
+    const result = projectedSpendForScope(
+      [],
+      {},
+      [tx({ amount: -800, date: '2023-12-31' })],
+      foodCategory,
+      '2023',
+      midYear
+    )
+    expect(result?.projectedTotal).toBe(800)
+  })
+
+  it('uses actual spend as-is (no extrapolation) for a future year', () => {
+    const result = projectedSpendForScope(
+      [],
+      {},
+      [tx({ amount: -800, date: '2030-01-01' })],
+      foodCategory,
+      '2030',
+      midYear
+    )
+    expect(result?.projectedTotal).toBe(800)
+  })
+
+  it('flags isOverBudget with pctOver 0 when budgetTotal is zero and there is spend', () => {
+    const result = projectedSpendForScope(
+      [],
+      {},
+      [tx({ amount: -100, date: '2025-03-01' })],
       foodCategory,
       '2025',
-      new Date(2025, 0, 1)
-    )).toMatchObject({ projectedTotal: 0, budgetTotal: 700, pctOver: -100, isOverBudget: false })
+      midYear
+    )
+    expect(result?.budgetTotal).toBe(0)
+    expect(result?.pctOver).toBe(0)
+    expect(result?.isOverBudget).toBe(true)
   })
 
-  it('clamps stale as-of dates to the period end', () => {
-    expect(projectedSpendForScope(
-      foodDefinition,
-      { '2025': { 'food-budget': 700 } },
-      [tx({ amount: -800, date: '2025-12-31' })],
-      foodCategory,
-      '2025',
-      new Date(2026, 2, 1)
-    )).toMatchObject({ projectedTotal: 800, budgetTotal: 700, isOverBudget: true })
-  })
-
-  it('handles empty transactions and definitions', () => {
-    expect(projectedSpendForScope([], {}, [], foodCategory, '2025', new Date(2025, 6, 2))).toEqual({
+  it('flags isOverBudget false with pctOver 0 when budgetTotal and spend are both zero', () => {
+    expect(projectedSpendForScope([], {}, [], foodCategory, '2025', midYear)).toEqual({
       projectedTotal: 0,
       budgetTotal: 0,
       pctOver: 0,
@@ -365,43 +451,6 @@ describe('overBudgetCategories', () => {
   })
 })
 
-describe('expenseSummaryForScope', () => {
-  const amountsByYear = {
-    '2025': { 'food-budget': 1000, 'transport-budget': 500 },
-    '2024': { 'food-budget': 800, 'transport-budget': 400 },
-  }
-  const t2025a = tx({ id: 't2025a', date: '2025-01-01', categoryId: 'food', amount: -300 })
-  const t2025b = tx({ id: 't2025b', date: '2025-02-01', categoryId: 'food', amount: -100 })
-  const t2025c = tx({ id: 't2025c', date: '2025-03-01', categoryId: 'transport', amount: -50 })
-  const t2024a = tx({ id: 't2024a', date: '2024-01-01', categoryId: 'food', amount: -200 })
-  const t2024b = tx({ id: 't2024b', date: '2024-06-01', categoryId: 'transport', amount: -1000 })
-
-  it('matches the current single-year summary for a concrete scope', () => {
-    const transactions = [t2025a, t2025b, t2025c]
-    const summary = expenseSummaryForScope(amountsByYear, transactions, '2025')
-    expect(summary.totalSpend).toBe(450)
-    expect(summary.totalBudget).toBe(1500)
-    expect(summary.averageTransaction).toBe(150)
-    expect(summary.largestTransaction).toMatchObject({ id: 't2025a', magnitude: 300 })
-    expect(summary.topCategory).toEqual(['food', 400])
-  })
-
-  it('sums spend, budget and recomputes largest/top-category across all years for SPEND_ALL_YEARS', () => {
-    const transactions = [t2025a, t2025b, t2025c, t2024a, t2024b]
-    const summary = expenseSummaryForScope(amountsByYear, transactions, SPEND_ALL_YEARS)
-    expect(summary.totalSpend).toBe(1650)
-    expect(summary.totalBudget).toBe(2700)
-    expect(summary.averageTransaction).toBe(330)
-    expect(summary.largestTransaction).toMatchObject({ id: 't2024b', magnitude: 1000 })
-    expect(summary.topCategory).toEqual(['transport', 1050])
-  })
-
-  it('handles no transactions in scope without throwing', () => {
-    const summary = expenseSummaryForScope(amountsByYear, [], '2025')
-    expect(summary).toEqual({ totalSpend: 0, totalBudget: 1500, averageTransaction: 0, largestTransaction: null, topCategory: null })
-  })
-})
-
 describe('overBudgetCategoriesForScope', () => {
   it('flags a category as over budget only once its summed multi-year actual exceeds its summed multi-year budget', () => {
     const categories: Category[] = [{ id: 'x', name: 'X', updatedAt: '' }]
@@ -417,7 +466,7 @@ describe('overBudgetCategoriesForScope', () => {
     expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025')).toEqual([])
     expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2024')).toEqual([])
     expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, SPEND_ALL_YEARS)).toEqual([
-      { categoryId: 'x', label: 'X', overageAmount: 70, pctOver: 350 },
+      { categoryId: 'x', label: 'X', overageAmount: 70, pctOver: 350, status: 'over' },
     ])
   })
 
@@ -427,7 +476,143 @@ describe('overBudgetCategoriesForScope', () => {
     const amountsByYear = { '2025': { 'food-budget': 100 } }
     const transactions = [tx({ amount: -150 })]
     expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025'))
-      .toEqual(overBudgetCategories(definitions, amountsByYear, transactions, categories, '2025'))
+      .toEqual(overBudgetCategories(definitions, amountsByYear, transactions, categories, '2025').map((row) => ({ ...row, status: 'over' })))
+  })
+
+  it('without asOfDate, only returns status: over rows (unchanged behavior)', () => {
+    const categories: Category[] = [{ id: 'food', name: 'Food', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'yearly' }]
+    const amountsByYear = { '2025': { 'food-budget': 100 } }
+    const transactions = [tx({ amount: -150 })]
+    expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025')).toEqual([
+      { categoryId: 'food', label: 'Food', overageAmount: 50, pctOver: 50, status: 'over' },
+    ])
+  })
+
+  it('flags a category under budget today as projected/amber when frequency-aware projection exceeds its budget', () => {
+    const categories: Category[] = [{ id: 'travel', name: 'Travel', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'travel-budget', name: 'Travel', categoryId: 'travel', frequency: 'monthly' }]
+    const amountsByYear = { '2025': { 'travel-budget': 100 } } // annualized budget 1200
+    // Half the year elapsed (fraction .5), actual 700 so far -> projected 1400, under budget today but over on projection.
+    const asOfDate = new Date('2025-07-02T00:00:00Z')
+    const transactions = [tx({ date: '2025-02-01', categoryId: 'travel', amount: -700, spendExpenseId: 'travel-budget' })]
+
+    const fraction = yearElapsedFraction(2025, asOfDate)
+    const projected = 700 / fraction
+    const result = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025', asOfDate)
+    expect(result).toEqual([
+      { categoryId: 'travel', label: 'Travel', overageAmount: expect.closeTo(projected - 1200, 5), pctOver: expect.closeTo((projected / 1200 - 1) * 100, 5), status: 'projected' },
+    ])
+  })
+
+  it('does not flag a yearly-linked lump sum within its yearly budget as amber, even though naive straight-line projection would', () => {
+    const categories: Category[] = [{ id: 'insurance', name: 'Insurance', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'insurance-budget', name: 'Insurance', categoryId: 'insurance', frequency: 'yearly' }]
+    const amountsByYear = { '2025': { 'insurance-budget': 1000 } }
+    // Paid once in January, in full, within budget. Naive straight-line projection (fraction ~ small) would blow this up.
+    const asOfDate = new Date('2025-02-01T00:00:00Z')
+    const transactions = [tx({ date: '2025-01-15', categoryId: 'insurance', amount: -1000, spendExpenseId: 'insurance-budget' })]
+
+    const result = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025', asOfDate)
+    expect(result).toEqual([])
+  })
+
+  it('a category already over budget today appears only once, as status: over, never duplicated as projected', () => {
+    const categories: Category[] = [{ id: 'food', name: 'Food', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'monthly' }]
+    const amountsByYear = { '2025': { 'food-budget': 50 } } // annualized 600
+    const asOfDate = new Date('2025-07-02T00:00:00Z')
+    const transactions = [tx({ date: '2025-02-01', categoryId: 'food', amount: -700, spendExpenseId: 'food-budget' })]
+
+    const result = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025', asOfDate)
+    expect(result).toEqual([
+      { categoryId: 'food', label: 'Food', overageAmount: 100, pctOver: expect.closeTo((700 / 600 - 1) * 100, 5), status: 'over' },
+    ])
+  })
+
+  it('past-year scope with asOfDate returns no amber rows (only over, identical to no-asOfDate call)', () => {
+    const categories: Category[] = [{ id: 'travel', name: 'Travel', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'travel-budget', name: 'Travel', categoryId: 'travel', frequency: 'monthly' }]
+    const amountsByYear = { '2024': { 'travel-budget': 100 } }
+    const asOfDate = new Date('2025-07-02T00:00:00Z')
+    const transactions = [tx({ date: '2024-02-01', categoryId: 'travel', amount: -700, spendExpenseId: 'travel-budget' })]
+
+    const withAsOf = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2024', asOfDate)
+    const withoutAsOf = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2024')
+    expect(withAsOf).toEqual(withoutAsOf)
+    expect(withAsOf.every((row) => row.status === 'over')).toBe(true)
+  })
+
+  it('all-years scope with asOfDate returns no amber rows', () => {
+    const categories: Category[] = [{ id: 'travel', name: 'Travel', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'travel-budget', name: 'Travel', categoryId: 'travel', frequency: 'monthly' }]
+    const amountsByYear = { '2025': { 'travel-budget': 100 } }
+    const asOfDate = new Date('2025-07-02T00:00:00Z')
+    const transactions = [tx({ date: '2025-02-01', categoryId: 'travel', amount: -700, spendExpenseId: 'travel-budget' })]
+
+    const result = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, SPEND_ALL_YEARS, asOfDate)
+    expect(result.every((row) => row.status === 'over')).toBe(true)
+  })
+
+  it('zero-budget category with spend, current year: still over with Infinity pctOver, with or without asOfDate', () => {
+    const categories: Category[] = [{ id: 'travel', name: 'Travel', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'travel-budget', name: 'Travel', categoryId: 'travel', frequency: 'yearly' }]
+    const amountsByYear = { '2025': { 'travel-budget': 0 } }
+    const asOfDate = new Date('2025-07-02T00:00:00Z')
+    const transactions = [tx({ date: '2025-02-01', categoryId: 'travel', amount: -25, spendExpenseId: 'travel-budget' })]
+
+    const withoutAsOf = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025')
+    const withAsOf = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025', asOfDate)
+    expect(withoutAsOf).toEqual([{ categoryId: 'travel', label: 'Travel', overageAmount: 25, pctOver: Infinity, status: 'over' }])
+    expect(withAsOf).toEqual([{ categoryId: 'travel', label: 'Travel', overageAmount: 25, pctOver: Infinity, status: 'over' }])
+  })
+
+  it('sorts over rows before projected rows, each group by overage descending', () => {
+    const categories: Category[] = [
+      { id: 'food', name: 'Food', updatedAt: '' },
+      { id: 'rent', name: 'Rent', updatedAt: '' },
+      { id: 'travel', name: 'Travel', updatedAt: '' },
+      { id: 'fun', name: 'Fun', updatedAt: '' },
+    ]
+    const definitions: ExpenseDefinition[] = [
+      { id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'monthly' },
+      { id: 'rent-budget', name: 'Rent', categoryId: 'rent', frequency: 'monthly' },
+      { id: 'travel-budget', name: 'Travel', categoryId: 'travel', frequency: 'monthly' },
+      { id: 'fun-budget', name: 'Fun', categoryId: 'fun', frequency: 'monthly' },
+    ]
+    const amountsByYear = {
+      '2025': { 'food-budget': 50, 'rent-budget': 200, 'travel-budget': 100, 'fun-budget': 40 },
+    } // annualized: food 600, rent 2400, travel 1200, fun 480
+    const asOfDate = new Date('2025-07-02T00:00:00Z') // fraction .5
+    const transactions = [
+      // food: already over today (actual 700 > 600)
+      tx({ id: 't-food', date: '2025-02-01', categoryId: 'food', amount: -700, spendExpenseId: 'food-budget' }),
+      // rent: already over today by more (actual 3000 > 2400)
+      tx({ id: 't-rent', date: '2025-02-01', categoryId: 'rent', amount: -3000, spendExpenseId: 'rent-budget' }),
+      // travel: under today (actual 700 <= 1200) but projected 1400 > 1200
+      tx({ id: 't-travel', date: '2025-02-01', categoryId: 'travel', amount: -700, spendExpenseId: 'travel-budget' }),
+      // fun: under today (actual 260 <= 480) and projected 520 > 480
+      tx({ id: 't-fun', date: '2025-02-01', categoryId: 'fun', amount: -260, spendExpenseId: 'fun-budget' }),
+    ]
+
+    const result = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025', asOfDate)
+    expect(result.map((r) => ({ categoryId: r.categoryId, status: r.status }))).toEqual([
+      { categoryId: 'rent', status: 'over' },
+      { categoryId: 'food', status: 'over' },
+      { categoryId: 'travel', status: 'projected' },
+      { categoryId: 'fun', status: 'projected' },
+    ])
+  })
+
+  it('excludes an excluded category from both over and projected lists', () => {
+    const categories: Category[] = [{ id: 'internal', name: 'Internal Transfer', updatedAt: '', excludeFromSpend: true }]
+    const definitions: ExpenseDefinition[] = [{ id: 'internal-budget', name: 'Internal Transfer', categoryId: 'internal', frequency: 'monthly' }]
+    const amountsByYear = { '2025': { 'internal-budget': 10 } }
+    const asOfDate = new Date('2025-07-02T00:00:00Z')
+    const transactions = [tx({ date: '2025-02-01', categoryId: 'internal', amount: -1000, spendExpenseId: 'internal-budget' })]
+
+    const result = overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025', asOfDate)
+    expect(result).toEqual([])
   })
 })
 
@@ -792,5 +977,276 @@ describe('tab-scoped position selectors (tabAccountIds)', () => {
     state.selectedCategoryKey = 'closedPositions'
     const results = acctFilteredClosedPositions(state, ['a1'])
     expect(results.map((cp) => cp.id)).toEqual(['cp1'])
+  })
+})
+
+describe('spendScopeKind', () => {
+  it('classifies SPEND_ALL_YEARS as all', () => {
+    expect(spendScopeKind(SPEND_ALL_YEARS, new Date(2025, 5, 15))).toBe('all')
+  })
+
+  it('classifies a scope matching asOf year as current', () => {
+    expect(spendScopeKind('2025', new Date(2025, 5, 15))).toBe('current')
+  })
+
+  it('classifies a scope year before asOf year as past', () => {
+    expect(spendScopeKind('2024', new Date(2025, 5, 15))).toBe('past')
+  })
+
+  it('classifies a scope year after asOf year as future', () => {
+    expect(spendScopeKind('2026', new Date(2025, 5, 15))).toBe('future')
+  })
+})
+
+describe('yearElapsedFraction', () => {
+  it('returns 1/365 on Jan 1 of a non-leap year', () => {
+    expect(yearElapsedFraction(2023, new Date(2023, 0, 1))).toBeCloseTo(1 / 365)
+  })
+
+  it('returns 1 on Dec 31 of a non-leap year', () => {
+    expect(yearElapsedFraction(2023, new Date(2023, 11, 31))).toBe(1)
+  })
+
+  it('returns 366/366 = 1 on Dec 31 of a leap year', () => {
+    expect(yearElapsedFraction(2024, new Date(2024, 11, 31))).toBe(1)
+  })
+
+  it('clamps to a value in (0, 1] when asOf is in a later year than the target year', () => {
+    const result = yearElapsedFraction(2023, new Date(2025, 5, 15))
+    expect(result).toBeGreaterThan(0)
+    expect(result).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('spendCardTotals budgetedSpend annualization', () => {
+  const annualizeCategories: Category[] = [
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'ignored', name: 'Ignored', updatedAt: '', excludeFromSpend: true },
+  ]
+  const annualizeDefinitions: ExpenseDefinition[] = [
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
+    { id: 'insurance', name: 'Insurance', categoryId: 'food', frequency: 'yearly' },
+    { id: 'ignored-definition', name: 'Ignored', categoryId: 'ignored', frequency: 'monthly' },
+  ]
+  const annualizeTransactions = [tx({ id: 'food-2025', date: '2025-01-01', categoryId: 'food', amount: -1 })]
+
+  it('annualizes a monthly definition amount into budgetedSpend (500/mo -> 6000/yr)', () => {
+    const totals = spendCardTotals(annualizeDefinitions, { '2025': { groceries: 500 } }, annualizeTransactions, annualizeCategories, '2025')
+    expect(totals.budgetedSpend).toBe(6000)
+  })
+
+  it('leaves a yearly definition amount unchanged in budgetedSpend', () => {
+    const totals = spendCardTotals(annualizeDefinitions, { '2025': { insurance: 500 } }, annualizeTransactions, annualizeCategories, '2025')
+    expect(totals.budgetedSpend).toBe(500)
+  })
+
+  it('skips definitions in excluded categories when annualizing budgetedSpend', () => {
+    const totals = spendCardTotals(annualizeDefinitions, { '2025': { 'ignored-definition': 500 } }, annualizeTransactions, annualizeCategories, '2025')
+    expect(totals.budgetedSpend).toBe(0)
+  })
+
+  it('matches the sum of per-category annualized budgets (cross-check against toPeriod)', () => {
+    const amountsByYear = { '2025': { groceries: 500, insurance: 500, 'ignored-definition': 500 } }
+    const totals = spendCardTotals(annualizeDefinitions, amountsByYear, annualizeTransactions, annualizeCategories, '2025')
+    const expectedBudget = annualizeDefinitions.reduce((sum, definition) => {
+      if (definition.categoryId === 'ignored') return sum
+      return sum + toPeriod(amountsByYear['2025'][definition.id] ?? 0, definition.frequency, 'yearly')
+    }, 0)
+    expect(totals.budgetedSpend).toBe(expectedBudget)
+    expect(totals.budgetedSpend).toBe(6500)
+  })
+})
+
+describe('savingsRateForScope', () => {
+  const rateCategories: Category[] = [
+    { id: 'income', name: ' Income ', updatedAt: '' },
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'ignored', name: 'Ignored', updatedAt: '', excludeFromSpend: true },
+  ]
+  const rateDefinitions: ExpenseDefinition[] = [
+    { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'monthly' },
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
+  ]
+
+  it('matches savingsRateByYear for a single-year scope', () => {
+    const transactions = [
+      tx({ id: 'income-2025', date: '2025-01-01', categoryId: 'income', amount: 1000 }),
+      tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -400 }),
+    ]
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, '2025')
+    const expected = savingsRateByYear(['2025'], transactions, rateCategories, rateDefinitions)[0]
+    expect(result?.pct).toBe(expected.pct)
+    expect(result?.isPositive).toBe(expected.isPositive)
+  })
+
+  it('aggregates income and spend across all years rather than averaging per-year rates', () => {
+    const transactions = [
+      tx({ id: 'income-a', date: '2024-01-01', categoryId: 'income', amount: 1000 }),
+      tx({ id: 'food-a', date: '2024-02-01', categoryId: 'food', amount: -500 }),
+      tx({ id: 'income-b', date: '2025-01-01', categoryId: 'income', amount: 5000 }),
+      tx({ id: 'food-b', date: '2025-02-01', categoryId: 'food', amount: -500 }),
+    ]
+    const perYear = savingsRateByYear(['2024', '2025'], transactions, rateCategories, rateDefinitions)
+    expect(perYear[0].pct).toBe(50)
+    expect(perYear[1].pct).toBe(90)
+    const average = (perYear[0].pct + perYear[1].pct) / 2
+    expect(average).toBe(70)
+
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, SPEND_ALL_YEARS)
+    expect(result?.income).toBe(6000)
+    expect(result?.spend).toBe(1000)
+    expect(result?.pct).toBeCloseTo((6000 - 1000) / 6000 * 100, 10)
+    expect(result?.pct).not.toBe(average)
+  })
+
+  it('reports isPositive false when spend exceeds income for a year', () => {
+    const transactions = [
+      tx({ id: 'income-2025', date: '2025-01-01', categoryId: 'income', amount: 500 }),
+      tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -900 }),
+    ]
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, '2025')
+    expect(result?.isPositive).toBe(false)
+    expect(result?.pct).toBeLessThan(0)
+  })
+
+  it('returns null when income is zero or negative', () => {
+    const noIncomeYear = [tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -900 })]
+    expect(savingsRateForScope(noIncomeYear, rateCategories, rateDefinitions, '2025')).toBeNull()
+    expect(savingsRateForScope(noIncomeYear, rateCategories, rateDefinitions, SPEND_ALL_YEARS)).toBeNull()
+  })
+
+  it('excludes excludeFromSpend categories from income/spend totals', () => {
+    const transactions = [
+      tx({ id: 'income-2025', date: '2025-01-01', categoryId: 'income', amount: 1000 }),
+      tx({ id: 'food-2025', date: '2025-02-01', categoryId: 'food', amount: -400 }),
+      tx({ id: 'ignored-2025', date: '2025-03-01', categoryId: 'ignored', amount: -9999 }),
+    ]
+    const result = savingsRateForScope(transactions, rateCategories, rateDefinitions, '2025')
+    expect(result?.income).toBe(1000)
+    expect(result?.spend).toBe(400)
+    expect(result?.pct).toBe(60)
+  })
+})
+
+describe('spendPaceForScope', () => {
+  const foodCategory: Category[] = [{ id: 'food', name: 'Food', updatedAt: '' }]
+  const midYear = new Date(2025, 6, 1) // fraction = 0.5
+
+  it('current year, monthly definition: expectedByToday prorates by elapsed fraction', () => {
+    const monthlyDefinition: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'monthly' }]
+    const fraction = yearElapsedFraction(2025, midYear)
+    expect(fraction).toBeCloseTo(0.5, 1)
+    const expected = 1200 * fraction
+
+    const onTrack = spendPaceForScope(
+      monthlyDefinition,
+      { '2025': { 'food-budget': 100 } },
+      [tx({ amount: -(expected - 100), date: '2025-03-01', spendExpenseId: 'food-budget' })],
+      foodCategory,
+      '2025',
+      midYear
+    )
+    expect(onTrack.expectedByToday).toBeCloseTo(expected)
+    expect(onTrack.actual).toBeCloseTo(expected - 100)
+    expect(onTrack.isOnTrack).toBe(true)
+
+    const offTrack = spendPaceForScope(
+      monthlyDefinition,
+      { '2025': { 'food-budget': 100 } },
+      [tx({ amount: -(expected + 100), date: '2025-03-01', spendExpenseId: 'food-budget' })],
+      foodCategory,
+      '2025',
+      midYear
+    )
+    expect(offTrack.expectedByToday).toBeCloseTo(expected)
+    expect(offTrack.actual).toBeCloseTo(expected + 100)
+    expect(offTrack.isOnTrack).toBe(false)
+  })
+
+  it('current year, yearly definition paid within budget counts fully toward expectedByToday', () => {
+    const yearlyDefinition: ExpenseDefinition[] = [{ id: 'insurance', name: 'Insurance', categoryId: 'food', frequency: 'yearly' }]
+    const earlyYear = new Date(2025, 1, 25) // fraction close to 0.2
+    const fraction = yearElapsedFraction(2025, earlyYear)
+    expect(fraction).toBeLessThan(1)
+
+    const result = spendPaceForScope(
+      yearlyDefinition,
+      { '2025': { insurance: 1000 } },
+      [tx({ amount: -1000, date: '2025-02-01', spendExpenseId: 'insurance' })],
+      foodCategory,
+      '2025',
+      earlyYear
+    )
+    expect(result.expectedByToday).toBe(1000)
+    expect(result.actual).toBe(1000)
+    expect(result.isOnTrack).toBe(true)
+  })
+
+  it('yearly definition overpaid past its budget caps its expectedByToday contribution', () => {
+    const yearlyDefinition: ExpenseDefinition[] = [{ id: 'insurance', name: 'Insurance', categoryId: 'food', frequency: 'yearly' }]
+    const earlyYear = new Date(2025, 1, 25)
+
+    const result = spendPaceForScope(
+      yearlyDefinition,
+      { '2025': { insurance: 1000 } },
+      [tx({ amount: -1100, date: '2025-02-01', spendExpenseId: 'insurance' })],
+      foodCategory,
+      '2025',
+      earlyYear
+    )
+    expect(result.expectedByToday).toBe(1000)
+    expect(result.actual).toBe(1100)
+    expect(result.isOnTrack).toBe(false)
+  })
+
+  it('past year scope: expectedByToday is null, compares actual against plain annualized budget', () => {
+    const monthlyDefinition: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'monthly' }]
+    const result = spendPaceForScope(
+      monthlyDefinition,
+      { '2024': { 'food-budget': 100 } },
+      [tx({ amount: -1300, date: '2024-06-01', spendExpenseId: 'food-budget' })],
+      foodCategory,
+      '2024',
+      midYear
+    )
+    expect(result.expectedByToday).toBeNull()
+    expect(result.budget).toBe(1200)
+    expect(result.actual).toBe(1300)
+    expect(result.isOnTrack).toBe(false)
+  })
+
+  it('all-years scope: expectedByToday is null, compares actual against plain annualized budget', () => {
+    const monthlyDefinition: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'monthly' }]
+    const result = spendPaceForScope(
+      monthlyDefinition,
+      { '2024': { 'food-budget': 100 } },
+      [tx({ amount: -1100, date: '2024-06-01', spendExpenseId: 'food-budget' })],
+      foodCategory,
+      SPEND_ALL_YEARS,
+      midYear
+    )
+    expect(result.expectedByToday).toBeNull()
+    expect(result.budget).toBe(1200)
+    expect(result.actual).toBe(1100)
+    expect(result.isOnTrack).toBe(true)
+  })
+
+  it('zero budget: pctOfBudget is 0, isOnTrack true iff actual is 0', () => {
+    const zeroSpend = spendPaceForScope([], {}, [], foodCategory, '2025', midYear)
+    expect(zeroSpend.budget).toBe(0)
+    expect(zeroSpend.pctOfBudget).toBe(0)
+    expect(zeroSpend.isOnTrack).toBe(true)
+
+    const someSpend = spendPaceForScope(
+      [],
+      {},
+      [tx({ amount: -50, date: '2025-03-01' })],
+      foodCategory,
+      '2025',
+      midYear
+    )
+    expect(someSpend.budget).toBe(0)
+    expect(someSpend.pctOfBudget).toBe(0)
+    expect(someSpend.isOnTrack).toBe(false)
   })
 })

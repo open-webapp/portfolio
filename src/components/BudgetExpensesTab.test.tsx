@@ -329,13 +329,6 @@ describe('BudgetExpensesTab category breakdown drilldown', () => {
       ],
     })
 
-    expect(screen.queryByTestId('expense-summary-spend')).toBeNull()
-    expect(screen.queryByTestId('expense-summary-average')).toBeNull()
-    expect(screen.queryByTestId('expense-summary-largest')).toBeNull()
-    expect(screen.queryByTestId('expense-summary-top-category')).toBeNull()
-    expect(screen.queryByTestId('expense-action-items')).toBeNull()
-    expect(screen.queryByTestId('expense-action-item')).toBeNull()
-    expect(screen.queryByText('Expense Summary')).toBeNull()
-    expect(screen.queryByText('Action items')).toBeNull()
+    expect(screen.queryByTestId('summary-cards')).toBeNull()
   })
 })
