@@ -3,9 +3,9 @@ import type { AppState } from '../lib/state'
 import { clearExpenseAmount, expenseDefinitionInUse, setExpenseAmount, updateExpenseDefinition } from '../lib/state'
 import type { CategoryAction } from '../lib/categoryStore'
 import type { Category } from '../lib/types'
-import { fmtUSD, LOSS_COLOR } from '../lib/computations'
+import { fmtPct, fmtUSD, GAIN_COLOR, LOSS_COLOR } from '../lib/computations'
 import { uid } from '../lib/seed'
-import { categoryBreakdown, availableBudgetYears, expenseTableYears, visibleExpenses } from '../lib/selectors'
+import { expenseTableColumnYears, planChanges, plannedFrequencySplit, plannedSavingsRate, plannedSpendSummary, visibleExpenses } from '../lib/selectors'
 import { parseExpensePaste } from '../lib/expensePasteImport'
 import { planExpensePasteImport } from '../lib/state'
 import { buildExpenseCsv } from '../lib/expenseExport'
@@ -16,6 +16,7 @@ export interface BudgetExpensesTabProps {
   dispatch: (action: any) => void
   categories: Category[]
   categoryDispatch: (action: CategoryAction) => void
+  selectedYear: string
 }
 
 /**
@@ -66,30 +67,18 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
   )
 }
 
-function ChevronIcon({ direction }: { direction: 'right' | 'down' }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="12" height="12">
-      {direction === 'right' ? <path d="m9 18 6-6-6-6"></path> : <path d="m6 9 6 6 6-6"></path>}
-    </svg>
-  )
-}
-
 type CellField = 'name' | 'category' | 'frequency' | `amount:${string}`
 
 /**
- * Expenses tab: multi-year Expense table on top (one row per ExpenseDefinition, one Amount
+ * Expenses tab: multi-year Expense table (one row per ExpenseDefinition, one Amount
  * column per year in the union-of-years set, always including the real
- * current calendar year), followed by Category Breakdown with its own year
- * selector and expandable per-category drilldown. Per-cell edit for Name/Category/Frequency mutates
+ * current calendar year). Per-cell edit for Name/Category/Frequency mutates
  * the shared ExpenseDefinition (visible under every year); per-cell edit for
  * an Amount cell dispatches SET_EXPENSE_AMOUNT/CLEAR_EXPENSE_AMOUNT scoped to
  * that one (year, expenseId) pair only.
  */
-export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatch }: BudgetExpensesTabProps) {
+export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatch, selectedYear }: BudgetExpensesTabProps) {
   const categoriesById = new Map(categories.map((c) => [c.id, c.name]))
-  const [breakdownYear, setBreakdownYear] = useState(
-    () => availableBudgetYears(state.budgetTransactions, new Date())[0]
-  )
   const [filterCategoryId, setFilterCategoryId] = useState('__all')
   const [sortBy, setSortBy] = useState<'category' | 'name'>('category')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -106,7 +95,6 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
   const [newCategoryName, setNewCategoryName] = useState('')
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: CellField } | null>(null)
   const [cellDraft, setCellDraft] = useState('')
-  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null)
   const skipBlurCommitRef = useRef(false)
   const pendingCommitStateRef = useRef<{ before: AppState; after: AppState } | null>(null)
 
@@ -135,14 +123,13 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
     setNewCategoryName('')
   }
 
-  const breakdownTransactions = state.budgetTransactions.filter((t) => t.date.slice(0, 4) === breakdownYear)
-  const breakdown = categoryBreakdown(
-    state.budgetExpenseDefinitions,
-    state.budgetExpenseAmountsByYear[breakdownYear] ?? {},
-    breakdownTransactions,
-    categories
-  )
-  const years = expenseTableYears(state.budgetTransactions, state.budgetExpenseAmountsByYear, new Date())
+  const years = expenseTableColumnYears(selectedYear)
+  const priorYearLabel = String(Number(selectedYear) - 1)
+  const spendSummary = plannedSpendSummary(state.budgetExpenseDefinitions, state.budgetExpenseAmountsByYear, categories, selectedYear)
+  const savingsRateSummary = plannedSavingsRate(state.budgetExpenseDefinitions, state.budgetExpenseAmountsByYear, categories, selectedYear)
+  const clampedSavingsRate = savingsRateSummary.rate === null ? 0 : Math.min(100, Math.max(0, savingsRateSummary.rate))
+  const frequencySplit = plannedFrequencySplit(state.budgetExpenseDefinitions, state.budgetExpenseAmountsByYear, categories, selectedYear)
+  const changes = planChanges(state.budgetExpenseDefinitions, state.budgetExpenseAmountsByYear, categories, selectedYear)
 
   const sortedDefinitions = visibleExpenses(state.budgetExpenseDefinitions, {}, filterCategoryId, sortBy, categoriesById)
   const rows = sortDir === 'desc' ? [...sortedDefinitions].reverse() : sortedDefinitions
@@ -208,126 +195,96 @@ export function BudgetExpensesTab({ state, dispatch, categories, categoryDispatc
 
   return (
     <>
-      <div className="card blueprint elev-sm" data-testid="category-breakdown" style={{ marginBottom: 'var(--space-4)' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-end',
-            flexWrap: 'wrap',
-            gap: 'var(--space-3)',
-            marginBottom: 'var(--space-3)',
-          }}
-        >
-          <div className="card-title">Category Breakdown</div>
-          <div className="field" style={{ maxWidth: '160px', margin: 0 }}>
-            <label>Year</label>
-            <select
-              className="input"
-              aria-label="Select breakdown year"
-              value={breakdownYear}
-              onChange={(e) => setBreakdownYear(e.target.value)}
+      <div
+        data-testid="plan-stats-cards"
+        style={{ display: 'grid', gap: 'var(--space-3)', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 'var(--space-4)' }}
+      >
+        <div className="card card-compact blueprint elev-sm" data-testid="plan-stat-spend">
+          <div className="kpi-label">Planned spend</div>
+          <div className="kpi-value">{fmtUSD(spendSummary.annual)}/yr</div>
+          <div className="kpi-context">{fmtUSD(spendSummary.monthly)}/mo</div>
+          {spendSummary.prior === null ? (
+            <div className="kpi-context">— No prior-year plan</div>
+          ) : (
+            <div
+              className="kpi-context"
+              style={{ color: spendSummary.prior.delta > 0 ? LOSS_COLOR : GAIN_COLOR }}
             >
-              {availableBudgetYears(state.budgetTransactions, new Date()).map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
+              {`${spendSummary.prior.delta >= 0 ? '+' : ''}${fmtUSD(spendSummary.prior.delta)}${
+                spendSummary.prior.pct !== null ? ` (${fmtPct(spendSummary.prior.pct)})` : ''
+              } vs ${priorYearLabel}`}
+            </div>
+          )}
+        </div>
+
+        <div className="card card-compact blueprint elev-sm" data-testid="plan-stat-savings">
+          <div className="kpi-label">Planned savings rate</div>
+          {savingsRateSummary.rate === null ? (
+            <div className="kpi-value">— No income planned</div>
+          ) : (
+            <>
+              <div className={`kpi-value ${savingsRateSummary.rate >= 0 ? 'kpi-gain' : 'kpi-loss'}`} style={{ color: savingsRateSummary.rate >= 0 ? GAIN_COLOR : LOSS_COLOR }}>
+                {savingsRateSummary.rate.toFixed(1)}%
+              </div>
+              <div className="kpi-bar">
+                <div
+                  data-testid="plan-stat-savings-bar"
+                  className={`kpi-bar-fill ${savingsRateSummary.rate >= 0 ? 'is-gain' : 'is-loss'}`}
+                  style={{ width: `${clampedSavingsRate}%` }}
+                />
+              </div>
+              <div className="kpi-context">
+                {fmtUSD(savingsRateSummary.income)} income · {fmtUSD(savingsRateSummary.spend)} spend
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="card card-compact blueprint elev-sm" data-testid="plan-stat-frequency">
+          <div className="kpi-label">Monthly vs yearly</div>
+          <div className="kpi-context">Monthly lines {fmtUSD(frequencySplit.monthlyTotal)}/mo</div>
+          <div className="kpi-context">Yearly lines {fmtUSD(frequencySplit.yearlyTotal)}/yr</div>
+          <div className="kpi-context">Set aside {fmtUSD(frequencySplit.setAsidePerMonth)}/mo</div>
+        </div>
+
+        <div className="card card-compact blueprint elev-sm" data-testid="plan-stat-changes">
+          <div className="kpi-label">Plan changes vs {priorYearLabel}</div>
+          {changes.increases.length === 0 && changes.decreases.length === 0 ? (
+            <div className="kpi-context">No changes</div>
+          ) : (
+            <>
+              {changes.increases.length > 0 && (
+                <div>
+                  {changes.increases.map((row) => (
+                    <div key={row.expenseId} data-testid="plan-change-increase" className="kpi-context">
+                      {row.name}{' '}
+                      <span style={{ color: LOSS_COLOR }}>+{fmtUSD(row.delta)}</span>{' '}
+                      {row.tag === 'new' && <span className="tag tag-outline">new</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {changes.decreases.length > 0 && (
+                <div>
+                  {changes.decreases.map((row) => (
+                    <div key={row.expenseId} data-testid="plan-change-decrease" className="kpi-context">
+                      {row.name}{' '}
+                      <span style={{ color: GAIN_COLOR }}>{fmtUSD(row.delta)}</span>{' '}
+                      {row.tag === 'dropped' && <span className="tag tag-outline">dropped</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          <div className="kpi-context" data-testid="plan-stat-not-carried">
+            {changes.notCarriedOver.count > 0
+              ? `${changes.notCarriedOver.count} lines not carried over: ${changes.notCarriedOver.names.join(', ')}`
+              : 'All lines carried over'}
           </div>
         </div>
-        {breakdown.length === 0 ? (
-          <div className="text-muted" style={{ fontSize: '12px' }}>
-            Add expenses to see the breakdown.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            {breakdown.map(({ categoryId, name, amount, actual, variance, budgetPct, actualPct, actualColor, varianceColor, drillLines, unlinkedActual }) => (
-              <div key={categoryId} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <div
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setExpandedCategoryId((id) => (id === categoryId ? null : categoryId))}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-1)' }}>
-                      <ChevronIcon direction={expandedCategoryId === categoryId ? 'down' : 'right'} />
-                      {name}
-                    </div>
-                    <div style={{ fontSize: '12px', color: varianceColor }}>
-                      {variance < 0
-                        ? `Over by ${fmtUSD(Math.abs(variance))}`
-                        : `Under by ${fmtUSD(Math.abs(variance))}`}
-                    </div>
-                  </div>
-                  <div style={{ position: 'relative', width: '100%', height: '8px' }}>
-                    <div
-                      data-testid="category-bar-budget"
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: `${budgetPct}%`,
-                        height: '100%',
-                        borderRadius: '4px',
-                        background: 'var(--color-border, #e5e5e5)',
-                      }}
-                    />
-                    <div
-                      data-testid="category-bar-fill"
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: `${actualPct}%`,
-                        height: '100%',
-                        borderRadius: '4px',
-                        background: actualColor,
-                      }}
-                    />
-                  </div>
-                  <div className="text-muted" style={{ fontSize: '12px' }}>
-                    Budget {fmtUSD(amount)} · Actual {fmtUSD(actual)}
-                  </div>
-                </div>
-                {expandedCategoryId === categoryId && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', padding: 'var(--space-2) 0 0 var(--space-4)' }}>
-                    {drillLines.map((line) => (
-                      <div key={line.id} data-testid={`category-drill-line-${line.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12px' }}>
-                          <div>{line.name} ({line.frequencyLabel})</div>
-                          <div style={{ fontSize: '11px', color: line.varianceColor }}>
-                            {line.variance < 0
-                              ? `Over by ${fmtUSD(Math.abs(line.variance))}`
-                              : `Under by ${fmtUSD(Math.abs(line.variance))}`}
-                          </div>
-                        </div>
-                        <div style={{ position: 'relative', width: '100%', height: '6px' }}>
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: `${line.budgetPct}%`, height: '100%', borderRadius: '3px', background: 'var(--color-border, #e5e5e5)' }} />
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: `${line.actualPct}%`, height: '100%', borderRadius: '3px', background: line.actualColor }} />
-                        </div>
-                        <div className="text-muted" style={{ fontSize: '11px' }}>
-                          Budget {fmtUSD(line.budget)} · Actual {fmtUSD(line.actual)}
-                        </div>
-                      </div>
-                    ))}
-                    {unlinkedActual !== null && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                        <div>Unlinked transactions</div>
-                        <div>{fmtUSD(unlinkedActual)}</div>
-                      </div>
-                    )}
-                    {drillLines.length === 0 && unlinkedActual === null && (
-                      <div className="text-muted" style={{ fontSize: '12px' }}>
-                        No budget lines in this category.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+
       <div className="card blueprint elev-sm">
         <div
           style={{

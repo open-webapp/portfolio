@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, projectedSpendForScope, sankeyFlowData, savingsRateByYear, savingsRateForScope, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendPaceForScope, spendScopeKind, spendTransactionsForScope, yearElapsedFraction, yearTotalSpend } from './selectors'
+import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseBudgetYears, expenseTableColumnYears, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, planChanges, plannedFrequencySplit, plannedSavingsRate, plannedSpendSummary, projectedSpendForScope, sankeyFlowData, savingsRateByYear, savingsRateForScope, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendPaceForScope, spendScopeKind, spendTransactionsForScope, yearElapsedFraction, yearTotalSpend } from './selectors'
 import { toPeriod } from './computations'
 import { initialState } from './state'
 import type { Account, BudgetTransaction, Category, ExpenseDefinition } from './types'
@@ -43,100 +43,6 @@ describe('derived budget income', () => {
   })
 })
 
-describe('categoryBreakdown', () => {
-  it('scales each category against its own budget and actual totals', () => {
-    const categoryDefs: ExpenseDefinition[] = [
-      { id: 'housing', name: 'Housing', categoryId: 'housing', frequency: 'yearly' },
-      { id: 'utilities', name: 'Utilities', categoryId: 'utilities', frequency: 'yearly' },
-    ]
-    const categoryList: Category[] = [
-      { id: 'housing', name: 'Housing', updatedAt: '' },
-      { id: 'utilities', name: 'Utilities', updatedAt: '' },
-    ]
-
-    expect(categoryBreakdown(
-      categoryDefs,
-      { housing: 1000, utilities: 100 },
-      [tx({ id: 'housing', categoryId: 'housing', amount: -500 }), tx({ id: 'utilities', categoryId: 'utilities', amount: -50 })],
-      categoryList
-    )).toMatchObject([
-      { name: 'Housing', budgetPct: 100, actualPct: 50 },
-      { name: 'Utilities', budgetPct: 100, actualPct: 50 },
-    ])
-  })
-
-  it('provides drill lines for each definition and no unlinked actual when all spend is linked', () => {
-    const categoryDefs: ExpenseDefinition[] = [
-      { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
-      { id: 'dining', name: 'Dining', categoryId: 'food', frequency: 'yearly' },
-    ]
-    const result = categoryBreakdown(
-      categoryDefs,
-      { groceries: 100, dining: 500 },
-      [
-        tx({ id: 'groceries-tx', spendExpenseId: 'groceries', amount: -75 }),
-        tx({ id: 'dining-tx', spendExpenseId: 'dining', amount: -600 }),
-      ],
-      [{ id: 'food', name: 'Food', updatedAt: '' }]
-    )
-
-    expect(result).toMatchObject([{
-      categoryId: 'food',
-      actual: 675,
-      unlinkedActual: null,
-      drillLines: [
-        { id: 'groceries', name: 'Groceries', frequencyLabel: 'Monthly', budget: 1200, actual: 75, variance: 1125, budgetPct: 100, actualPct: 6.25 },
-        { id: 'dining', name: 'Dining', frequencyLabel: 'Yearly', budget: 500, actual: 600, variance: -100, budgetPct: 83.33333333333334, actualPct: 100 },
-      ],
-    }])
-  })
-
-  it('reconciles linked and unlinked actual spend within a category', () => {
-    const result = categoryBreakdown(
-      [{ id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' }],
-      { groceries: 500 },
-      [
-        tx({ id: 'linked', spendExpenseId: 'groceries', amount: -100 }),
-        tx({ id: 'unlinked', amount: -30 }),
-        tx({ id: 'stale-link', spendExpenseId: 'missing', amount: -20 }),
-      ],
-      [{ id: 'food', name: 'Food', updatedAt: '' }]
-    )[0]
-
-    expect(result.unlinkedActual).toBe(50)
-    expect(result.drillLines[0]).toMatchObject({ budget: 500, actual: 100, variance: 400 })
-    expect(result.drillLines.reduce((sum, line) => sum + line.actual, 0) + (result.unlinkedActual ?? 0)).toBe(result.actual)
-  })
-
-  it('returns all actual spend as unlinked when a category has no definitions', () => {
-    const result = categoryBreakdown(
-      [],
-      {},
-      [tx({ id: 'food-tx', amount: -80 })],
-      [{ id: 'food', name: 'Food', updatedAt: '' }]
-    )
-
-    expect(result).toMatchObject([{ categoryId: 'food', actual: 80, drillLines: [], unlinkedActual: 80 }])
-  })
-
-  it('returns null unlinked actual for a definition-free category with no spend', () => {
-    expect(categoryBreakdown([], {}, [], [{ id: 'food', name: 'Food', updatedAt: '' }])).toMatchObject([
-      { categoryId: 'food', actual: 0, drillLines: [], unlinkedActual: null },
-    ])
-  })
-
-  it('omits excluded categories entirely rather than emitting empty drilldown data', () => {
-    const result = categoryBreakdown(
-      [{ id: 'ignored-expense', name: 'Ignored expense', categoryId: 'ignored', frequency: 'yearly' }],
-      { 'ignored-expense': 100 },
-      [tx({ id: 'ignored-tx', categoryId: 'ignored', amount: -50 })],
-      [{ id: 'ignored', name: 'Ignored', updatedAt: '', excludeFromSpend: true }]
-    )
-
-    expect(result.find((row) => row.categoryId === 'ignored')).toBeUndefined()
-  })
-})
-
 describe('expenseTableYears', () => {
   const now = new Date(2026, 8, 19)
 
@@ -163,6 +69,315 @@ describe('expenseTableYears', () => {
       { invalid: {}, '': {} },
       now
     )).toEqual(['', '20', '2026', 'bad', 'invalid'])
+  })
+})
+
+describe('expenseBudgetYears', () => {
+  const now = new Date(2026, 8, 19)
+
+  it('unions amountsByYear keys with the current year, dedup, sorted descending', () => {
+    expect(expenseBudgetYears({ '2024': {}, '2025': {} }, now)).toEqual(['2026', '2025', '2024'])
+  })
+
+  it('returns only the current year when amountsByYear is empty', () => {
+    expect(expenseBudgetYears({}, now)).toEqual(['2026'])
+  })
+
+  it('does not duplicate a key equal to the current year', () => {
+    expect(expenseBudgetYears({ '2026': {} }, now)).toEqual(['2026'])
+  })
+
+  it('includes a future key and sorts it first', () => {
+    expect(expenseBudgetYears({ '2024': {}, '2028': {} }, now)).toEqual(['2028', '2026', '2024'])
+  })
+})
+
+describe('expenseTableColumnYears', () => {
+  it('returns the selected year with its neighbors, ascending', () => {
+    expect(expenseTableColumnYears('2026')).toEqual(['2025', '2026', '2027'])
+  })
+
+  it('handles year boundaries as plain string arithmetic', () => {
+    expect(expenseTableColumnYears('2000')).toEqual(['1999', '2000', '2001'])
+  })
+})
+
+describe('plannedSpendSummary', () => {
+  const plannedCategories: Category[] = [
+    { id: 'income', name: 'Income', updatedAt: '' },
+    { id: 'food', name: 'Food', updatedAt: '' },
+    { id: 'ignored', name: 'Ignored', updatedAt: '', excludeFromSpend: true },
+  ]
+  const plannedDefinitions: ExpenseDefinition[] = [
+    { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'monthly' },
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
+    { id: 'rent', name: 'Rent', categoryId: 'food', frequency: 'yearly' },
+    { id: 'subscription', name: 'Subscription', categoryId: 'ignored', frequency: 'monthly' },
+  ]
+
+  it('annualizes spend defs, excluding income defs, from monthly and yearly frequencies', () => {
+    const result = plannedSpendSummary(
+      plannedDefinitions,
+      { '2025': { salary: 5000, groceries: 100, rent: 1200 } },
+      plannedCategories,
+      '2025'
+    )
+    expect(result.annual).toBe(2400)
+    expect(result.monthly).toBe(200)
+  })
+
+  it('still counts excludeFromSpend category definitions as spend', () => {
+    const result = plannedSpendSummary(
+      plannedDefinitions,
+      { '2025': { groceries: 100, rent: 1200, subscription: 50 } },
+      plannedCategories,
+      '2025'
+    )
+    expect(result.annual).toBe(1200 + 1200 + 600)
+  })
+
+  it('computes prior-year delta and pct when a prior spend def has an amount', () => {
+    const result = plannedSpendSummary(
+      plannedDefinitions,
+      {
+        '2025': { groceries: 100, rent: 1200 },
+        '2024': { groceries: 100, rent: 800 },
+      },
+      plannedCategories,
+      '2025'
+    )
+    expect(result.annual).toBe(2400)
+    expect(result.prior).toEqual({ annual: 2000, delta: 400, pct: 20 })
+  })
+
+  it('returns null prior when there are no prior-year amounts at all', () => {
+    const result = plannedSpendSummary(
+      plannedDefinitions,
+      { '2025': { groceries: 100, rent: 1200 } },
+      plannedCategories,
+      '2025'
+    )
+    expect(result.prior).toBeNull()
+  })
+
+  it('returns null prior when only income-category defs have prior-year amounts', () => {
+    const result = plannedSpendSummary(
+      plannedDefinitions,
+      {
+        '2025': { groceries: 100, rent: 1200 },
+        '2024': { salary: 5000 },
+      },
+      plannedCategories,
+      '2025'
+    )
+    expect(result.prior).toBeNull()
+  })
+
+  it('treats an explicit prior-year spend amount of 0 as present, with null pct', () => {
+    const result = plannedSpendSummary(
+      plannedDefinitions,
+      {
+        '2025': { groceries: 100, rent: 1200 },
+        '2024': { groceries: 0 },
+      },
+      plannedCategories,
+      '2025'
+    )
+    expect(result.prior).toEqual({ annual: 0, delta: 2400, pct: null })
+  })
+})
+
+describe('plannedSavingsRate', () => {
+  const rateCategories: Category[] = [
+    { id: 'income', name: 'Income', updatedAt: '' },
+    { id: 'food', name: 'Food', updatedAt: '' },
+  ]
+  const rateDefinitions: ExpenseDefinition[] = [
+    { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'yearly' },
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' },
+  ]
+
+  it('computes rate from yearly income and spend', () => {
+    const result = plannedSavingsRate(
+      rateDefinitions,
+      { '2025': { salary: 10000, groceries: 2400 } },
+      rateCategories,
+      '2025'
+    )
+    expect(result.income).toBe(10000)
+    expect(result.spend).toBe(2400)
+    expect(result.rate).toBe(76)
+  })
+
+  it('annualizes monthly income before computing rate', () => {
+    const monthlyDefinitions: ExpenseDefinition[] = [
+      { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'monthly' },
+      { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'yearly' },
+    ]
+    const result = plannedSavingsRate(
+      monthlyDefinitions,
+      { '2025': { salary: 1000, groceries: 2400 } },
+      rateCategories,
+      '2025'
+    )
+    expect(result.income).toBe(12000)
+    expect(result.rate).toBe(80)
+  })
+
+  it('returns null rate when income is 0', () => {
+    const result = plannedSavingsRate(
+      rateDefinitions,
+      { '2025': { groceries: 2400 } },
+      rateCategories,
+      '2025'
+    )
+    expect(result.income).toBe(0)
+    expect(result.rate).toBeNull()
+  })
+
+  it('returns a negative rate when spend exceeds income', () => {
+    const result = plannedSavingsRate(
+      rateDefinitions,
+      { '2025': { salary: 1000, groceries: 2400 } },
+      rateCategories,
+      '2025'
+    )
+    expect(result.rate).toBe(-140)
+  })
+})
+
+describe('plannedFrequencySplit', () => {
+  const splitCategories: Category[] = [
+    { id: 'income', name: 'Income', updatedAt: '' },
+    { id: 'food', name: 'Food', updatedAt: '' },
+  ]
+  const splitDefinitions: ExpenseDefinition[] = [
+    { id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'monthly' },
+    { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
+    { id: 'gym', name: 'Gym', categoryId: 'food', frequency: 'monthly' },
+    { id: 'rent', name: 'Rent', categoryId: 'food', frequency: 'yearly' },
+    { id: 'insurance', name: 'Insurance', categoryId: 'food', frequency: 'yearly' },
+  ]
+
+  it('splits raw monthly vs yearly spend totals, ignoring income defs', () => {
+    const result = plannedFrequencySplit(
+      splitDefinitions,
+      { '2025': { salary: 5000, groceries: 100, gym: 50, rent: 1200, insurance: 600 } },
+      splitCategories,
+      '2025'
+    )
+    expect(result.monthlyTotal).toBe(150)
+    expect(result.yearlyTotal).toBe(1800)
+    expect(result.setAsidePerMonth).toBe(150)
+  })
+
+  it('returns all zeros when there is no data for the year', () => {
+    const result = plannedFrequencySplit(splitDefinitions, {}, splitCategories, '2025')
+    expect(result).toEqual({ monthlyTotal: 0, yearlyTotal: 0, setAsidePerMonth: 0 })
+  })
+})
+
+describe('planChanges', () => {
+  const changeCategories: Category[] = [{ id: 'income', name: 'Income', updatedAt: '' }, { id: 'food', name: 'Food', updatedAt: '' }]
+
+  it('returns only the top 3 increases, sorted descending', () => {
+    const defs: ExpenseDefinition[] = [
+      { id: 'a', name: 'A', categoryId: 'food', frequency: 'yearly' },
+      { id: 'b', name: 'B', categoryId: 'food', frequency: 'yearly' },
+      { id: 'c', name: 'C', categoryId: 'food', frequency: 'yearly' },
+      { id: 'd', name: 'D', categoryId: 'food', frequency: 'yearly' },
+      { id: 'e', name: 'E', categoryId: 'food', frequency: 'yearly' },
+    ]
+    const result = planChanges(
+      defs,
+      {
+        '2024': { a: 100, b: 100, c: 100, d: 100, e: 100 },
+        '2025': { a: 600, b: 500, c: 400, d: 300, e: 200 },
+      },
+      changeCategories,
+      '2025'
+    )
+    expect(result.increases.map((r) => r.expenseId)).toEqual(['a', 'b', 'c'])
+    expect(result.increases[0]).toMatchObject({ expenseId: 'a', prior: 100, current: 600, delta: 500, tag: null })
+  })
+
+  it('tags a def with no prior-year amount as new', () => {
+    const defs: ExpenseDefinition[] = [{ id: 'x', name: 'X', categoryId: 'food', frequency: 'monthly' }]
+    const result = planChanges(defs, { '2025': { x: 50 } }, changeCategories, '2025')
+    expect(result.increases).toEqual([{ expenseId: 'x', name: 'X', prior: 0, current: 600, delta: 600, tag: 'new' }])
+  })
+
+  it('tags a def dropped to no current amount as dropped, with correct annualized delta', () => {
+    const defs: ExpenseDefinition[] = [{ id: 'y', name: 'Y', categoryId: 'food', frequency: 'monthly' }]
+    const result = planChanges(defs, { '2024': { y: 100 } }, changeCategories, '2025')
+    expect(result.decreases).toEqual([{ expenseId: 'y', name: 'Y', prior: 1200, current: 0, delta: -1200, tag: 'dropped' }])
+  })
+
+  it('omits defs whose annualized amount is unchanged between years', () => {
+    const defs: ExpenseDefinition[] = [
+      { id: 'same-monthly', name: 'Same Monthly', categoryId: 'food', frequency: 'monthly' },
+      { id: 'same-yearly', name: 'Same Yearly', categoryId: 'food', frequency: 'yearly' },
+    ]
+    const result = planChanges(
+      defs,
+      {
+        '2024': { 'same-monthly': 100, 'same-yearly': 1200 },
+        '2025': { 'same-monthly': 100, 'same-yearly': 1200 },
+      },
+      changeCategories,
+      '2025'
+    )
+    expect(result.increases).toEqual([])
+    expect(result.decreases).toEqual([])
+  })
+
+  it('sorts decreases with the largest drop first, using name as a tiebreak', () => {
+    const defs: ExpenseDefinition[] = [
+      { id: 'z', name: 'Z', categoryId: 'food', frequency: 'yearly' },
+      { id: 'm', name: 'M', categoryId: 'food', frequency: 'yearly' },
+      { id: 'a', name: 'A', categoryId: 'food', frequency: 'yearly' },
+    ]
+    const result = planChanges(
+      defs,
+      {
+        '2024': { z: 1000, m: 500, a: 500 },
+        '2025': { z: 400, m: 100, a: 100 },
+      },
+      changeCategories,
+      '2025'
+    )
+    expect(result.decreases.map((r) => r.expenseId)).toEqual(['z', 'a', 'm'])
+  })
+
+  it('counts and names defs present in the prior year but absent (key missing) in the current year', () => {
+    const defs: ExpenseDefinition[] = [
+      { id: 'gone', name: 'Gone', categoryId: 'food', frequency: 'monthly' },
+      { id: 'zeroed', name: 'Zeroed', categoryId: 'food', frequency: 'monthly' },
+    ]
+    const result = planChanges(
+      defs,
+      {
+        '2024': { gone: 100, zeroed: 100 },
+        '2025': { zeroed: 0 },
+      },
+      changeCategories,
+      '2025'
+    )
+    expect(result.notCarriedOver).toEqual({ count: 1, names: ['Gone'] })
+  })
+
+  it('reports zero not-carried-over defs when none qualify', () => {
+    const defs: ExpenseDefinition[] = [{ id: 'x', name: 'X', categoryId: 'food', frequency: 'monthly' }]
+    const result = planChanges(defs, { '2024': { x: 100 }, '2025': { x: 100 } }, changeCategories, '2025')
+    expect(result.notCarriedOver).toEqual({ count: 0, names: [] })
+  })
+
+  it('never includes income defs in increases, decreases, or notCarriedOver', () => {
+    const defs: ExpenseDefinition[] = [{ id: 'salary', name: 'Salary', categoryId: 'income', frequency: 'yearly' }]
+    const result = planChanges(defs, { '2024': { salary: 1000 }, '2025': { salary: 5000 } }, changeCategories, '2025')
+    expect(result.increases).toEqual([])
+    expect(result.decreases).toEqual([])
+    expect(result.notCarriedOver).toEqual({ count: 0, names: [] })
   })
 })
 

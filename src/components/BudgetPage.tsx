@@ -23,6 +23,7 @@ import {
   formatSpendCategoryLabel,
   SPEND_ALL_YEARS,
   spendBudgetYears,
+  expenseBudgetYears,
   spendTransactionsForScope,
   spendCardTotals,
   spendScopeKind,
@@ -45,6 +46,7 @@ export interface BudgetPageProps {
   setPeriod: (period: 'expenses' | 'spend' | 'analytics') => void
   selectedScope: SpendScope
   setSelectedScope: Dispatch<SetStateAction<SpendScope>>
+  onScopeChange: (scope: SpendScope) => void
 }
 
 const textBtnAccent: CSSProperties = {
@@ -117,15 +119,15 @@ function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
 
 /**
  * Budget page: Expenses/Spend/Analytics tab toggle.
- * - Expenses tab (BudgetExpensesTab): Category Breakdown (own independent
- *   year selector) + a multi-year Expense table of global ExpenseDefinitions.
+ * - Expenses tab (BudgetExpensesTab): a multi-year Expense table of global
+ *   ExpenseDefinitions.
  * - Spend tab: scope selector, summary cards, and the Spend records table.
  * - Analytics tab: unchanged, delegates to BudgetAnalytics.
  * Spend-expense links propagate via auto-tag clusters in the state layer
  * (propagateSpendLinksByAutoTag); per-cell and bulk spend pickers dispatch
  * plain UPDATE actions and the cascade happens in state.
  */
-export function BudgetPage({ state, dispatch, categories, categoryDispatch, budgetAccountRules = [], period, selectedScope, setSelectedScope }: BudgetPageProps) {
+export function BudgetPage({ state, dispatch, categories, categoryDispatch, budgetAccountRules = [], period, selectedScope, setSelectedScope, onScopeChange }: BudgetPageProps) {
   const [recordSearch, setRecordSearch] = useState('')
   const [recSortBy, setRecSortBy] = useState<'date' | 'description' | 'category' | 'account' | 'amount'>('date')
   const [recSortDir, setRecSortDir] = useState<'asc' | 'desc'>('desc')
@@ -218,10 +220,19 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
     : canonicalBudgetAccountName(budgetAccountRules, importAccountSelection) ?? importAccountSelection.trim()
 
   useEffect(() => {
+    if (period !== 'spend') return
     if (selectedScope !== SPEND_ALL_YEARS && !availableYears.includes(selectedScope)) {
       setSelectedScope(SPEND_ALL_YEARS)
     }
-  }, [availableYears, selectedScope])
+  }, [availableYears, selectedScope, period])
+
+  useEffect(() => {
+    if (period !== 'expenses') return
+    const years = expenseBudgetYears(state.budgetExpenseAmountsByYear, new Date())
+    if (selectedScope === SPEND_ALL_YEARS || !years.includes(selectedScope as string)) {
+      onScopeChange(String(new Date().getFullYear()))
+    }
+  }, [period, selectedScope, state.budgetExpenseAmountsByYear, onScopeChange])
 
   useEffect(() => {
     setRecPage(0)
@@ -658,7 +669,13 @@ export function BudgetPage({ state, dispatch, categories, categoryDispatch, budg
       {period === 'analytics' ? (
         <BudgetAnalytics state={state} categories={categories} />
       ) : period === 'expenses' ? (
-        <BudgetExpensesTab state={state} dispatch={dispatch} categories={categories} categoryDispatch={categoryDispatch} />
+        <BudgetExpensesTab
+          state={state}
+          dispatch={dispatch}
+          categories={categories}
+          categoryDispatch={categoryDispatch}
+          selectedYear={selectedScope === SPEND_ALL_YEARS ? String(new Date().getFullYear()) : (selectedScope as string)}
+        />
       ) : (
       <>
       <div data-testid="summary-cards" className="kpi-grid">

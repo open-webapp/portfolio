@@ -26,7 +26,7 @@ import {
 import { useDriveConnection } from '@open-webapp/drive-connect'
 import { runPriceSync } from './lib/priceSync'
 import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync } from './lib/selectors'
-import { SPEND_ALL_YEARS, spendBudgetYears, type SpendScope } from './lib/selectors'
+import { SPEND_ALL_YEARS, spendBudgetYears, expenseBudgetYears, type SpendScope } from './lib/selectors'
 import { syncTickerOverviews } from './lib/tickerOverview'
 import { runMutualFundSync } from './lib/mutualFundSync'
 import { useHashRoute } from './hooks/useHashRoute'
@@ -59,12 +59,14 @@ function PeriodSegControl({
   selectedScope,
   onScopeChange,
   availableYears,
+  expenseYears,
 }: {
   period: BudgetPeriod
   setPeriod: (period: BudgetPeriod) => void
   selectedScope: SpendScope
   onScopeChange: (scope: SpendScope) => void
   availableYears: string[]
+  expenseYears: string[]
 }) {
   return (
     <div className="budget-controls" style={{ width: '100%' }}>
@@ -88,6 +90,16 @@ function PeriodSegControl({
           >
             <option value="__spend_all_years__">All</option>
             {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+          </select>
+        )}
+        {period === 'expenses' && (
+          <select
+            className="input"
+            aria-label="Select year"
+            value={selectedScope === SPEND_ALL_YEARS ? '' : selectedScope}
+            onChange={(event) => onScopeChange(event.target.value)}
+          >
+            {expenseYears.map((year) => <option key={year} value={year}>{year}</option>)}
           </select>
         )}
       </div>
@@ -957,6 +969,7 @@ function App() {
               selectedScope={selectedScope}
               onScopeChange={handleScopeChange}
               availableYears={spendBudgetYears(state.budgetTransactions)}
+              expenseYears={expenseBudgetYears(state.budgetExpenseAmountsByYear, new Date())}
             />
           ) : state.view === 'accounts' ? (
             <PositionsTabSegControl
@@ -985,6 +998,7 @@ function App() {
                 setPeriod,
                 selectedScope,
                 setSelectedScope,
+                onScopeChange: handleScopeChange,
               }}
             />
           </div>

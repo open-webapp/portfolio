@@ -2,7 +2,7 @@ import type { AppState } from './state'
 import { resolveExpenseAmountsForAnalyticsYear } from './state'
 import type { Position, ClosedPosition, Transaction, TaxCategory, ExpenseDefinition, BudgetTransaction, Category } from './types'
 import { sortBy } from './sort'
-import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod, GAIN_COLOR, LOSS_COLOR } from './computations'
+import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod, toYearly } from './computations'
 import { latestBalance } from './register'
 
 /**
@@ -1245,6 +1245,161 @@ export function spendPaceForScope(
 }
 
 /**
+ * Distinct budgeted years available for the Expenses page's year selector:
+ * amountsByYear keys plus the current year, deduped, sorted descending
+ * (numeric-string compare).
+ */
+export function expenseBudgetYears(
+  amountsByYear: Record<string, Record<string, number>>,
+  now: Date
+): string[] {
+  const years = new Set<string>(Object.keys(amountsByYear))
+  years.add(String(now.getFullYear()))
+  return [...years].sort((a, b) => Number(b) - Number(a))
+}
+
+/**
+ * The three column years (previous, selected, next) for the Expenses table,
+ * ascending.
+ */
+export function expenseTableColumnYears(selectedYear: string): [string, string, string] {
+  const year = Number(selectedYear)
+  return [String(year - 1), String(year), String(year + 1)]
+}
+
+/**
+ * Planned (budgeted) spend summary for the given year: annualized total across
+ * all non-Income definitions (excludeFromSpend categories still counted — planned
+ * figures are never affected by excludeFromSpend), plus a prior-year comparison
+ * when the prior year has at least one spend def with an amount set.
+ */
+export function plannedSpendSummary(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  categories: Category[],
+  year: string
+): { annual: number; monthly: number; prior: { annual: number; delta: number; pct: number | null } | null } {
+  const incomeIds = incomeCategoryIdSet(categories)
+  const spendDefs = definitions.filter((definition) => !incomeIds.has(definition.categoryId))
+
+  const annualFor = (y: string): number => {
+    const amounts = amountsByYear[y] ?? {}
+    return spendDefs.reduce((sum, definition) => sum + toYearly(amounts[definition.id] ?? 0, definition.frequency), 0)
+  }
+
+  const annual = annualFor(year)
+  const priorYear = String(Number(year) - 1)
+  const priorAmounts = amountsByYear[priorYear] ?? {}
+  const hasPriorAmount = spendDefs.some((definition) => priorAmounts[definition.id] !== undefined)
+
+  let prior: { annual: number; delta: number; pct: number | null } | null = null
+  if (hasPriorAmount) {
+    const priorAnnual = annualFor(priorYear)
+    const delta = annual - priorAnnual
+    prior = { annual: priorAnnual, delta, pct: priorAnnual === 0 ? null : (delta / priorAnnual) * 100 }
+  }
+
+  return { annual, monthly: annual / 12, prior }
+}
+
+/**
+ * Planned savings rate for the given year: budgeted Income vs. planned spend
+ * (via `plannedSpendSummary`). `rate` is null when income is 0.
+ */
+export function plannedSavingsRate(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  categories: Category[],
+  year: string
+): { income: number; spend: number; rate: number | null } {
+  const income = budgetedIncomeForYear(definitions, amountsByYear, categories, year)
+  const spend = plannedSpendSummary(definitions, amountsByYear, categories, year).annual
+  return { income, spend, rate: income > 0 ? ((income - spend) / income) * 100 : null }
+}
+
+/**
+ * Splits planned spend for the given year into raw (un-annualized) monthly vs.
+ * yearly totals (spend defs only, same filter as `plannedSpendSummary`).
+ * `setAsidePerMonth` is the yearly total spread evenly across 12 months.
+ */
+export function plannedFrequencySplit(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  categories: Category[],
+  year: string
+): { monthlyTotal: number; yearlyTotal: number; setAsidePerMonth: number } {
+  const incomeIds = incomeCategoryIdSet(categories)
+  const spendDefs = definitions.filter((definition) => !incomeIds.has(definition.categoryId))
+  const amounts = amountsByYear[year] ?? {}
+
+  const monthlyTotal = spendDefs
+    .filter((definition) => definition.frequency === 'monthly')
+    .reduce((sum, definition) => sum + (amounts[definition.id] ?? 0), 0)
+  const yearlyTotal = spendDefs
+    .filter((definition) => definition.frequency === 'yearly')
+    .reduce((sum, definition) => sum + (amounts[definition.id] ?? 0), 0)
+
+  return { monthlyTotal, yearlyTotal, setAsidePerMonth: yearlyTotal / 12 }
+}
+
+export type PlanChangeRow = { expenseId: string; name: string; prior: number; current: number; delta: number; tag: 'new' | 'dropped' | null }
+
+/**
+ * Year-over-year plan changes for spend defs (income defs excluded): the top 3
+ * increases and top 3 decreases by annualized delta, plus defs that had a
+ * prior-year amount but no amount (key absent) in the selected year.
+ */
+export function planChanges(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  categories: Category[],
+  year: string
+): { increases: PlanChangeRow[]; decreases: PlanChangeRow[]; notCarriedOver: { count: number; names: string[] } } {
+  const incomeIds = incomeCategoryIdSet(categories)
+  const spendDefs = definitions.filter((definition) => !incomeIds.has(definition.categoryId))
+  const priorYear = String(Number(year) - 1)
+  const priorAmounts = amountsByYear[priorYear] ?? {}
+  const currentAmounts = amountsByYear[year] ?? {}
+
+  const rows: PlanChangeRow[] = []
+  for (const definition of spendDefs) {
+    const prior = toYearly(priorAmounts[definition.id] ?? 0, definition.frequency)
+    const current = toYearly(currentAmounts[definition.id] ?? 0, definition.frequency)
+    const delta = current - prior
+    if (delta === 0) continue
+    rows.push({
+      expenseId: definition.id,
+      name: definition.name,
+      prior,
+      current,
+      delta,
+      tag: delta > 0 ? (prior === 0 ? 'new' : null) : current === 0 ? 'dropped' : null,
+    })
+  }
+
+  const byNameAsc = (a: PlanChangeRow, b: PlanChangeRow) => a.name.localeCompare(b.name)
+
+  const increases = rows
+    .filter((row) => row.delta > 0)
+    .sort((a, b) => b.delta - a.delta || byNameAsc(a, b))
+    .slice(0, 3)
+  const decreases = rows
+    .filter((row) => row.delta < 0)
+    .sort((a, b) => a.delta - b.delta || byNameAsc(a, b))
+    .slice(0, 3)
+
+  const notCarriedOverDefs = spendDefs.filter(
+    (definition) => priorAmounts[definition.id] !== undefined && currentAmounts[definition.id] === undefined
+  )
+  const notCarriedOver = {
+    count: notCarriedOverDefs.length,
+    names: notCarriedOverDefs.map((definition) => definition.name).sort((a, b) => a.localeCompare(b)),
+  }
+
+  return { increases, decreases, notCarriedOver }
+}
+
+/**
  * Distinct years for the Expenses table: transaction date prefixes, expense
  * amount snapshot keys, and the current local year, sorted ascending.
  */
@@ -1259,99 +1414,6 @@ export function expenseTableYears(
   return [...years].sort()
 }
 
-/**
- * Aggregate expenses by category for the given year, alongside actual spend from
- * budget transactions in the same year. Budget amounts are per-frequency
- * snapshots annualized via frequency (monthly × 12) so both sides are yearly totals.
- * `budgetPct`/`actualPct` are relative to the larger budget or actual total for
- * that category.
- * Returns entries sorted by budgeted amount descending.
- */
-export function categoryBreakdown(
-  definitions: ExpenseDefinition[],
-  amountsForYear: Record<string, number>,
-  transactions: BudgetTransaction[],
-  categories: Category[]
-): Array<{
-  categoryId: string
-  name: string
-  amount: number
-  actual: number
-  variance: number
-  budgetPct: number
-  actualPct: number
-  actualColor: string
-  varianceColor: string
-  drillLines: Array<{
-    id: string
-    name: string
-    frequencyLabel: string
-    budget: number
-    actual: number
-    variance: number
-    budgetPct: number
-    actualPct: number
-    actualColor: string
-    varianceColor: string
-  }>
-  unlinkedActual: number | null
-}> {
-  const excludedIds = excludedCategoryIdSet(categories)
-  const byCategory: Record<string, number> = {}
-  definitions.forEach((e) => {
-    if (excludedIds.has(e.categoryId)) return
-    const amount = toPeriod(amountsForYear[e.id] ?? 0, e.frequency, 'yearly')
-    byCategory[e.categoryId] = (byCategory[e.categoryId] ?? 0) + amount
-  })
-  const actuals = actualByCategory(transactions, definitions, categories)
-  return [...new Set([...categories.filter((c) => !excludedIds.has(c.id)).map((c) => c.id), ...Object.keys(byCategory), ...Object.keys(actuals)])]
-    .sort((a, b) => (byCategory[b] ?? 0) - (byCategory[a] ?? 0))
-    .map((categoryId) => {
-      const amount = byCategory[categoryId] ?? 0
-      const actual = actuals[categoryId] ?? 0
-      const variance = amount - actual
-      const categoryMax = Math.max(1, amount, actual)
-      const name = categories.find((c) => c.id === categoryId)?.name ?? categoryId
-      const catDefs = definitions.filter((d) => d.categoryId === categoryId && !excludedIds.has(categoryId))
-      const catTx = transactions.filter((t) => effectiveCategoryId(t, definitions) === categoryId)
-      const linkedIds = new Set(catDefs.map((d) => d.id))
-      const unlinkedSum = catTx
-        .filter((t) => !t.spendExpenseId || !linkedIds.has(t.spendExpenseId))
-        .reduce((sum, t) => sum - t.amount, 0)
-      return {
-        categoryId,
-        name,
-        amount,
-        actual,
-        variance,
-        budgetPct: (amount / categoryMax) * 100,
-        actualPct: (actual / categoryMax) * 100,
-        actualColor: variance >= 0 ? '#3b6ef6' : LOSS_COLOR,
-        varianceColor: variance >= 0 ? GAIN_COLOR : LOSS_COLOR,
-        drillLines: catDefs.map((catDef) => {
-          const budget = toPeriod(amountsForYear[catDef.id] ?? 0, catDef.frequency, 'yearly')
-          const actualForExp = catTx
-            .filter((t) => t.spendExpenseId === catDef.id)
-            .reduce((sum, t) => sum - t.amount, 0)
-          const drillVariance = budget - actualForExp
-          const drillMax = Math.max(1, budget, actualForExp)
-          return {
-            id: catDef.id,
-            name: catDef.name,
-            frequencyLabel: catDef.frequency === 'monthly' ? 'Monthly' : 'Yearly',
-            budget,
-            actual: actualForExp,
-            variance: drillVariance,
-            budgetPct: (budget / drillMax) * 100,
-            actualPct: (actualForExp / drillMax) * 100,
-            actualColor: drillVariance >= 0 ? '#3b6ef6' : LOSS_COLOR,
-            varianceColor: drillVariance >= 0 ? GAIN_COLOR : LOSS_COLOR
-          }
-        }),
-        unlinkedActual: unlinkedSum !== 0 ? unlinkedSum : null
-      }
-    })
-}
 
 /**
  * Categories whose latest-year actual monthly average spend exceeds their budgeted

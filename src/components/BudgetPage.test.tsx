@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BudgetPage as BudgetPageUnderTest, type BudgetPageProps } from './BudgetPage'
 import { initialState } from '../lib/state'
 import { appReducer } from '../lib/reducer'
-import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, projectedSpendForScope, type SpendScope } from '../lib/selectors'
+import { sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, expenseBudgetYears, projectedSpendForScope, type SpendScope } from '../lib/selectors'
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -21,11 +21,12 @@ const recordsTable = () => screen.getByTestId('records-table')
 
 // BudgetPage's production owner is App. This host supplies the controlled
 // scope and retains the legacy test suite's direct-page interaction coverage.
-function BudgetPage(props: Omit<BudgetPageProps, 'selectedScope' | 'setSelectedScope'>) {
+function BudgetPage(props: Omit<BudgetPageProps, 'selectedScope' | 'setSelectedScope' | 'onScopeChange'>) {
   const [selectedScope, setSelectedScope] = useState<SpendScope>(
     () => spendBudgetYears(props.state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
   )
   const availableYears = spendBudgetYears(props.state.budgetTransactions)
+  const expenseYears = expenseBudgetYears(props.state.budgetExpenseAmountsByYear, new Date())
   const onScopeChange = (scope: SpendScope) => {
     setSelectedScope(scope)
     if (scope !== SPEND_ALL_YEARS && !props.state.budgetExpenseAmountsByYear[scope]) {
@@ -45,7 +46,16 @@ function BudgetPage(props: Omit<BudgetPageProps, 'selectedScope' | 'setSelectedS
           {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
         </select>
       )}
-      <BudgetPageUnderTest {...props} selectedScope={selectedScope} setSelectedScope={setSelectedScope} />
+      {props.period === 'expenses' && (
+        <select
+          aria-label="Select year"
+          value={selectedScope === SPEND_ALL_YEARS ? '' : selectedScope}
+          onChange={(event) => onScopeChange(event.target.value)}
+        >
+          {expenseYears.map((year) => <option key={year} value={year}>{year}</option>)}
+        </select>
+      )}
+      <BudgetPageUnderTest {...props} selectedScope={selectedScope} setSelectedScope={setSelectedScope} onScopeChange={onScopeChange} />
     </>
   )
 }
@@ -206,7 +216,7 @@ describe('BudgetPage derived income', () => {
       budgetExpenseAmountsByYear: { '2024': { rent: 200 } },
       budgetTransactions: [{ id: 'rent', date: '2024-01-02', description: 'Rent', categoryId: 'housing', amount: -100 }],
     }
-    render(<BudgetPageUnderTest state={allScopeState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} {...periodProps} />)
+    render(<BudgetPageUnderTest state={allScopeState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} onScopeChange={vi.fn()} {...periodProps} />)
     const allScopeTile = screen.getAllByTestId('kpi-spend').at(-1)!
     expect(allScopeTile.querySelector('.kpi-bar-fill')?.classList.contains('is-gain')).toBe(true)
     expect(within(allScopeTile).queryByTestId('kpi-pace-marker')).toBeNull()
@@ -252,7 +262,7 @@ describe('BudgetPage derived income', () => {
     expect(pastTile.textContent).toContain('under budget')
 
     cleanup()
-    render(<BudgetPageUnderTest state={pastState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} {...periodProps} />)
+    render(<BudgetPageUnderTest state={pastState} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} onScopeChange={vi.fn()} {...periodProps} />)
     const allTile = screen.getByTestId('kpi-projected')
     expect(allTile.textContent).toContain('Avg yearly spend')
     expect(allTile.textContent).toContain('avg yearly budget')
@@ -273,7 +283,7 @@ describe('BudgetPage derived income', () => {
     expect(yearTile.textContent).toMatch(/%/)
 
     cleanup()
-    render(<BudgetPageUnderTest state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} {...periodProps} />)
+    render(<BudgetPageUnderTest state={state} dispatch={vi.fn()} categories={categories} categoryDispatch={vi.fn()} categoriesHydrated selectedScope={SPEND_ALL_YEARS} setSelectedScope={vi.fn()} onScopeChange={vi.fn()} {...periodProps} />)
     const allTile = screen.getByTestId('kpi-savings')
     expect(within(allTile).queryByLabelText('Edit income')).toBeNull()
     expect(allTile.textContent).toMatch(/%/)
@@ -473,10 +483,171 @@ describe('BudgetPage period props', () => {
   })
 
   it('does not render the App-owned year scope selector', () => {
-    render(<BudgetPageUnderTest {...props} period="spend" selectedScope="2025" setSelectedScope={vi.fn()} />)
+    render(<BudgetPageUnderTest {...props} period="spend" selectedScope="2025" setSelectedScope={vi.fn()} onScopeChange={vi.fn()} />)
 
     expect(screen.queryByLabelText('Select year')).toBeNull()
   })
+})
+
+describe('BudgetPage Spend/Expenses shared-scope reconcile (T6)', () => {
+  const currentYear = String(new Date().getFullYear())
+  const t6Categories = [{ id: 'food', name: 'Food', updatedAt: '' }]
+  const t6Definitions = [{ id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' as const }]
+
+  // Local harness that owns `period` (mirroring App.tsx's PeriodSegControl
+  // Spend/Expenses tabs) and a real reducer, so the reconcile effects in
+  // BudgetPage run against actual state transitions exactly as in production.
+  const T6Harness = ({ initial, actions }: { initial: ReturnType<typeof initialState>; actions: ReturnType<typeof vi.fn> }) => {
+    const [period, setPeriod] = useState<'spend' | 'expenses' | 'analytics'>('spend')
+    const [appState, setAppState] = useState(initial)
+    return (
+      <>
+        <button type="button" onClick={() => setPeriod('spend')}>Spend</button>
+        <button type="button" onClick={() => setPeriod('expenses')}>Expenses</button>
+        {/*
+          Test-only escape hatch: clearing an expense's last amount for a year
+          removes that expenseId key but (per state.ts's clearExpenseAmount)
+          leaves the year's now-empty {} entry in place, which
+          expenseBudgetYears still counts as budgeted. This button instead
+          drops the year key outright, simulating the year fully vacating the
+          budgeted map, to exercise BudgetPage's reconcile effect in isolation
+          from that unrelated persistence detail.
+        */}
+        <button
+          type="button"
+          onClick={() =>
+            setAppState((s) => {
+              const { ['2027']: _drop, ...rest } = s.budgetExpenseAmountsByYear
+              return { ...s, budgetExpenseAmountsByYear: rest }
+            })
+          }
+        >
+          clear-2027-amount
+        </button>
+        <BudgetPage
+          state={appState}
+          dispatch={(action) => {
+            actions(action)
+            setAppState((s) => appReducer(s, action))
+          }}
+          categories={t6Categories}
+          categoryDispatch={vi.fn()}
+          categoriesHydrated
+          period={period}
+          setPeriod={setPeriod}
+        />
+      </>
+    )
+  }
+
+  const renderReconcile = (state = initialState()) => {
+    const actions = vi.fn()
+    render(<T6Harness initial={state} actions={actions} />)
+    return actions
+  }
+
+  const RECONCILE_TIMEOUT_MS = 2000
+
+  it('(a) resets All scope to the current year when switching Spend -> Expenses', () => {
+    renderReconcile()
+    fireEvent.click(screen.getByText('Expenses'))
+
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(yearSelect.value).toBe(currentYear)
+  }, RECONCILE_TIMEOUT_MS)
+
+  it('(b) resets a past year with transactions but no budgeted amounts to the current year on Expenses', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: t6Definitions,
+      budgetTransactions: [{ id: 'old', date: '2019-01-01', description: 'Old', categoryId: 'food', amount: -10 }],
+    }
+    renderReconcile(state)
+    const spendYearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    fireEvent.change(spendYearSelect, { target: { value: '2019' } })
+    expect(spendYearSelect.value).toBe('2019')
+
+    fireEvent.click(screen.getByText('Expenses'))
+
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(yearSelect.value).toBe(currentYear)
+  }, RECONCILE_TIMEOUT_MS)
+
+  it('(c) keeps a budgeted-only future year selected on Expenses (Spend reset effect stays gated off)', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: t6Definitions,
+      budgetExpenseAmountsByYear: { '2027': { groceries: 100 } },
+    }
+    renderReconcile(state)
+    fireEvent.click(screen.getByText('Expenses'))
+    let yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    fireEvent.change(yearSelect, { target: { value: '2027' } })
+    yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(yearSelect.value).toBe('2027')
+    // If the Spend all-years reset effect were still running for the Expenses
+    // period, this would ping-pong (2027 -> All -> current year) or hang.
+  }, RECONCILE_TIMEOUT_MS)
+
+  it('(d) switching back to Spend from a budgeted future year on Expenses resets scope to All', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: t6Definitions,
+      budgetExpenseAmountsByYear: { '2027': { groceries: 100 } },
+    }
+    renderReconcile(state)
+    fireEvent.click(screen.getByText('Expenses'))
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2027' } })
+    fireEvent.click(screen.getByText('Spend'))
+
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(yearSelect.value).toBe('__spend_all_years__')
+  }, RECONCILE_TIMEOUT_MS)
+
+  it('(e) clearing the last budget amount of the selected non-current year on Expenses jumps to current year', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: t6Definitions,
+      budgetExpenseAmountsByYear: { '2027': { groceries: 100 } },
+    }
+    renderReconcile(state)
+    fireEvent.click(screen.getByText('Expenses'))
+    fireEvent.change(screen.getByLabelText('Select year'), { target: { value: '2027' } })
+    expect((screen.getByLabelText('Select year') as HTMLSelectElement).value).toBe('2027')
+
+    fireEvent.click(screen.getByText('clear-2027-amount'))
+
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(yearSelect.value).toBe(currentYear)
+  }, RECONCILE_TIMEOUT_MS)
+
+  it('(f) reconcile with no current-year snapshot dispatches ENSURE_BUDGET_YEAR_SNAPSHOT and lands on the current year', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: t6Definitions,
+      budgetExpenseAmountsByYear: { '2024': { groceries: 100 } },
+    }
+    const actions = renderReconcile(state)
+    fireEvent.click(screen.getByText('Expenses'))
+
+    expect(actions).toHaveBeenCalledWith({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT', year: currentYear })
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(yearSelect.value).toBe(currentYear)
+  }, RECONCILE_TIMEOUT_MS)
+
+  it('(g) reconcile does not dispatch ENSURE_BUDGET_YEAR_SNAPSHOT when the current year already has a snapshot entry', () => {
+    const state = {
+      ...initialState(),
+      budgetExpenseDefinitions: t6Definitions,
+      budgetExpenseAmountsByYear: { [currentYear]: { groceries: 100 } },
+    }
+    const actions = renderReconcile(state)
+    fireEvent.click(screen.getByText('Expenses'))
+
+    expect(actions).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ENSURE_BUDGET_YEAR_SNAPSHOT' }))
+    const yearSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(yearSelect.value).toBe(currentYear)
+  }, RECONCILE_TIMEOUT_MS)
 })
 
 describe('BudgetPage Spend scopes', () => {
@@ -582,6 +753,7 @@ describe('BudgetPage Spend scopes', () => {
       categoriesHydrated: true,
       ...periodProps,
       setSelectedScope: vi.fn(),
+      onScopeChange: vi.fn(),
     }
     const { rerender } = render(<BudgetPageUnderTest {...props} selectedScope={SPEND_ALL_YEARS} />)
 

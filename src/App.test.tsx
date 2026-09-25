@@ -373,7 +373,7 @@ describe('navigation shell title and controls', () => {
     expect(document.querySelector('header.top-bar')).toBeTruthy()
   })
 
-  it('renders Budget tabs in Spend, Expenses, Analytics order and exposes Year only for Spend', async () => {
+  it('renders Budget tabs in Spend, Expenses, Analytics order and exposes Year for Spend and Expenses, but not Analytics', async () => {
     await renderUnlockedApp()
     fireEvent.click(navTab('Budget'))
 
@@ -385,10 +385,54 @@ describe('navigation shell title and controls', () => {
     expect(screen.getByLabelText('Select year')).toBeTruthy()
 
     fireEvent.click(budgetTabs.getByText('Expenses'))
-    expect(screen.queryByLabelText('Select year')).toBeNull()
+    const expensesSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(expensesSelect).toBeTruthy()
+    const expensesOptionValues = Array.from(expensesSelect.options).map((o) => o.value)
+    expect(expensesOptionValues).not.toContain('__spend_all_years__')
+    expect(expensesOptionValues).toEqual([String(new Date().getFullYear())])
 
     fireEvent.click(budgetTabs.getByText('Analytics'))
     expect(screen.queryByLabelText('Select year')).toBeNull()
+  })
+
+  it('shares the selected year scope between the Expenses and Spend selects', async () => {
+    const currentYear = new Date().getFullYear()
+    const loaded = initialState()
+    loaded.budgetTransactions = [{
+      id: 'budget-transaction-shared-scope',
+      date: `${currentYear}-01-01`,
+      description: 'Groceries',
+      categoryId: '',
+      accountName: 'Checking',
+      amount: -75,
+    }]
+    mockUnlockLoadedState.current = loaded
+
+    await renderUnlockedApp()
+    fireEvent.click(navTab('Budget'))
+    const budgetTabs = within(document.querySelector('.budget-tabs') as HTMLElement)
+
+    fireEvent.click(budgetTabs.getByText('Expenses'))
+    const expensesSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    fireEvent.change(expensesSelect, { target: { value: String(currentYear) } })
+    expect(expensesSelect.value).toBe(String(currentYear))
+
+    fireEvent.click(budgetTabs.getByText('Spend'))
+    const spendSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    expect(spendSelect.value).toBe(String(currentYear))
+
+    mockUnlockLoadedState.current = undefined
+  })
+
+  it('shows exactly the current year on the Expenses select when no expense years are budgeted', async () => {
+    await renderUnlockedApp()
+    fireEvent.click(navTab('Budget'))
+    const budgetTabs = within(document.querySelector('.budget-tabs') as HTMLElement)
+    fireEvent.click(budgetTabs.getByText('Expenses'))
+
+    const expensesSelect = screen.getByLabelText('Select year') as HTMLSelectElement
+    const optionValues = Array.from(expensesSelect.options).map((o) => o.value)
+    expect(optionValues).toEqual([String(new Date().getFullYear())])
   })
 
   it('uses Ledger Dashboard without a portfolio title for the gate and picker', async () => {
