@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
+import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryBreakdown, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseSummaryForScope, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, projectedSpendForScope, sankeyFlowData, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendTransactionsForScope, yearTotalSpend } from './selectors'
 import { initialState } from './state'
 import type { Account, BudgetTransaction, Category, ExpenseDefinition } from './types'
 
@@ -362,6 +362,72 @@ describe('overBudgetCategories', () => {
 
   it('returns no action items for an empty scope', () => {
     expect(overBudgetCategories(overBudgetDefinitions, { '2025': { 'food-budget': 100 } }, [], overBudgetCategoriesList, '2025')).toEqual([])
+  })
+})
+
+describe('expenseSummaryForScope', () => {
+  const amountsByYear = {
+    '2025': { 'food-budget': 1000, 'transport-budget': 500 },
+    '2024': { 'food-budget': 800, 'transport-budget': 400 },
+  }
+  const t2025a = tx({ id: 't2025a', date: '2025-01-01', categoryId: 'food', amount: -300 })
+  const t2025b = tx({ id: 't2025b', date: '2025-02-01', categoryId: 'food', amount: -100 })
+  const t2025c = tx({ id: 't2025c', date: '2025-03-01', categoryId: 'transport', amount: -50 })
+  const t2024a = tx({ id: 't2024a', date: '2024-01-01', categoryId: 'food', amount: -200 })
+  const t2024b = tx({ id: 't2024b', date: '2024-06-01', categoryId: 'transport', amount: -1000 })
+
+  it('matches the current single-year summary for a concrete scope', () => {
+    const transactions = [t2025a, t2025b, t2025c]
+    const summary = expenseSummaryForScope(amountsByYear, transactions, '2025')
+    expect(summary.totalSpend).toBe(450)
+    expect(summary.totalBudget).toBe(1500)
+    expect(summary.averageTransaction).toBe(150)
+    expect(summary.largestTransaction).toMatchObject({ id: 't2025a', magnitude: 300 })
+    expect(summary.topCategory).toEqual(['food', 400])
+  })
+
+  it('sums spend, budget and recomputes largest/top-category across all years for SPEND_ALL_YEARS', () => {
+    const transactions = [t2025a, t2025b, t2025c, t2024a, t2024b]
+    const summary = expenseSummaryForScope(amountsByYear, transactions, SPEND_ALL_YEARS)
+    expect(summary.totalSpend).toBe(1650)
+    expect(summary.totalBudget).toBe(2700)
+    expect(summary.averageTransaction).toBe(330)
+    expect(summary.largestTransaction).toMatchObject({ id: 't2024b', magnitude: 1000 })
+    expect(summary.topCategory).toEqual(['transport', 1050])
+  })
+
+  it('handles no transactions in scope without throwing', () => {
+    const summary = expenseSummaryForScope(amountsByYear, [], '2025')
+    expect(summary).toEqual({ totalSpend: 0, totalBudget: 1500, averageTransaction: 0, largestTransaction: null, topCategory: null })
+  })
+})
+
+describe('overBudgetCategoriesForScope', () => {
+  it('flags a category as over budget only once its summed multi-year actual exceeds its summed multi-year budget', () => {
+    const categories: Category[] = [{ id: 'x', name: 'X', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'x-budget', name: 'X', categoryId: 'x', frequency: 'yearly' }]
+    // 2025 alone: budget 100, actual 90 -> under. 2024 alone: budget clamps to 0, actual 0 -> not over.
+    // Summed raw budget (100 + -80 = 20) is what's compared against summed actual (90), so combined is over.
+    const amountsByYear = { '2025': { 'x-budget': 100 }, '2024': { 'x-budget': -80 } }
+    const transactions = [
+      tx({ id: 't1', date: '2025-06-01', categoryId: 'x', amount: -90 }),
+      tx({ id: 't2', date: '2024-01-01', categoryId: 'x', amount: 0 }),
+    ]
+
+    expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025')).toEqual([])
+    expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2024')).toEqual([])
+    expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, SPEND_ALL_YEARS)).toEqual([
+      { categoryId: 'x', label: 'X', overageAmount: 70, pctOver: 350 },
+    ])
+  })
+
+  it('delegates concrete-year scope to overBudgetCategories', () => {
+    const categories: Category[] = [{ id: 'food', name: 'Food', updatedAt: '' }]
+    const definitions: ExpenseDefinition[] = [{ id: 'food-budget', name: 'Food', categoryId: 'food', frequency: 'yearly' }]
+    const amountsByYear = { '2025': { 'food-budget': 100 } }
+    const transactions = [tx({ amount: -150 })]
+    expect(overBudgetCategoriesForScope(definitions, amountsByYear, transactions, categories, '2025'))
+      .toEqual(overBudgetCategories(definitions, amountsByYear, transactions, categories, '2025'))
   })
 })
 

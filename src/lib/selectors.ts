@@ -997,6 +997,69 @@ export function overBudgetCategories(
     .sort((a, b) => b.overageAmount - a.overageAmount || a.label.localeCompare(b.label))
 }
 
+/**
+ * Same contract as `overBudgetCategories`, made explicit for scope-aware callers.
+ * `overBudgetCategories` already takes a `SpendScope` and, via `perCategoryBudgetActual`,
+ * sums budget/actual across every year in scope before comparing (not per-year, then
+ * merged) — so this is a direct delegate for both a concrete year and SPEND_ALL_YEARS.
+ */
+export function overBudgetCategoriesForScope(
+  definitions: ExpenseDefinition[],
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  categories: Category[],
+  scope: SpendScope
+): Array<{ categoryId: string; label: string; overageAmount: number; pctOver: number }> {
+  return overBudgetCategories(definitions, amountsByYear, transactions, categories, scope)
+}
+
+type ExpenseSummaryTransaction = BudgetTransaction & { magnitude: number }
+
+/**
+ * Expense Summary card totals (Spend tab) for a scope: total/average/largest spend
+ * transaction and the top spending category. Budget side uses the exact-year
+ * definition amounts for a concrete year, or their sum across every transaction-backed
+ * year (`spendBudgetYears`) for SPEND_ALL_YEARS — mirroring `spendCardTotals`'s
+ * "sum across years in scope" aggregation shape.
+ */
+export function expenseSummaryForScope(
+  amountsByYear: Record<string, Record<string, number>>,
+  transactions: BudgetTransaction[],
+  scope: SpendScope
+): {
+  totalSpend: number
+  totalBudget: number
+  averageTransaction: number
+  largestTransaction: ExpenseSummaryTransaction | null
+  topCategory: [string, number] | null
+} {
+  const scopedTransactions = spendTransactionsForScope(transactions, scope)
+  const summaryTransactions: ExpenseSummaryTransaction[] = scopedTransactions.map((transaction) => ({
+    ...transaction,
+    magnitude: Math.abs(transaction.amount)
+  }))
+  const totalSpend = summaryTransactions.reduce((total, transaction) => total + transaction.magnitude, 0)
+  const budgetForYear = (year: string) =>
+    Object.values(amountsByYear[year] ?? {}).reduce((total, amount) => total + Math.abs(amount), 0)
+  const totalBudget = scope === SPEND_ALL_YEARS
+    ? spendBudgetYears(scopedTransactions).reduce((sum, year) => sum + budgetForYear(year), 0)
+    : budgetForYear(scope)
+  const averageTransaction = summaryTransactions.length === 0 ? 0 : totalSpend / summaryTransactions.length
+  const largestTransaction = summaryTransactions.reduce<ExpenseSummaryTransaction | null>(
+    (largest, transaction) => largest === null || transaction.magnitude > largest.magnitude ? transaction : largest,
+    null
+  )
+  const categoryTotals = new Map<string, number>()
+  for (const transaction of summaryTransactions) {
+    categoryTotals.set(transaction.categoryId, (categoryTotals.get(transaction.categoryId) ?? 0) + transaction.magnitude)
+  }
+  const topCategory = [...categoryTotals.entries()].reduce<[string, number] | null>(
+    (top, entry) => top === null || entry[1] > top[1] ? entry : top,
+    null
+  )
+  return { totalSpend, totalBudget, averageTransaction, largestTransaction, topCategory }
+}
+
 /** Spend-card totals for exact transaction-backed years in the selected scope. */
 export function spendCardTotals(
   definitions: ExpenseDefinition[],
