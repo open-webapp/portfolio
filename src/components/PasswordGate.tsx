@@ -150,7 +150,7 @@ function SetPasswordScreen({
 
   return (
     <GateShell
-      title={`Password to access ${portfolioName} Portfolio`}
+      title={`Password to access ${portfolioName}`}
       subtitle="Choose a password to encrypt your data on this device."
       onBackToPicker={onBackToPicker}
     >
@@ -237,7 +237,7 @@ function EnterPasswordScreen({
 
   return (
     <GateShell
-      title={`Password to access ${portfolioName} Portfolio`}
+      title={`Password to access ${portfolioName}`}
       subtitle="Your data is encrypted on this device. Enter your password to unlock it."
       onBackToPicker={onBackToPicker}
     >

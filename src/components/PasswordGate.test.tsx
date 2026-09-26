@@ -103,7 +103,7 @@ describe('PasswordGate', () => {
     it('interpolates portfolioName into the heading', () => {
       renderPasswordGate({ shape: 'absent', onUnlock, onBackToPicker, portfolioName: 'Acme' })
 
-      expect(screen.getByRole('heading', { name: 'Password to access Acme Portfolio' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Password to access Acme' })).toBeTruthy()
     })
 
     it('keeps the submission pending until an async onUnlock completes', async () => {
@@ -137,7 +137,7 @@ describe('PasswordGate', () => {
       expect(
         screen.getByText('Your data is encrypted on this device. Enter your password to unlock it.')
       ).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Password to access Test Portfolio Portfolio' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Password to access Test' })).toBeTruthy()
       // Single card wrapper around the unlock form; no restore cards.
       expect(container.querySelectorAll('.card.blueprint.elev-sm')).toHaveLength(1)
       expect(screen.queryByText('Google Drive')).toBeFalsy()
