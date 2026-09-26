@@ -926,6 +926,7 @@ function App() {
     return (
       <PasswordGate
         shape={gateShape}
+        portfolioName={activePortfolio.name}
         onUnlock={(key, salt, loadedState) => hydrateBudgetAccountRulesThenReconcile(
           loadedState ?? initialState(),
           key,
@@ -962,6 +963,7 @@ function App() {
       />
       <div className="app-shell" style={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0 }}>
         <TopBar
+          portfolioName={activePortfolio.name}
           periodControl={state.view === 'budget' ? (
             <PeriodSegControl
               period={period}

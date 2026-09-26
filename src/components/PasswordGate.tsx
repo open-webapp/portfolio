@@ -5,6 +5,7 @@ import { loadPersistedApp, peekStoredSalt } from '../lib/persist'
 
 export interface PasswordGateProps {
   shape: 'absent' | 'encrypted'
+  portfolioName: string
   onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => Promise<void> | void
   onBackToPicker: () => void
 }
@@ -14,11 +15,11 @@ export interface PasswordGateProps {
  * Nav/Accounts tree until the user has unlocked (or set) a password.
  * Mirrors design/v4's "Encryption Password" screen layout for both shapes.
  */
-export function PasswordGate({ shape, onUnlock, onBackToPicker }: PasswordGateProps) {
+export function PasswordGate({ shape, portfolioName, onUnlock, onBackToPicker }: PasswordGateProps) {
   return shape === 'encrypted' ? (
-    <EnterPasswordScreen onUnlock={onUnlock} onBackToPicker={onBackToPicker} />
+    <EnterPasswordScreen portfolioName={portfolioName} onUnlock={onUnlock} onBackToPicker={onBackToPicker} />
   ) : (
-    <SetPasswordScreen onUnlock={onUnlock} onBackToPicker={onBackToPicker} />
+    <SetPasswordScreen portfolioName={portfolioName} onUnlock={onUnlock} onBackToPicker={onBackToPicker} />
   )
 }
 
@@ -111,9 +112,11 @@ function GateShell({
 }
 
 function SetPasswordScreen({
+  portfolioName,
   onUnlock,
   onBackToPicker,
 }: {
+  portfolioName: string
   onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => Promise<void> | void
   onBackToPicker: () => void
 }) {
@@ -147,7 +150,7 @@ function SetPasswordScreen({
 
   return (
     <GateShell
-      title="Set Encryption Password"
+      title={`Password to access ${portfolioName} Portfolio`}
       subtitle="Choose a password to encrypt your data on this device."
       onBackToPicker={onBackToPicker}
     >
@@ -195,9 +198,11 @@ function SetPasswordScreen({
 }
 
 function EnterPasswordScreen({
+  portfolioName,
   onUnlock,
   onBackToPicker,
 }: {
+  portfolioName: string
   onUnlock: (key: CryptoKey, salt: Uint8Array, loadedState?: AppState) => Promise<void> | void
   onBackToPicker: () => void
 }) {
@@ -232,7 +237,7 @@ function EnterPasswordScreen({
 
   return (
     <GateShell
-      title="Encryption Password"
+      title={`Password to access ${portfolioName} Portfolio`}
       subtitle="Your data is encrypted on this device. Enter your password to unlock it."
       onBackToPicker={onBackToPicker}
     >

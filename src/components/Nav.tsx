@@ -9,6 +9,7 @@ export interface NavProps {
   handleSync: () => void
   onOpenSettings: () => void
   onSwitchPortfolio: () => void
+  portfolioName: string
 }
 
 export interface RailNavProps {
@@ -23,6 +24,7 @@ export interface RailNavProps {
 
 export interface TopBarProps {
   periodControl?: ReactNode
+  portfolioName: string
 }
 
 const mainNavTabs = [
@@ -94,9 +96,10 @@ export function RailNav({ state, dispatch, connected, syncing, handleSync, onOpe
   )
 }
 
-export function TopBar({ periodControl }: TopBarProps) {
+export function TopBar({ periodControl, portfolioName }: TopBarProps) {
   return (
     <header className="top-bar">
+      <span className="nav-brand">{portfolioName}</span>
       {periodControl}
     </header>
   )
@@ -115,7 +118,7 @@ export function Nav(props: NavProps) {
         onOpenSettings={props.onOpenSettings}
         onSwitchPortfolio={props.onSwitchPortfolio}
       />
-      <TopBar />
+      <TopBar portfolioName={props.portfolioName} />
     </>
   )
 }

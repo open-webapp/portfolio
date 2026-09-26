@@ -17,6 +17,7 @@ RailNavProps = {
 
 TopBarProps = {
   periodControl?: ReactNode
+  portfolioName: string
 }
 ```
 
@@ -33,5 +34,5 @@ TopBarProps = {
 
 ## Top Bar
 
-- `header.top-bar` is a period-control-only strip and always renders.
-- It renders `periodControl` directly when supplied; otherwise it is intentionally blank.
+- `header.top-bar` always renders.
+- Renders `<span className="nav-brand">{portfolioName}</span>` first (unconditional), then `periodControl` when supplied; `periodControl` remains optional and is Budget-only per the caller.

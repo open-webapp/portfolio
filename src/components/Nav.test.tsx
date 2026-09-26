@@ -26,6 +26,7 @@ function makeRailProps(overrides: Partial<React.ComponentProps<typeof RailNav>> 
 
 function makeTopBarProps(overrides: Partial<React.ComponentProps<typeof TopBar>> = {}) {
   return {
+    portfolioName: 'Test Portfolio',
     ...overrides,
   }
 }
@@ -116,20 +117,33 @@ describe('RailNav', () => {
 })
 
 describe('TopBar', () => {
-  it('contains the supplied period control and no portfolio or Sync controls', () => {
+  it('contains the supplied period control and the portfolio name, but no portfolio or Sync buttons', () => {
     render(<TopBar {...makeTopBarProps()} periodControl={<div data-testid="period-control">This month</div>} />)
 
     const topBar = document.querySelector('.top-bar')
     expect(topBar?.querySelector('[data-testid="period-control"]')).toBeTruthy()
+    expect(topBar?.textContent).toContain('Test Portfolio')
     expect(screen.queryByRole('button', { name: /portfolio|sync/i })).toBeNull()
   })
 
-  it('renders a blank top bar without a period control', () => {
+  it('renders the portfolio name with an empty period-control slot when none is supplied', () => {
     render(<TopBar {...makeTopBarProps()} />)
 
     const topBar = document.querySelector('.top-bar')
     expect(topBar).toBeTruthy()
-    expect(topBar?.childElementCount).toBe(0)
+    expect(topBar?.childElementCount).toBe(1)
+    expect(topBar?.querySelector('.nav-brand')?.textContent).toBe('Test Portfolio')
     expect(screen.queryByRole('button', { name: /portfolio|sync/i })).toBeNull()
+  })
+
+  it('renders the portfolio name as a non-interactive span', () => {
+    render(<TopBar {...makeTopBarProps()} />)
+
+    const brand = document.querySelector('.nav-brand')
+    expect(brand?.tagName).toBe('SPAN')
+    expect(brand?.getAttribute('role')).toBeNull()
+    expect(brand?.getAttribute('href')).toBeNull()
+    expect(brand?.getAttribute('onclick')).toBeNull()
+    expect(() => fireEvent.click(brand!)).not.toThrow()
   })
 })

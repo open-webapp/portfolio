@@ -14,5 +14,5 @@ Sibling: `Nav.design.md`.
 
 ## Top Bar
 
-- The top bar has no portfolio or Sync controls.
-- The shell supplies its period control for Budget only. For every other view, the retained top-bar strip is intentionally blank.
+- The top bar always shows the active portfolio's name as plain, non-interactive text (left-aligned, `.nav-brand`); it has no Sync or portfolio-switch *controls*.
+- The shell supplies its period control for Budget only. For every other view, only the portfolio name renders.
