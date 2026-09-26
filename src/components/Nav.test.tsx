@@ -147,13 +147,28 @@ describe('TopBar', () => {
     expect(() => fireEvent.click(brand!)).not.toThrow()
   })
 
-  it('stays on one line and truncates instead of wrapping when space is tight', () => {
+  it('renders the full name on one line without shrinking or truncating, even when long', () => {
     render(<TopBar {...makeTopBarProps()} portfolioName="A Very Long Portfolio Name That Would Otherwise Wrap" />)
 
     const brand = document.querySelector('.nav-brand') as HTMLElement
+    expect(brand.textContent).toBe('A Very Long Portfolio Name That Would Otherwise Wrap')
     expect(brand.style.whiteSpace).toBe('nowrap')
-    expect(brand.style.overflow).toBe('hidden')
-    expect(brand.style.textOverflow).toBe('ellipsis')
-    expect(brand.style.minWidth).toBe('0px')
+    expect(brand.style.overflow).toBe('')
+    expect(brand.style.textOverflow).toBe('')
+  })
+
+  it('overlays the portfolio name and period control in the same grid cell so the period control spans the full width, unaffected by the name', () => {
+    render(<TopBar {...makeTopBarProps()} periodControl={<div data-testid="period-control">This month</div>} />)
+
+    const topBar = document.querySelector('.top-bar') as HTMLElement
+    const brand = document.querySelector('.nav-brand') as HTMLElement
+    const periodWrapper = screen.getByTestId('period-control').parentElement as HTMLElement
+
+    expect(topBar.style.display).toBe('grid')
+    expect(brand.style.gridColumn).toBe('1')
+    expect(brand.style.gridRow).toBe('1')
+    expect(periodWrapper.style.gridColumn).toBe('1')
+    expect(periodWrapper.style.gridRow).toBe('1')
+    expect(periodWrapper.style.width).toBe('100%')
   })
 })

@@ -98,9 +98,16 @@ export function RailNav({ state, dispatch, connected, syncing, handleSync, onOpe
 
 export function TopBar({ periodControl, portfolioName }: TopBarProps) {
   return (
-    <header className="top-bar">
-      <span className="nav-brand" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{portfolioName}</span>
-      {periodControl}
+    <header className="top-bar" style={{ display: 'grid', gridTemplateColumns: '1fr' }}>
+      <span
+        className="nav-brand"
+        style={{ gridColumn: '1', gridRow: '1', justifySelf: 'start', whiteSpace: 'nowrap' }}
+      >
+        {portfolioName}
+      </span>
+      {periodControl ? (
+        <div style={{ gridColumn: '1', gridRow: '1', width: '100%' }}>{periodControl}</div>
+      ) : null}
     </header>
   )
 }
