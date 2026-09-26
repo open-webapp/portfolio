@@ -22,7 +22,7 @@ Quotes has no rail icon — it is the 5th tab inside the Positions page (see "Ac
 
 Each main control is an icon-only button with an accessible label and tooltip. Clicking dispatches `SET_VIEW`; the selected control is accent-filled and exposes `aria-pressed="true"`. Settings is a separate gear button outside the main item stack.
 
-`TopBar` shows the active portfolio's name (plain text, `.nav-brand`, non-interactive, left-aligned, first child of `<header class="top-bar">`) on every view, plus the Budget-only period `.seg` control. It has no portfolio-switch button and no Sync button — those controls (accent-colored Switch-portfolio, right-aligned accent **Sync Now** icon button, `title`/accessible label `Sync now`, disabled whenever Drive is disconnected or syncing) live in `RailNav`, not `TopBar` — see "Shell Navigation" above. The Settings gear (in `RailNav`) opens Settings and resets `settingsSection` to "Backup".
+`TopBar` shows the active portfolio's name (plain text, `.nav-brand`, non-interactive, left-aligned, first child of `<header class="top-bar">`) on every view, plus the Budget-only period `.seg` control. A long portfolio name stays on one line and truncates with an ellipsis rather than wrapping to a second line, so it never crowds the centered Budget period tabs. It has no portfolio-switch button and no Sync button — those controls (accent-colored Switch-portfolio, right-aligned accent **Sync Now** icon button, `title`/accessible label `Sync now`, disabled whenever Drive is disconnected or syncing) live in `RailNav`, not `TopBar` — see "Shell Navigation" above. The Settings gear (in `RailNav`) opens Settings and resets `settingsSection` to "Backup".
 
 ## Allocation chart
 

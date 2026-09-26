@@ -146,4 +146,14 @@ describe('TopBar', () => {
     expect(brand?.getAttribute('onclick')).toBeNull()
     expect(() => fireEvent.click(brand!)).not.toThrow()
   })
+
+  it('stays on one line and truncates instead of wrapping when space is tight', () => {
+    render(<TopBar {...makeTopBarProps()} portfolioName="A Very Long Portfolio Name That Would Otherwise Wrap" />)
+
+    const brand = document.querySelector('.nav-brand') as HTMLElement
+    expect(brand.style.whiteSpace).toBe('nowrap')
+    expect(brand.style.overflow).toBe('hidden')
+    expect(brand.style.textOverflow).toBe('ellipsis')
+    expect(brand.style.minWidth).toBe('0px')
+  })
 })

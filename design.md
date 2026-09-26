@@ -56,7 +56,7 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 - `App.tsx` renders `RailNav` and `TopBar` for every hydrated, unlocked portfolio view.
 - `RailNav` is a fixed left icon rail, no mark/logo: Budget, Positions, Register (3 main items — Quotes is not a rail item, see Positions); flexible spacer; Sync (when connected/syncing); Settings; Switch-portfolio last. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the spacer.
-- `TopBar` is a flex row that always renders the active portfolio's name (`<span class="nav-brand">{portfolioName}</span>`, required `portfolioName` prop, first child, plain/non-interactive) plus the optional Budget-only period control. It has no portfolio-switch button and no Sync button — those live in `RailNav`.
+- `TopBar` is a flex row that always renders the active portfolio's name (`<span class="nav-brand">{portfolioName}</span>`, required `portfolioName` prop, first child, plain/non-interactive) plus the optional Budget-only period control. It has no portfolio-switch button and no Sync button — those live in `RailNav`. `.nav-brand` carries inline `overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0` so it truncates instead of wrapping onto a second line when the sibling period control (`.budget-controls`, `width: 100%`) competes for space.
 - `router.ts` recognizes `#/categories` and renders `ManageCategoriesPage` without requiring an unlocked portfolio session.
 
 ## Global Categories

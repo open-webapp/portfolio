@@ -36,3 +36,4 @@ TopBarProps = {
 
 - `header.top-bar` always renders.
 - Renders `<span className="nav-brand">{portfolioName}</span>` first (unconditional), then `periodControl` when supplied; `periodControl` remains optional and is Budget-only per the caller.
+- `.nav-brand` carries inline `style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}` so a long name truncates with an ellipsis instead of wrapping onto a second line when it competes for space with a centered `periodControl` (e.g. the Budget period `.seg` tabs, which render at `width: 100%` via `.budget-controls`).

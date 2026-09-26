@@ -16,3 +16,4 @@ Sibling: `Nav.design.md`.
 
 - The top bar always shows the active portfolio's name as plain, non-interactive text (left-aligned, `.nav-brand`); it has no Sync or portfolio-switch *controls*.
 - The shell supplies its period control for Budget only. For every other view, only the portfolio name renders.
+- A long portfolio name stays on one line and truncates with an ellipsis rather than wrapping onto a second line, so it never pushes the centered Budget period tabs out of place.
