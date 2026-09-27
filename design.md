@@ -161,7 +161,7 @@ interface GlobalCategoryState {
 - Per-portfolio `AppState.budgetAccountAppliedConventions: Record<string, StatementConvention>` records the convention applied to each normalized imported account.
 - `IMPORT_BUDGET_TRANSACTIONS` receives `appliedConvention: { accountName, statementConvention }` and updates the marker even for a duplicate-only import.
 - `reconcileBudgetAccountConventions(state, rules)` delegates to `reconcileBudgetAccountRules`: it compares markers with the current rule/default, flips matching amounts once when conventions differ, canonicalizes a rule-backed account name, and updates markers.
-- `App.tsx` reconciles before rendering a hydrated/opened portfolio and after global-rule changes. A confirmed Settings > Spend Accounts tab rule action reconciles the active portfolio immediately.
+- `App.tsx` renders the unlocked shell as soon as local decrypt/load finishes; it does not block on the global categories store's hydration or Drive sync. Reconciliation against `budgetAccountRules` runs in the background afterward (once the global store is hydrated, and after any Drive sync if connected) and re-dispatches state if reconciliation changed anything, same path used after global-rule changes. A confirmed Settings > Spend Accounts tab rule action reconciles the active portfolio immediately.
 
 ## Persistence and Drive
 

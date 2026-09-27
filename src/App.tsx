@@ -310,6 +310,28 @@ function App() {
     setSessionSalt(salt)
     dispatch({ type: '__SET_STATE', newState: loadedState })
 
+    if (persistLoadedState) {
+      try {
+        await savePersistedApp(loadedState, key, salt)
+      } catch (error) {
+        if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
+        setHydrationError(error instanceof Error ? error.message : 'Could not finish loading this portfolio.')
+        return
+      }
+    }
+
+    // Unblock the app shell immediately once local state is decrypted/loaded —
+    // don't make the user wait on the cross-portfolio category store's own
+    // hydration or (if connected) a live Drive sync of it. Reconciling budget
+    // account conventions against that store's rules happens below in the
+    // background and re-dispatches once it's ready, same as the
+    // RECONCILE_BUDGET_ACCOUNT_CONVENTIONS effect does on rule changes later.
+    if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
+    setIsHydrated(true)
+    passwordEntryTimeRef.current = Date.now()
+    lastActivityTimeRef.current = Date.now()
+    setGateShape('encrypted')
+
     try {
       await waitForGlobalCategoriesHydration()
       if (connected) {
@@ -321,19 +343,13 @@ function App() {
       if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
 
       const reconciledState = reconcileBudgetAccountConventions(loadedState, globalCategoriesRulesRef.current)
-      if (reconciledState !== loadedState || persistLoadedState) {
+      if (reconciledState !== loadedState) {
         await savePersistedApp(reconciledState, key, salt)
+        if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
+        dispatch({ type: '__SET_STATE', newState: reconciledState })
       }
-
-      if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
-      dispatch({ type: '__SET_STATE', newState: reconciledState })
-      setIsHydrated(true)
-      passwordEntryTimeRef.current = Date.now()
-      lastActivityTimeRef.current = Date.now()
-      setGateShape('encrypted')
     } catch (error) {
-      if (hydrationGenerationRef.current !== generation || activePortfolioIdRef.current !== portfolio.id) return
-      setHydrationError(error instanceof Error ? error.message : 'Could not finish loading this portfolio.')
+      console.error('Background budget-account-convention reconciliation failed:', error)
     }
   }, [activatePortfolio, connected, globalCategories, waitForGlobalCategoriesHydration])
 

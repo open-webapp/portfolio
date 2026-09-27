@@ -1071,7 +1071,7 @@ describe('global categories wiring', () => {
     expect(props.budgetAccountRules).toBe(mockGlobalCategoriesFixture.current.budgetAccountRules)
   })
 
-  it('reconciles budget account rules and persists the result before opening the shell', async () => {
+  it('reconciles budget account rules and persists the result in the background after opening the shell', async () => {
     const loaded = initialState()
     loaded.budgetTransactions = [{
       id: 'budget-transaction-1',
@@ -1096,6 +1096,7 @@ describe('global categories wiring', () => {
     fireEvent.click(screen.getByText('MockUnlock'))
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy())
+    await waitFor(() => expect(vi.mocked(savePersistedApp).mock.calls[0]).toBeTruthy())
     const [savedState] = vi.mocked(savePersistedApp).mock.calls[0]
     expect(savedState.budgetTransactions[0]).toMatchObject({ accountName: 'Checking', amount: -75 })
     expect(savedState.budgetAccountAppliedConventions).toEqual({ checking: 'positiveSpend' })
@@ -1105,7 +1106,7 @@ describe('global categories wiring', () => {
     expect((budgetPagePropsCapture.current as { state: typeof loaded }).state.budgetTransactions[0].amount).toBe(-75)
   })
 
-  it('waits for global category hydration before reconciling rules or rendering the unlocked shell', async () => {
+  it('renders the unlocked shell immediately without waiting for global category hydration, then reconciles rules in the background once hydrated', async () => {
     const loaded = initialState()
     loaded.budgetTransactions = [{
       id: 'budget-transaction-1',
@@ -1129,18 +1130,17 @@ describe('global categories wiring', () => {
     await waitFor(() => expect(screen.getByText('MockUnlock')).toBeTruthy())
     fireEvent.click(screen.getByText('MockUnlock'))
 
-    await waitFor(() => expect(screen.getByText('Loading...')).toBeTruthy())
-    expect(screen.queryByRole('button', { name: 'Positions' })).toBeFalsy()
+    // Shell renders right away — it doesn't block on the global categories store.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy())
     expect(savePersistedApp).not.toHaveBeenCalled()
 
     mockGlobalCategoriesFixture.current.hydrated = true
     rerender(<App />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy())
-    expect(vi.mocked(savePersistedApp).mock.calls[0][0].budgetTransactions[0]).toMatchObject({
+    await waitFor(() => expect(vi.mocked(savePersistedApp).mock.calls[0]?.[0].budgetTransactions[0]).toMatchObject({
       accountName: 'Checking',
       amount: -75,
-    })
+    }))
   })
 
   it('passes budget-spend-accounts props (but not category-mapping props) to SettingsPage', async () => {
