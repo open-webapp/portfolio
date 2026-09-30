@@ -1,5 +1,6 @@
 import type { getDriveAuthFor } from './drive'
 import { legacyDriveSync } from './drive'
+import { ensureFolderPathSerialized } from './ensureFolder'
 import type { GlobalCategoryState } from './categoryStore'
 
 const FILENAME = 'category-mappings.json'
@@ -61,7 +62,7 @@ export async function pullGlobalCategoriesFromDrive(
   const project = legacyDriveSync.project(projectId)
   let resolvedFileId = fileId
   if (!resolvedFileId) {
-    const folderId = await project.ensureFolderPath()
+    const folderId = await ensureFolderPathSerialized(project)
     const files = await project.files.list({ folderId, nameEquals: FILENAME })
     if (files.length === 0) return null
     resolvedFileId = files[0].id
@@ -126,7 +127,7 @@ export async function pushGlobalCategoriesToDrive(
     return
   }
 
-  const folderId = await project.ensureFolderPath()
+  const folderId = await ensureFolderPathSerialized(project)
   const files = await project.files.list({ folderId, nameEquals: FILENAME })
   const existingFileId = files.length > 0 ? files[0].id : undefined
 
@@ -165,7 +166,7 @@ export async function getGlobalCategoriesModifiedTime(
     }
   }
 
-  const folderId = await project.ensureFolderPath()
+  const folderId = await ensureFolderPathSerialized(project)
   const files = await project.files.list({ folderId, nameEquals: FILENAME })
   if (files.length === 0) return null
 

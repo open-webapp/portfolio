@@ -137,7 +137,7 @@ describe('PasswordGate', () => {
       expect(
         screen.getByText('Your data is encrypted on this device. Enter your password to unlock it.')
       ).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'Password to access Test' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Password to access Test Portfolio' })).toBeTruthy()
       // Single card wrapper around the unlock form; no restore cards.
       expect(container.querySelectorAll('.card.blueprint.elev-sm')).toHaveLength(1)
       expect(screen.queryByText('Google Drive')).toBeFalsy()

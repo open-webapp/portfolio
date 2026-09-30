@@ -1,4 +1,5 @@
 import { createDriveSync, NeedsReauthError, PickerCancelledError } from '@open-webapp/drive-sync'
+import { ensureFolderPathSerialized } from './ensureFolder'
 import type { Connection } from '@open-webapp/drive-sync'
 import { createDriveAuth } from '@open-webapp/drive-connect'
 import type { AppState } from './state'
@@ -129,7 +130,7 @@ export async function listPortfolioFoldersOnDrive(): Promise<{ name: string; id:
 
   try {
     const folderId = await withTimeout(
-      project.ensureFolderPath(),
+      ensureFolderPathSerialized(project),
       DRIVE_IO_TIMEOUT_MS,
       'ensureFolderPath (picker root)'
     )
@@ -317,7 +318,7 @@ export const drive = {
           [key: string]: unknown
         }
         if (!Object.prototype.hasOwnProperty.call(pickerOptions, 'parentFolderId') && !unscoped) {
-          pickerOptions.parentFolderId = await project.ensureFolderPath()
+          pickerOptions.parentFolderId = await ensureFolderPathSerialized(project)
         }
 
         let result
@@ -404,7 +405,7 @@ export async function resolvePortfolioFolderId(
   project: ReturnType<typeof legacyDriveSync.project>
 ): Promise<string> {
   if (portfolio.sharedDriveFolderId) return portfolio.sharedDriveFolderId
-  return await withTimeout(project.ensureFolderPath(), DRIVE_IO_TIMEOUT_MS, 'ensureFolderPath')
+  return await withTimeout(ensureFolderPathSerialized(project), DRIVE_IO_TIMEOUT_MS, 'ensureFolderPath')
 }
 
 /**
@@ -763,7 +764,7 @@ export async function migrateLegacyDriveFolderIfNeeded(portfolio: Portfolio): Pr
   const rootProject = legacyDriveSync.project(projectId)
 
   const rootFolderId = await withTimeout(
-    rootProject.ensureFolderPath(),
+    ensureFolderPathSerialized(rootProject),
     DRIVE_IO_TIMEOUT_MS,
     'ensureFolderPath (legacy root)'
   )
@@ -783,7 +784,7 @@ export async function migrateLegacyDriveFolderIfNeeded(portfolio: Portfolio): Pr
 
   const newProject = driveSyncForPortfolio(portfolio).project(projectId)
   const newFolderId = await withTimeout(
-    newProject.ensureFolderPath(),
+    ensureFolderPathSerialized(newProject),
     DRIVE_IO_TIMEOUT_MS,
     'ensureFolderPath (portfolio folder)'
   )

@@ -176,4 +176,5 @@ interface Portfolio {
 ```
 - Portfolio encrypted state and its Drive `portfolio-state.json` remain per portfolio unless `sharedDriveFolderId` is set.
 - `resolvePortfolioFolderId(portfolio, project)` returns `portfolio.sharedDriveFolderId` when present; otherwise it resolves the private `OpenWebApp/Portfolio/<portfolio.name>` folder. `syncBackup`, `getBackupFileId`, and `getPortfolioDriveFolderUrl` use this resolver. `getBackupFileStatus` checks its supplied backup file ID directly, including IDs found in a shared folder.
+- All Drive `ensureFolderPath` calls (`drive.ts`, `categoryDrive.ts`) go through `ensureFolderPathSerialized` (`src/lib/ensureFolder.ts`), an app-wide promise queue; prevents concurrent check-then-create from making duplicate `OpenWebApp`/`Portfolio` folders within one tab. Cross-browser races are not covered.
 - Global category state, including account rules, is separate from portfolio backups and uses its global IndexedDB document and shared Drive JSON file.
