@@ -555,7 +555,7 @@ describe('PortfolioPicker', () => {
       const myPortfoliosHeading = screen.getByText('My portfolios')
       const sharedPortfolioHeading = screen.getByText('Shared portfolio')
       const myPortfolios = screen.getByText("Restore a portfolio you've backed up to Google Drive.")
-      const sharedPortfolio = screen.getByText('Open a portfolio someone else shared with you on Google Drive.')
+      const sharedPortfolio = screen.getByText('Open a portfolio someone else shared with you on Google Drive. Pick its portfolio-state.json file.')
       expect(myPortfoliosHeading.compareDocumentPosition(sharedPortfolioHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(myPortfolios.compareDocumentPosition(sharedPortfolio) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(container.querySelectorAll('input[name="portfolioDriveMode"]')).toHaveLength(0)
@@ -698,7 +698,7 @@ describe('PortfolioPicker', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
       await waitFor(() => {
-        expect(pickFile).toHaveBeenCalledWith({ unscoped: true, includeFolders: true, multiSelect: false })
+        expect(pickFile).toHaveBeenCalledWith({ unscoped: true, multiSelect: false })
         expect(onImportSharedPortfolio).toHaveBeenCalledWith({ name: 'Team portfolio', id: 'shared-folder' }, 'correct-pw')
       })
     })

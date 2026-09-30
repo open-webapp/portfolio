@@ -9,6 +9,7 @@ export interface Portfolio {
   dbName: string
   createdAt: number
   sharedDriveFolderId?: string
+  sharedDriveFileId?: string
 }
 
 export interface Account {

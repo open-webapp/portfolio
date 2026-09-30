@@ -184,9 +184,32 @@ export async function decryptDriveFolderBackup(
     throw new DriveMalformedBackupError(`No ${APP_STATE_FILENAME} found in Drive folder`)
   }
 
+  return await readAndDecryptPickerFile(project, files[0].id, password)
+}
+
+/**
+ * Same as `decryptDriveFolderBackup`, but for a backup file the user picked
+ * directly in the Google Picker. Required for backups shared by another
+ * user: under the `drive.file` scope, picking a shared *folder* grants access
+ * to the folder only, so listing its children finds nothing. Picking the file
+ * grants access to it, so it is read by id.
+ */
+export async function decryptDriveFileBackup(
+  fileId: string,
+  password: string
+): Promise<{ state: AppState; key: CryptoKey; salt: Uint8Array }> {
+  await getPickerDriveAuth().ensureFresh()
+  return await readAndDecryptPickerFile(legacyDriveSync.project('picker'), fileId, password)
+}
+
+async function readAndDecryptPickerFile(
+  project: ReturnType<typeof legacyDriveSync.project>,
+  fileId: string,
+  password: string
+): Promise<{ state: AppState; key: CryptoKey; salt: Uint8Array }> {
   let content: unknown
   try {
-    content = await project.files.read(files[0].id)
+    content = await project.files.read(fileId)
   } catch (error) {
     throw new DriveMalformedBackupError(
       `Failed to read ${APP_STATE_FILENAME} from Drive folder: ${error instanceof Error ? error.message : String(error)}`
@@ -444,6 +467,23 @@ export async function syncBackup(portfolio: Portfolio, state: AppState, key: Cry
     await getDriveAuthFor(portfolio).ensureFresh()
     const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
 
+    // A shared file (picked directly) is updated by id; the app has no
+    // access to its folder.
+    if (portfolio.sharedDriveFileId) {
+      const sharedEnvelope = await encryptState(state, key, salt)
+      const sharedFile = await withTimeout(
+        project.files.write({
+          fileId: portfolio.sharedDriveFileId,
+          name: APP_STATE_FILENAME,
+          content: JSON.stringify(sharedEnvelope),
+          mimeType: 'application/json',
+        }),
+        DRIVE_IO_TIMEOUT_MS,
+        'files.write'
+      )
+      return sharedFile.id
+    }
+
     // Use the shared folder when configured, otherwise ensure the private folder.
     const folderId = await resolvePortfolioFolderId(portfolio, project)
 
@@ -492,6 +532,7 @@ export async function syncBackup(portfolio: Portfolio, state: AppState, key: Cry
  * Google auth window: an expired/missing token yields null, not an error.
  */
 export async function getBackupFileId(portfolio: Portfolio): Promise<string | null> {
+  if (portfolio.sharedDriveFileId) return portfolio.sharedDriveFileId
   try {
     const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
 
@@ -534,6 +575,7 @@ export async function getBackupFileId(portfolio: Portfolio): Promise<string | nu
  * propagates to the caller.
  */
 export async function getPortfolioDriveFolderUrl(portfolio: Portfolio): Promise<string> {
+  if (portfolio.sharedDriveFileId) return `https://drive.google.com/file/d/${portfolio.sharedDriveFileId}/view`
   const project = driveSyncForPortfolio(portfolio).project(driveProjectIdFor(portfolio))
   const folderId = await resolvePortfolioFolderId(portfolio, project)
   return `https://drive.google.com/drive/folders/${folderId}`

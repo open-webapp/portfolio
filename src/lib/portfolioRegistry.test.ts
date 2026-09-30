@@ -6,6 +6,7 @@ import {
   createPortfolio,
   renamePortfolio,
   setSharedDriveFolderId,
+  setSharedDriveFileId,
   unlinkSharedPortfolioFolder,
   deletePortfolio,
   nameKey,
@@ -157,6 +158,14 @@ describe('portfolioRegistry CRUD', () => {
     expect(unchanged.sharedDriveFolderId).toBeUndefined()
     expect((await getPortfolio(withFolder.id))?.sharedDriveFolderId).toBeUndefined()
     expect((await listPortfolios()).find((p) => p.id === withFolder.id)?.sharedDriveFolderId).toBeUndefined()
+  })
+
+  it('sets and unlinks a shared Drive file ID', async () => {
+    const p = await createPortfolio('Foo')
+    expect((await setSharedDriveFileId(p.id, 'file-1')).sharedDriveFileId).toBe('file-1')
+    expect((await getPortfolio(p.id))?.sharedDriveFileId).toBe('file-1')
+    expect((await unlinkSharedPortfolioFolder(p.id)).sharedDriveFileId).toBeUndefined()
+    await expect(setSharedDriveFileId('port-missing', 'file-1')).rejects.toThrow('Portfolio not found')
   })
 
   it('rejects shared Drive folder changes for unknown portfolios without affecting existing portfolios', async () => {

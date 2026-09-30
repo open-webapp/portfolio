@@ -149,7 +149,7 @@ interface GlobalCategoryState {
 ## Drive Restore
 
 - Three live restore paths: existing-portfolio conflict flow, new-portfolio-from-Drive-folder, new-portfolio-from-local-file. `DriveRestorePanel` and `GateRestoreFromFilePanel` have been removed and are not part of the current component tree.
-- Picker-scoped Drive access (used before a portfolio session exists): `getPickerDriveAuth()`, `listPortfolioFoldersOnDrive()`, `decryptDriveFolderBackup()`; `DriveMalformedBackupError` vs `DriveDecryptError` distinguish corrupt-format from wrong-key/undecryptable backups.
+- Picker-scoped Drive access (used before a portfolio session exists): `getPickerDriveAuth()`, `listPortfolioFoldersOnDrive()`, `decryptDriveFolderBackup()`, `decryptDriveFileBackup()` (reads a picked file by id; no folder listing); `DriveMalformedBackupError` vs `DriveDecryptError` distinguish corrupt-format from wrong-key/undecryptable backups.
 
 ## Drive Sync Conflict
 
@@ -172,9 +172,10 @@ interface Portfolio {
   dbName: string
   createdAt: number
   sharedDriveFolderId?: string
+  sharedDriveFileId?: string
 }
 ```
-- Portfolio encrypted state and its Drive `portfolio-state.json` remain per portfolio unless `sharedDriveFolderId` is set.
-- `resolvePortfolioFolderId(portfolio, project)` returns `portfolio.sharedDriveFolderId` when present; otherwise it resolves the private `OpenWebApp/Portfolio/<portfolio.name>` folder. `syncBackup`, `getBackupFileId`, and `getPortfolioDriveFolderUrl` use this resolver. `getBackupFileStatus` checks its supplied backup file ID directly, including IDs found in a shared folder.
+- Portfolio encrypted state and its Drive `portfolio-state.json` remain per portfolio unless `sharedDriveFolderId` or `sharedDriveFileId` is set.
+- `resolvePortfolioFolderId(portfolio, project)` returns `portfolio.sharedDriveFolderId` when present; otherwise it resolves the private `OpenWebApp/Portfolio/<portfolio.name>` folder. `syncBackup`, `getBackupFileId`, and `getPortfolioDriveFolderUrl` use this resolver. When `sharedDriveFileId` is set (shared import), `syncBackup` writes that file by id, `getBackupFileId` returns it, and `getPortfolioDriveFolderUrl` returns its file URL; no folder access. `setSharedDriveFileId` sets it; `unlinkSharedPortfolioFolder` clears both link fields. `getBackupFileStatus` checks its supplied backup file ID directly, including IDs found in a shared folder.
 - All Drive `ensureFolderPath` calls (`drive.ts`, `categoryDrive.ts`) go through `ensureFolderPathSerialized` (`src/lib/ensureFolder.ts`), an app-wide promise queue; prevents concurrent check-then-create from making duplicate `OpenWebApp`/`Portfolio` folders within one tab. Cross-browser races are not covered.
 - Global category state, including account rules, is separate from portfolio backups and uses its global IndexedDB document and shared Drive JSON file.

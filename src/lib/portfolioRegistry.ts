@@ -94,11 +94,20 @@ export async function setSharedDriveFolderId(id: string, folderId: string): Prom
   return updated
 }
 
+export async function setSharedDriveFileId(id: string, fileId: string): Promise<Portfolio> {
+  const current = await getPortfolio(id)
+  if (!current) throw new Error('Portfolio not found')
+  const updated: Portfolio = { ...current, sharedDriveFileId: fileId }
+  await putPortfolio(updated)
+  return updated
+}
+
 export async function unlinkSharedPortfolioFolder(id: string): Promise<Portfolio> {
   const current = await getPortfolio(id)
   if (!current) throw new Error('Portfolio not found')
   const updated: Portfolio = { ...current }
   delete updated.sharedDriveFolderId
+  delete updated.sharedDriveFileId
   await putPortfolio(updated)
   return updated
 }

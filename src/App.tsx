@@ -22,6 +22,7 @@ import {
   getBackupFileStatus,
   listPortfolioFoldersOnDrive,
   decryptDriveFolderBackup,
+  decryptDriveFileBackup,
 } from './lib/drive'
 import { useDriveConnection } from '@open-webapp/drive-connect'
 import { runPriceSync } from './lib/priceSync'
@@ -37,7 +38,7 @@ import {
   renamePortfolio,
   deletePortfolio,
   getPortfolio,
-  setSharedDriveFolderId,
+  setSharedDriveFileId,
   unlinkSharedPortfolioFolder,
 } from './lib/portfolioRegistry'
 import { decryptImportEnvelope, getEnvelopeSaltBytes } from './lib/importExport'
@@ -410,7 +411,7 @@ function App() {
     await unlinkSharedPortfolioFolder(id)
     setPortfolios(await listPortfolios())
     setActivePortfolio((prev) => (
-      prev?.id === id ? { ...prev, sharedDriveFolderId: undefined } : prev
+      prev?.id === id ? { ...prev, sharedDriveFolderId: undefined, sharedDriveFileId: undefined } : prev
     ))
   }, [])
 
@@ -452,16 +453,22 @@ function App() {
     await handleOpenUnlocked(portfolio, key, salt, importedState, true)
   }, [handleOpenUnlocked])
 
-  // Imports a Drive backup shared by another user. The selected folder becomes
-  // this portfolio's permanent sync target instead of creating a new folder.
-  const handleImportSharedPortfolio = useCallback(async (pickedFolder: { name: string; id: string }, password: string) => {
-    const { state: importedState, key, salt } = await decryptDriveFolderBackup(pickedFolder.id, password)
-    const portfolio = await createPortfolio(pickedFolder.name)
-    await setSharedDriveFolderId(portfolio.id, pickedFolder.id)
+  // Imports a Drive backup shared by another user. The picked backup file
+  // becomes this portfolio's permanent sync target (read/written by file id;
+  // the app has no access to the owner's folder under the drive.file scope).
+  const handleImportSharedPortfolio = useCallback(async (pickedFile: { name: string; id: string }, password: string) => {
+    const { state: importedState, key, salt } = await decryptDriveFileBackup(pickedFile.id, password)
+    // The picked file is always named portfolio-state.json, so pick a unique
+    // default name instead of using it.
+    const existingNames = new Set((await listPortfolios()).map((p) => p.name.toLowerCase()))
+    let sharedName = 'Shared portfolio'
+    for (let n = 2; existingNames.has(sharedName.toLowerCase()); n++) sharedName = `Shared portfolio ${n}`
+    const portfolio = await createPortfolio(sharedName)
+    await setSharedDriveFileId(portfolio.id, pickedFile.id)
     const sharedPortfolio = await getPortfolio(portfolio.id)
     setActivePortfolioDb(portfolio.dbName)
     setPortfolios(await listPortfolios())
-    await handleOpenUnlocked(sharedPortfolio ?? { ...portfolio, sharedDriveFolderId: pickedFolder.id }, key, salt, importedState, true)
+    await handleOpenUnlocked(sharedPortfolio ?? { ...portfolio, sharedDriveFileId: pickedFile.id }, key, salt, importedState, true)
   }, [handleOpenUnlocked])
 
   // Imports a portfolio backup from a locally-picked export file, registering

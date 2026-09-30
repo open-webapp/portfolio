@@ -28,7 +28,7 @@ export interface PortfolioPickerProps {
   onDelete: (id: string) => Promise<void>
   onOpen: (id: string) => void
   onImportFromDriveFolder: (folder: { name: string; id: string }, password: string) => Promise<void>
-  onImportSharedPortfolio: (folder: { name: string; id: string }, password: string) => Promise<void>
+  onImportSharedPortfolio: (file: { name: string; id: string }, password: string) => Promise<void>
   onImportFromFile: (envelope: EncryptedEnvelope, name: string, password: string) => Promise<void>
   onListDriveFolders: () => Promise<{ name: string; id: string }[]>
   isOnline: boolean
@@ -375,7 +375,7 @@ export function PortfolioPicker({
   }
 
   const handlePickSharedPortfolio = async () => {
-    const folder = await drive.project('picker').pickFile({ unscoped: true, includeFolders: true, multiSelect: false })
+    const folder = await drive.project('picker').pickFile({ unscoped: true, multiSelect: false })
     if (!folder) return
     setSharedImportFolder({ name: folder.name, id: folder.id })
     setSharedImportState({ password: '', error: null, importing: false, passwordOpen: true })
@@ -462,7 +462,7 @@ export function PortfolioPicker({
                       />
                     ) : (
                       <div className="card-title" onClick={() => startRename(portfolio)} style={{ cursor: 'pointer' }}>
-                        {portfolio.name} {portfolio.sharedDriveFolderId && <SharedSourceBadge />}
+                        {portfolio.name} {(portfolio.sharedDriveFolderId || portfolio.sharedDriveFileId) && <SharedSourceBadge />}
                       </div>
                     )}
                     <p className="card-body" style={{ fontSize: 12, margin: 'var(--space-1) 0 0' }}>
@@ -650,7 +650,7 @@ export function PortfolioPicker({
             <div className="hr" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               <div className="card-title">Shared portfolio</div>
-              {!sharedImportFolder && <><div className="card-body">Open a portfolio someone else shared with you on Google Drive.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => void handlePickSharedPortfolio()}>Import a shared portfolio</button></>}
+              {!sharedImportFolder && <><div className="card-body">Open a portfolio someone else shared with you on Google Drive. Pick its portfolio-state.json file.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => void handlePickSharedPortfolio()}>Import a shared portfolio</button></>}
               {sharedImportFolder && sharedImportState && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}><div className="card-title">{sharedImportFolder.name}</div><div className="field"><label>Password</label><input className="input" type="password" placeholder="Enter the portfolio's password" value={sharedImportState.password} autoFocus autoComplete="current-password" disabled={sharedImportState.importing} onChange={(e) => setSharedImportState({ ...sharedImportState, password: e.target.value, error: null })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSubmitSharedImport() } }} /></div>{sharedImportState.error && <div className="tag tag-outline" style={{ marginBottom: 0 }}>{sharedImportState.error}</div>}<div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}><button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} disabled={sharedImportState.importing} onClick={() => { setSharedImportFolder(null); setSharedImportState(null) }}>Cancel</button><button type="button" className="btn btn-primary" disabled={sharedImportState.importing} onClick={() => void handleSubmitSharedImport()}>{sharedImportState.importing ? 'Importing...' : 'Import'}</button></div></div>}
             </div>
           </div>

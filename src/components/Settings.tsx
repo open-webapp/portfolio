@@ -278,16 +278,16 @@ export function SettingsPage({
       {settingsSection === 'backup' && (
       <section className="card blueprint elev-sm" style={{ marginBottom: 'var(--space-5)' }}>
         <div className="card-title" style={{ marginBottom: 'var(--space-4)' }}>
-          Google Drive Sync{activePortfolio.sharedDriveFolderId && <> <SharedSourceBadge /></>}
+          Google Drive Sync{(activePortfolio.sharedDriveFolderId || activePortfolio.sharedDriveFileId) && <> <SharedSourceBadge /></>}
         </div>
         <GoogleDriveWidget
           auth={driveAuth}
           onConnected={onDriveConnected}
           onDisconnected={onDriveDisconnected}
         />
-        {activePortfolio.sharedDriveFolderId && (
+        {(activePortfolio.sharedDriveFolderId || activePortfolio.sharedDriveFileId) && (
           <UnlinkButton
-            confirmText="Unlink this shared Google Drive folder?"
+            confirmText="Unlink this shared Google Drive backup?"
             onUnlink={handleUnlinkSharedFolder}
           />
         )}

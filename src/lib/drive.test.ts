@@ -118,6 +118,7 @@ import {
   DriveMalformedBackupError,
   drive,
   decryptDriveFolderBackup,
+  decryptDriveFileBackup,
   getDriveAuthFor,
   getPickerDriveAuth,
   driveAuthProjectIdFor,
@@ -595,6 +596,25 @@ describe('conflict-reconcile helpers', () => {
       expect(mockFilesWrite).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'shared-folder-id' }))
     })
 
+    it('syncBackup updates a sharedDriveFileId portfolio by file id without listing or ensureFolderPath', async () => {
+      const salt = generateSalt()
+      const key = await deriveKey('password', salt)
+      mockFilesWrite.mockResolvedValue({ id: 'shared-file-id' })
+      const sharedFile: Portfolio = { ...testPortfolio, sharedDriveFileId: 'shared-file-id' }
+
+      await expect(syncBackup(sharedFile, initialState(), key, salt)).resolves.toBe('shared-file-id')
+
+      expect(mockEnsureFolderPath).not.toHaveBeenCalled()
+      expect(mockFilesList).not.toHaveBeenCalled()
+      expect(mockFilesWrite).toHaveBeenCalledWith(expect.objectContaining({ fileId: 'shared-file-id' }))
+    })
+
+    it('getBackupFileId returns sharedDriveFileId without Drive I/O', async () => {
+      const sharedFile: Portfolio = { ...testPortfolio, sharedDriveFileId: 'shared-file-id' }
+      await expect(getBackupFileId(sharedFile)).resolves.toBe('shared-file-id')
+      expect(mockFilesList).not.toHaveBeenCalled()
+    })
+
     it('getBackupFileId lists sharedDriveFolderId without calling ensureFolderPath', async () => {
       mockFilesList.mockResolvedValue([{ id: 'file-1' }])
 
@@ -1058,6 +1078,34 @@ describe('listPortfolioFoldersOnDrive', () => {
 // ---------------------------------------------------------------------------
 // decryptDriveFolderBackup (T3 — picker Drive folder decrypt).
 // ---------------------------------------------------------------------------
+describe('decryptDriveFileBackup (shared file picked directly; drive.file scope cannot list a picked folder\'s children)', () => {
+  it('reads and decrypts by file id without listing any folder', async () => {
+    mockFilesList.mockReset()
+    mockFilesRead.mockReset()
+    vi.mocked(getPickerDriveAuth().ensureFresh).mockResolvedValue({
+      email: 'user@example.com', needsReauth: false, expiresAt: Date.now() + 3600_000,
+    } as never)
+    const salt = generateSalt()
+    const key = await deriveKey('pw', salt)
+    const remoteState = initialState()
+    mockFilesRead.mockResolvedValue(JSON.stringify(await encryptState(remoteState, key, salt)))
+
+    const result = await decryptDriveFileBackup('shared-file-1', 'pw')
+
+    expect(result.state).toEqual(remoteState)
+    expect(mockFilesRead).toHaveBeenCalledWith('shared-file-1')
+    expect(mockFilesList).not.toHaveBeenCalled()
+  })
+
+  it('rejects with DriveDecryptError on the wrong password', async () => {
+    mockFilesRead.mockReset()
+    const salt = generateSalt()
+    const key = await deriveKey('pw', salt)
+    mockFilesRead.mockResolvedValue(JSON.stringify(await encryptState(initialState(), key, salt)))
+    await expect(decryptDriveFileBackup('shared-file-1', 'nope')).rejects.toThrow(DriveDecryptError)
+  })
+})
+
 describe('decryptDriveFolderBackup', () => {
   let ensureFresh: ReturnType<typeof vi.mocked<ReturnType<typeof getPickerDriveAuth>['ensureFresh']>>
   let salt: Uint8Array

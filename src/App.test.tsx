@@ -121,6 +121,7 @@ vi.mock('./lib/drive', () => {
     getBackupFileStatus: vi.fn(),
     listPortfolioFoldersOnDrive: vi.fn().mockResolvedValue([]),
     decryptDriveFolderBackup: vi.fn(),
+    decryptDriveFileBackup: vi.fn(),
     DriveDecryptError: class DriveDecryptError extends Error {},
     DriveMalformedBackupError: class DriveMalformedBackupError extends Error {},
   }
@@ -1754,14 +1755,14 @@ describe('shared Drive portfolio import', () => {
     render(<App />)
     await waitFor(() => expect(portfolioPickerPropsCapture.current).toBeTruthy())
     return (portfolioPickerPropsCapture.current as {
-      onImportSharedPortfolio: (folder: { name: string; id: string }, password: string) => Promise<void>
+      onImportSharedPortfolio: (file: { name: string; id: string }, password: string) => Promise<void>
     }).onImportSharedPortfolio
   }
 
-  it('registers the selected Drive folder as the shared sync target and opens the imported portfolio unlocked', async () => {
+  it('registers the picked Drive file as the shared sync target and opens the imported portfolio unlocked', async () => {
     const driveModule = await import('./lib/drive')
     const importedState = initialState()
-    vi.mocked(driveModule.decryptDriveFolderBackup).mockResolvedValue({
+    vi.mocked(driveModule.decryptDriveFileBackup).mockResolvedValue({
       state: importedState,
       key: mockSessionKey,
       salt: mockSessionSalt,
@@ -1769,39 +1770,41 @@ describe('shared Drive portfolio import', () => {
 
     const onImportSharedPortfolio = await renderSharedImportHandler()
     await act(async () => {
-      await onImportSharedPortfolio({ name: 'Shared household', id: 'shared-folder-1' }, 'correct-pw')
+      await onImportSharedPortfolio({ name: 'portfolio-state.json', id: 'shared-file-1' }, 'correct-pw')
     })
 
     const [portfolio] = await listPortfolios()
-    expect(portfolio).toMatchObject({ name: 'Shared household', sharedDriveFolderId: 'shared-folder-1' })
-    expect(await getPortfolio(portfolio.id)).toMatchObject({ sharedDriveFolderId: 'shared-folder-1' })
+    expect(portfolio).toMatchObject({ name: 'Shared portfolio', sharedDriveFileId: 'shared-file-1' })
+    expect(await getPortfolio(portfolio.id)).toMatchObject({ sharedDriveFileId: 'shared-file-1' })
     expect(setActivePortfolioDb).toHaveBeenCalledWith(portfolio.dbName)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Positions' })).toBeTruthy())
   })
 
-  it('propagates a local name collision without special-casing it', async () => {
+  it('picks a unique default name when the default is taken', async () => {
     const driveModule = await import('./lib/drive')
-    vi.mocked(driveModule.decryptDriveFolderBackup).mockResolvedValue({
+    vi.mocked(driveModule.decryptDriveFileBackup).mockResolvedValue({
       state: initialState(),
       key: mockSessionKey,
       salt: mockSessionSalt,
     })
-    await createPortfolio('Shared household')
+    await createPortfolio('Shared portfolio')
 
     const onImportSharedPortfolio = await renderSharedImportHandler()
 
-    await expect(onImportSharedPortfolio({ name: 'Shared household', id: 'shared-folder-1' }, 'correct-pw'))
-      .rejects.toThrow(/name already exists/i)
+    await act(async () => {
+      await onImportSharedPortfolio({ name: 'portfolio-state.json', id: 'shared-file-1' }, 'correct-pw')
+    })
+    expect((await listPortfolios()).map((p) => p.name)).toContain('Shared portfolio 2')
   })
 
   it.each(['DriveDecryptError', 'DriveMalformedBackupError'] as const)('propagates %s for picker inline handling', async (errorName) => {
     const driveModule = await import('./lib/drive')
     const error = new driveModule[errorName]('import failed')
-    vi.mocked(driveModule.decryptDriveFolderBackup).mockRejectedValue(error)
+    vi.mocked(driveModule.decryptDriveFileBackup).mockRejectedValue(error)
 
     const onImportSharedPortfolio = await renderSharedImportHandler()
 
-    await expect(onImportSharedPortfolio({ name: 'Shared household', id: 'shared-folder-1' }, 'wrong-pw'))
+    await expect(onImportSharedPortfolio({ name: 'portfolio-state.json', id: 'shared-file-1' }, 'wrong-pw'))
       .rejects.toBe(error)
   })
 })
