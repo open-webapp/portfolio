@@ -71,7 +71,7 @@ Landing page at the `picker` route. A centered Ledger heading precedes an always
 ## Cross-flow notes
 
 - While the Create password panel is open, the name field and "Import from file" action are disabled (mutually exclusive with editing the create name).
-- The Drive card shows labeled **My portfolios** and **Shared portfolio** sections together; Shared portfolio uses the unscoped file Picker (pick the shared `portfolio-state.json`), then the existing password form.
+- The Drive card shows labeled **My portfolios** and **Shared portfolio** sections together; Shared portfolio uses the unscoped Picker with folders browsable (select the shared `portfolio-state.json` file), then the existing password form.
 - Settings is a fourth seg tab (gear icon, `aria-label="Settings"`); selecting it shows the panel below the always-visible tab bar. It has a heading and local-file import/download icon buttons (download is disabled with no mapping data). It explains device-wide mapping, shows a summary plus Manage action, then offers the separate Google Drive shared-mapping import/link/unlink flow. Manage opens the category-mappings dialog in place; it never navigates to category CRUD. The dialog edits trimmed, non-empty mapping substrings on Enter and confirms deletions; both persist global state.
 - Each panel tracks its own error/loading state; switching away and back preserves it.
 - No flow shows a global spinner/overlay; all pending states are local button-label changes ("Creating...", "Importing...", "Loading Google Drive...").

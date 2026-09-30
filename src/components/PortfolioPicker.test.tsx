@@ -698,7 +698,7 @@ describe('PortfolioPicker', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Import' }))
 
       await waitFor(() => {
-        expect(pickFile).toHaveBeenCalledWith({ unscoped: true, multiSelect: false })
+        expect(pickFile).toHaveBeenCalledWith({ unscoped: true, includeFolders: true, multiSelect: false })
         expect(onImportSharedPortfolio).toHaveBeenCalledWith({ name: 'Team portfolio', id: 'shared-folder' }, 'correct-pw')
       })
     })

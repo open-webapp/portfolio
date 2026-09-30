@@ -375,7 +375,7 @@ export function PortfolioPicker({
   }
 
   const handlePickSharedPortfolio = async () => {
-    const folder = await drive.project('picker').pickFile({ unscoped: true, multiSelect: false })
+    const folder = await drive.project('picker').pickFile({ unscoped: true, includeFolders: true, multiSelect: false })
     if (!folder) return
     setSharedImportFolder({ name: folder.name, id: folder.id })
     setSharedImportState({ password: '', error: null, importing: false, passwordOpen: true })

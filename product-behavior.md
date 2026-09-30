@@ -243,7 +243,7 @@ Available without opening a portfolio. A centered `Ledger` / `Your portfolios` h
 
 - **Category settings**: the gear icon opens a settings panel with a close X, a category/mapping summary line, and a **Manage** button that navigates to `#/categories` for category CRUD.
 
-- **Import a shared portfolio**: opens an unscoped Google Picker for the shared `portfolio-state.json` file (files only, no folders), then prompts for that portfolio's password. A successful decrypt creates and opens a new local portfolio named `Shared portfolio` (`Shared portfolio 2`, … if taken) linked to the picked file. Syncs read/write that file by id.
+- **Import a shared portfolio**: opens an unscoped Google Picker (folders browsable) and expects you to select the shared `portfolio-state.json` file, then prompts for that portfolio's password. A successful decrypt creates and opens a new local portfolio named `Shared portfolio` (`Shared portfolio 2`, … if taken) linked to the picked file. Syncs read/write that file by id.
 - **Shared portfolio unlink**: Settings > Backup's Google Drive Sync card also shows **Shared** and **Unlink** for a linked portfolio. Unlink clears only the shared folder/file link; local data is unchanged. This intentionally returns future syncs to that portfolio's own name-based Drive folder, which the next sync creates or reuses.
 
 ### Multi-portfolio navigation & isolation
