@@ -580,12 +580,6 @@ export function PortfolioPicker({
 
         {pickerMode === 'drive' && (
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            {pickerDriveConnected && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
-                <div className="card-body">{pickerDriveEmail?.trim() || 'Connected to Google Drive'}</div>
-                <button type="button" className="btn btn-secondary" onClick={() => void handlePickerDriveDisconnect()}>Disconnect</button>
-              </div>
-            )}
             {pickerDriveError && <div className="tag tag-outline">{pickerDriveError}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               <div className="card-title">My portfolios</div>
@@ -679,6 +673,13 @@ export function PortfolioPicker({
               {!sharedImportFolder && <><div className="card-body">Open a portfolio someone else shared with you on Google Drive. Pick its portfolio-state.json file.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => void handlePickSharedPortfolio()}>Import a shared portfolio</button></>}
               {sharedImportFolder && sharedImportState && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}><div className="card-title">{sharedImportFolder.name}</div><div className="field"><label>Password</label><input className="input" type="password" placeholder="Enter the portfolio's password" value={sharedImportState.password} autoFocus autoComplete="current-password" disabled={sharedImportState.importing} onChange={(e) => setSharedImportState({ ...sharedImportState, password: e.target.value, error: null })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSubmitSharedImport() } }} /></div>{sharedImportState.error && <div className="tag tag-outline" style={{ marginBottom: 0 }}>{sharedImportState.error}</div>}<div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}><button type="button" className="btn-ghost" style={{ border: 'none', background: 'none', cursor: 'pointer' }} disabled={sharedImportState.importing} onClick={() => { setSharedImportFolder(null); setSharedImportState(null) }}>Cancel</button><button type="button" className="btn btn-primary" disabled={sharedImportState.importing} onClick={() => void handleSubmitSharedImport()}>{sharedImportState.importing ? 'Importing...' : 'Import'}</button></div></div>}
             </div>
+            {pickerDriveConnected && <>
+              <div className="hr" />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                <div className="card-body">{pickerDriveEmail?.trim() || 'Connected to Google Drive'}</div>
+                <button type="button" className="btn btn-secondary" onClick={() => void handlePickerDriveDisconnect()}>Disconnect</button>
+              </div>
+            </>}
           </div>
         )}
 

@@ -686,6 +686,18 @@ describe('PortfolioPicker', () => {
       expect(myPortfolios.parentElement?.nextElementSibling?.className).toContain('hr')
     })
 
+    it('places connected account controls below the Shared portfolio section', () => {
+      pickerDriveConnection.connected = true
+      pickerDriveConnection.email = 'account@example.com'
+      renderPicker()
+      selectPickerMode('Google Drive')
+
+      const sharedPortfolioHeading = screen.getByText('Shared portfolio')
+      const accountEmail = screen.getByText('account@example.com')
+      expect(sharedPortfolioHeading.compareDocumentPosition(accountEmail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(sharedPortfolioHeading.parentElement?.nextElementSibling?.className).toContain('hr')
+    })
+
     it('disables the trigger button and shows offline tooltip when isOnline is false', () => {
       renderPicker({ isOnline: false })
       selectPickerMode('Google Drive')
