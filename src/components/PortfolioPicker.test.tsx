@@ -20,6 +20,16 @@ import {
 } from '../lib/categoryPersist'
 import { mergeCategoryState } from '../lib/categoryMerge'
 
+const pickerDriveConnection = {
+  connected: false,
+  email: undefined as string | undefined,
+  error: undefined as string | undefined,
+}
+
+vi.mock('@open-webapp/drive-connect', () => ({
+  useDriveConnection: vi.fn(() => pickerDriveConnection),
+}))
+
 vi.mock('../lib/importExport', () => ({
   downloadJsonAsFile: vi.fn(),
   parseCategoryMappingImportFile: vi.fn(),
@@ -116,6 +126,9 @@ function selectSharedDriveMode() {
 describe('PortfolioPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    pickerDriveConnection.connected = false
+    pickerDriveConnection.email = undefined
+    pickerDriveConnection.error = undefined
     window.confirm = vi.fn().mockReturnValue(true)
     vi.mocked(loadGlobalCategoryState).mockResolvedValue({
       categories: [],
@@ -123,7 +136,7 @@ describe('PortfolioPicker', () => {
     } as never)
     vi.mocked(getSharedCategoryDriveFileId).mockResolvedValue(undefined)
     vi.mocked(setSharedCategoryDriveFileId).mockResolvedValue(undefined)
-    vi.mocked(getPickerDriveAuth).mockReturnValue({} as never)
+    vi.mocked(getPickerDriveAuth).mockReturnValue({ disconnect: vi.fn().mockResolvedValue(undefined) } as never)
     vi.mocked(drive.project).mockReturnValue({ pickFile: vi.fn().mockResolvedValue(null) } as never)
   })
 
@@ -548,6 +561,117 @@ describe('PortfolioPicker', () => {
   })
 
   describe('Drive-folder panel', () => {
+    it('shows the connected picker account email and disconnects through its auth handle', async () => {
+      const disconnect = vi.fn().mockImplementation(async () => {
+        pickerDriveConnection.connected = false
+      })
+      const pickerAuth = { disconnect }
+      pickerDriveConnection.connected = true
+      pickerDriveConnection.email = '  account@example.com  '
+      vi.mocked(getPickerDriveAuth).mockReturnValue(pickerAuth as never)
+      const { props } = renderPicker({ portfolios: [makePortfolio({ name: 'Local portfolio' })] })
+      selectPickerMode('Google Drive')
+
+      expect(screen.getByText('account@example.com')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
+
+      await waitFor(() => expect(disconnect).toHaveBeenCalledTimes(1))
+      expect(props.onListDriveFolders).not.toHaveBeenCalled()
+      expect(props.onImportFromDriveFolder).not.toHaveBeenCalled()
+      expect(props.onImportSharedPortfolio).not.toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeFalsy()
+      selectPickerMode('Open')
+      expect(screen.getByText('Local portfolio')).toBeTruthy()
+    })
+
+    it('uses the connected fallback label when picker account email is unavailable', () => {
+      pickerDriveConnection.connected = true
+      pickerDriveConnection.email = '   '
+      renderPicker()
+      selectPickerMode('Google Drive')
+
+      expect(screen.getByText('Connected to Google Drive')).toBeTruthy()
+    })
+
+    it('keeps the disconnected Drive UI unchanged and renders picker auth errors inline', () => {
+      pickerDriveConnection.error = 'Google Drive sign-in failed.'
+      renderPicker()
+      selectPickerMode('Google Drive')
+
+      expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeFalsy()
+      expect(screen.getByRole('button', { name: 'Load from Google Drive' })).toBeTruthy()
+      expect(screen.getByText('Google Drive sign-in failed.')).toBeTruthy()
+    })
+
+    it('clears populated Drive and shared import state only after a successful picker disconnect', async () => {
+      const disconnect = vi.fn().mockImplementation(async () => {
+        pickerDriveConnection.connected = false
+      })
+      const pickerAuth = { disconnect }
+      const onListDriveFolders = vi.fn().mockResolvedValue([{ name: 'Drive portfolio', id: 'drive-1' }])
+      const onImportFromDriveFolder = vi.fn().mockRejectedValue(new Error('Folder password failed.'))
+      const onImportSharedPortfolio = vi.fn().mockRejectedValue(new Error('Shared password failed.'))
+      const pickFile = vi.fn().mockResolvedValue({ name: 'Shared portfolio', id: 'shared-1' })
+      pickerDriveConnection.connected = true
+      vi.mocked(getPickerDriveAuth).mockReturnValue(pickerAuth as never)
+      vi.mocked(drive.project).mockReturnValue({ pickFile } as never)
+      renderPicker({
+        portfolios: [makePortfolio({ name: 'Local portfolio' })],
+        onListDriveFolders,
+        onImportFromDriveFolder,
+        onImportSharedPortfolio,
+      })
+      selectPickerMode('Google Drive')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
+      await screen.findByText('Drive portfolio')
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      fireEvent.change(screen.getByPlaceholderText("Enter the portfolio's password"), { target: { value: 'folder-password' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      await screen.findByText('Folder password failed.')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Import a shared portfolio' }))
+      await waitFor(() => expect(screen.getAllByPlaceholderText("Enter the portfolio's password")).toHaveLength(2))
+      const sharedPassword = screen.getAllByPlaceholderText("Enter the portfolio's password")[1]
+      fireEvent.change(sharedPassword, { target: { value: 'shared-password' } })
+      fireEvent.click(screen.getAllByRole('button', { name: 'Import' })[1])
+      await screen.findByText('Shared password failed.')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
+
+      await waitFor(() => {
+        expect(disconnect).toHaveBeenCalledTimes(1)
+        expect(screen.queryByText('Drive portfolio')).toBeFalsy()
+        expect(screen.getAllByText('Shared portfolio')).toHaveLength(1)
+      })
+      expect(screen.queryByText('Folder password failed.')).toBeFalsy()
+      expect(screen.queryByText('Shared password failed.')).toBeFalsy()
+      expect(screen.queryByPlaceholderText("Enter the portfolio's password")).toBeFalsy()
+      expect(screen.getByRole('button', { name: 'Load from Google Drive' })).toBeTruthy()
+      expect(onListDriveFolders).toHaveBeenCalledTimes(1)
+      expect(onImportFromDriveFolder).toHaveBeenCalledTimes(1)
+      expect(onImportSharedPortfolio).toHaveBeenCalledTimes(1)
+
+      selectPickerMode('Open')
+      expect(screen.getByText('Local portfolio')).toBeTruthy()
+    })
+
+    it('retains Drive data when picker disconnect rejects', async () => {
+      const disconnect = vi.fn().mockRejectedValue(new Error('disconnect failed'))
+      pickerDriveConnection.connected = true
+      vi.mocked(getPickerDriveAuth).mockReturnValue({ disconnect } as never)
+      renderPicker({ onListDriveFolders: vi.fn().mockResolvedValue([{ name: 'Drive portfolio', id: 'drive-1' }]) })
+      selectPickerMode('Google Drive')
+      fireEvent.click(screen.getByRole('button', { name: 'Load from Google Drive' }))
+      await screen.findByText('Drive portfolio')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
+
+      await waitFor(() => expect(disconnect).toHaveBeenCalledTimes(1))
+      expect(screen.getByText('Drive portfolio')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Disconnect' })).toBeTruthy()
+    })
+
     it('shows My portfolios and Shared portfolio sections together without nested tabs', () => {
       const { container } = renderPicker()
       selectPickerMode('Google Drive')

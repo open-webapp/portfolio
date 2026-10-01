@@ -76,7 +76,7 @@ interface GlobalCategoryState {
 - `categoryPersist.ts` stores one global IndexedDB document; its `DriveSyncMeta` has optional `lastKnownRemoteModifiedTime` and `sharedFileId` fields.
 - `categoryDrive.ts` reads/writes unencrypted shared Drive `OpenWebApp/Portfolio/category-mappings.json`. `pullGlobalCategoriesFromDrive`, `pushGlobalCategoriesToDrive`, and `getGlobalCategoriesModifiedTime` each accept optional `fileId?: string`; when supplied, they read/write/status that file instead of resolving it by name in the shared root.
 - `useGlobalCategories(driveAuth, driveConnected, driveProjectId)` hydrates once, returns visible `{ categories, budgetAccountRules, dispatch, hydrated, syncNow }`, debounce-saves locally (500ms), merges Drive initial/manual/polled pulls, immediately pushes connected local edits, and polls every 60 seconds.
-- `PortfolioPicker` uses a centered 520px landing layout with a full-width `Open` (default) / `Create` / `Google Drive` segment. Only the selected top-level panel mounts. The Drive card renders sequential My-portfolios and Shared-portfolio sections separated by `.hr`. Local file import remains inside Create; switching modes preserves component-local state.
+- `PortfolioPicker` uses a centered 520px landing layout with a full-width `Open` (default) / `Create` / `Google Drive` segment. Only the selected top-level panel mounts. The Drive card uses picker-specific auth/hook status: while connected it shows the trimmed account email (or `Connected to Google Drive`) and `Disconnect`; while disconnected it adds no separate connect control. It renders sequential My-portfolios and Shared-portfolio sections separated by `.hr`. Local file import remains inside Create; switching modes preserves component-local state.
 - `ManageCategoriesPage` is rendered at `#/categories` for global category management. `router.ts` adds the `categories` `Route` variant and `navigateToCategories()` helper.
 - `App.tsx` prop-drills global categories, rules, hydration state, and `categoryDispatch` into `BudgetPage`; no context.
 
@@ -142,6 +142,7 @@ interface GlobalCategoryState {
 
 - `getDriveAuthFor(portfolio)` caches/keys a `DriveAuthHandle` per portfolio; `driveProjectIdFor` derives the Drive project id. `createDriveSync`/`createDriveAuth` wire `@open-webapp/drive-connect` 0.2.0.
 - `DriveAuthHandle` exposes only `{connect, disconnect, ensureFresh, activate}`; connection status comes from the `useDriveConnection` hook, not the handle. `connectInFlight` guards duplicate connect attempts.
+- `PortfolioPicker` uses separate `getPickerDriveAuth()` and `useDriveConnection(getPickerDriveAuth())` before any portfolio is open; its connected/email/error status and disconnect action do not use or change any portfolio auth handle or session.
 - Status is split across two sources: `@open-webapp/drive-sync` (backup/sync state) vs `@open-webapp/drive-connect` (auth/connection state). `NO_ACTIVE_PORTFOLIO` is the placeholder id used before a portfolio is open.
 - `getConnectionSnapshot()` in `src/lib/drive.ts` is the single call site reading the current `Connection` snapshot. A post-unlock effect calls `activate()`. `onDriveConnected`/`onDriveDisconnected` handlers exist for the four content-op signatures (backup/restore/list/status). `migrateLegacyDriveFolderIfNeeded` migrates pre-existing per-portfolio folders.
 - Orphaned: a drive-compat wrapper and `pickFile` helper have no remaining callers. Widget CSS vars are mapped through `--owa-drive-*` custom properties.
@@ -150,6 +151,7 @@ interface GlobalCategoryState {
 
 - Three live restore paths: existing-portfolio conflict flow, new-portfolio-from-Drive-folder, new-portfolio-from-local-file. `DriveRestorePanel` and `GateRestoreFromFilePanel` have been removed and are not part of the current component tree.
 - Picker-scoped Drive access (used before a portfolio session exists): `getPickerDriveAuth()`, `listPortfolioFoldersOnDrive()`, `decryptDriveFolderBackup()`, `decryptDriveFileBackup()` (reads a picked file by id; no folder listing); `DriveMalformedBackupError` vs `DriveDecryptError` distinguish corrupt-format from wrong-key/undecryptable backups.
+- A successful picker `Disconnect` clears only picker Drive UI state: listed folders, list loading/error/empty state, per-folder password/import/error state, and selected shared-import folder/password/import/error state. It does not modify local portfolios, portfolio data, or Drive files; a rejected disconnect preserves that UI state.
 
 ## Drive Sync Conflict
 

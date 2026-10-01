@@ -5,6 +5,11 @@ import { AccountsPage, type AccountsPageProps } from './AccountsPage'
 import { appReducer, type AppAction } from '../lib/reducer'
 import { initialState, type AppState, type PositionsTab } from '../lib/state'
 
+vi.mock('../lib/marketDataDb', () => ({
+  getAllBars: vi.fn().mockResolvedValue([]),
+  getAllTickerOverviews: vi.fn().mockResolvedValue([]),
+}))
+
 afterEach(cleanup)
 
 /**

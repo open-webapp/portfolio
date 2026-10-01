@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useDriveConnection } from '@open-webapp/drive-connect'
 import type { Portfolio } from '../lib/types'
 import type { EncryptedEnvelope } from '../lib/crypto'
 import { nameKey } from '../lib/portfolioRegistry'
@@ -66,6 +67,8 @@ export function PortfolioPicker({
   onListDriveFolders,
   isOnline,
 }: PortfolioPickerProps) {
+  const pickerDriveAuth = getPickerDriveAuth()
+  const { connected: pickerDriveConnected, email: pickerDriveEmail, error: pickerDriveError } = useDriveConnection(pickerDriveAuth)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [createDraft, setCreateDraft] = useState('')
@@ -332,6 +335,22 @@ export function PortfolioPicker({
     }
   }
 
+  const handlePickerDriveDisconnect = async () => {
+    try {
+      await pickerDriveAuth.disconnect()
+      setDriveFoldersOpen(false)
+      setDriveFolders(null)
+      setDriveListError(null)
+      setDriveListLoading(false)
+      setDriveEmptyMessage(null)
+      setDriveRowState({})
+      setSharedImportFolder(null)
+      setSharedImportState(null)
+    } catch {
+      // The connection hook retains and exposes the auth error.
+    }
+  }
+
   const dismissDriveListError = () => {
     setDriveListError(null)
     setDriveFoldersOpen(false)
@@ -561,6 +580,13 @@ export function PortfolioPicker({
 
         {pickerMode === 'drive' && (
           <div className="card blueprint elev-sm" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {pickerDriveConnected && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                <div className="card-body">{pickerDriveEmail?.trim() || 'Connected to Google Drive'}</div>
+                <button type="button" className="btn btn-secondary" onClick={() => void handlePickerDriveDisconnect()}>Disconnect</button>
+              </div>
+            )}
+            {pickerDriveError && <div className="tag tag-outline">{pickerDriveError}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               <div className="card-title">My portfolios</div>
               {!driveFoldersOpen && <><div className="card-body">Restore a portfolio you've backed up to Google Drive.</div><button type="button" className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={!isOnline || driveListLoading} title={isOnline ? undefined : 'Connect to the internet to import from Google Drive'} onClick={() => void handleOpenDriveFolders()}>{driveListLoading ? 'Loading Google Drive...' : 'Load from Google Drive'}</button></>}
