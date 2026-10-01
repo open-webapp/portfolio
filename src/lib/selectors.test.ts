@@ -862,7 +862,7 @@ describe('sankeyFlowData', () => {
       { id: 'small-b', name: 'Small B', updatedAt: '' },
     ]
     const definitions = categories.map((category) => ({ id: `${category.id}-budget`, name: category.name, categoryId: category.id, frequency: 'yearly' as const }))
-    const result = sankeyFlowData(definitions, { '2025': { 'large-budget': 1000, 'small-a-budget': 1, 'small-b-budget': 1 } }, [], categories, '2025')
+    const result = sankeyFlowData(definitions, { '2025': { 'large-budget': 1000, 'small-a-budget': 1, 'small-b-budget': 1 } }, [tx({ amount: -1 })], categories, '2025')
     const smallNodes = result.nodes.filter((node) => node.id.startsWith('budget:small'))
 
     expect(smallNodes[1].y + smallNodes[1].height / 2 - (smallNodes[0].y + smallNodes[0].height / 2)).toBeGreaterThanOrEqual(32)
@@ -888,11 +888,18 @@ describe('sankeyFlowData', () => {
     expect([...result.nodes, ...result.links].every((item) => !JSON.stringify(item).includes('NaN') && !JSON.stringify(item).includes('Infinity'))).toBe(true)
   })
 
-  it('renders untracked spend with a zero-height budget node and finite width', () => {
-    const result = sankeyFlowData([], {}, [tx({ amount: -25 })], sankeyCategories.slice(0, 1), '2025')
+  it('omits zero-budget categories and returns no data when every budget is zero', () => {
+    const result = sankeyFlowData(
+      sankeyDefinitions,
+      { '2025': { 'food-budget': 100, 'rent-budget': 0 } },
+      [tx({ amount: -25 }), tx({ id: 'rent', categoryId: 'rent', amount: -50 })],
+      sankeyCategories,
+      '2025'
+    )
+    const emptyResult = sankeyFlowData(sankeyDefinitions, { '2025': { 'food-budget': 0, 'rent-budget': 0 } }, [tx({ amount: -1 })], sankeyCategories, '2025')
 
-    expect(result.nodes.find((node) => node.id === 'budget:food')).toMatchObject({ height: 0, width: expect.any(Number) })
-    expect(result.nodes.find((node) => node.id === 'actual:food')?.height).toBeGreaterThan(0)
+    expect(result.nodes.some((node) => node.id.endsWith(':rent'))).toBe(false)
+    expect(emptyResult).toEqual({ nodes: [], links: [] })
   })
 
   it('returns zero-height actual nodes when the scope has no transactions', () => {

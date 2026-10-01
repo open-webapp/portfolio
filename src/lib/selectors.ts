@@ -907,6 +907,7 @@ export function sankeyFlowData(
   width: number = 1200
 ): { nodes: SankeyNode[]; links: SankeyLink[] } {
   const rows = perCategoryBudgetActual(definitions, amountsByYear, transactions, categories, scope)
+    .filter((row) => row.budget > 0)
     .map((row) => ({ ...row, id: row.categoryId }))
     .sort((a, b) => b.budget - a.budget || b.actual - a.actual || a.label.localeCompare(b.label))
 
