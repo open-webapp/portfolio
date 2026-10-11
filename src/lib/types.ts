@@ -58,6 +58,7 @@ export interface ClosedPosition {
   lastImportedAt: string
   realizedGL: number | null
   realizedGLBasis: 'transactions' | 'unknown'
+  sellTransactionId?: string
 }
 
 export interface Transaction {

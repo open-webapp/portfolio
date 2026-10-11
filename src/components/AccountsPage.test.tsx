@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
-import { useReducer } from 'react'
+import { useReducer, useState } from 'react'
 import { AccountsPage, type AccountsPageProps } from './AccountsPage'
 import { appReducer, type AppAction } from '../lib/reducer'
 import { initialState, type AppState, type PositionsTab } from '../lib/state'
@@ -38,6 +38,16 @@ function AccountsPageHarness({
 
 function renderPage(props: Omit<AccountsPageProps, 'tickerOverviewErrors'> & { tickerOverviewErrors?: Record<string, string> }) {
   return render(<AccountsPage tickerOverviewErrors={{}} {...props} />)
+}
+
+function TabChangingHarness({ initial }: { initial: AppState }) {
+  const [positionsTab, setPositionsTab] = useState<PositionsTab>('taxable')
+  return (
+    <>
+      <button type="button" onClick={() => setPositionsTab('nonTaxable')}>Change tab</button>
+      <AccountsPage state={initial} dispatch={vi.fn()} positionsTab={positionsTab} tickerOverviewErrors={{}} />
+    </>
+  )
 }
 
 function buildAppStateWithAccounts(options?: {
@@ -150,219 +160,62 @@ describe('AccountsPage', () => {
       const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
       render(<AccountsPageHarness initial={state} positionsTab="taxable" />)
 
-      // Selecting scopes the allocation title to the account name
+      // Selecting scopes the KPI row to the account.
       fireEvent.click(screen.getByText('#1000').closest('div[style*="cursor: pointer"]')!)
-      expect(screen.getByText('Allocation — Brokerage Account 1')).toBeTruthy()
+      expect(screen.getByText('1 position · 1 account')).toBeTruthy()
 
       // Clicking again deselects
       fireEvent.click(screen.getByText('#1000').closest('div[style*="cursor: pointer"]')!)
-      expect(screen.getByText(/Allocation —/)).toBeTruthy()
+      expect(screen.getByText('1 position · 1 account')).toBeTruthy()
     })
   })
 
-  describe('closed positions tab', () => {
-    it('renders the Closed Positions block when positionsTab is closedPositions, with its accounts always visible', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 2, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: 1000,
-        realizedGLBasis: 'known',
-        lastImportedAt: '2024-01-15',
-      })
-      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
-
-      expect(screen.getByText('Closed Positions')).toBeTruthy()
-      // acc-1 has a closed position, so should appear
-      expect(screen.getByText(/Brokerage Account 1/)).toBeTruthy()
-      // acc-2 has no closed positions, so should not appear
-      expect(screen.queryByText(/Brokerage Account 2/)).toBeNull()
-    })
-
-    it('Closed Positions card shows "—" when all closed positions have unknown realizedGL', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: null,
-        realizedGLBasis: 'unknown',
-        lastImportedAt: '2024-01-15',
-      })
-      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
-
-      const accountRow = screen.getByText(/Brokerage Account 1/).closest('div[style*="cursor: pointer"]')!
-      const totalStr = accountRow.querySelector('div:last-child')?.textContent
-      expect(totalStr).toMatch(/—/)
-    })
-
-    it('clicking an account row in Closed Positions card selects it (highlighted)', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: 1000,
-        realizedGLBasis: 'known',
-        lastImportedAt: '2024-01-15',
-      })
-      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
-
-      const accountRow = screen.getByText(/Brokerage Account 1/).closest('div[style*="cursor: pointer"]')!
-      fireEvent.click(accountRow)
-
-      const rowStyle = accountRow.getAttribute('style')
-      expect(rowStyle).toContain('--color-accent-100')
-    })
-
-    it('selecting an account under Closed Positions renders ClosedPositionsTable instead of aggregate table', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: 1000,
-        realizedGLBasis: 'known',
-        lastImportedAt: '2024-01-15',
-        closedDate: '2024-01-10',
-      })
-      renderPage({ state, dispatch: vi.fn(), positionsTab: 'closedPositions' })
-
-      // ClosedPositionsTable should render with the specific columns: Symbol, Closed, Realized G/L
-      expect(screen.getByText('Closed')).toBeTruthy()
-      expect(screen.getByText('Realized G/L')).toBeTruthy()
-      expect(screen.getByText('OLD')).toBeTruthy()
-      expect(screen.getByText('Old Stock')).toBeTruthy()
-
-      // Open positions aggregate table should NOT be rendered (no "Amount Invested" header)
-      expect(screen.queryByText('Amount Invested')).toBeNull()
-    })
-
-    it('asset-class filter narrows closed-positions list when in closed view', () => {
-      const state = initialState()
-      state.accounts.push({
-        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
-        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
-      })
-      state.closedPositions.push(
-        {
-          id: 'cp-1', accountId: 'acc-1', symbol: 'OLD', name: 'Old Stock', assetClass: 'Equities',
-          shares: 100, avgCost: 100, realizedGL: 1000, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
-        },
-        {
-          id: 'cp-2', accountId: 'acc-1', symbol: 'BND', name: 'Bond ETF', assetClass: 'Bonds',
-          shares: 50, avgCost: 100, realizedGL: 100, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
-        },
-      )
-      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
-
-      // Initially both symbols should be visible
-      expect(screen.getByText('OLD')).toBeTruthy()
-      expect(screen.getByText('BND')).toBeTruthy()
-
-      // Click the Bonds filter
-      const bondsOption = screen.getAllByText('Bonds').find((el) => el.closest('label.seg-opt'))!
-      fireEvent.click(bondsOption.closest('label')!)
-
-      // Now only BND should be visible
-      expect(screen.queryByText('OLD')).toBeNull()
-      expect(screen.getByText('BND')).toBeTruthy()
-    })
-
-    it('search box narrows closed-positions list when in closed view', () => {
-      const state = initialState()
-      state.accounts.push({
-        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
-        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
-      })
-      state.closedPositions.push(
-        {
-          id: 'cp-1', accountId: 'acc-1', symbol: 'OLD', name: 'Old Stock', assetClass: 'Equities',
-          shares: 100, avgCost: 100, realizedGL: 1000, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
-        },
-        {
-          id: 'cp-2', accountId: 'acc-1', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Equities',
-          shares: 50, avgCost: 100, realizedGL: 500, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
-        },
-      )
-      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
-
-      // Initially both symbols should be visible
-      expect(screen.getByText('OLD')).toBeTruthy()
-      expect(screen.getByText('MSFT')).toBeTruthy()
-
-      // Type in search
-      const search = screen.getByPlaceholderText('Search symbol or name')
-      fireEvent.change(search, { target: { value: 'old' } })
-
-      // Now only OLD should be visible
-      expect(screen.getByText('OLD')).toBeTruthy()
-      expect(screen.queryByText('MSFT')).toBeNull()
-    })
-
-    it('switching positionsTab from closedPositions to taxable shows the open-positions table for that tab', () => {
-      const state = buildAppStateWithAccounts({ taxableAccounts: 2, nonTaxableAccounts: 0, taxDeferredAccounts: 0 })
-      // acc-1 and acc-2 are both taxable
-      state.closedPositions.push({
-        id: 'cp-1',
-        accountId: 'acc-1',
-        symbol: 'OLD',
-        name: 'Old Stock',
-        assetClass: 'Equities',
-        shares: 100,
-        avgCost: 100,
-        realizedGL: 1000,
-        realizedGLBasis: 'known',
-        lastImportedAt: '2024-01-15',
-        closedDate: '2024-01-10',
-      })
-
-      renderPage({ state, dispatch: vi.fn(), positionsTab: 'closedPositions' })
-      expect(screen.getByText('Closed')).toBeTruthy()
-      expect(screen.getByText('OLD')).toBeTruthy()
-      cleanup()
-
-      renderPage({ state, dispatch: vi.fn(), positionsTab: 'taxable' })
-      expect(screen.getByText('Amount Invested')).toBeTruthy()
-      expect(screen.getByText('AAPL')).toBeTruthy()
-      expect(screen.queryByText('OLD')).toBeNull()
-    })
-
-    it('closed-positions view shows "No positions to show." when filtered to zero rows', () => {
-      const state = initialState()
-      state.accounts.push({
-        id: 'acc-1', accountNumber: '1', name: 'Brokerage', institution: 'Fidelity',
-        taxCategory: 'taxable', retirement: false, createdAt: '2024-01-01',
-      })
+  describe('closed positions mode', () => {
+    function stateWithClosedPosition() {
+      const state = buildAppStateWithAccounts({ taxableAccounts: 1, nonTaxableAccounts: 1, taxDeferredAccounts: 0 })
       state.closedPositions.push({
         id: 'cp-1', accountId: 'acc-1', symbol: 'OLD', name: 'Old Stock', assetClass: 'Equities',
-        shares: 100, avgCost: 100, realizedGL: 1000, realizedGLBasis: 'known', lastImportedAt: '2024-01-01', closedDate: '2024-01-10'
+        shares: 100, avgCost: 100, realizedGL: 1000, realizedGLBasis: 'known',
+        lastImportedAt: '2024-01-15', closedDate: '2024-01-10',
       })
-      render(<AccountsPageHarness initial={state} positionsTab="closedPositions" />)
+      return state
+    }
 
-      // Search for non-matching symbol
-      const search = screen.getByPlaceholderText('Search symbol or name')
-      fireEvent.change(search, { target: { value: 'zzz-no-match' } })
+    it('opens from the Closed positions button and returns to the positions list with Back', () => {
+      render(<AccountsPageHarness initial={stateWithClosedPosition()} positionsTab="taxable" />)
 
-      // Should show empty-state message
-      expect(screen.getByText('No positions to show.')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Closed positions' }))
+      expect(screen.getAllByTestId('positions-kpi-card')).toHaveLength(3)
+      expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+      expect(screen.getByText('Amount Invested')).toBeTruthy()
+      expect(screen.queryByText('Closed')).toBeNull()
+    })
+
+    it('resets closed mode when the positions tab changes', () => {
+      render(<TabChangingHarness initial={stateWithClosedPosition()} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Closed positions' }))
+      expect(screen.getAllByTestId('positions-kpi-card')).toHaveLength(3)
+      fireEvent.click(screen.getByRole('button', { name: 'Change tab' }))
+
+      expect(screen.getByText('Non-Taxable')).toBeTruthy()
+      expect(screen.getByText('Amount Invested')).toBeTruthy()
+    })
+
+    it('shows the closed account list, search, and undo/delete table controls without a close-position button', () => {
+      render(<AccountsPageHarness initial={stateWithClosedPosition()} positionsTab="taxable" />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Closed positions' }))
+
+      expect(screen.getByText(/Brokerage Account 1/)).toBeTruthy()
+      expect(screen.queryByText(/HSA Account 1/)).toBeNull()
+      expect(screen.getByPlaceholderText('Search symbol or name')).toBeTruthy()
+      expect(screen.getByText('OLD')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Reopen this position as an import' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Delete this closed position' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Close a position' })).toBeNull()
     })
   })
 

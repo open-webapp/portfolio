@@ -56,7 +56,7 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 - `App.tsx` renders `RailNav` and `TopBar` for every hydrated, unlocked portfolio view.
 - `RailNav` is a fixed left icon rail, no mark/logo: Budget, Positions, Register (3 main items — Quotes is not a rail item, see Positions); flexible spacer; Sync (when connected/syncing); Settings; Switch-portfolio last. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the spacer.
-- `TopBar` renders `header.top-bar` as a single-column CSS grid (inline `display: grid; gridTemplateColumns: '1fr'`, overriding the class's flex display) so the active portfolio's name (`<span class="nav-brand">{portfolioName}</span>`, required `portfolioName` prop, plain/non-interactive, `justifySelf: 'start'`, `whiteSpace: 'nowrap'`) and the optional Budget-only period control (wrapped in a `width: 100%` div) both occupy the same grid cell, overlaid rather than side-by-side. This keeps the period control centered on the *full* top-bar width independent of the name's length, and the name always renders in full on one line (no wrap, no truncation) — a very long name may visually overlap the tabs instead. It has no portfolio-switch button and no Sync button — those live in `RailNav`.
+- `TopBar` renders `header.top-bar` as a one-column grid. The active portfolio name is plain/non-interactive, left-aligned, and non-wrapping. Its optional Budget period control or Accounts `positionsTab` tax-category/Quotes segment occupies the same full-width grid cell, centered independently of the name; a long name may visually overlap the control. It has no portfolio-switch or Sync button; those live in `RailNav`.
 - `router.ts` recognizes `#/categories` and renders `ManageCategoriesPage` without requiring an unlocked portfolio session.
 
 ## Global Categories
@@ -111,20 +111,12 @@ interface GlobalCategoryState {
 
 ## Positions
 
-- `AccountsPage.tsx` renders a 5-tab top strip: Taxable, Non-Taxable, Tax-Deferred, Closed Positions, Quotes. Active tab is `PositionsTab` (`src/lib/state.ts`), held as local `useState` in `App.tsx` — not persisted, not part of `AppState`/reducer. Switching tabs dispatches `CLEAR_ACCOUNT_SELECTION`.
-- No "All Accounts" pill; category collapse/expand (chevrons, `expandedCategories`, `TOGGLE_CATEGORY_EXPANDED`) is removed — category blocks are always static/expanded.
-- Left nav per tab:
-  - Taxable/Non-Taxable/Tax-Deferred: exactly one category block — accounts in that tax category, per-account totals, category sum.
-  - Closed Positions: accounts with closed positions + realized G/L totals.
-  - Quotes: none; right panel is `QuotesPage` full width.
-- Right panel per tab:
-  - Taxable/Non-Taxable/Tax-Deferred: allocation chart, filter row, aggregate table, scoped to the active tab's accounts even with no account selected (selectors take `tabAccountIds?: string[]`: `acctScopedPositions`, `acctFilteredPositions`, `acctScopedClosedPositions`, `acctFilteredClosedPositions`; `acctAllocationTitle` takes optional `tabLabel?: string`).
-  - Closed Positions: always renders `ClosedPositionsTable` (`acctFilteredClosedPositions(state)`), not conditional on selection.
-  - Quotes: `QuotesPage`.
-- `ClosedPositionsTable.tsx` takes a `positions` prop; reused by `PositionsTable.tsx` (`state.closedPositions`) and `AccountsPage.tsx`.
-- Undo Closed Position flow: table Undo click → `findMatchingOpenPosition`/`isExactLotMatch` → confirm dialog only if an exact-lot match exists → `RESTORE_CLOSED_POSITION` dispatch → `restoreClosedPosition` (three outcome branches: no match/partial match/exact match); account selection is cleared via `CLEAR_ACCOUNT_SELECTION`/`clearAccountSelection` as part of the restore.
-- Account Selection flow: `SELECT_ACCOUNT` → `selectAccount`, with toggle (reselect clears)/replace/null semantics for single-account filtering.
-- `acctAllAccountsTotal` deleted (dead code after pill removal).
+- `App.tsx` owns a non-persisted local active Accounts segment: Taxable, Non-Taxable, Tax-Deferred, or Quotes. Changing it dispatches `CLEAR_ACCOUNT_SELECTION`.
+- `AccountsPage.tsx` renders one always-expanded category card for the active tax category; each account row selects/toggles that account through `SELECT_ACCOUNT`. Quotes renders `QuotesPage` full width with no category card.
+- Held positions use active-category account ids when nothing is selected, then apply `acctAssetClassFilter` and `acctPosSearch`; aggregate rows group by tracking symbol (when set) plus effective asset class.
+- The right panel begins with `PositionsKpiRow`: market value, unrealized G/L, realized G/L, and an embedded allocation grid. It then renders the asset-class filter, search, Import action, aggregate table, and row overlay. The table's Close action opens `ClosePositionPage` for that aggregate group.
+- The `Closed positions` action switches the same tax-category view into a local closed mode; Back returns to held positions. The category card stays visible. Closed mode shows KPIs without allocations, filters/searches closed records in the active category or selected account, and renders `ClosedPositionsTable`.
+- `ClosedPositionsTable.tsx` receives its filtered `positions` list. Undo restores a fresh-id open position; an existing exact lot requires confirmation before replacement. Restoring also removes the linked sale transaction when one was recorded for the close.
 
 ## Balance Register
 

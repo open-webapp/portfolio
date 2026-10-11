@@ -13,6 +13,7 @@ export type AppAction =
   | { type: 'UPDATE_POSITION'; positionId: string; patch: any }
   | { type: 'SET_ASSET_CLASS_OVERRIDE'; positionId: string; override?: any }
   | { type: 'CLOSE_POSITION'; positionId: string }
+  | { type: 'CLOSE_POSITION_WITH_SALE'; positionId: string; shares: number; price: number; date: string; fees: number }
   | { type: 'DELETE_CLOSED_POSITION'; id: string }
   | { type: 'RESTORE_CLOSED_POSITION'; closedPositionId: string; replaceExistingPositionId?: string }
   | { type: 'SET_SORT'; sortKey: any; sortDir: any }
@@ -92,6 +93,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'CLOSE_POSITION':
       return StateActions.closePosition(state, action.positionId)
+
+    case 'CLOSE_POSITION_WITH_SALE':
+      return StateActions.closePositionWithSale(state, action)
 
     case 'DELETE_CLOSED_POSITION':
       return StateActions.deleteClosedPosition(state, action.id)

@@ -42,8 +42,8 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | `accountId` | `string` | |
 | `symbol` | `string` | |
 | `name` | `string \| null` | Inherited verbatim from the `Position` that closed (preserves `null`) |
-| `closedDate` | `string` | ISO date of the import (or `CLOSE_POSITION` dispatch) that closed this position |
-| `assetClass` | `string` | Inherited from the closed `Position` (base class, not the override) |
+| `closedDate` | `string` | ISO date of the import or explicit sale that closed this position |
+| `assetClass` | `string` | Effective class at closure; an explicit sale stores `assetClassManualOverride || assetClass` |
 | `assetClassManualOverride?` | `string` | Inherited from the closed `Position`'s override, if any |
 | `shares` | `number` | Inherited from the closed `Position` |
 | `avgCost` | `number` | Inherited from the closed `Position` |
@@ -51,8 +51,9 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | `lastImportedAt` | `string` | Inherited from the closed `Position` |
 | `realizedGL` | `number \| null` | Computed from matching `Sell` transactions if any exist for `(accountId, symbol)`; `null` if none exist. **Never approximated/fabricated.** |
 | `realizedGLBasis` | `'transactions' \| 'unknown'` | `'transactions'` iff `realizedGL` was computed; `'unknown'` otherwise |
+| `sellTransactionId?` | `string` | ID of the Sell transaction used by an explicit close, whether an equivalent imported transaction was reused or one was recorded. Undo removes it when present; absent on imported/legacy closes without a linked sale. |
 
-Realized G/L formula when basis is `'transactions'`: `sum(sellTx.amount for matching sells) - (oldPosition.shares * oldPosition.avgCost)` — total sale proceeds minus the closed position's cost basis at time of closure.
+For an explicit sale, realized G/L is `shares * (price - avgCost) - fees`; the linked sell transaction stores net proceeds (`shares * price - fees`). Import-created closures retain transaction-derived or unknown basis without fabrication.
 
 ## Transaction
 
@@ -292,7 +293,8 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 **Positions**
 - `UPDATE_POSITION`: Patch fields on a `Position`
 - `SET_ASSET_CLASS_OVERRIDE`: Set/clear `assetClassManualOverride` on a `Position`
-- `CLOSE_POSITION`: Move a `Position` to `closedPositions` (`realizedGL: null`, `realizedGLBasis: 'unknown'`)
+- `CLOSE_POSITION`: Move a `Position` to `closedPositions` with unknown realized G/L
+- `CLOSE_POSITION_WITH_SALE { positionId, shares, price, date, fees }`: Close all or part of a lot at an explicit sale; reuses an equivalent imported Sell transaction or records one, and links it through `sellTransactionId`
 - `DELETE_CLOSED_POSITION`: Remove a `ClosedPosition` from state
 - `RESTORE_CLOSED_POSITION`: Move a `ClosedPosition` back to `positions` (fresh id), optionally replacing an existing open position
 
@@ -339,9 +341,9 @@ Note: global `Category` CRUD (`ADD_CATEGORY`, `RENAME_CATEGORY`, `DELETE_CATEGOR
 
 ## AppState UI/filter fields (not persisted domain data, but part of the same `AppState` blob — see `state.ts`)
 
-`view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'` (defaults to `'accounts'`; `'quotes'` is unreachable — Quotes is now a Positions-page tab, not a separate view — but the value stays in the union for persisted-state compatibility), `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `txTypeFilter: string`, `txSearch: string`, `selectedAccountId: string | null`, `selectedCategoryKey: TaxCategory | 'closedPositions' | null`, `acctAssetClassFilter: string`, `acctPosSearch: string`, `regAccountId: string | null` (selected account on RegisterPage), `regExpanded: Record<string, boolean>` (category expansion state on RegisterPage), `regActivityFilter: 'All' | 'With Activity'`.
+`view: 'settings' | 'accounts' | 'quotes' | 'register' | 'budget'` (defaults to `'accounts'`; `'quotes'` remains only for persisted-state compatibility), `sortKey: keyof Position`, `sortDir: 'asc' | 'desc'`, `txTypeFilter: string`, `txSearch: string`, `selectedAccountId: string | null`, `selectedCategoryKey: TaxCategory | null`, `acctAssetClassFilter: string`, `acctPosSearch: string`, `regAccountId: string | null` (selected account on RegisterPage), `regExpanded: Record<string, boolean>` (category expansion state on RegisterPage), `regActivityFilter: 'All' | 'With Activity'`.
 
-Positions-page active tab (`PositionsTab`) is component-local `useState` in `App.tsx`, not part of `AppState`.
+The Accounts page's active top-bar segment is component-local in `App.tsx`, not part of `AppState`.
 
 On load, `coalesceWithDefaults` whitelists `view`: any value other than `'accounts'`/`'settings'`/`'quotes'`/`'register'`/`'budget'` — including the retired `'dashboard'` written by older builds — is coerced to `'accounts'`. All other missing fields fall back to `initialState()` defaults.
 

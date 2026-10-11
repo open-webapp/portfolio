@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { AppState } from '../lib/state'
+import type { AppState, PositionsTab } from '../lib/state'
 
 export interface NavProps {
   state: AppState
@@ -25,7 +25,16 @@ export interface RailNavProps {
 export interface TopBarProps {
   periodControl?: ReactNode
   portfolioName: string
+  positionsTab?: PositionsTab
+  onPositionsTabChange?: (tab: PositionsTab) => void
 }
+
+const positionsTabOptions: { value: PositionsTab; label: string }[] = [
+  { value: 'taxable', label: 'Taxable' },
+  { value: 'nonTaxable', label: 'Non-Taxable' },
+  { value: 'taxDeferred', label: 'Tax-Deferred' },
+  { value: 'quotes', label: 'Quotes' },
+]
 
 const mainNavTabs = [
   {
@@ -96,7 +105,7 @@ export function RailNav({ state, dispatch, connected, syncing, handleSync, onOpe
   )
 }
 
-export function TopBar({ periodControl, portfolioName }: TopBarProps) {
+export function TopBar({ periodControl, portfolioName, positionsTab, onPositionsTabChange }: TopBarProps) {
   return (
     <header className="top-bar" style={{ display: 'grid', gridTemplateColumns: '1fr' }}>
       <span
@@ -107,6 +116,25 @@ export function TopBar({ periodControl, portfolioName }: TopBarProps) {
       </span>
       {periodControl ? (
         <div style={{ gridColumn: '1', gridRow: '1', width: '100%' }}>{periodControl}</div>
+      ) : null}
+      {positionsTab && onPositionsTabChange ? (
+        <div className="budget-controls" style={{ gridColumn: '1', gridRow: '1', width: '100%' }}>
+          <div className="budget-tabs">
+            <div className="seg">
+              {positionsTabOptions.map((option) => (
+                <label key={option.value} className="seg-opt">
+                  <input
+                    type="radio"
+                    name="positionsTab"
+                    checked={positionsTab === option.value}
+                    onChange={() => onPositionsTabChange(option.value)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
       ) : null}
     </header>
   )

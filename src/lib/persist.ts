@@ -168,6 +168,7 @@ export function coalesceWithDefaults(loaded: Partial<AppState>): AppState {
       price: cp.price ?? 0,
       assetClassManualOverride: cp.assetClassManualOverride,
       lastImportedAt: cp.lastImportedAt ?? '',
+      sellTransactionId: cp.sellTransactionId,
     })),
     transactions: loaded.transactions ?? defaults.transactions,
     snapshots: loaded.snapshots ?? defaults.snapshots,

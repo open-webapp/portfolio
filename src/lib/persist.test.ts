@@ -2,6 +2,32 @@ import { describe, expect, it } from 'vitest'
 import { coalesceWithDefaults, dropLegacyBudgetIncome } from './persist'
 
 describe('budget persistence migration', () => {
+  it('preserves a closed position sell transaction link through hydration', () => {
+    const coalesced = coalesceWithDefaults({
+      closedPositions: [{
+        id: 'closed-1', accountId: 'account-1', symbol: 'ABC', name: null,
+        closedDate: '2026-10-01', assetClass: 'Equity', shares: 1, avgCost: 10,
+        price: 12, lastImportedAt: '2026-10-01T00:00:00.000Z', realizedGL: 2,
+        realizedGLBasis: 'transactions', sellTransactionId: 'sell-1',
+      }],
+    })
+
+    expect(coalesced.closedPositions[0].sellTransactionId).toBe('sell-1')
+  })
+
+  it('hydrates legacy closed positions without a sell transaction link as undefined', () => {
+    const coalesced = coalesceWithDefaults({
+      closedPositions: [{
+        id: 'closed-1', accountId: 'account-1', symbol: 'ABC', name: null,
+        closedDate: '2026-10-01', assetClass: 'Equity', shares: 1, avgCost: 10,
+        price: 12, lastImportedAt: '2026-10-01T00:00:00.000Z', realizedGL: 2,
+        realizedGLBasis: 'transactions',
+      }],
+    })
+
+    expect(coalesced.closedPositions[0].sellTransactionId).toBeUndefined()
+  })
+
   it('drops every retired manual-income shape without creating records', () => {
     const raw = dropLegacyBudgetIncome({ budgetIncomeByYear: { '2025': { monthly: 10 } }, budgetIncomeMonthly: 10, budgetIncomeYearly: 120, budgetTransactions: [] })
     expect(raw).not.toHaveProperty('budgetIncomeByYear')

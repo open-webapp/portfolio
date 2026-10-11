@@ -19,7 +19,7 @@ import type {
 } from './types'
 import { uid } from './seed'
 
-export type PositionsTab = 'taxable' | 'nonTaxable' | 'taxDeferred' | 'closedPositions' | 'quotes'
+export type PositionsTab = 'taxable' | 'nonTaxable' | 'taxDeferred' | 'quotes'
 import type { ExportableState } from './importExport'
 import { normalizeBudgetAccountName, reconcileBudgetAccountRules } from './budgetAccountRules'
 import { applyAutoTags, unionTags } from './autoTag'
@@ -48,7 +48,7 @@ export interface AppState {
   txTypeFilter: string // 'All' or specific type like 'Buy'
   txSearch: string // search text for transactions
   selectedAccountId: string | null // selected account on AccountsPage
-  selectedCategoryKey: TaxCategory | 'closedPositions' | null // selected category on AccountsPage
+  selectedCategoryKey: TaxCategory | null // selected category on AccountsPage
   acctAssetClassFilter: string // asset class filter on AccountsPage
   acctPosSearch: string // position search text on AccountsPage
   regAccountId: string | null // selected account on RegisterPage
@@ -323,6 +323,86 @@ export function closePosition(state: AppState, positionId: string): AppState {
   }
 }
 
+export interface ClosePositionWithSaleInput {
+  positionId: string
+  shares: number
+  price: number
+  date: string
+  fees: number
+}
+
+function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+/**
+ * Close all or part of one lot using an explicit sale. Reuses an equivalent
+ * imported sale in the same account, otherwise records the sale transaction.
+ */
+export function closePositionWithSale(
+  state: AppState,
+  { positionId, shares, price, date, fees }: ClosePositionWithSaleInput
+): AppState {
+  const position = state.positions.find((p) => p.id === positionId)
+  if (
+    !position ||
+    !Number.isFinite(shares) ||
+    shares <= 0 ||
+    shares > position.shares ||
+    !Number.isFinite(price) ||
+    price < 0 ||
+    !Number.isFinite(fees) ||
+    fees < 0 ||
+    !isCalendarDate(date)
+  ) return state
+
+  const existingSale = state.transactions.find((transaction) =>
+    transaction.accountId === position.accountId &&
+    transaction.date === date &&
+    transaction.symbol === position.symbol &&
+    transaction.type === 'Sell' &&
+    transaction.shares === shares &&
+    transaction.price === price
+  )
+  const saleTransaction: Transaction = existingSale ?? {
+    id: uid('transaction'),
+    accountId: position.accountId,
+    date,
+    symbol: position.symbol,
+    type: 'Sell',
+    shares,
+    price,
+    amount: shares * price - fees,
+    importedAt: new Date().toISOString(),
+  }
+  const closed: ClosedPosition = {
+    id: uid('closed'),
+    accountId: position.accountId,
+    symbol: position.symbol,
+    name: position.name,
+    closedDate: date,
+    assetClass: position.assetClassManualOverride || position.assetClass,
+    realizedGL: shares * (price - position.avgCost) - fees,
+    realizedGLBasis: 'transactions',
+    sellTransactionId: saleTransaction.id,
+    shares,
+    avgCost: position.avgCost,
+    price,
+    assetClassManualOverride: position.assetClassManualOverride,
+    lastImportedAt: position.lastImportedAt,
+  }
+  return {
+    ...state,
+    positions: state.positions.flatMap((p) =>
+      p.id !== positionId ? [p] : shares === position.shares ? [] : [{ ...p, shares: p.shares - shares }]
+    ),
+    closedPositions: [...state.closedPositions, closed],
+    transactions: existingSale ? state.transactions : [...state.transactions, saleTransaction],
+  }
+}
+
 /**
  * Find an existing OPEN position in the same account with the same symbol as
  * a ClosedPosition snapshot, for restore-time dedup decisions.
@@ -379,6 +459,9 @@ export function restoreClosedPosition(
       restored,
     ],
     closedPositions: state.closedPositions.filter((cp) => cp.id !== closedPositionId),
+    transactions: closed.sellTransactionId
+      ? state.transactions.filter((transaction) => transaction.id !== closed.sellTransactionId)
+      : state.transactions,
   }
 }
 
@@ -431,7 +514,7 @@ export function setTransactionTypeFilter(state: AppState, filter: string): AppSt
 /**
  * Select an account and category on AccountsPage (toggle if already selected).
  */
-export function selectAccount(state: AppState, accountId: string, categoryKey: TaxCategory | 'closedPositions'): AppState {
+export function selectAccount(state: AppState, accountId: string, categoryKey: TaxCategory): AppState {
   const isSame = state.selectedAccountId === accountId && state.selectedCategoryKey === categoryKey
   return {
     ...state,

@@ -17,6 +17,25 @@ afterEach(() => {
 })
 
 describe('budget backup export', () => {
+  it('round-trips closed position sell transaction links', async () => {
+    const state = {
+      ...initialState(),
+      closedPositions: [{
+        id: 'closed-1', accountId: 'account-1', symbol: 'ABC', name: null,
+        closedDate: '2026-10-01', assetClass: 'Equity', shares: 1, avgCost: 10,
+        price: 12, lastImportedAt: '2026-10-01T00:00:00.000Z', realizedGL: 2,
+        realizedGLBasis: 'transactions' as const, sellTransactionId: 'sell-1',
+      }],
+    }
+    const password = 'test-password'
+    const salt = generateSalt()
+    const key = await deriveKey(password, salt)
+
+    const restored = await decryptImportEnvelope(await exportBackup(state, key, salt), password)
+
+    expect(restored.closedPositions[0].sellTransactionId).toBe('sell-1')
+  })
+
   it('exports definitions, snapshots, and transactions without manual income', () => {
     const state = {
       ...initialState(),

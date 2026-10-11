@@ -115,3 +115,59 @@ describe('budget reducer', () => {
     expect(result.selectedCategoryKey).toBeNull()
   })
 })
+
+describe('position sale reducer', () => {
+  const position = {
+    id: 'position-1',
+    accountId: 'account-1',
+    symbol: 'AAPL',
+    description: 'Apple Inc.',
+    shares: 10,
+    price: 150,
+    avgCost: 100,
+    assetClass: 'US Equity',
+  }
+
+  it('closes a position with a linked sale and restores it end-to-end', () => {
+    const state = { ...initialState(), positions: [position] }
+    const closed = appReducer(state, {
+      type: 'CLOSE_POSITION_WITH_SALE',
+      positionId: position.id,
+      date: '2026-10-11',
+      shares: 10,
+      price: 175,
+      fees: 0,
+    })
+
+    expect(closed.closedPositions).toHaveLength(1)
+    expect(closed.closedPositions[0]).toMatchObject({ symbol: 'AAPL', realizedGL: 750 })
+    expect(closed.transactions).toContainEqual(expect.objectContaining({
+      accountId: position.accountId,
+      symbol: 'AAPL',
+      type: 'Sell',
+      shares: 10,
+      price: 175,
+    }))
+
+    const restored = appReducer(closed, {
+      type: 'RESTORE_CLOSED_POSITION',
+      closedPositionId: closed.closedPositions[0].id,
+    })
+
+    expect(restored.closedPositions).toHaveLength(0)
+    expect(restored.transactions).toHaveLength(0)
+  })
+
+  it('returns the input state when the sale exceeds the position shares', () => {
+    const state = { ...initialState(), positions: [position] }
+
+    expect(appReducer(state, {
+      type: 'CLOSE_POSITION_WITH_SALE',
+      positionId: position.id,
+      date: '2026-10-11',
+      shares: 11,
+      price: 175,
+      fees: 0,
+    })).toBe(state)
+  })
+})

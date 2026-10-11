@@ -114,9 +114,44 @@ describe('RailNav', () => {
     expect(styles).toMatch(/\.syncing\s*\{[^}]*animation:\s*sync-spin\s+0\.8s\s+linear\s+infinite[^}]*\}/s)
     expect(styles).toMatch(/@keyframes\s+sync-spin\s*\{[^}]*transform:\s*rotate\(360deg\)/s)
   })
+
+  it('keeps Positions active when the Quotes tab is selected', () => {
+    render(<RailNav {...makeRailProps({ state: { view: 'accounts' } })} />)
+
+    expect(screen.getByRole('button', { name: 'Positions' }).getAttribute('aria-pressed')).toBe('true')
+  })
 })
 
 describe('TopBar', () => {
+  it('renders four position tabs only when supplied for the Positions view', () => {
+    const onPositionsTabChange = vi.fn()
+    render(
+      <TopBar
+        {...makeTopBarProps()}
+        positionsTab="taxable"
+        onPositionsTabChange={onPositionsTabChange}
+      />
+    )
+
+    expect(screen.getByRole('radio', { name: 'Taxable' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Non-Taxable' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Tax-Deferred' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Quotes' })).toBeTruthy()
+    expect(screen.queryByRole('radio', { name: 'Closed Positions' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Quotes' }))
+    expect(onPositionsTabChange).toHaveBeenCalledWith('quotes')
+  })
+
+  it('renders no position tabs on non-Positions views', () => {
+    render(<TopBar {...makeTopBarProps()} />)
+
+    expect(screen.queryByRole('radio', { name: 'Taxable' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Non-Taxable' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Tax-Deferred' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Quotes' })).toBeNull()
+  })
+
   it('contains the supplied period control and the portfolio name, but no portfolio or Sync buttons', () => {
     render(<TopBar {...makeTopBarProps()} periodControl={<div data-testid="period-control">This month</div>} />)
 

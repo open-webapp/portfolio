@@ -18,13 +18,15 @@ RailNavProps = {
 TopBarProps = {
   periodControl?: ReactNode
   portfolioName: string
+  positionsTab?: PositionsTab
+  onPositionsTabChange?: (tab: PositionsTab) => void
 }
 ```
 
 ## Rail
 
 - Fixed left `nav[aria-label="Main navigation"]`: main-item stack, flexible spacer, optional Sync, Settings, then Switch portfolio last.
-- Main items: Budget (dashboard grid icon), Positions (vertical bars), Register (document), Quotes (trend line).
+- Main items: Budget (dashboard grid icon), Positions (vertical bars), Register (document).
 - Main controls are icon-only `button.rail-item` elements with accessible label and tooltip title.
 - Active item: `state.view === item.value`; adds `.active` and `aria-pressed`.
 - Switch portfolio is an icon-only `button.rail-item.rail-exit` with an exit door+arrow glyph on a warm amber fill (`#f59e0b`, hover `#d97706`); it calls `onSwitchPortfolio`.
@@ -34,8 +36,8 @@ TopBarProps = {
 
 ## Top Bar
 
-- `header.top-bar` always renders.
-- `header.top-bar` is `display: grid; grid-template-columns: 1fr` (inline style, overriding the `.top-bar` class's flex display). `.nav-brand` and a `periodControl` wrapper (`<div style={{ width: '100%' }}>`, only rendered when `periodControl` is supplied) are both placed at `gridColumn: 1; gridRow: 1`, so they occupy the same full-width cell rather than sitting side by side.
-- `.nav-brand` also gets `justifySelf: 'start'` (left-anchored within the cell) and `whiteSpace: 'nowrap'` — it always renders the full, untruncated name on one line at its natural width, unaffected by `periodControl`.
-- The `periodControl` wrapper spans the entire cell (`width: 100%`), so `periodControl`'s own internal centering (e.g. `.budget-controls`' `1fr auto 1fr` grid) always centers on the *full* top-bar width, never shifted by the name's width. Both items being normal in-flow grid items (not `position: absolute`) means the row's height is still set correctly even when `periodControl` is absent (non-Budget views).
-- If the name is long enough to visually reach the tabs, it overlaps/steps over them rather than the tabs shrinking or shifting right — accepted tradeoff, since name and tab centering are otherwise fully independent.
+- `header.top-bar` always renders as an inline one-column grid, overriding its flex class.
+- `.nav-brand`, the optional Budget period wrapper, and the optional Positions `positionsTab` control share `gridColumn: 1; gridRow: 1`; each optional control spans the full cell.
+- `.nav-brand` is left-anchored and non-wrapping, always rendering its full natural-width name.
+- The Positions control is a `.seg` radio group for Taxable, Non-Taxable, Tax-Deferred, and Quotes.
+- Normal grid flow preserves row height. A long name overlaps the centered control rather than moving or shrinking it.

@@ -236,89 +236,6 @@ export function registerAllAccountsTotal(state: AppState): string {
 }
 
 /**
- * Generate closed-positions card data for the Accounts page's left column.
- * Mirrors categoryCards structure but shows closed positions across all accounts.
- * One card labeled "Closed Positions", listing only accounts with ≥1 closed position,
- * with per-account totals (sum of realizedGL where not null), expand/collapse state, and selection state.
- */
-export function closedPositionsCard(state: AppState): {
-  key: string
-  label: string
-  totalStr: string
-  accountCount: number
-  accounts: Array<{
-    id: string
-    institution: string
-    name: string
-    accountNumber: string
-    updatedStr: string
-    totalStr: string
-    selected: boolean
-  }>
-  hasAccounts: boolean
-  noAccounts: boolean
-} {
-  // Group closed positions by account
-  const closedPositionsByAccount = new Map<string, ClosedPosition[]>()
-  state.closedPositions.forEach((cp) => {
-    if (!closedPositionsByAccount.has(cp.accountId)) {
-      closedPositionsByAccount.set(cp.accountId, [])
-    }
-    closedPositionsByAccount.get(cp.accountId)!.push(cp)
-  })
-
-  // Build accounts list: only include accounts with ≥1 closed position
-  let cardTotal = 0
-  const accounts = state.accounts
-    .filter((account) => closedPositionsByAccount.has(account.id))
-    .map((account) => {
-      const accountClosedPositions = closedPositionsByAccount.get(account.id)!
-
-      // Calculate total: sum of realizedGL where not null
-      const total = accountClosedPositions.reduce((sum, cp) => {
-        return cp.realizedGL !== null ? sum + cp.realizedGL : sum
-      }, 0)
-      cardTotal += total
-
-      // Determine totalStr: if all realizedGL are null, show '—', otherwise show sum
-      const hasAnyRealized = accountClosedPositions.some((cp) => cp.realizedGL !== null)
-      const totalStr = hasAnyRealized ? fmtUSD(total) : '—'
-
-      // updatedStr: latest lastImportedAt across closed positions
-      const updatedStr =
-        accountClosedPositions.length === 0
-          ? '—'
-          : new Date(
-              Math.max(...accountClosedPositions.map((cp) => new Date(cp.lastImportedAt).getTime()))
-            ).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-
-      return {
-        id: account.id,
-        institution: account.institution || '',
-        name: account.name,
-        accountNumber: account.accountNumber,
-        updatedStr,
-        totalStr,
-        selected: state.selectedAccountId === account.id && state.selectedCategoryKey === 'closedPositions'
-      }
-    })
-
-  // Determine card-level total
-  const hasAnyCardRealized = state.closedPositions.some((cp) => cp.realizedGL !== null)
-  const cardTotalStr = hasAnyCardRealized ? fmtUSD(cardTotal) : '—'
-
-  return {
-    key: 'closedPositions',
-    label: 'Closed Positions',
-    totalStr: cardTotalStr,
-    accountCount: accounts.length,
-    accounts,
-    hasAccounts: accounts.length > 0,
-    noAccounts: accounts.length === 0
-  }
-}
-
-/**
  * Positions scoped to the currently-selected account on the Accounts page,
  * or, when no account is selected, scoped to `tabAccountIds` (the active tab's
  * accounts) if given, else all positions.
@@ -406,6 +323,55 @@ export function acctFilteredPositions(state: AppState, tabAccountIds?: string[])
   return results
 }
 
+export interface ClosePositionSalePreview {
+  valid: boolean
+  error: string | null
+  realizedGL: number
+  proceeds: number
+  costBasis: number
+  remaining: number
+}
+
+/** Preview an explicit sale without mutating the selected lot. */
+export function closePositionSalePreview(
+  position: Position,
+  input: { shares: string; price: string; date: string; fees: string }
+): ClosePositionSalePreview {
+  const shares = Number(input.shares)
+  const price = Number(input.price)
+  const fees = Number(input.fees)
+  const invalid = (error: string): ClosePositionSalePreview => ({
+    valid: false,
+    error,
+    realizedGL: 0,
+    proceeds: 0,
+    costBasis: 0,
+    remaining: position.shares,
+  })
+
+  if (!input.shares.trim() || !Number.isFinite(shares) || shares <= 0) return invalid('Enter shares greater than 0.')
+  if (shares > position.shares) return invalid(`Shares cannot exceed ${position.shares}.`)
+  if (!input.price.trim() || !Number.isFinite(price) || price < 0) return invalid('Enter a non-negative sale price.')
+  if (!input.fees.trim() || !Number.isFinite(fees) || fees < 0) return invalid('Enter non-negative fees.')
+  const saleDate = new Date(`${input.date}T00:00:00.000Z`)
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(input.date) ||
+    Number.isNaN(saleDate.getTime()) ||
+    saleDate.toISOString().slice(0, 10) !== input.date
+  ) return invalid('Enter a sale date.')
+
+  const proceeds = shares * price
+  const costBasis = shares * position.avgCost
+  return {
+    valid: true,
+    error: null,
+    realizedGL: proceeds - costBasis - fees,
+    proceeds,
+    costBasis,
+    remaining: position.shares - shares,
+  }
+}
+
 /**
  * Closed positions scoped to the currently-selected account on the Accounts page,
  * or all closed positions when no account is selected.
@@ -419,6 +385,46 @@ export function acctScopedClosedPositions(state: AppState, tabAccountIds?: strin
     return state.closedPositions.filter((cp) => idSet.has(cp.accountId))
   }
   return state.closedPositions
+}
+
+/**
+ * Position-page KPIs for the active tab accounts, or the selected account when one is selected.
+ * Positions without a price are excluded because they have no current market value.
+ */
+export function positionsKpis(state: AppState, tabAccountIds: string[], closed = false): {
+  marketValue: number
+  unrealizedGL: number
+  unrealizedGLPct: number
+  realizedGL: number
+  positionCount: number
+  accountCount: number
+  allocationBars: ReturnType<typeof allocationBars>
+} {
+  const positions = acctScopedPositions(state, tabAccountIds).filter((position) => position.price !== null)
+  const closedPositions = acctScopedClosedPositions(state, tabAccountIds)
+  const totals = positions.reduce(
+    (sum, position) => {
+      const computed = computePosition(position)
+      sum.marketValue += computed.marketValue
+      sum.unrealizedGL += computed.gl
+      sum.costBasis += computed.costBasis
+      return sum
+    },
+    { marketValue: 0, unrealizedGL: 0, costBasis: 0 }
+  )
+  const accountIds = state.selectedAccountId
+    ? new Set([state.selectedAccountId])
+    : new Set(tabAccountIds)
+
+  return {
+    marketValue: totals.marketValue,
+    unrealizedGL: totals.unrealizedGL,
+    unrealizedGLPct: totals.costBasis === 0 ? 0 : (totals.unrealizedGL / totals.costBasis) * 100,
+    realizedGL: closedPositions.reduce((sum, position) => sum + (position.realizedGL ?? 0), 0),
+    positionCount: closed ? closedPositions.length : positions.length,
+    accountCount: state.accounts.filter((account) => accountIds.has(account.id)).length,
+    allocationBars: allocationBars(positions)
+  }
 }
 
 /**

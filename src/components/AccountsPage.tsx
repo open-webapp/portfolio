@@ -1,25 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AppState, PositionsTab } from '../lib/state'
 import type { Position } from '../lib/types'
 import {
   categoryCards,
-  closedPositionsCard,
   acctScopedPositions,
   acctFilteredPositions,
   acctScopedClosedPositions,
   acctFilteredClosedPositions,
   acctAssetClassOptions,
-  acctAllocationTitle,
+  positionsKpis,
   assetClassOptions,
 } from '../lib/selectors'
 import { buildAggregateRows, AGGREGATE_SORT_FIELD, type AggregateRow } from '../lib/aggregateRows'
 import { sortBy } from '../lib/sort'
 import { fmtUSD, fmtPct, fmtPortfolioPercent, glColor } from '../lib/computations'
-import { AllocationChart } from './AllocationChart'
+import { PositionsKpiRow } from './PositionsKpiRow'
 import { ImportDialog } from './import/ImportDialog'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
 import { ClosedPositionsTable } from './ClosedPositionsTable'
 import { QuotesPage } from './QuotesPage'
+import { ClosePositionPage } from './ClosePositionPage'
 
 export interface AccountsPageProps {
   state: AppState
@@ -35,6 +35,12 @@ export interface AccountsPageProps {
  */
 export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErrors }: AccountsPageProps) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
+  const [closingGroupKey, setClosingGroupKey] = useState<string | null>(null)
+  const [mode, setMode] = useState<'list' | 'closed' | 'close'>('list')
+
+  useEffect(() => {
+    setMode('list')
+  }, [positionsTab])
 
   if (positionsTab === 'quotes') {
     return (
@@ -44,9 +50,9 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
     )
   }
 
-  const isClosedView = positionsTab === 'closedPositions'
+  const isClosedView = mode === 'closed'
   const cards = categoryCards(state)
-  const activeCard = isClosedView ? closedPositionsCard(state) : cards.find((c) => c.key === positionsTab)
+  const activeCard = cards.find((c) => c.key === positionsTab)
   const tabAccountIds = activeCard ? activeCard.accounts.map((a) => a.id) : []
 
   const scopedPositions = acctScopedPositions(state, tabAccountIds)
@@ -55,6 +61,7 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
 
   const aggregateRows = buildAggregateRows(filteredPositions)
   const selectedGroup = aggregateRows.find((r) => r.key === selectedGroupKey) ?? null
+  const closingGroup = aggregateRows.find((r) => r.key === closingGroupKey) ?? null
   const sortedRows = sortBy(
     aggregateRows,
     AGGREGATE_SORT_FIELD[state.sortKey] ?? (state.sortKey as keyof AggregateRow),
@@ -116,7 +123,7 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                 activeCard.accounts.map((acc) => (
                   <div
                     key={acc.id}
-                    onClick={() => dispatch({ type: 'SELECT_ACCOUNT', accountId: acc.id, categoryKey: activeCard.key })}
+                    onClick={() => dispatch({ type: 'SELECT_ACCOUNT', accountId: acc.id, categoryKey: positionsTab })}
                     style={{
                       padding: 'var(--space-3) var(--space-4)',
                       borderBottom: '1px solid var(--color-divider)',
@@ -159,9 +166,19 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
 
       {/* Positions for selection */}
       <div>
-        <div style={{ marginBottom: 'var(--space-5)' }}>
-          <AllocationChart positions={scopedPositions} title={acctAllocationTitle(state, activeCard?.label)} />
-        </div>
+        {mode === 'close' && closingGroup ? (
+          <ClosePositionPage
+            positions={closingGroup.positions}
+            accounts={state.accounts}
+            dispatch={dispatch}
+            onCancel={() => setMode('list')}
+            onClosed={() => {
+              setClosingGroupKey(null)
+              setMode('closed')
+            }}
+          />
+        ) : <>
+        <PositionsKpiRow kpis={positionsKpis(state, tabAccountIds, isClosedView)} closed={isClosedView} />
 
         <div style={{ background: 'var(--color-divider)', margin: 'var(--space-6) 0' }} />
 
@@ -184,7 +201,14 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
             ))}
           </div>
 
-          <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            {isClosedView ? (
+              <button type="button" className="btn btn-secondary" onClick={() => setMode('list')}>Back</button>
+            ) : (
+              <button type="button" className="btn btn-secondary" onClick={() => setMode('closed')}>Closed positions</button>
+            )}
+            <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
+          </div>
         </div>
 
         <div
@@ -249,9 +273,10 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                   <th style={{ textAlign: 'right' }}>Amount Invested</th>
                   <th style={{ textAlign: 'right' }}>Market Value</th>
                   <th style={{ textAlign: 'right' }}>% of Selection</th>
-                  <th style={{ textAlign: 'right' }}>G/L</th>
-                  <th style={{ textAlign: 'right' }}>G/L %</th>
-                  <th style={{ textAlign: 'right' }}></th>
+                   <th style={{ textAlign: 'right' }}>G/L</th>
+                   <th style={{ textAlign: 'right' }}>G/L %</th>
+                   <th style={{ textAlign: 'right' }}></th>
+                   <th style={{ textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -276,9 +301,22 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                       <td style={{ textAlign: 'right' }}>{fmtPortfolioPercent(row.marketValue, acctPortfolioTotal)}</td>
                       <td style={{ textAlign: 'right', color: glColorVal, fontWeight: 600 }}>{glStr}</td>
                       <td style={{ textAlign: 'right', color: glColorVal }}>{glPctStr}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        <span className="tag tag-neutral">{row.rowCount}</span>
-                      </td>
+                       <td style={{ textAlign: 'right' }}>
+                         <span className="tag tag-neutral">{row.rowCount}</span>
+                       </td>
+                       <td style={{ textAlign: 'right' }}>
+                         <button
+                           type="button"
+                           className="btn btn-secondary"
+                           onClick={(event) => {
+                             event.stopPropagation()
+                             setClosingGroupKey(row.key)
+                             setMode('close')
+                           }}
+                         >
+                           Close
+                         </button>
+                       </td>
                     </tr>
                   )
                 })}
@@ -306,6 +344,7 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
             })()}
           </>
         )}
+        </>}
       </div>
     </div>
   )

@@ -5,12 +5,16 @@ import {
   autoTagBudgetTransactions,
   clearBudgetTransactionAutoTags,
   clearBudgetTransactionTags,
+  closePositionWithSale,
+  closePosition,
+  deleteClosedPosition,
   deleteExpenseDefinition,
   ensureExpenseAmountsSnapshotForYear,
   importBudgetTransactions,
   initialState,
   propagateSpendLinksByAutoTag,
   reconcileBudgetAccountConventions,
+  restoreClosedPosition,
   resolveBudgetImportRows,
   rolloverBudgetExpenseAmountsIfNeeded,
   stripEmptyBudgetSnapshots,
@@ -19,6 +23,156 @@ import {
   updateExpenseDefinition,
 } from './state'
 import type { BudgetAccountRule, StatementConvention } from './types'
+
+describe('closePositionWithSale', () => {
+  const lot = {
+    id: 'lot-1',
+    accountId: 'account-1',
+    symbol: 'ACME',
+    name: 'Acme Corp',
+    assetClass: 'Equity',
+    shares: 10,
+    avgCost: 100,
+    price: 110,
+    lastImportedAt: '2026-01-01T00:00:00.000Z',
+  }
+  const sale = { positionId: 'lot-1', shares: 10, price: 120, date: '2026-02-01', fees: 5 }
+
+  it('fully sells a lot with transaction-derived realized gain/loss', () => {
+    const result = closePositionWithSale({ ...initialState(), positions: [lot] }, sale)
+
+    expect(result.positions).toEqual([])
+    expect(result.closedPositions).toHaveLength(1)
+    expect(result.closedPositions[0]).toMatchObject({
+      accountId: 'account-1',
+      symbol: 'ACME',
+      shares: 10,
+      price: 120,
+      closedDate: '2026-02-01',
+      realizedGL: 195,
+      realizedGLBasis: 'transactions',
+    })
+  })
+
+  it('partially sells a lot and retains the remaining shares', () => {
+    const result = closePositionWithSale(
+      { ...initialState(), positions: [lot] },
+      { ...sale, shares: 4, fees: 0 }
+    )
+
+    expect(result.positions).toEqual([{ ...lot, shares: 6 }])
+    expect(result.closedPositions[0]).toMatchObject({ shares: 4, realizedGL: 80 })
+  })
+
+  it('records the sale transaction and links it from the closed position', () => {
+    const result = closePositionWithSale({ ...initialState(), positions: [lot] }, sale)
+
+    expect(result.transactions).toHaveLength(1)
+    expect(result.transactions[0]).toMatchObject({
+      accountId: 'account-1',
+      date: '2026-02-01',
+      symbol: 'ACME',
+      type: 'Sell',
+      shares: 10,
+      price: 120,
+      amount: 1195,
+    })
+    expect(result.closedPositions[0].sellTransactionId).toBe(result.transactions[0].id)
+  })
+
+  it('reuses a matching sale only within the lot account', () => {
+    const matching = {
+      id: 'existing-sale', accountId: 'account-1', date: '2026-02-01', symbol: 'ACME', type: 'Sell',
+      shares: 10, price: 120, amount: 1200, importedAt: '2026-02-01T00:00:00.000Z',
+    }
+    const otherAccount = { ...matching, id: 'other-sale', accountId: 'account-2' }
+
+    const reused = closePositionWithSale({ ...initialState(), positions: [lot], transactions: [matching] }, sale)
+    expect(reused.transactions).toHaveLength(1)
+    expect(reused.closedPositions[0].sellTransactionId).toBe('existing-sale')
+
+    const added = closePositionWithSale({ ...initialState(), positions: [lot], transactions: [otherAccount] }, sale)
+    expect(added.transactions).toHaveLength(2)
+    expect(added.closedPositions[0].sellTransactionId).not.toBe('other-sale')
+  })
+
+  it('leaves state unchanged for invalid sale values', () => {
+    const state = { ...initialState(), positions: [lot] }
+    for (const invalid of [
+      { ...sale, shares: 0 },
+      { ...sale, shares: -1 },
+      { ...sale, shares: 11 },
+      { ...sale, price: -1 },
+      { ...sale, date: 'not-a-date' },
+    ]) {
+      expect(closePositionWithSale(state, invalid)).toBe(state)
+    }
+  })
+
+  it('does not change other lots or accounts sharing the symbol', () => {
+    const otherLot = { ...lot, id: 'lot-2', shares: 7 }
+    const otherAccountLot = { ...lot, id: 'lot-3', accountId: 'account-2', shares: 3 }
+    const state = { ...initialState(), positions: [lot, otherLot, otherAccountLot] }
+    const result = closePositionWithSale(state, sale)
+
+    expect(result.positions).toEqual([otherLot, otherAccountLot])
+  })
+})
+
+describe('closed position restoration and deletion', () => {
+  const lot = {
+    id: 'lot-1',
+    accountId: 'account-1',
+    symbol: 'ACME',
+    name: 'Acme Corp',
+    assetClass: 'Equity',
+    shares: 10,
+    avgCost: 100,
+    price: 110,
+    lastImportedAt: '2026-01-01T00:00:00.000Z',
+  }
+  const sale = { positionId: 'lot-1', shares: 10, price: 120, date: '2026-02-01', fees: 5 }
+
+  it('undoing a linked close removes its sell and restores the position', () => {
+    const closed = closePositionWithSale({ ...initialState(), positions: [lot] }, sale)
+    const result = restoreClosedPosition(closed, closed.closedPositions[0].id)
+
+    expect(result.closedPositions).toEqual([])
+    expect(result.transactions).toEqual([])
+    expect(result.positions).toMatchObject([{ accountId: lot.accountId, symbol: lot.symbol, shares: lot.shares }])
+  })
+
+  it('deleting a linked closed position keeps its sell transaction', () => {
+    const closed = closePositionWithSale({ ...initialState(), positions: [lot] }, sale)
+    const result = deleteClosedPosition(closed, closed.closedPositions[0].id)
+
+    expect(result.closedPositions).toEqual([])
+    expect(result.transactions).toEqual(closed.transactions)
+  })
+
+  it('undoing an unlinked close does not change transactions', () => {
+    const closed = closePosition({ ...initialState(), positions: [lot] }, lot.id)
+    const result = restoreClosedPosition(closed, closed.closedPositions[0].id)
+
+    expect(result.closedPositions).toEqual([])
+    expect(result.transactions).toEqual(closed.transactions)
+    expect(result.positions).toMatchObject([{ accountId: lot.accountId, symbol: lot.symbol, shares: lot.shares }])
+  })
+
+  it('undoing a close with a missing linked sell does not throw', () => {
+    const closed = closePositionWithSale({ ...initialState(), positions: [lot] }, sale)
+    const withMissingSell = {
+      ...closed,
+      transactions: [],
+      closedPositions: [{ ...closed.closedPositions[0], sellTransactionId: 'missing-sale' }],
+    }
+
+    expect(() => restoreClosedPosition(withMissingSell, withMissingSell.closedPositions[0].id)).not.toThrow()
+    const result = restoreClosedPosition(withMissingSell, withMissingSell.closedPositions[0].id)
+    expect(result.closedPositions).toEqual([])
+    expect(result.transactions).toEqual([])
+  })
+})
 
 describe('budget state', () => {
   it('has no manual income state', () => {

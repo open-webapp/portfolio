@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryCards, closedPositionsCard, computeRecurringSpendIds, expenseBudgetYears, expenseTableColumnYears, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, planChanges, plannedFrequencySplit, plannedSavingsRate, plannedSpendSummary, projectedSpendForScope, sankeyFlowData, savingsRateByYear, savingsRateForScope, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendPaceForScope, spendScopeKind, spendTransactionsForScope, yearElapsedFraction, yearTotalSpend } from './selectors'
+import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryCards, computeRecurringSpendIds, expenseBudgetYears, expenseTableColumnYears, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, planChanges, plannedFrequencySplit, plannedSavingsRate, plannedSpendSummary, positionsKpis, projectedSpendForScope, sankeyFlowData, savingsRateByYear, savingsRateForScope, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendPaceForScope, spendScopeKind, spendTransactionsForScope, yearElapsedFraction, yearTotalSpend } from './selectors'
 import { toPeriod } from './computations'
 import { initialState } from './state'
 import type { Account, BudgetTransaction, Category, ExpenseDefinition } from './types'
@@ -1074,7 +1074,7 @@ describe('computeRecurringSpendIds', () => {
   })
 })
 
-describe('categoryCards / closedPositionsCard', () => {
+describe('categoryCards', () => {
   const account = (patch: Partial<Account>): Account => ({
     id: patch.id ?? 'acct',
     accountNumber: '1234',
@@ -1095,11 +1095,6 @@ describe('categoryCards / closedPositionsCard', () => {
     cards.forEach((card) => {
       expect(card).not.toHaveProperty('expanded')
     })
-  })
-
-  it('closedPositionsCard output has no expanded key', () => {
-    const state = initialState()
-    expect(closedPositionsCard(state)).not.toHaveProperty('expanded')
   })
 
   it('groups accounts into correct category cards with per-account totals and accountCount', () => {
@@ -1196,9 +1191,85 @@ describe('tab-scoped position selectors (tabAccountIds)', () => {
   it('scopes closed positions to the selected account within the closedPositions tab', () => {
     const state = buildState()
     state.selectedAccountId = 'a1'
-    state.selectedCategoryKey = 'closedPositions'
+    state.selectedCategoryKey = 'taxable'
     const results = acctFilteredClosedPositions(state, ['a1'])
     expect(results.map((cp) => cp.id)).toEqual(['cp1'])
+  })
+})
+
+describe('positionsKpis', () => {
+  const account = (id: string): Account => ({
+    id,
+    accountNumber: id,
+    name: id,
+    institution: 'Bank',
+    taxCategory: 'taxable',
+    retirement: false,
+    createdAt: '2025-01-01',
+  })
+
+  function buildState() {
+    const state = initialState()
+    state.accounts = [account('a1'), account('a2'), account('a3')]
+    state.positions = [
+      { id: 'p1', accountId: 'a1', symbol: 'AAPL', shares: 6, price: 100, avgCost: 80, assetClass: 'Equity', lastImportedAt: '2025-01-01' } as never,
+      { id: 'p2', accountId: 'a2', symbol: 'BND', shares: 4, price: 100, avgCost: 125, assetClass: 'Bond', lastImportedAt: '2025-01-01' } as never,
+      { id: 'p3', accountId: 'a3', symbol: 'MSFT', shares: 10, price: 100, avgCost: 50, assetClass: 'Equity', lastImportedAt: '2025-01-01' } as never,
+      { id: 'no-price', accountId: 'a1', symbol: 'CASH', shares: 10, price: null, avgCost: 1, assetClass: 'Cash', lastImportedAt: '2025-01-01' } as never,
+    ]
+    state.closedPositions = [
+      { id: 'c1', accountId: 'a1', symbol: 'OLD', shares: 1, assetClass: 'Equity', realizedGL: 40, realizedGLBasis: 'transactions', lastImportedAt: '2025-01-01' } as never,
+      { id: 'c2', accountId: 'a2', symbol: 'UNKNOWN', shares: 1, assetClass: 'Equity', realizedGL: null, realizedGLBasis: 'unknown', lastImportedAt: '2025-01-01' } as never,
+      { id: 'c3', accountId: 'a3', symbol: 'OTHER', shares: 1, assetClass: 'Equity', realizedGL: 90, realizedGLBasis: 'transactions', lastImportedAt: '2025-01-01' } as never,
+    ]
+    return state
+  }
+
+  it('uses active tab accounts only, with real counts and allocation percentages', () => {
+    const result = positionsKpis(buildState(), ['a1', 'a2'])
+
+    expect(result).toMatchObject({
+      marketValue: 1000,
+      unrealizedGL: 20,
+      unrealizedGLPct: 20 / 980 * 100,
+      realizedGL: 40,
+      positionCount: 2,
+      accountCount: 2,
+    })
+    expect(result.allocationBars).toEqual([
+      { label: 'Equity', value: '$600.00', pct: '+60.00%', pctNum: 60 },
+      { label: 'Bond', value: '$400.00', pct: '+40.00%', pctNum: 40 },
+    ])
+  })
+
+  it('narrows the KPI scope to the selected account', () => {
+    const state = buildState()
+    state.selectedAccountId = 'a2'
+
+    expect(positionsKpis(state, ['a1', 'a2'])).toMatchObject({
+      marketValue: 400,
+      unrealizedGL: -100,
+      unrealizedGLPct: -20,
+      realizedGL: 0,
+      positionCount: 1,
+      accountCount: 1,
+    })
+  })
+
+  it('uses the closed position count in the closed view', () => {
+    expect(positionsKpis(buildState(), ['a1', 'a2'], true).positionCount).toBe(2)
+  })
+
+  it('returns zero KPIs and no allocation for an empty scope', () => {
+    expect(positionsKpis(buildState(), [])).toEqual({
+      marketValue: 0,
+      unrealizedGL: 0,
+      unrealizedGLPct: 0,
+      realizedGL: 0,
+      positionCount: 0,
+      accountCount: 0,
+      allocationBars: [],
+    })
   })
 })
 

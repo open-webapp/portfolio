@@ -108,42 +108,6 @@ function PeriodSegControl({
   )
 }
 
-const POSITIONS_TAB_OPTIONS: { value: PositionsTab; label: string }[] = [
-  { value: 'taxable', label: 'Taxable' },
-  { value: 'nonTaxable', label: 'Non-Taxable' },
-  { value: 'taxDeferred', label: 'Tax-Deferred' },
-  { value: 'closedPositions', label: 'Closed Positions' },
-  { value: 'quotes', label: 'Quotes' },
-]
-
-function PositionsTabSegControl({
-  positionsTab,
-  setPositionsTab,
-}: {
-  positionsTab: PositionsTab
-  setPositionsTab: (tab: PositionsTab) => void
-}) {
-  return (
-    <div className="budget-controls" style={{ width: '100%' }}>
-      <div className="budget-tabs">
-        <div className="seg">
-          {POSITIONS_TAB_OPTIONS.map((option) => (
-            <label key={option.value} className="seg-opt">
-              <input
-                type="radio"
-                name="positionsTab"
-                checked={positionsTab === option.value}
-                onChange={() => setPositionsTab(option.value)}
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // Placeholder portfolio passed to useDriveConnection before a real portfolio
 // is active (picker route, or portfolio not yet resolved). useDriveConnection
 // requires a non-null DriveAuthHandle on every render (React hooks can't be
@@ -996,15 +960,12 @@ function App() {
               availableYears={spendBudgetYears(state.budgetTransactions)}
               expenseYears={expenseBudgetYears(state.budgetExpenseAmountsByYear, new Date())}
             />
-          ) : state.view === 'accounts' ? (
-            <PositionsTabSegControl
-              positionsTab={positionsTab}
-              setPositionsTab={(tab) => {
-                setPositionsTab(tab)
-                dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })
-              }}
-            />
           ) : undefined}
+          positionsTab={state.view === 'accounts' ? positionsTab : undefined}
+          onPositionsTabChange={state.view === 'accounts' ? (tab) => {
+            setPositionsTab(tab)
+            dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })
+          } : undefined}
         />
 
         {state.view === 'budget' ? (

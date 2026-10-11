@@ -259,7 +259,10 @@ export async function decryptImportEnvelope(envelope: EncryptedEnvelope, passwor
   return {
     accounts: decrypted.accounts ?? [],
     positions: decrypted.positions ?? [],
-    closedPositions: decrypted.closedPositions ?? [],
+    closedPositions: (decrypted.closedPositions ?? []).map((closedPosition) => ({
+      ...closedPosition,
+      sellTransactionId: closedPosition.sellTransactionId,
+    })),
     transactions: decrypted.transactions ?? [],
     snapshots: decrypted.snapshots ?? [],
     csvMappings: decrypted.csvMappings ?? [],
