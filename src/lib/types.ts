@@ -1,5 +1,7 @@
 export type TaxCategory = 'taxable' | 'nonTaxable' | 'taxDeferred'
 
+export type PositionsTab = TaxCategory | `tag:${string}` | 'quotes'
+
 export type AssetClass =
   | 'Equity' | 'ETF' | 'Mutual Fund' | 'Fixed Income' | 'Crypto' | 'Cash' | 'Other'
 
@@ -18,6 +20,7 @@ export interface Account {
   name: string
   institution: string
   taxCategory: TaxCategory
+  tags?: string[]
   retirement: boolean
   createdAt: string
 }

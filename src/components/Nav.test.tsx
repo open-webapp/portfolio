@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { RailNav, TopBar } from './Nav'
 import { initialState } from '../lib/state'
+import { positionsTabs } from '../lib/selectors'
 
 const styles = readFileSync('src/styles/styles.css', 'utf8')
 
@@ -123,6 +124,18 @@ describe('RailNav', () => {
 })
 
 describe('TopBar', () => {
+  it('renders alphabetic tag segments between base tabs and Quotes', () => {
+    const state = initialState()
+    state.accounts = [{ id: 'a', name: 'Tagged', accountNumber: '1', taxCategory: 'taxable', retirement: false, createdAt: '', tags: ['Zulu', 'Alpha'] }]
+    render(<TopBar {...makeTopBarProps()} positionsTab="taxable" positionsTabOptions={positionsTabs(state)} onPositionsTabChange={vi.fn()} />)
+    expect(screen.getAllByRole('radio').map((radio) => radio.parentElement?.textContent)).toEqual(['Taxable', 'Non-Taxable', 'Tax-Deferred', 'Alpha', 'Zulu', 'Quotes'])
+  })
+
+  it('renders no extra segments without account tags', () => {
+    render(<TopBar {...makeTopBarProps()} positionsTab="taxable" positionsTabOptions={positionsTabs(initialState())} onPositionsTabChange={vi.fn()} />)
+    expect(screen.getAllByRole('radio')).toHaveLength(4)
+  })
+
   it('renders four position tabs only when supplied for the Positions view', () => {
     const onPositionsTabChange = vi.fn()
     render(

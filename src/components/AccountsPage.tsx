@@ -3,23 +3,25 @@ import type { AppState, PositionsTab } from '../lib/state'
 import type { Position } from '../lib/types'
 import {
   categoryCards,
+  positionsTabAccounts,
+  closedPositionsTabAccounts,
+  CATEGORY_LABEL,
   acctScopedPositions,
   acctFilteredPositions,
   acctScopedClosedPositions,
   acctFilteredClosedPositions,
   acctAssetClassOptions,
-  positionsKpis,
+  positionsHero,
   assetClassOptions,
 } from '../lib/selectors'
 import { buildAggregateRows, AGGREGATE_SORT_FIELD, type AggregateRow } from '../lib/aggregateRows'
 import { sortBy } from '../lib/sort'
 import { fmtUSD, fmtPct, fmtPortfolioPercent, glColor } from '../lib/computations'
-import { PositionsKpiRow } from './PositionsKpiRow'
+import { PositionsHero } from './PositionsHero'
 import { ImportDialog } from './import/ImportDialog'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
 import { ClosedPositionsTable } from './ClosedPositionsTable'
 import { QuotesPage } from './QuotesPage'
-import { ClosePositionPage } from './ClosePositionPage'
 
 export interface AccountsPageProps {
   state: AppState
@@ -34,13 +36,27 @@ export interface AccountsPageProps {
  * filter, search, and an aggregate positions table scoped to the selection.
  */
 export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErrors }: AccountsPageProps) {
-  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
-  const [closingGroupKey, setClosingGroupKey] = useState<string | null>(null)
-  const [mode, setMode] = useState<'list' | 'closed' | 'close'>('list')
+  const [selectedLotIds, setSelectedLotIds] = useState<string[]>([])
+  const selectedPositions = state.positions.filter((position) => selectedLotIds.includes(position.id))
+  const [mode, setMode] = useState<'list' | 'closed'>('list')
+  const isClosedView = mode === 'closed'
+  const tabAccounts = positionsTabAccounts(state, positionsTab)
+  const sidebarAccounts = isClosedView ? closedPositionsTabAccounts(state, positionsTab) : tabAccounts
+
+  useEffect(() => {
+    if (state.selectedAccountId && !sidebarAccounts.some((account) => account.id === state.selectedAccountId)) {
+      dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })
+    }
+  }, [state.selectedAccountId, sidebarAccounts, dispatch])
 
   useEffect(() => {
     setMode('list')
+    setSelectedLotIds([])
   }, [positionsTab])
+
+  useEffect(() => {
+    if (selectedLotIds.length > 0 && selectedPositions.length === 0) setSelectedLotIds([])
+  }, [selectedLotIds.length, selectedPositions.length])
 
   if (positionsTab === 'quotes') {
     return (
@@ -50,18 +66,27 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
     )
   }
 
-  const isClosedView = mode === 'closed'
   const cards = categoryCards(state)
-  const activeCard = cards.find((c) => c.key === positionsTab)
-  const tabAccountIds = activeCard ? activeCard.accounts.map((a) => a.id) : []
+  const accountCards = new Map(cards.flatMap((card) => card.accounts).map((account) => [account.id, account]))
+  const activeCard = {
+    key: positionsTab,
+    label: positionsTab.startsWith('tag:') ? positionsTab.slice(4) : cards.find((card) => card.key === positionsTab)!.label,
+    accounts: sidebarAccounts.map((account) => ({
+      ...accountCards.get(account.id)!,
+      tags: (account.tags ?? []).filter((tag) => !Object.values(CATEGORY_LABEL).includes(tag)),
+      selected: state.selectedAccountId === account.id && state.selectedCategoryKey === positionsTab,
+    })),
+    hasAccounts: sidebarAccounts.length > 0,
+  }
+  const tabAccountIds = tabAccounts.map((account) => account.id)
 
   const scopedPositions = acctScopedPositions(state, tabAccountIds)
   const filteredPositions = acctFilteredPositions(state, tabAccountIds)
   const acctPortfolioTotal = filteredPositions.reduce((s, p) => s + p.shares * p.price, 0)
 
   const aggregateRows = buildAggregateRows(filteredPositions)
-  const selectedGroup = aggregateRows.find((r) => r.key === selectedGroupKey) ?? null
-  const closingGroup = aggregateRows.find((r) => r.key === closingGroupKey) ?? null
+  // Preserve the opened lots across grouping edits and account reassignment.
+  const selectedGroup = buildAggregateRows(selectedPositions)[0] ?? null
   const sortedRows = sortBy(
     aggregateRows,
     AGGREGATE_SORT_FIELD[state.sortKey] ?? (state.sortKey as keyof AggregateRow),
@@ -82,6 +107,8 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
   }
 
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+      <PositionsHero kpis={positionsHero(state, positionsTab, isClosedView)} closed={isClosedView} />
     <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 'var(--space-6)', alignItems: 'start' }}>
       {/* Category card */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -111,11 +138,7 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                 >
                   {activeCard.label}
                 </span>
-                <span className="tag tag-neutral">{activeCard.accountCount}</span>
               </div>
-              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: '15px', whiteSpace: 'nowrap' }}>
-                {activeCard.totalStr}
-              </span>
             </div>
 
             <div style={{ borderTop: '1px solid var(--color-divider)' }}>
@@ -152,6 +175,13 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                       <span className="tag tag-outline" style={{ fontSize: '10px' }}>#{acc.accountNumber}</span>
                       <span className="tag tag-outline" style={{ fontSize: '10px' }}>Updated {acc.updatedStr}</span>
                     </div>
+                    {acc.tags.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                        {acc.tags.map((tag) => (
+                          <span key={tag} className="tag tag-accent" style={{ fontSize: '10px', whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: '100%' }}>{tag}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -166,22 +196,12 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
 
       {/* Positions for selection */}
       <div>
-        {mode === 'close' && closingGroup ? (
-          <ClosePositionPage
-            positions={closingGroup.positions}
-            accounts={state.accounts}
-            dispatch={dispatch}
-            onCancel={() => setMode('list')}
-            onClosed={() => {
-              setClosingGroupKey(null)
-              setMode('closed')
-            }}
-          />
-        ) : <>
-        <PositionsKpiRow kpis={positionsKpis(state, tabAccountIds, isClosedView)} closed={isClosedView} />
-
-        <div style={{ background: 'var(--color-divider)', margin: 'var(--space-6) 0' }} />
-
+        {isClosedView && (
+          <div style={{ marginBottom: 'var(--space-4)' }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setMode('list')}>← Back to positions</button>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '30px', margin: 'var(--space-3) 0 0' }}>Closed positions</h2>
+          </div>
+        )}
         <div
           style={{
             display: 'flex',
@@ -201,14 +221,10 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            {isClosedView ? (
-              <button type="button" className="btn btn-secondary" onClick={() => setMode('list')}>Back</button>
-            ) : (
+          {!isClosedView && <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setMode('closed')}>Closed positions</button>
-            )}
             <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
-          </div>
+          </div>}
         </div>
 
         <div
@@ -251,7 +267,7 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
             <ClosedPositionsTable state={state} dispatch={dispatch} positions={acctFilteredClosedPositions(state, tabAccountIds)} />
             {acctFilteredClosedPositions(state, tabAccountIds).length === 0 && (
               <div className="text-muted" style={{ fontSize: '12px', padding: 'var(--space-4) 0' }}>
-                No positions to show.
+                No closed positions in this category.
               </div>
             )}
           </>
@@ -274,9 +290,8 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                   <th style={{ textAlign: 'right' }}>Market Value</th>
                   <th style={{ textAlign: 'right' }}>% of Selection</th>
                    <th style={{ textAlign: 'right' }}>G/L</th>
-                   <th style={{ textAlign: 'right' }}>G/L %</th>
-                   <th style={{ textAlign: 'right' }}></th>
-                   <th style={{ textAlign: 'right' }}></th>
+                    <th style={{ textAlign: 'right' }}>G/L %</th>
+                    <th style={{ textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -287,7 +302,7 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                   const sharesStr = row.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
                   return (
-                    <tr key={row.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedGroupKey(row.key)}>
+                    <tr key={row.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedLotIds(row.positions.map((position) => position.id))}>
                       <td>
                         <div style={{ fontWeight: 600 }}>{row.symbol}</div>
                         <div style={{ fontSize: '11px' }} className="text-muted">{row.displayName}</div>
@@ -304,19 +319,6 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
                        <td style={{ textAlign: 'right' }}>
                          <span className="tag tag-neutral">{row.rowCount}</span>
                        </td>
-                       <td style={{ textAlign: 'right' }}>
-                         <button
-                           type="button"
-                           className="btn btn-secondary"
-                           onClick={(event) => {
-                             event.stopPropagation()
-                             setClosingGroupKey(row.key)
-                             setMode('close')
-                           }}
-                         >
-                           Close
-                         </button>
-                       </td>
                     </tr>
                   )
                 })}
@@ -332,11 +334,11 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
               const title = `${selectedGroup.symbol} — ${selectedGroup.displayName} — ${selectedGroup.effectiveAssetClass}`
               return (
                 <PositionGroupOverlay
-                  positions={selectedGroup.positions}
+                  positions={selectedPositions}
                   title={title}
                   accounts={state.accounts}
                   dispatch={dispatch}
-                  onClose={() => setSelectedGroupKey(null)}
+                  onClose={() => setSelectedLotIds([])}
                   existingAssetClasses={assetClassOptions(state)}
                   state={state}
                 />
@@ -344,8 +346,8 @@ export function AccountsPage({ state, dispatch, positionsTab, tickerOverviewErro
             })()}
           </>
         )}
-        </>}
       </div>
+    </div>
     </div>
   )
 }

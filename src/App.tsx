@@ -26,7 +26,7 @@ import {
 } from './lib/drive'
 import { useDriveConnection } from '@open-webapp/drive-connect'
 import { runPriceSync } from './lib/priceSync'
-import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync } from './lib/selectors'
+import { heldEquityEtfSymbols, heldMutualFundSymbols, shouldRetryPolygonSync, shouldRetryMutualFundSync, positionsTabs, positionsTabAccounts } from './lib/selectors'
 import { SPEND_ALL_YEARS, spendBudgetYears, expenseBudgetYears, type SpendScope } from './lib/selectors'
 import { syncTickerOverviews } from './lib/tickerOverview'
 import { runMutualFundSync } from './lib/mutualFundSync'
@@ -136,6 +136,16 @@ function App() {
   const [state, dispatch] = useReducer(appReducer, initialState())
   const [period, setPeriod] = useState<BudgetPeriod>('spend')
   const [positionsTab, setPositionsTab] = useState<PositionsTab>('taxable')
+  const positionsTabOptions = positionsTabs(state)
+  const activePositionsTab = positionsTabOptions.some((tab) => tab.key === positionsTab)
+    ? positionsTab
+    : positionsTabOptions[0].key
+
+  useEffect(() => {
+    if (positionsTab === activePositionsTab) return
+    setPositionsTab(activePositionsTab)
+    dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })
+  }, [positionsTab, activePositionsTab])
   const [selectedScope, setSelectedScope] = useState<SpendScope>(
     () => spendBudgetYears(state.budgetTransactions)[0] ?? SPEND_ALL_YEARS
   )
@@ -961,7 +971,8 @@ function App() {
               expenseYears={expenseBudgetYears(state.budgetExpenseAmountsByYear, new Date())}
             />
           ) : undefined}
-          positionsTab={state.view === 'accounts' ? positionsTab : undefined}
+          positionsTab={state.view === 'accounts' ? activePositionsTab : undefined}
+          positionsTabOptions={positionsTabOptions}
           onPositionsTabChange={state.view === 'accounts' ? (tab) => {
             setPositionsTab(tab)
             dispatch({ type: 'CLEAR_ACCOUNT_SELECTION' })
@@ -991,7 +1002,8 @@ function App() {
         ) : state.view === 'accounts' ? (
           /* Accounts page view */
           <div style={{ padding: 'var(--space-4) var(--space-4) var(--space-6) var(--space-4)' }}>
-            <AccountsPage state={state} dispatch={dispatch} positionsTab={positionsTab} tickerOverviewErrors={tickerOverviewErrors} />
+            {/* T7 consumes tabAccounts when replacing the base-only category-card lookup. */}
+            <AccountsPage {...{ tabAccounts: positionsTabAccounts(state, activePositionsTab) }} state={state} dispatch={dispatch} positionsTab={activePositionsTab} tickerOverviewErrors={tickerOverviewErrors} />
           </div>
         ) : state.view === 'register' ? (
           /* Register page view */

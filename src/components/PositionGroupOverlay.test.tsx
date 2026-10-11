@@ -1,1211 +1,192 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { useReducer, useState } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { PositionGroupOverlay } from './PositionGroupOverlay'
-import type { Position, Account } from '../lib/types'
+import { initialState } from '../lib/state'
+import { appReducer } from '../lib/reducer'
+import type { Account, Position } from '../lib/types'
 import type { AppState } from '../lib/state'
 
-afterEach(cleanup)
-
-describe('PositionGroupOverlay', () => {
-  let mockDispatch: ReturnType<typeof vi.fn>
-
-  beforeEach(() => {
-    mockDispatch = vi.fn()
-  })
-
-  const createTestPosition = (overrides?: Partial<Position>): Position => ({
-    id: 'pos-1',
-    accountId: 'acc-1',
-    symbol: 'AAPL',
-    name: 'Apple Inc',
-    assetClass: 'Equity',
-    shares: 100,
-    avgCost: 150,
-    price: 180,
-    lastImportedAt: '2024-01-01',
-    ...overrides,
-  })
-
-  const createTestAccount = (overrides?: Partial<Account>): Account => ({
-    id: 'acc-1',
-    accountNumber: '001',
-    name: 'Brokerage A',
-    institution: 'Test Institution',
-    retirement: false,
-    createdAt: '2024-01-01',
-    ...overrides,
-  })
-
-
-  const buildOverlayTitle = (symbol: string, displayName: string, assetClass: string): string => {
-    return `${symbol} — ${displayName} — ${assetClass}`
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
+const accounts: Account[] = [
+  { id: 'a', institution: 'Alpha', name: 'Brokerage', accountNumber: '1', taxCategory: 'taxable', retirement: false, createdAt: '' },
+  { id: 'b', institution: 'Beta', name: 'IRA', accountNumber: '2', taxCategory: 'taxDeferred', retirement: true, createdAt: '' },
+]
+const lots: Position[] = [
+  { id: 'one', accountId: 'a', symbol: 'ABC', trackingSymbol: 'TRACK', name: 'Example', assetClass: 'Equity', shares: 10, avgCost: 8, price: 20, lastImportedAt: '' },
+  { id: 'two', accountId: 'a', symbol: 'ABC', trackingSymbol: 'TRACK', name: 'Example', assetClass: 'Equity', shares: 30, avgCost: 12, price: 20, lastImportedAt: '' },
+]
+function Harness() {
+  const [state, dispatch] = useReducer(appReducer, { ...initialState(), accounts, positions: lots, positionsTab: 'taxable' })
+  const [open, setOpen] = useState(true)
+  return <>
+    <output data-testid="state">{JSON.stringify(state.positions)}</output>
+    <output data-testid="account-total">{state.positions.filter(p => p.accountId === 'a').reduce((n, p) => n + p.shares * p.price, 0)}</output>
+    {open && <PositionGroupOverlay positions={state.positions} accounts={accounts} dispatch={dispatch} onClose={() => setOpen(false)} existingAssetClasses={['Equity', 'Bond']} state={state} />}
+  </>
+}
+const result = () => JSON.parse(screen.getByTestId('state').textContent!) as Position[]
+function edit(label: string, draft: string, finish: string) {
+  fireEvent.click(screen.getByRole('button', { name: `Edit ${label}` }))
+  const input = screen.getByRole(label === 'Current Price' ? 'spinbutton' : 'textbox', { name: label })
+  fireEvent.change(input, { target: { value: draft } })
+  if (finish === 'blur') fireEvent.blur(input)
+  else fireEvent.keyDown(input, { key: finish })
+}
+describe('shared header and lots', () => {
+  for (const [label, field, draft, expected] of [
+    ['Symbol', 'symbol', 'XYZ', 'XYZ'], ['Tracking Symbol', 'trackingSymbol', 'OTHER', 'OTHER'],
+    ['Name', 'name', 'Updated', 'Updated'], ['Current Price', 'price', '25', 25],
+  ] as const) {
+    for (const finish of ['Enter', 'blur']) it(`${label} commits all lots on ${finish}`, () => {
+      render(<Harness />); edit(label, draft, finish)
+      expect(result().map(p => p[field])).toEqual([expected, expected])
+      expect(screen.getByRole('dialog')).toBeTruthy()
+    })
+    it(`${label} Escape reverts without closing overlay`, () => {
+      render(<Harness />); edit(label, draft, 'Escape')
+      expect(result()).toEqual(lots)
+      expect(screen.getByRole('dialog')).toBeTruthy()
+      expect(screen.queryByRole('textbox', { name: label })).toBeNull()
+    })
   }
-
-  const createTestState = (positions: Position[] = [], accounts: Account[] = []): AppState => ({
-    accounts,
-    positions,
-    closedPositions: [],
-    transactions: [],
-    snapshots: [],
-    csvMappings: [],
-    customInstitutions: [],
-    tab: 'positions',
-    view: 'accounts',
-    sortKey: 'symbol',
-    sortDir: 'asc',
-    assetClassFilter: 'All',
-    posSearch: '',
-    txTypeFilter: 'All',
-    txSearch: '',
-    showClosed: false,
+  for (const draft of ['', '-1', 'invalid', '1e309']) it(`rejects price ${JSON.stringify(draft)}`, () => {
+    render(<Harness />); edit('Current Price', draft, 'blur')
+    expect(result()).toEqual(lots)
+    expect(screen.getByRole('button', { name: 'Edit Current Price' }).textContent).toBe('$20.00')
   })
-
-  /**
-   * Test 1: Clicking shares/avgCost/price/taxes values renders input pre-filled with current value
-   */
-  it('renders input pre-filled when clicking shares cell', () => {
-    const position = createTestPosition({ shares: 100 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-    const testState = createTestState([position], [account])
-
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const sharesCell = screen.getByText('100.00')
-    fireEvent.click(sharesCell)
-
-    const input = screen.getByDisplayValue('100') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('number')
+  it('clears tracking symbol', () => {
+    render(<Harness />); edit('Tracking Symbol', '', 'Enter')
+    expect(result().map(p => p.trackingSymbol)).toEqual([undefined, undefined])
   })
-
-  it('renders input pre-filled when clicking avgCost cell', () => {
-    const position = createTestPosition({ avgCost: 150 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const avgCostCells = screen.getAllByText('$150.00')
-    const avgCostCell = avgCostCells[0]
-    fireEvent.click(avgCostCell)
-
-    const input = screen.getByDisplayValue('150') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('number')
+  it('changes shared asset class override', () => {
+    render(<Harness />); fireEvent.click(screen.getByText('Set')); fireEvent.click(screen.getByText('Bond'))
+    expect(result().map(p => p.assetClassManualOverride)).toEqual(['Bond', 'Bond'])
   })
-
-  it('renders input pre-filled when clicking price cell', () => {
-    const position = createTestPosition({ price: 180 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const priceCells = screen.getAllByText('$180.00')
-    const priceCell = priceCells[priceCells.length - 1]
-    fireEvent.click(priceCell)
-
-    const input = screen.getByDisplayValue('180') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('number')
+  it('shows literal lot columns', () => {
+    render(<Harness />)
+    expect(screen.getAllByRole('columnheader').map(e => e.textContent)).toEqual(['Account', 'Shares', 'Avg Cost', 'Market Value', '% of Portfolio', 'Close', 'Delete'])
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(within(rows[0]).getAllByRole('cell').slice(1, 5).map(e => e.textContent)).toEqual(['10.00', '$8.00', '$200.00', '25.0%'])
+    expect(within(rows[1]).getAllByRole('cell').slice(1, 5).map(e => e.textContent)).toEqual(['30.00', '$12.00', '$600.00', '75.0%'])
   })
-
-  /**
-   * Test 2: Valid new value + Enter dispatches UPDATE_POSITION with correct patch
-   */
-  it('dispatches UPDATE_POSITION when pressing Enter with valid shares value', () => {
-    const position = createTestPosition({ shares: 100 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const sharesCell = screen.getByText('100.00')
-    fireEvent.click(sharesCell)
-
-    const input = screen.getByDisplayValue('100')
-    fireEvent.change(input, { target: { value: '150' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_POSITION',
-      positionId: 'pos-1',
-      patch: { shares: 150 },
-    })
+  it('reassigns a lot across tabs and updates account total', () => {
+    render(<Harness />)
+    fireEvent.change(screen.getAllByRole('combobox', { name: /Account/ })[0], { target: { value: 'b' } })
+    expect(result()[0].accountId).toBe('b')
+    expect(screen.getByTestId('account-total').textContent).toBe('600')
+    expect(screen.getAllByRole('combobox', { name: /Account/ }).some(e => (e as HTMLSelectElement).value === 'b')).toBe(true)
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
-
-  /**
-   * Test 3: Valid new value + blur dispatches UPDATE_POSITION
-   */
-  it('dispatches UPDATE_POSITION when blurring with valid avgCost value', () => {
-    const position = createTestPosition({ avgCost: 150 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const avgCostCells = screen.getAllByText('$150.00')
-    fireEvent.click(avgCostCells[0])
-
-    const input = screen.getByDisplayValue('150')
-    fireEvent.change(input, { target: { value: '200' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_POSITION',
-      positionId: 'pos-1',
-      patch: { avgCost: 200 },
-    })
-  })
-
-  /**
-   * Test 4: Escape while editing reverts to previous value, no dispatch
-   */
-  it('reverts to previous value on Escape without dispatching', () => {
-    const position = createTestPosition({ shares: 100 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const sharesCell = screen.getByText('100.00')
-    fireEvent.click(sharesCell)
-
-    const input = screen.getByDisplayValue('100')
-    fireEvent.change(input, { target: { value: '999' } })
-    fireEvent.keyDown(input, { key: 'Escape' })
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-
-    // After Escape, input should be gone (display mode returns)
-    expect(screen.queryByDisplayValue('999')).toBeNull()
-  })
-
-  /**
-   * Test 5: Invalid (negative) value on shares/avgCost/price/taxes + blur reverts silently
-   */
-  it('reverts silently on negative shares value', () => {
-    const position = createTestPosition({ shares: 100 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const sharesCell = screen.getByText('100.00')
-    fireEvent.click(sharesCell)
-
-    const input = screen.getByDisplayValue('100')
-    fireEvent.change(input, { target: { value: '-5' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  it('reverts silently on negative price value', () => {
-    const position = createTestPosition({ price: 180 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const priceCells = screen.getAllByText('$180.00')
-    const priceCell = priceCells[priceCells.length - 1]
-    fireEvent.click(priceCell)
-
-    const input = screen.getByDisplayValue('180')
-    fireEvent.change(input, { target: { value: '-10' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  /**
-   * Test 6: Empty value + blur on shares/avgCost/price reverts silently (does NOT save as 0)
-   */
-  it('reverts silently on empty shares value', () => {
-    const position = createTestPosition({ shares: 100 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const sharesCell = screen.getByText('100.00')
-    fireEvent.click(sharesCell)
-
-    const input = screen.getByDisplayValue('100')
-    fireEvent.change(input, { target: { value: '' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  it('reverts silently on empty avgCost value', () => {
-    const position = createTestPosition({ avgCost: 150 })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const avgCostCells = screen.getAllByText('$150.00')
-    fireEvent.click(avgCostCells[0])
-
-    const input = screen.getByDisplayValue('150')
-    fireEvent.change(input, { target: { value: '' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  /**
-   * Test 3: Symbol cell is click-to-edit with text input
-   */
-  it('renders text input pre-filled when clicking symbol cell', () => {
-    const position = createTestPosition({ symbol: 'TSLA' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const symbolCell = screen.getByText('TSLA')
-    fireEvent.click(symbolCell)
-
-    const input = screen.getByDisplayValue('TSLA') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('text')
-  })
-
-  it('dispatches UPDATE_POSITION with new symbol on Enter', () => {
-    const position = createTestPosition({ symbol: 'AAPL' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const symbolCell = screen.getByText('AAPL')
-    fireEvent.click(symbolCell)
-
-    const input = screen.getByDisplayValue('AAPL') as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'MSFT' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_POSITION',
-      positionId: position.id,
-      patch: { symbol: 'MSFT' },
-    })
-  })
-
-  it('reverts symbol on Escape without dispatching', () => {
-    const position = createTestPosition({ symbol: 'AAPL' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    mockDispatch.mockClear()
-
-    const symbolCell = screen.getByText('AAPL')
-    fireEvent.click(symbolCell)
-
-    const input = screen.getByDisplayValue('AAPL') as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'MSFT' } })
-    fireEvent.keyDown(input, { key: 'Escape' })
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  /**
-   * Test 8, 11: Account dropdown allows selecting existing accounts
-   */
-  it('Account dropdown opens on click and lists all accounts', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account1 = createTestAccount({ id: 'acc-1', name: 'Brokerage A' })
-    const account2 = createTestAccount({ id: 'acc-2', name: 'Brokerage B', accountNumber: '002' })
-
-    const testState = createTestState([position], [account1, account2])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account1, account2]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Find the account dropdown button by looking for the text that includes the account name
-    const buttons = screen.getAllByRole('button')
-    const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
-    expect(accountButton).toBeDefined()
-
-    fireEvent.click(accountButton!)
-
-    // Both accounts should be visible in the dropdown (checking for institution—name format)
-    expect(screen.getByText(/Test Institution — Brokerage B/)).toBeDefined()
-  })
-
-  it('Account dropdown selection dispatches UPDATE_POSITION', () => {
-    const position = createTestPosition({ accountId: 'acc-1' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account1 = createTestAccount({ id: 'acc-1', name: 'Brokerage A' })
-    const account2 = createTestAccount({ id: 'acc-2', name: 'Brokerage B' })
-
-    const testState = createTestState([position], [account1, account2])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account1, account2]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    mockDispatch.mockClear()
-
-    // Open the dropdown
-    const buttons = screen.getAllByRole('button')
-    const accountButton = buttons.find(b => b.textContent?.includes('Brokerage A'))
-    fireEvent.click(accountButton!)
-
-    // Click on the second account (using regex to match the two-line format)
-    const account2Option = screen.getByText(/Test Institution — Brokerage B/)
-    fireEvent.click(account2Option)
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_POSITION',
-      positionId: position.id,
-      patch: { accountId: 'acc-2' },
-    })
-  })
-
-  /**
-   * Test 9: Override/AssetClassOverrideSelect cell unchanged
-   */
-  it('preserves Override select element', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Verify the override button exists (from AssetClassOverrideSelect)
-    const overrideButtons = screen.queryAllByText(/^(Set|Override)$/)
-    expect(overrideButtons.length).toBeGreaterThan(0)
-  })
-
-
-  /**
-   * Test 3: Name column editable
-   */
-  it('renders Name column cell with initial value', () => {
-    const position = createTestPosition({ name: 'Tech Holdings' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    expect(screen.getByText('Tech Holdings')).toBeTruthy()
-  })
-
-  it('Name column: clicking cell enters edit mode', () => {
-    const position = createTestPosition({ name: 'Tech Holdings' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const nameCell = screen.getByText('Tech Holdings')
-    fireEvent.click(nameCell)
-
-    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('text')
-  })
-
-  it('Name column: pressing Enter commits non-empty value', () => {
-    const position = createTestPosition({ name: 'Tech Holdings' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const nameCell = screen.getByText('Tech Holdings')
-    fireEvent.click(nameCell)
-
-    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'Updated Name' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_POSITION',
-      positionId: position.id,
-      patch: { name: 'Updated Name' },
-    })
-  })
-
-  it('Name column: blurring with non-empty value commits', () => {
-    const position = createTestPosition({ name: 'Tech Holdings' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const nameCell = screen.getByText('Tech Holdings')
-    fireEvent.click(nameCell)
-
-    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'New Name' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'UPDATE_POSITION',
-      positionId: position.id,
-      patch: { name: 'New Name' },
-    })
-  })
-
-  it('Name column: blurring with empty value reverts silently', () => {
-    const position = createTestPosition({ name: 'Tech Holdings' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const nameCell = screen.getByText('Tech Holdings')
-    fireEvent.click(nameCell)
-
-    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '' } })
-    fireEvent.blur(input)
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  it('Name column: pressing Escape reverts without dispatching', () => {
-    const position = createTestPosition({ name: 'Tech Holdings' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    mockDispatch.mockClear()
-
-    const nameCell = screen.getByText('Tech Holdings')
-    fireEvent.click(nameCell)
-
-    const input = screen.getByDisplayValue('Tech Holdings') as HTMLInputElement
-    fireEvent.change(input, { target: { value: 'Will be reverted' } })
-    fireEvent.keyDown(input, { key: 'Escape' })
-
-    expect(mockDispatch).not.toHaveBeenCalled()
-  })
-
-  it('Name column: empty name shows placeholder and is editable', () => {
-    const position = createTestPosition({ name: '' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const nameCell = screen.getByText('(no name)')
-    fireEvent.click(nameCell)
-
-    const input = screen.getByDisplayValue('') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('text')
-  })
-
-  it('Name column: null name shows placeholder and is editable', () => {
-    const position = createTestPosition({ name: null as any })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const nameCell = screen.getByText('(no name)')
-    fireEvent.click(nameCell)
-
-    const input = screen.getByDisplayValue('') as HTMLInputElement
-    expect(input).toBeTruthy()
-    expect(input.type).toBe('text')
-  })
-
-  /**
-   * Test 4: Sort order (institution→name)
-   */
-  it('renders positions sorted by institution then account name', () => {
-    // Create 3 positions across 2 institutions, varying account name/tax status
-    const pos1 = createTestPosition({ id: 'pos-1', symbol: 'AAPL', accountId: 'acc-fid-taxable' })
-    const pos2 = createTestPosition({ id: 'pos-2', symbol: 'MSFT', accountId: 'acc-schwab-taxable' })
-    const pos3 = createTestPosition({ id: 'pos-3', symbol: 'GOOG', accountId: 'acc-fid-deferred' })
-
-    const accFidTaxable = createTestAccount({
-      id: 'acc-fid-taxable',
-      institution: 'Fidelity',
-      name: 'Brokerage',
-      retirement: false,
-    })
-
-    const accSchwabTaxable = createTestAccount({
-      id: 'acc-schwab-taxable',
-      institution: 'Charles Schwab',
-      name: 'Brokerage',
-      retirement: false,
-    })
-
-    const accFidDeferred = createTestAccount({
-      id: 'acc-fid-deferred',
-      institution: 'Fidelity',
-      name: 'IRA',
-      retirement: true,
-    })
-
-    // Render with positions in random order to test sorting
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-
-    const testState = createTestState([pos1, pos2, pos3], [accFidTaxable, accSchwabTaxable, accFidDeferred])
-    render(
-      <PositionGroupOverlay
-        positions={[pos1,pos2,pos3]}
-        title={title}
-        accounts={[accFidTaxable, accSchwabTaxable, accFidDeferred]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Find all rows in the table body
-    const rows = screen.getAllByRole('row')
-    // rows[0] is thead, rows[1..n] are tbody
-    const bodyRows = rows.slice(1)
-
-    // Expected sort order (alphabetical by institution, then by account name):
-    // 1. Charles Schwab → Brokerage (pos2: MSFT)
-    // 2. Fidelity → Brokerage (pos1: AAPL)
-    // 3. Fidelity → IRA (pos3: GOOG)
-
-    expect(bodyRows[0].textContent).toContain('Charles Schwab — Brokerage')
-    expect(bodyRows[0].textContent).toContain('MSFT')
-
-    expect(bodyRows[1].textContent).toContain('Fidelity — Brokerage')
-    expect(bodyRows[1].textContent).toContain('AAPL')
-
-    expect(bodyRows[2].textContent).toContain('Fidelity — IRA')
-    expect(bodyRows[2].textContent).toContain('GOOG')
-  })
-
-  /**
-   * Test 5: Regression tests (old columns must not exist)
-   */
-  it('does not render Cost Basis header', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    expect(screen.queryByText('Cost Basis')).toBeNull()
-  })
-
-  it('does not render Amount Invested header', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    expect(screen.queryByText('Amount Invested')).toBeNull()
-  })
-
-  it('renders Market Value header', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    screen.getByText('Market Value')
-  })
-
-  it('does not render G/L header', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    expect(screen.queryByText(/^G\/L$/)).toBeNull()
-  })
-
-  it('does not render G/L% header', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    expect(screen.queryByText(/^G\/L%$/)).toBeNull()
-  })
-
-  /**
-   * Test: Delete column (10th column)
-   */
-  it('renders a trash-icon delete button in each row', () => {
-    const pos1 = createTestPosition({ id: 'pos-1' })
-    const pos2 = createTestPosition({ id: 'pos-2' })
-    const account = createTestAccount()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-
-    const testState = createTestState([pos1, pos2], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[pos1, pos2]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Should have 2 delete buttons (one per position in the group)
-    const deleteButtons = screen.getAllByTitle('Delete this position')
-    expect(deleteButtons).toHaveLength(2)
-  })
-
-  it('clicking delete + confirming dispatches CLOSE_POSITION exactly once', () => {
+  it('delete updates totals and percentages; last delete closes overlay', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-
-    const position = createTestPosition({ id: 'pos-123' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const deleteButton = screen.getByTitle('Delete this position')
-    fireEvent.click(deleteButton)
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'CLOSE_POSITION',
-      positionId: 'pos-123',
-    })
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
+    render(<Harness />); fireEvent.click(screen.getAllByRole('button', { name: 'Delete this position' })[0])
+    expect(result().map(p => p.id)).toEqual(['two'])
+    expect(screen.getByTestId('account-total').textContent).toBe('600')
+    expect(screen.getByText('100.0%')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this position' }))
+    expect(result()).toEqual([]); expect(screen.queryByRole('dialog')).toBeNull()
   })
-
-  it('clicking delete + cancelling does not dispatch anything', () => {
+  it('cancel delete preserves lots', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
-
-    const position = createTestPosition({ id: 'pos-456' })
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const deleteButton = screen.getByTitle('Delete this position')
-    fireEvent.click(deleteButton)
-
-    expect(mockDispatch).not.toHaveBeenCalled()
+    render(<Harness />); fireEvent.click(screen.getAllByRole('button', { name: 'Delete this position' })[0])
+    expect(result()).toEqual(lots)
   })
+})
 
-  it('multi-row group: deleting one row only dispatches with that row\'s positionId', () => {
+const saleLot = (patch: Partial<Position> = {}): Position => ({ id: 'lot-1', accountId: 'a', symbol: 'ACME', name: 'Acme', assetClass: 'Equity', shares: 10, avgCost: 100, price: 120, lastImportedAt: '2026-01-01', ...patch })
+function SaleHarness({ positions = [saleLot()], transactions = [] }: { positions?: Position[]; transactions?: AppState['transactions'] }) {
+  const [state, dispatch] = useReducer(appReducer, { ...initialState(), accounts, positions, transactions })
+  const [open, setOpen] = useState(true)
+  return <><output data-testid="sale-state">{JSON.stringify(state)}</output>{open && <PositionGroupOverlay positions={state.positions} accounts={accounts} dispatch={dispatch} onClose={() => setOpen(false)} existingAssetClasses={[]} state={state} />}</>
+}
+const saleState = () => JSON.parse(screen.getByTestId('sale-state').textContent!) as AppState
+const openSale = (index = 0) => fireEvent.click(screen.getAllByRole('button', { name: 'Close', exact: true }).filter(b => b.classList.contains('btn-ghost'))[index])
+describe('inline lot close', () => {
+  it('opens only on lot Close, defaults all shares/current price/today/zero fees, without a lot selector', () => {
+    render(<SaleHarness />)
+    expect(screen.queryByLabelText('Sale price')).toBeNull()
+    openSale()
+    expect((screen.getByLabelText('Shares') as HTMLInputElement).value).toBe('10')
+    expect((screen.getByLabelText('Sale price') as HTMLInputElement).value).toBe('120')
+    expect((screen.getByLabelText('Fees') as HTMLInputElement).value).toBe('0')
+    expect((screen.getByLabelText('Sale date') as HTMLInputElement).value).toBe(new Date().toISOString().slice(0, 10))
+    expect(screen.queryByLabelText('Position lot')).toBeNull()
+  })
+  it('selects another lot through its Close button and resets defaults', () => {
+    render(<SaleHarness positions={[saleLot(), saleLot({ id: 'lot-2', avgCost: 90, shares: 5 })]} />)
+    openSale(); fireEvent.change(screen.getByLabelText('Fees'), { target: { value: '5' } }); openSale(1)
+    expect((screen.getByLabelText('Shares') as HTMLInputElement).value).toBe('5')
+    expect((screen.getByLabelText('Fees') as HTMLInputElement).value).toBe('0')
+    expect(screen.getByText('$150.00')).toBeTruthy()
+  })
+  it('preserves old realized preview literals and shows net proceeds', () => {
+    render(<SaleHarness />); openSale()
+    fireEvent.change(screen.getByLabelText('Fees'), { target: { value: '5' } })
+    expect(screen.getByText('$195.00')).toBeTruthy()
+    expect(screen.getByText('$1,195.00')).toBeTruthy()
+    expect(screen.getByText('19.50%')).toBeTruthy()
+  })
+  it('renders hand-computed proceeds 115, realized 15/15%, cost 100, remaining zero', () => {
+    render(<SaleHarness positions={[saleLot({ avgCost: 10, price: 12 })]} />); openSale()
+    fireEvent.change(screen.getByLabelText('Fees'), { target: { value: '5' } })
+    for (const literal of ['$115.00', '$15.00', '15.00%', '$100.00', '0.00 shares']) expect(screen.getByText(literal)).toBeTruthy()
+  })
+  it.each([
+    ['Shares', '0', 'Enter shares greater than 0.'], ['Shares', '-1', 'Enter shares greater than 0.'],
+    ['Shares', '11', 'You only hold 10 shares'], ['Sale price', '-1', 'Enter a non-negative sale price.'],
+    ['Sale price', '0', 'Enter a sale price greater than 0.'], ['Sale date', '', 'Enter a sale date.'],
+    ['Fees', '-1', 'Enter non-negative fees.'],
+  ])('rejects %s = %s without changing state', (label, value, message) => {
+    render(<SaleHarness />); const before = saleState(); openSale()
+    fireEvent.change(screen.getByLabelText(label), { target: { value } })
+    expect(screen.getByRole('alert').textContent).toBe(message)
+    expect((screen.getByRole('button', { name: 'Close position' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close position' }))
+    expect(saleState()).toEqual(before)
+  })
+  it('Cancel removes the panel and preserves state', () => {
+    render(<SaleHarness />); const before = saleState(); openSale()
+    fireEvent.change(screen.getByLabelText('Shares'), { target: { value: '4' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByLabelText('Sale price')).toBeNull(); expect(saleState()).toEqual(before)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+  it('full sale with no prior Sell creates a linked transaction and known realized basis', () => {
+    render(<SaleHarness />); openSale()
+    fireEvent.change(screen.getByLabelText('Sale date'), { target: { value: '2026-02-03' } })
+    fireEvent.change(screen.getByLabelText('Fees'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Close position' }))
+    const state = saleState()
+    expect(state.positions).toEqual([])
+    expect(state.transactions).toHaveLength(1)
+    expect(state.transactions[0]).toMatchObject({ accountId: 'a', symbol: 'ACME', type: 'Sell', date: '2026-02-03', shares: 10, price: 120, amount: 1195 })
+    expect(state.closedPositions[0]).toMatchObject({ symbol: 'ACME', shares: 10, realizedGL: 195, realizedGLBasis: 'transactions', sellTransactionId: state.transactions[0].id })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+  it('partial sale leaves six shares and closes only the panel', () => {
+    render(<SaleHarness />); openSale()
+    fireEvent.change(screen.getByLabelText('Shares'), { target: { value: '4' } })
+    expect(screen.getByText('6.00 shares')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close position' }))
+    expect(saleState().positions).toEqual([saleLot({ shares: 6 })])
+    expect(saleState().closedPositions[0].shares).toBe(4)
+    expect(screen.queryByLabelText('Sale price')).toBeNull()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+  it('reuses an equivalent imported Sell instead of duplicating it', () => {
+    const transaction = { id: 'imported-sell', accountId: 'a', symbol: 'ACME', type: 'Sell' as const, date: '2026-02-03', shares: 10, price: 120, amount: 1200, importedAt: '' }
+    render(<SaleHarness transactions={[transaction]} />); openSale()
+    fireEvent.change(screen.getByLabelText('Sale date'), { target: { value: transaction.date } })
+    fireEvent.click(screen.getByRole('button', { name: 'Close position' }))
+    expect(saleState().transactions).toEqual([transaction])
+    expect(saleState().closedPositions[0].sellTransactionId).toBe('imported-sell')
+  })
+  it('Delete without a sale preserves unknown basis and creates no Sell', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-
-    const pos1 = createTestPosition({ id: 'pos-first' })
-    const pos2 = createTestPosition({ id: 'pos-second' })
-    const account = createTestAccount()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-
-    const testState = createTestState([pos1, pos2], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[pos1, pos2]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    const deleteButtons = screen.getAllByTitle('Delete this position')
-    fireEvent.click(deleteButtons[1]) // Click the second delete button
-
-    expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'CLOSE_POSITION',
-      positionId: 'pos-second',
-    })
-  })
-
-  /**
-   * Test: "% of Portfolio" column displays in overlay
-   */
-  it('renders "% of Portfolio" column header in overlay table', () => {
-    const position = createTestPosition()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-    const account = createTestAccount()
-
-    const testState = createTestState([position], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[position]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Check for the column header
-    const headers = screen.getAllByRole('columnheader')
-    const portfolioPercentHeader = Array.from(headers).find(h =>
-      h.textContent?.includes('% of Portfolio')
-    )
-    expect(portfolioPercentHeader).toBeDefined()
-  })
-
-  /**
-   * Test: "% of Portfolio" shows individual position percentage
-   */
-  it('shows individual position percentage in overlay', () => {
-    // Create two positions with different market values
-    const pos1 = createTestPosition({ id: 'pos-1', shares: 10, price: 200 }) // marketValue = 2000
-    const pos2 = createTestPosition({ id: 'pos-2', symbol: 'MSFT', shares: 15, price: 200 }) // marketValue = 3000
-    const account = createTestAccount()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-
-    const testState = createTestState([pos1, pos2], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[pos1, pos2]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Total = 2000 + 3000 = 5000
-    // pos1: 2000 / 5000 = 40.0%
-    // pos2: 3000 / 5000 = 60.0%
-    expect(screen.getByText('40.0%')).toBeDefined()
-    expect(screen.getByText('60.0%')).toBeDefined()
-  })
-
-  /**
-   * Test: Negative position value shows negative percentage
-   */
-  it('negative position market value shows negative percentage', () => {
-    const pos1 = createTestPosition({ id: 'pos-1', shares: 10, price: 200 }) // marketValue = 2000
-    const pos2 = createTestPosition({ id: 'pos-2', symbol: 'SHORT', shares: -5, price: 200 }) // marketValue = -1000
-    const account = createTestAccount()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-
-    const testState = createTestState([pos1, pos2], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[pos1, pos2]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Total = 2000 - 1000 = 1000
-    // pos1: 2000 / 1000 = 200.0%
-    // pos2: -1000 / 1000 = -100.0%
-    expect(screen.getByText('200.0%')).toBeDefined()
-    expect(screen.getByText('-100.0%')).toBeDefined()
-  })
-
-  /**
-   * Test: Overlay percentages match selector-computed percentages
-   */
-  it('overlay percentages match filteredPortfolioTotal calculation', () => {
-    // This test verifies that the percentages shown in the overlay
-    // match what would be computed from filteredPortfolioTotal selector
-    const pos1 = createTestPosition({ id: 'pos-1', shares: 5, avgCost: 100, price: 100 }) // marketValue = 500
-    const pos2 = createTestPosition({ id: 'pos-2', symbol: 'AAPL2', shares: 10, avgCost: 150, price: 200 }) // marketValue = 2000
-    const account = createTestAccount()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-
-    const testState = createTestState([pos1, pos2], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[pos1, pos2]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // Total = 500 + 2000 = 2500
-    // pos1: 500 / 2500 = 20.0%
-    // pos2: 2000 / 2500 = 80.0%
-    expect(screen.getByText('20.0%')).toBeDefined()
-    expect(screen.getByText('80.0%')).toBeDefined()
-  })
-
-  /**
-   * Test: Zero total edge case (all positions have zero market value)
-   */
-  it('overlay shows dash for percentage when portfolio total is zero', () => {
-    const pos1 = createTestPosition({ id: 'pos-1', shares: 0, price: 0 }) // marketValue = 0
-    const account = createTestAccount()
-    const title = buildOverlayTitle("AAPL", "Apple Inc", "Equity")
-
-    const testState = createTestState([pos1], [account])
-    render(
-      <PositionGroupOverlay
-        positions={[pos1]}
-        title={title}
-        accounts={[account]}
-        dispatch={mockDispatch}
-        onClose={() => {}}
-        existingAssetClasses={["Equity", "Crypto"]}
-        state={testState}
-      />
-    )
-
-    // When total is 0, fmtPortfolioPercent returns '—'
-    expect(screen.getByText('—')).toBeDefined()
+    render(<SaleHarness />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete this position' }))
+    expect(saleState().closedPositions[0]).toMatchObject({ realizedGL: null, realizedGLBasis: 'unknown' })
+    expect(saleState().transactions).toEqual([])
   })
 })

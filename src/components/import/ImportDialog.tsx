@@ -12,6 +12,7 @@ import { applyFieldMap, validatePreviewRow, isReviewValid, isBlankRow } from '..
 import { uid } from '../../lib/seed'
 import { Trash } from 'lucide-react'
 import { tableToCsv, type PastedClipboard, type CsvIssue } from '../../lib/pastedTable'
+import { CategoryMultiSelect, type CategorySelection } from './CategoryMultiSelect'
 
 export interface ImportDialogProps {
   state: AppState
@@ -70,7 +71,10 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
   const [formInstitution, setFormInstitution] = useState<string>('')
   const [formName, setFormName] = useState<string>('')
   const [formNumber, setFormNumber] = useState<string>('')
-  const [formCategory, setFormCategory] = useState<TaxCategory>('taxable')
+  const [formCategories, setFormCategories] = useState<CategorySelection>({ primary: 'taxable' })
+  const formCategory = formCategories.primary
+  const existingCustomTags = [...new Set(state.accounts.flatMap((account) => account.tags ?? []))]
+    .filter((tag) => !Object.values(TAX_CATEGORY_LABELS).some((label) => label.toLowerCase() === tag.trim().toLowerCase()))
   const [formRetirement, setFormRetirement] = useState<'retirement' | 'nonRetirement'>('nonRetirement')
   const [isAddingInstitution, setIsAddingInstitution] = useState(false)
   const [newInstitutionName, setNewInstitutionName] = useState('')
@@ -106,7 +110,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     setFormInstitution('')
     setFormName('')
     setFormNumber('')
-    setFormCategory('taxable')
+    setFormCategories({ primary: 'taxable' })
     setFormRetirement('nonRetirement')
     setIsAddingInstitution(false)
     setNewInstitutionName('')
@@ -136,7 +140,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         setFormInstitution('')
         setFormName('')
         setFormNumber('')
-        setFormCategory('taxable')
+        setFormCategories({ primary: 'taxable' })
         setFormRetirement('nonRetirement')
       } else {
         const a = state.accounts.find((acc) => acc.id === key)
@@ -144,7 +148,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         setFormInstitution(a.institution || '')
         setFormName(a.name)
         setFormNumber(a.accountNumber || '')
-        setFormCategory(a.taxCategory)
+        setFormCategories({ primary: a.taxCategory, ...(a.tags?.length ? { tags: [...a.tags] } : {}) })
         setFormRetirement(a.retirement ? 'retirement' : 'nonRetirement')
       }
     },
@@ -171,6 +175,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
       formName.trim() === selectedAccount.name &&
       formNumber.trim() === (selectedAccount.accountNumber || '') &&
       formCategory === selectedAccount.taxCategory &&
+      JSON.stringify(formCategories.tags ?? []) === JSON.stringify(selectedAccount.tags ?? []) &&
       formRetirement === (selectedAccount.retirement ? 'retirement' : 'nonRetirement'))
 
   const handleSaveAccountChanges = useCallback(() => {
@@ -182,12 +187,14 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     if (formNumber.trim() !== (selectedAccount.accountNumber || ''))
       patch.accountNumber = formNumber.trim()
     if (formCategory !== selectedAccount.taxCategory) patch.taxCategory = formCategory
+    if (JSON.stringify(formCategories.tags ?? []) !== JSON.stringify(selectedAccount.tags ?? []))
+      patch.tags = formCategories.tags ?? []
     const retirementBool = formRetirement === 'retirement'
     if (retirementBool !== selectedAccount.retirement) patch.retirement = retirementBool
     if (Object.keys(patch).length === 0) return
     dispatch({ type: 'UPDATE_ACCOUNT', accountId: selectedAccount.id, patch })
     setImportSaved(true)
-  }, [selectedAccount, formInstitution, formName, formNumber, formCategory, formRetirement, dispatch])
+  }, [selectedAccount, formInstitution, formName, formNumber, formCategory, formCategories, formRetirement, dispatch])
 
   const handleFileSelect = useCallback(
     async (selectedFile: File | null) => {
@@ -431,6 +438,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
         name: formName.trim(),
         institution: formInstitution,
         taxCategory: formCategory,
+        ...(formCategories.tags?.length ? { tags: formCategories.tags } : {}),
         retirement: formRetirement === 'retirement',
         createdAt: new Date().toISOString(),
       }
@@ -480,6 +488,7 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
     formNumber,
     formInstitution,
     formCategory,
+    formCategories,
     formRetirement,
     dispatch,
     fileName,
@@ -795,17 +804,11 @@ export function ImportDialog({ state, dispatch, onClose }: ImportDialogProps) {
                 >
                   <div className="field">
                     <label>Category</label>
-                    <select
-                      className="input"
-                      value={formCategory}
-                      onChange={(e) =>
-                        updateFormField(() => setFormCategory(e.target.value as TaxCategory))
-                      }
-                    >
-                      <option value="taxable">Taxable</option>
-                      <option value="nonTaxable">Non-Taxable</option>
-                      <option value="taxDeferred">Tax-Deferred</option>
-                    </select>
+                    <CategoryMultiSelect
+                      value={formCategories}
+                      onChange={(value) => updateFormField(() => setFormCategories(value))}
+                      existingCustomTags={existingCustomTags}
+                    />
                   </div>
                   <div className="field">
                     <label>Retirement</label>

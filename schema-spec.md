@@ -13,8 +13,13 @@ All types defined in `src/lib/types.ts`. IDs are `string`, generated via `uid(pr
 | `name` | `string` | User-assigned, editable |
 | `institution` | `string` | User-selected via seeded list or free-typed; empty string means unfilled; required only for accounts created via the import dialog's new-account form |
 | `taxCategory` | `TaxCategory` | `'taxable' \| 'nonTaxable' \| 'taxDeferred'` |
+| `tags?` | `string[]` | Additional category memberships; absent means none. Base labels or custom labels; not Budget transaction tags |
 | `retirement` | `boolean` | |
 | `createdAt` | `string` | ISO date, set once at creation |
+
+- `addAccount`/`updateAccount`/`setAccountTags`: trim labels, drop blank/exact duplicates and own primary-category label; omit `tags` when empty. Case-sensitive reducer identity; `CategoryMultiSelect` dedupes UI choices case/trim-insensitively.
+- Limits: primary + at most 3 tags (4 memberships/account); at most 3 distinct custom labels across portfolio accounts. Exact base labels `Taxable`, `Non-Taxable`, `Tax-Deferred` do not consume custom-label slots; tags with these labels grant membership in that base tab. Invalid mutations leave state unchanged atomically.
+- Optional field: existing accounts need no migration; encrypted IndexedDB/Drive/backup account JSON preserves tags. `PositionsTab = TaxCategory | tag:${string} | 'quotes'`; tab membership is derived, not separately stored.
 
 ## Position
 
@@ -287,6 +292,7 @@ Core state mutations dispatched via `appReducer` in `reducer.ts`:
 **Accounts**
 - `ADD_ACCOUNT`: Add new `Account` to state
 - `UPDATE_ACCOUNT`: Patch fields on an `Account`
+- `SET_ACCOUNT_TAGS { accountId: string; tags: string[] }`: `setAccountTags` delegates to `updateAccount`; same normalization/limits as add/update
 - `DELETE_ACCOUNT`: Remove `Account` and cascade-delete its positions/closedPositions/transactions/snapshots/csvMappings/balanceEntries
 - `ADD_CUSTOM_INSTITUTION`: Add a free-typed institution name to `customInstitutions` (no-op if blank or already present)
 

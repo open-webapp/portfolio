@@ -9,6 +9,7 @@ export type AppAction =
   | { type: '__SET_STATE'; newState: AppState }
   | { type: 'ADD_ACCOUNT'; account: any }
   | { type: 'UPDATE_ACCOUNT'; accountId: string; patch: any }
+  | { type: 'SET_ACCOUNT_TAGS'; accountId: string; tags: string[] }
   | { type: 'DELETE_ACCOUNT'; accountId: string }
   | { type: 'UPDATE_POSITION'; positionId: string; patch: any }
   | { type: 'SET_ASSET_CLASS_OVERRIDE'; positionId: string; override?: any }
@@ -78,6 +79,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'UPDATE_ACCOUNT':
       return StateActions.updateAccount(state, action.accountId, action.patch)
+
+    case 'SET_ACCOUNT_TAGS':
+      return StateActions.setAccountTags(state, action.accountId, action.tags)
 
     case 'DELETE_ACCOUNT':
       return StateActions.deleteAccount(state, action.accountId)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { appReducer } from './reducer'
+import type { Account } from './types'
 import { autoTagBudgetTransactions, clearBudgetTransactionAutoTags, clearBudgetTransactionTags, initialState } from './state'
 
 describe('budget reducer', () => {
@@ -169,5 +170,56 @@ describe('position sale reducer', () => {
       price: 175,
       fees: 0,
     })).toBe(state)
+  })
+})
+describe('account category tags', () => {
+  const account: Account = { id: 'a', accountNumber: '1', name: 'Brokerage', institution: 'Bank', taxCategory: 'taxable', retirement: false, createdAt: '' }
+  const other: Account = { ...account, id: 'b', accountNumber: '2' }
+
+  it('stores tags while preserving the primary base and other accounts', () => {
+    const state = { ...initialState(), accounts: [account, other] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'a', tags: ['Family'] })).toEqual({ ...state, accounts: [{ ...account, tags: ['Family'] }, other] })
+  })
+
+  it('omits the tags key when cleared', () => {
+    const state = { ...initialState(), accounts: [{ ...account, tags: ['Family'] }] }
+    const result = appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'a', tags: [] })
+    expect(result).toEqual({ ...state, accounts: [account] })
+    expect('tags' in result.accounts[0]).toBe(false)
+  })
+
+  it('accepts exactly four categories, including three custom tags', () => {
+    const state = { ...initialState(), accounts: [account] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'a', tags: ['Family', 'College', 'Travel'] })).toEqual({ ...state, accounts: [{ ...account, tags: ['Family', 'College', 'Travel'] }] })
+  })
+
+  it('rejects a fifth category even when only two tags are custom', () => {
+    const state = { ...initialState(), accounts: [account] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'a', tags: ['Non-Taxable', 'Tax-Deferred', 'Family', 'College'] })).toBe(state)
+  })
+
+  it('rejects a fourth distinct portfolio custom tag', () => {
+    const state = { ...initialState(), accounts: [{ ...account, tags: ['Family', 'College', 'Travel'] }, other] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'b', tags: ['New'] })).toBe(state)
+  })
+
+  it('allows existing custom tags and non-primary base labels at the portfolio limit', () => {
+    const state = { ...initialState(), accounts: [{ ...account, tags: ['Family', 'College', 'Travel'] }, other] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'b', tags: ['Family', 'Non-Taxable', 'Tax-Deferred'] })).toEqual({ ...state, accounts: [state.accounts[0], { ...other, tags: ['Family', 'Non-Taxable', 'Tax-Deferred'] }] })
+  })
+
+  it('leaves an unknown account unchanged', () => {
+    const state = { ...initialState(), accounts: [account] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'missing', tags: ['Family'] })).toBe(state)
+  })
+
+  it('trims and deduplicates names, removes blanks and the primary base label', () => {
+    const state = { ...initialState(), accounts: [account] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'a', tags: [' Family ', 'Family', ' ', 'Taxable', ' Non-Taxable '] })).toEqual({ ...state, accounts: [{ ...account, tags: ['Family', 'Non-Taxable'] }] })
+  })
+
+  it('counts replacement tags rather than the removed tags', () => {
+    const state = { ...initialState(), accounts: [{ ...account, tags: ['Family', 'College', 'Travel'] }] }
+    expect(appReducer(state, { type: 'SET_ACCOUNT_TAGS', accountId: 'a', tags: ['New'] })).toEqual({ ...state, accounts: [{ ...account, tags: ['New'] }] })
   })
 })

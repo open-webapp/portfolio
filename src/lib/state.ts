@@ -19,7 +19,7 @@ import type {
 } from './types'
 import { uid } from './seed'
 
-export type PositionsTab = 'taxable' | 'nonTaxable' | 'taxDeferred' | 'quotes'
+export type { PositionsTab } from './types'
 import type { ExportableState } from './importExport'
 import { normalizeBudgetAccountName, reconcileBudgetAccountRules } from './budgetAccountRules'
 import { applyAutoTags, unionTags } from './autoTag'
@@ -181,29 +181,64 @@ export function stripEmptyBudgetSnapshots(state: AppState): AppState {
   }
 }
 
-/**
- * Update a single account (to be implemented in reducer cases).
- */
+const ACCOUNT_BASE_LABELS: Record<TaxCategory, string> = {
+  taxable: 'Taxable',
+  nonTaxable: 'Non-Taxable',
+  taxDeferred: 'Tax-Deferred',
+}
+
+function normalizeAccountTags(account: Account): Account {
+  const tags = [...new Set((account.tags ?? []).map((tag) => tag.trim()))]
+    .filter((tag) => tag && tag !== ACCOUNT_BASE_LABELS[account.taxCategory])
+  const normalized = { ...account }
+  if (tags.length) normalized.tags = tags
+  else delete normalized.tags
+  return normalized
+}
+
+function accountTagLimitsSatisfied(accounts: Account[]): boolean {
+  const baseLabels = new Set(Object.values(ACCOUNT_BASE_LABELS))
+  const customTags = new Set<string>()
+  for (const account of accounts) {
+    const tags = normalizeAccountTags(account).tags ?? []
+    if (tags.length > 3) return false
+    for (const tag of tags) {
+      if (!baseLabels.has(tag)) customTags.add(tag)
+    }
+  }
+  return customTags.size <= 3
+}
+
+/** Update an account atomically, enforcing category and portfolio tag limits. */
 export function updateAccount(
   state: AppState,
   accountId: string,
   patch: Partial<Account>
 ): AppState {
+  const existing = state.accounts.find((a) => a.id === accountId)
+  if (!existing) return state
+  const updated = normalizeAccountTags({ ...existing, ...patch })
+  const accounts = state.accounts.map((a) => a === existing ? updated : a)
+  if (!accountTagLimitsSatisfied(accounts)) return state
   return {
     ...state,
-    accounts: state.accounts.map((a) =>
-      a.id === accountId ? { ...a, ...patch } : a
-    ),
+    accounts,
   }
+}
+
+export function setAccountTags(state: AppState, accountId: string, tags: string[]): AppState {
+  return updateAccount(state, accountId, { tags })
 }
 
 /**
  * Add a new account (to be implemented in reducer cases).
  */
 export function addAccount(state: AppState, account: Account): AppState {
+  const accounts = [...state.accounts, normalizeAccountTags(account)]
+  if (!accountTagLimitsSatisfied(accounts)) return state
   return {
     ...state,
-    accounts: [...state.accounts, account],
+    accounts,
   }
 }
 

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { acctFilteredClosedPositions, acctFilteredPositions, acctScopedPositions, actualByCategory, actualIncomeForYear, budgetedIncomeForYear, categoryCards, computeRecurringSpendIds, expenseBudgetYears, expenseTableColumnYears, expenseTableYears, isIncomeOrExcludedTransaction, overBudgetCategories, overBudgetCategoriesForScope, planChanges, plannedFrequencySplit, plannedSavingsRate, plannedSpendSummary, positionsKpis, projectedSpendForScope, sankeyFlowData, savingsRateByYear, savingsRateForScope, SPEND_ALL_YEARS, spendBudgetYears, spendCardTotals, spendPaceForScope, spendScopeKind, spendTransactionsForScope, yearElapsedFraction, yearTotalSpend } from './selectors'
-import { toPeriod } from './computations'
+import { fmtPct, fmtUSD, toPeriod } from './computations'
 import { initialState } from './state'
-import type { Account, BudgetTransaction, Category, ExpenseDefinition } from './types'
+import { positionsHero, positionsTabs, positionsTabAccounts, closedPositionsTabAccounts } from './selectors'
+import type { Account, BudgetTransaction, Category, ClosedPosition, ExpenseDefinition } from './types'
 
 const categories: Category[] = [
   { id: 'income', name: ' Income ', updatedAt: '' },
@@ -15,6 +16,126 @@ const definitions: ExpenseDefinition[] = [
   { id: 'groceries', name: 'Groceries', categoryId: 'food', frequency: 'monthly' },
 ]
 const tx = (patch: Partial<BudgetTransaction>): BudgetTransaction => ({ id: 't', date: '2025-01-01', description: '', categoryId: 'food', amount: 1, ...patch })
+
+describe('positions tabs', () => {
+  const accounts: Account[] = [
+    { id: 'a', accountNumber: '1', name: 'Brokerage', institution: '', taxCategory: 'taxable', tags: ['Zulu', 'Non-Taxable'], retirement: false, createdAt: '' },
+    { id: 'b', accountNumber: '2', name: 'IRA', institution: '', taxCategory: 'taxDeferred', tags: ['Alpha', 'Zulu', 'Taxable'], retirement: true, createdAt: '' },
+    { id: 'c', accountNumber: '3', name: 'Roth', institution: '', taxCategory: 'nonTaxable', retirement: true, createdAt: '' },
+  ]
+  const state = { ...initialState(), accounts, positions: [
+    { id: 'pa', accountId: 'a', symbol: 'AAA', name: null, assetClass: 'Equity', shares: 1, avgCost: 1, price: 2, lastImportedAt: '' },
+    { id: 'pb', accountId: 'b', symbol: 'BBB', name: null, assetClass: 'Equity', shares: 1, avgCost: 1, price: 3, lastImportedAt: '' },
+    { id: 'pc', accountId: 'c', symbol: 'CCC', name: null, assetClass: 'Equity', shares: 1, avgCost: 1, price: 4, lastImportedAt: '' },
+  ] }
+
+  it('orders base tabs, distinct alphabetical custom tags, then Quotes', () => {
+    expect(positionsTabs(state)).toEqual([
+      { key: 'taxable', label: 'Taxable' },
+      { key: 'nonTaxable', label: 'Non-Taxable' },
+      { key: 'taxDeferred', label: 'Tax-Deferred' },
+      { key: 'tag:Alpha', label: 'Alpha' },
+      { key: 'tag:Zulu', label: 'Zulu' },
+      { key: 'quotes', label: 'Quotes' },
+    ])
+  })
+
+  it('omits tags without accounts while retaining base tabs', () => {
+    expect(positionsTabs({ ...state, accounts: [] })).toEqual([
+      { key: 'taxable', label: 'Taxable' },
+      { key: 'nonTaxable', label: 'Non-Taxable' },
+      { key: 'taxDeferred', label: 'Tax-Deferred' },
+      { key: 'quotes', label: 'Quotes' },
+    ])
+  })
+
+  it('grants base membership through taxCategory or its display-label tag', () => {
+    expect(positionsTabAccounts(state, 'taxable').map((a) => a.id)).toEqual(['a', 'b'])
+    expect(positionsTabAccounts(state, 'nonTaxable').map((a) => a.id)).toEqual(['a', 'c'])
+    expect(positionsTabAccounts(state, 'taxDeferred').map((a) => a.id)).toEqual(['b'])
+  })
+
+  it('includes tagged accounts in both base and custom tabs and scopes positions', () => {
+    expect(positionsTabAccounts(state, 'tag:Zulu').map((a) => a.id)).toEqual(['a', 'b'])
+    expect(acctScopedPositions(state, positionsTabAccounts(state, 'tag:Alpha').map((a) => a.id)).map((p) => p.id)).toEqual(['pb'])
+    expect(positionsTabAccounts(state, 'quotes')).toEqual([])
+  })
+
+  it('round-trips spaces and colons in custom tag names', () => {
+    const odd = { ...state, accounts: [{ ...accounts[0], tags: ['Family : long term'] }] }
+    expect(positionsTabs(odd)).toEqual([
+      { key: 'taxable', label: 'Taxable' },
+      { key: 'nonTaxable', label: 'Non-Taxable' },
+      { key: 'taxDeferred', label: 'Tax-Deferred' },
+      { key: 'tag:Family : long term', label: 'Family : long term' },
+      { key: 'quotes', label: 'Quotes' },
+    ])
+    expect(positionsTabAccounts(odd, 'tag:Family : long term').map((a) => a.id)).toEqual(['a'])
+  })
+
+  it('returns empty accounts and scoped positions for a vanished active tag', () => {
+    expect(positionsTabAccounts(state, 'tag:x')).toEqual([])
+    expect(acctFilteredPositions(state, positionsTabAccounts(state, 'tag:x').map((a) => a.id))).toEqual([])
+    expect(acctFilteredClosedPositions(state, positionsTabAccounts(state, 'tag:x').map((a) => a.id))).toEqual([])
+  })
+})
+
+describe('closed-mode category selectors', () => {
+  const accounts: Account[] = [
+    { id: 'a', accountNumber: '1', name: 'Closed brokerage', institution: '', taxCategory: 'taxable', tags: ['Family'], retirement: false, createdAt: '' },
+    { id: 'b', accountNumber: '2', name: 'Second brokerage', institution: '', taxCategory: 'taxable', retirement: false, createdAt: '' },
+    { id: 'open', accountNumber: '3', name: 'Open only', institution: '', taxCategory: 'taxable', tags: ['Family'], retirement: false, createdAt: '' },
+    { id: 'ira', accountNumber: '4', name: 'IRA', institution: '', taxCategory: 'taxDeferred', tags: ['Family', 'Non-Taxable'], retirement: true, createdAt: '' },
+  ]
+  const closedPositions: ClosedPosition[] = [
+    { id: 'apple', accountId: 'a', symbol: 'AAPL', name: 'Apple', assetClass: 'Equity', shares: 1, avgCost: 10, price: 10, closedDate: '2026-01-01', lastImportedAt: '', realizedGL: 0, realizedGLBasis: 'transactions' },
+    { id: 'bond', accountId: 'a', symbol: 'BND', name: 'Total bond', assetClass: 'ETF', assetClassManualOverride: 'Bond', shares: 1, avgCost: 10, price: 10, closedDate: '2026-01-01', lastImportedAt: '', realizedGL: null, realizedGLBasis: 'unknown' },
+    { id: 'fund', accountId: 'b', symbol: 'VTI', name: 'Total market', assetClass: 'ETF', shares: 1, avgCost: 10, price: 15, closedDate: '2026-01-01', lastImportedAt: '', realizedGL: 5, realizedGLBasis: 'transactions' },
+    { id: 'retired', accountId: 'ira', symbol: 'MSFT', name: 'Microsoft', assetClass: 'Equity', shares: 1, avgCost: 10, price: 12, closedDate: '2026-01-01', lastImportedAt: '', realizedGL: 2, realizedGLBasis: 'transactions' },
+  ]
+  const state = { ...initialState(), accounts, closedPositions, positions: [
+    { id: 'held', accountId: 'open', symbol: 'OPEN', name: null, assetClass: 'Equity', shares: 1, avgCost: 1, price: 2, lastImportedAt: '' },
+  ] }
+  const ids = (rows: ClosedPosition[]) => rows.map((row) => row.id)
+  const taxableIds = ['a', 'b']
+
+  it('lists only category accounts with closed positions, independent of row filters or selection', () => {
+    expect(closedPositionsTabAccounts(state, 'taxable').map((a) => a.id)).toEqual(taxableIds)
+    expect(closedPositionsTabAccounts({ ...state, selectedAccountId: 'a', acctPosSearch: 'absent', acctAssetClassFilter: 'Cash' }, 'taxable').map((a) => a.id)).toEqual(taxableIds)
+  })
+
+  it('supports custom tags and display-label base membership', () => {
+    expect(closedPositionsTabAccounts(state, 'tag:Family').map((a) => a.id)).toEqual(['a', 'ira'])
+    expect(closedPositionsTabAccounts(state, 'nonTaxable').map((a) => a.id)).toEqual(['ira'])
+    expect(ids(acctFilteredClosedPositions(state, ['a', 'ira']))).toEqual(['apple', 'bond', 'retired'])
+  })
+
+  it('scopes rows to the selected eligible account', () => {
+    expect(ids(acctFilteredClosedPositions({ ...state, selectedAccountId: 'a' }, taxableIds))).toEqual(['apple', 'bond'])
+  })
+
+  it('returns empty rows for an empty category even with a stale selection', () => {
+    expect(closedPositionsTabAccounts(state, 'tag:missing')).toEqual([])
+    expect(closedPositionsTabAccounts(state, 'quotes')).toEqual([])
+    expect(acctFilteredClosedPositions({ ...state, selectedAccountId: 'a' }, [])).toEqual([])
+  })
+
+  it('narrows by effective asset class, case-insensitive symbol/name search, and their intersection', () => {
+    expect(ids(acctFilteredClosedPositions({ ...state, acctAssetClassFilter: 'Bond' }, taxableIds))).toEqual(['bond'])
+    expect(ids(acctFilteredClosedPositions({ ...state, acctPosSearch: 'TOTAL' }, taxableIds))).toEqual(['bond', 'fund'])
+    expect(ids(acctFilteredClosedPositions({ ...state, acctPosSearch: 'aapl' }, taxableIds))).toEqual(['apple'])
+    expect(ids(acctFilteredClosedPositions({ ...state, acctAssetClassFilter: 'Bond', acctPosSearch: 'TOTAL' }, taxableIds))).toEqual(['bond'])
+  })
+
+  it('disregards a stale selection after category switch without mutating state', () => {
+    const selected = { ...state, selectedAccountId: 'a' }
+    const before = structuredClone(selected)
+    const switchedIds = closedPositionsTabAccounts(selected, 'taxDeferred').map((a) => a.id)
+    expect(ids(acctFilteredClosedPositions(selected, switchedIds))).toEqual(['retired'])
+    expect(selected).toEqual(before)
+    expect(ids(acctFilteredClosedPositions({ ...state, selectedAccountId: 'open' }, ['a', 'b', 'open']))).toEqual(['apple', 'bond', 'fund'])
+  })
+})
 
 describe('derived budget income', () => {
   it('annualizes exact active Income definitions for the selected year', () => {
@@ -1224,6 +1345,133 @@ describe('positionsKpis', () => {
     ]
     return state
   }
+
+  describe('positionsHero', () => {
+    function heroState() {
+      const state = buildState()
+      state.accounts[0].tags = ['Family']
+      state.accounts[1].tags = ['Family']
+      state.accounts[2].taxCategory = 'taxDeferred'
+      state.accounts[2].tags = ['Other']
+      return state
+    }
+
+    // Fixed display goldens, independent of selector implementation.
+    const tabGolden = {
+      marketValue: 1000, unrealizedGL: 20, unrealizedGLPct: expect.closeTo(2.040816326530612, 12),
+      realizedGL: 40, positionCount: 2, accountCount: 2, closedCount: 1,
+      allocationBars: [
+        { label: 'Equity', value: '$600.00', pct: '+60.00%', pctNum: 60 },
+        { label: 'Bond', value: '$400.00', pct: '+40.00%', pctNum: 40 },
+      ],
+    }
+    const selectedGolden = {
+      marketValue: 400, unrealizedGL: -100, unrealizedGLPct: -20,
+      realizedGL: 0, positionCount: 1, accountCount: 1, closedCount: 0,
+      allocationBars: [{ label: 'Bond', value: '$400.00', pct: '+100.00%', pctNum: 100 }],
+    }
+    const otherGolden = {
+      marketValue: 1000, unrealizedGL: 500, unrealizedGLPct: 100,
+      realizedGL: 90, positionCount: 1, accountCount: 1, closedCount: 1,
+      allocationBars: [{ label: 'Equity', value: '$1,000.00', pct: '+100.00%', pctNum: 100 }],
+    }
+    const zeroGolden = {
+      marketValue: 0, unrealizedGL: 0, unrealizedGLPct: 0, realizedGL: 0,
+      positionCount: 0, accountCount: 0, closedCount: 0, allocationBars: [],
+    }
+    const displayed = (hero: ReturnType<typeof positionsHero>) => [
+      fmtUSD(hero.marketValue),
+      `${hero.unrealizedGL >= 0 ? '+' : '-'}${fmtUSD(Math.abs(hero.unrealizedGL))}`,
+      fmtPct(hero.unrealizedGLPct),
+      `${hero.realizedGL >= 0 ? '+' : '-'}${fmtUSD(Math.abs(hero.realizedGL))}`,
+    ]
+
+    it('matches captured tab goldens and hand-computed counts and slices', () => {
+      const result = positionsHero(heroState())
+      expect(result).toEqual(tabGolden)
+      expect(displayed(result)).toEqual(['$1,000.00', '+$20.00', '+2.04%', '+$40.00'])
+    })
+
+    it('matches separate selected-account goldens', () => {
+      const state = heroState()
+      state.selectedAccountId = 'a2'
+      const result = positionsHero(state, 'taxable')
+      expect(result).toEqual(selectedGolden)
+      expect(displayed(result)).toEqual(['$400.00', '-$100.00', '-20.00%', '+$0.00'])
+    })
+
+    it('scopes other base and custom tabs with separate literal totals', () => {
+      expect(positionsHero(heroState(), 'taxDeferred')).toEqual(otherGolden)
+      expect(displayed(positionsHero(heroState(), 'tag:Other'))).toEqual(['$1,000.00', '+$500.00', '+100.00%', '+$90.00'])
+      expect(positionsHero(heroState(), 'tag:Family')).toEqual(tabGolden)
+      expect(positionsHero(heroState(), 'tag:Other')).toEqual(otherGolden)
+    })
+
+    it('includes accounts with a nonprimary base-category tag', () => {
+      const state = heroState()
+      state.accounts[0].tags = ['Non-Taxable']
+      expect(positionsHero(state, 'nonTaxable')).toEqual({
+        marketValue: 600, unrealizedGL: 120, unrealizedGLPct: 25, realizedGL: 40,
+        positionCount: 1, accountCount: 1, closedCount: 1,
+        allocationBars: [{ label: 'Equity', value: '$600.00', pct: '+100.00%', pctNum: 100 }],
+      })
+    })
+
+    it('retains open unrealized totals and allocation in closed mode, including selected scope', () => {
+      const state = heroState()
+      expect(positionsHero(state, 'taxable', true)).toEqual(tabGolden)
+      state.selectedAccountId = 'a2'
+      expect(positionsHero(state, 'taxable', true)).toEqual(selectedGolden)
+    })
+
+    it('ignores table search and asset-class filters without mutating state', () => {
+      const state = heroState()
+      state.acctPosSearch = 'does not match'
+      state.acctAssetClassFilter = 'Cash'
+      const before = structuredClone(state)
+      expect(positionsHero(state)).toEqual(tabGolden)
+      expect(state).toEqual(before)
+    })
+
+    it('excludes unknown-basis realized amounts and counts, but includes known zero and loss', () => {
+      const state = heroState()
+      state.closedPositions[1].realizedGL = 999
+      state.closedPositions.push(
+        { ...state.closedPositions[0], id: 'zero', realizedGL: 0 },
+        { ...state.closedPositions[0], id: 'loss', realizedGL: -10 },
+        { ...state.closedPositions[0], id: 'missing', realizedGL: null },
+      )
+      expect(positionsHero(state)).toEqual({ ...tabGolden, realizedGL: 30, closedCount: 3 })
+    })
+
+    it('returns finite literal zeros for empty portfolios in either mode', () => {
+      for (const closed of [false, true]) {
+        const result = positionsHero(initialState(), 'taxable', closed)
+        expect(result).toEqual(zeroGolden)
+        expect(Object.values(result).filter((value) => typeof value === 'number').every(Number.isFinite)).toBe(true)
+        expect(displayed(result)).toEqual(['$0.00', '+$0.00', '+0.00%', '+$0.00'])
+      }
+    })
+
+    it('does not leak a stale selected account into another tab or Quotes', () => {
+      const state = heroState()
+      state.selectedAccountId = 'a3'
+      expect(positionsHero(state, 'taxable')).toEqual(zeroGolden)
+      expect(positionsHero(state, 'tag:vanished')).toEqual(zeroGolden)
+      expect(positionsHero(state, 'quotes')).toEqual(zeroGolden)
+    })
+
+    it('uses effective asset classes and allocation percentages totaling 100 ±0.01', () => {
+      const state = heroState()
+      state.positions[0].assetClassManualOverride = 'ETF'
+      const result = positionsHero(state)
+      expect(result.allocationBars).toEqual([
+        { label: 'ETF', value: '$600.00', pct: '+60.00%', pctNum: 60 },
+        { label: 'Bond', value: '$400.00', pct: '+40.00%', pctNum: 40 },
+      ])
+      expect(Math.abs(result.allocationBars.reduce((sum, slice) => sum + slice.pctNum, 0) - 100)).toBeLessThanOrEqual(0.01)
+    })
+  })
 
   it('uses active tab accounts only, with real counts and allocation percentages', () => {
     const result = positionsKpis(buildState(), ['a1', 'a2'])

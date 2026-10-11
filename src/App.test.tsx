@@ -17,6 +17,29 @@ import {
   _resetRegistryForTests,
 } from './lib/portfolioRegistry'
 import App from './App'
+import type { AppState } from './lib/state'
+import type { Account } from './lib/types'
+
+const tabFixture = vi.hoisted(() => ({ enabled: false }))
+
+// T4 exercises the App/page boundary with interactive UI; T7 owns the real
+// AccountsPage's tag-card rendering and consumption of tabAccounts.
+vi.mock('./components/AccountsPage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/AccountsPage')>()
+  return {
+    ...actual,
+    AccountsPage: (props: React.ComponentProps<typeof actual.AccountsPage> & { tabAccounts?: Account[] }) => {
+      if (!tabFixture.enabled) return <actual.AccountsPage {...props} />
+      return <section aria-label="Tab accounts">
+        {props.tabAccounts?.map((account) => <div key={account.id}>
+          <button onClick={() => props.dispatch({ type: 'SELECT_ACCOUNT', accountId: account.id, categoryKey: props.positionsTab })}>{account.name}</button>
+          <button aria-label={`Remove tags from ${account.name}`} onClick={() => props.dispatch({ type: 'UPDATE_ACCOUNT', accountId: account.id, patch: { tags: undefined } })}>Remove tags</button>
+        </div>)}
+        {props.state.selectedAccountId && <output>Account selected</output>}
+      </section>
+    },
+  }
+})
 
 const REGISTRY_DB_NAME = 'portfolio-registry'
 const REGISTRY_STORE_NAME = 'portfolios'
@@ -307,6 +330,106 @@ async function renderUnlockedApp() {
 function navTab(label: string): HTMLElement {
   return screen.getByRole('button', { name: label })
 }
+
+describe('position tag tab wiring', () => {
+  beforeEach(() => {
+    tabFixture.enabled = true
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    const loaded: AppState = initialState()
+    loaded.accounts = [
+      { id: 'base', name: 'Base account', accountNumber: '1', taxCategory: 'taxable', retirement: false, createdAt: '' },
+      { id: 'tagged', name: 'Tagged account', accountNumber: '2', taxCategory: 'taxDeferred', retirement: true, createdAt: '', tags: ['Family'] },
+    ]
+    mockUnlockLoadedState.current = loaded
+  })
+
+  afterEach(() => {
+    tabFixture.enabled = false
+    mockUnlockLoadedState.current = undefined
+  })
+
+  it('clicking a tag tab exposes only its accounts', async () => {
+    await renderUnlockedApp()
+    fireEvent.click(screen.getByRole('radio', { name: 'Family' }))
+    expect(screen.getByRole('radio', { name: 'Family' })).toHaveProperty('checked', true)
+    expect(screen.getByRole('button', { name: 'Tagged account' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Base account' })).toBeNull()
+  })
+
+  it('falls back to the first base segment and its accounts when the last tag is removed', async () => {
+    await renderUnlockedApp()
+    fireEvent.click(screen.getByRole('radio', { name: 'Family' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tagged account' }))
+    expect(screen.getByText('Account selected')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tags from Tagged account' }))
+    expect(screen.queryByRole('radio', { name: 'Family' })).toBeNull()
+    expect(screen.getByRole('radio', { name: 'Taxable' })).toHaveProperty('checked', true)
+    expect(screen.getByRole('button', { name: 'Base account' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Tagged account' })).toBeNull()
+    expect(screen.queryByText('Account selected')).toBeNull()
+  })
+
+  it('switching tabs clears selection even after returning to the original tab', async () => {
+    await renderUnlockedApp()
+    fireEvent.click(screen.getByRole('button', { name: 'Base account' }))
+    expect(screen.getByText('Account selected')).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: 'Tax-Deferred' }))
+    expect(screen.queryByText('Account selected')).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: 'Taxable' }))
+    expect(screen.getByRole('button', { name: 'Base account' })).toBeTruthy()
+    expect(screen.queryByText('Account selected')).toBeNull()
+  })
+})
+
+describe('live positions integration', () => {
+  beforeEach(() => {
+    tabFixture.enabled = false
+    vi.mocked(peekEnvelopeShape).mockResolvedValue('absent')
+    const state = initialState()
+    state.accounts = [
+      { id: 'a', name: 'Brokerage', accountNumber: '100', taxCategory: 'taxable', retirement: false, createdAt: '' },
+      { id: 'b', name: 'IRA', accountNumber: '200', taxCategory: 'taxDeferred', retirement: true, createdAt: '', tags: ['Taxable'] },
+    ]
+    state.positions = [
+      { id: 'p1', accountId: 'a', symbol: 'AAA', shares: 10, avgCost: 80, price: 100, assetClass: 'Equity' },
+      { id: 'p2', accountId: 'b', symbol: 'BBB', shares: 5, avgCost: 90, price: 100, assetClass: 'Equity' },
+    ]
+    mockUnlockLoadedState.current = state
+  })
+  afterEach(() => { mockUnlockLoadedState.current = undefined })
+
+  it('adds/removes an ACTIVE tag through real account editing, preserving base membership and clearing selection', async () => {
+    await renderUnlockedApp()
+    expect(screen.getByText('#200')).toBeTruthy()
+    expect(screen.getByText('2 positions · 2 accounts')).toBeTruthy()
+    const editAccount = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Accounts & Import' }))
+      fireEvent.change(document.querySelector('.dialog select')!, { target: { value: 'a' } })
+      fireEvent.click(screen.getByText('Categories', { exact: true }))
+    }
+    editAccount()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add category' }), { target: { value: 'Family' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Add category' }), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(screen.getByRole('radio', { name: 'Family' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Close', exact: true }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Family' }))
+    expect(screen.queryByText('#200')).toBeNull()
+    fireEvent.click(screen.getByText('#100'))
+    editAccount()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Family' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(screen.queryByRole('radio', { name: 'Family' })).toBeNull()
+    expect(screen.getByRole('radio', { name: 'Taxable', exact: true })).toHaveProperty('checked', true)
+    expect(screen.getByText('2 positions · 2 accounts')).toBeTruthy()
+    expect(screen.getByText('#200')).toBeTruthy()
+    await waitFor(() => {
+      const saved = vi.mocked(savePersistedApp).mock.calls.at(-1)?.[0]
+      expect(saved?.selectedAccountId).toBeNull()
+      expect(saved?.accounts.find(a => a.id === 'a')?.tags).toBeUndefined()
+    })
+  })
+})
 
 describe('app shell layout', () => {
   it('reserves space for the fixed desktop navigation rail', () => {

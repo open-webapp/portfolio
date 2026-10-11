@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import 'fake-indexeddb/auto'
+import { appReducer } from './reducer'
+import { coalesceWithDefaults, loadPersistedApp, savePersistedApp, setActivePortfolioDb } from './persist'
+import { decryptState, deriveKey, encryptState, generateSalt } from './crypto'
 import {
   addBudgetTransaction,
   addExpenseDefinition,
@@ -835,5 +839,50 @@ describe('updateBudgetTransactionsBulk spend-link cascade', () => {
       { id: 'a', spendExpenseId: 'expB', categoryId: 'catB' },
       { id: 'b', spendExpenseId: 'expB', categoryId: 'catB' },
     ])
+  })
+})
+describe('account mutation tag limits and compatibility', () => {
+  const account = { id: 'a', accountNumber: '1', name: 'Brokerage', institution: 'Bank', taxCategory: 'taxable' as const, retirement: false, createdAt: '' }
+
+  it.each(['ADD_ACCOUNT', 'UPDATE_ACCOUNT'] as const)('%s rejects category overflow atomically', (type) => {
+    const state = { ...initialState(), accounts: [account] }
+    const tags = ['Non-Taxable', 'Tax-Deferred', 'Family', 'College']
+    const action = type === 'ADD_ACCOUNT' ? { type, account: { ...account, id: 'b', tags } } : { type, accountId: 'a', patch: { name: 'Changed', tags } }
+    expect(appReducer(state, action)).toBe(state)
+  })
+
+  it.each(['ADD_ACCOUNT', 'UPDATE_ACCOUNT'] as const)('%s rejects portfolio custom-tag overflow', (type) => {
+    const state = { ...initialState(), accounts: [{ ...account, tags: ['Family', 'College', 'Travel'] }, { ...account, id: 'b' }] }
+    const action = type === 'ADD_ACCOUNT' ? { type, account: { ...account, id: 'c', tags: ['New'] } } : { type, accountId: 'b', patch: { tags: ['New'] } }
+    expect(appReducer(state, action)).toBe(state)
+  })
+
+  it('normalizes imported account additions and omits empty update tags', () => {
+    const state = initialState()
+    const added = appReducer(state, { type: 'ADD_ACCOUNT', account: { ...account, tags: [' Family ', 'Family', ''] } })
+    expect(added).toEqual({ ...state, accounts: [{ ...account, tags: ['Family'] }] })
+    const cleared = appReducer(added, { type: 'UPDATE_ACCOUNT', accountId: 'a', patch: { tags: [] } })
+    expect(cleared).toEqual({ ...state, accounts: [account] })
+    expect('tags' in cleared.accounts[0]).toBe(false)
+  })
+
+  it('unknown UPDATE_ACCOUNT leaves state unchanged', () => {
+    const state = { ...initialState(), accounts: [account] }
+    expect(appReducer(state, { type: 'UPDATE_ACCOUNT', accountId: 'missing', patch: { tags: ['Family'] } })).toBe(state)
+  })
+
+  it('legacy accounts round-trip through persistence and Drive envelope JSON without tags', async () => {
+    const state = { ...initialState(), accounts: [account] }
+    const salt = generateSalt()
+    const key = await deriveKey('account-tags-test', salt)
+    setActivePortfolioDb('t2-account-tags-legacy')
+    await savePersistedApp(state, key, salt)
+    const loaded = await loadPersistedApp(key)
+    expect(loaded).toEqual(state)
+    const envelope = JSON.parse(JSON.stringify(await encryptState(loaded!, key, salt)))
+    const restored = appReducer(initialState(), { type: '__SET_STATE', newState: coalesceWithDefaults(await decryptState(envelope, key)) })
+    expect(restored).toEqual(state)
+    expect(JSON.stringify(restored.accounts)).toBe(JSON.stringify([account]))
+    expect('tags' in restored.accounts[0]).toBe(false)
   })
 })

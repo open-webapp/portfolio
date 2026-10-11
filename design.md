@@ -56,7 +56,7 @@ See also: [product-behavior.md](product-behavior.md), [schema-spec.md](schema-sp
 
 - `App.tsx` renders `RailNav` and `TopBar` for every hydrated, unlocked portfolio view.
 - `RailNav` is a fixed left icon rail, no mark/logo: Budget, Positions, Register (3 main items — Quotes is not a rail item, see Positions); flexible spacer; Sync (when connected/syncing); Settings; Switch-portfolio last. Main buttons dispatch `SET_VIEW`, expose `aria-pressed`, labels, and tooltips. At widths <=480px it becomes a fixed bottom bar and hides the spacer.
-- `TopBar` renders `header.top-bar` as a one-column grid. The active portfolio name is plain/non-interactive, left-aligned, and non-wrapping. Its optional Budget period control or Accounts `positionsTab` tax-category/Quotes segment occupies the same full-width grid cell, centered independently of the name; a long name may visually overlap the control. It has no portfolio-switch or Sync button; those live in `RailNav`.
+- `TopBar` renders `header.top-bar` as a one-column grid. The active portfolio name is plain/non-interactive, left-aligned, and non-wrapping. Its optional Budget period control or Accounts `positionsTab` base/custom-category/Quotes segment occupies the same full-width grid cell, centered independently of the name; a long name may visually overlap the control. It has no portfolio-switch or Sync button; those live in `RailNav`.
 - `router.ts` recognizes `#/categories` and renders `ManageCategoriesPage` without requiring an unlocked portfolio session.
 
 ## Global Categories
@@ -89,7 +89,7 @@ interface GlobalCategoryState {
 
 ## Quotes Page
 
-- `QuotesPage.tsx`: rendered as the 5th tab (`'quotes'`) inside `AccountsPage`, full width, no left nav — not a standalone rail-navigable view. Props: `{state, dispatch, tickerOverviewErrors}`.
+- `QuotesPage.tsx`: rendered as the last tab (`'quotes'`) inside `AccountsPage`, full width, no left nav. Props: `{state, dispatch, tickerOverviewErrors}`.
 - Rows = union of held Equity/ETF and Mutual Fund symbols, sorted/merged by symbol. Asset Class: Equity/ETF looks up `assetClassManualOverride || assetClass`; Mutual Fund rows are hardcoded `'Mutual Fund'`.
 - Loads `marketDataDb.getAllBars()` + `getAllTickerOverviews()` in a `useEffect` keyed on `priceSync.lastRun?.at` / `mutualFundSync.lastRun?.at`.
 - Columns: Ticker, Asset Class, Name (cached `TickerOverview.name`, `—` if uncached), Status, Price (`fmtUSD`; Equity/ETF falls back to cached bar close, Mutual Fund reads `mutualFundSync.heldPrices` only, no bar fallback), Held (always Yes), Last Updated (UTC from `DailyBar.t`), SIC Description (`overview?.sicDescription || '—'`, `||` not `??` so empty string also shows `—`).
@@ -111,12 +111,16 @@ interface GlobalCategoryState {
 
 ## Positions
 
-- `App.tsx` owns a non-persisted local active Accounts segment: Taxable, Non-Taxable, Tax-Deferred, or Quotes. Changing it dispatches `CLEAR_ACCOUNT_SELECTION`.
-- `AccountsPage.tsx` renders one always-expanded category card for the active tax category; each account row selects/toggles that account through `SELECT_ACCOUNT`. Quotes renders `QuotesPage` full width with no category card.
+- `PositionsTab` (`types.ts`, re-exported by `state.ts`) = `TaxCategory | tag:${string} | 'quotes'`. `App.tsx` owns the non-persisted active tab (default Taxable); changes dispatch `CLEAR_ACCOUNT_SELECTION`; unavailable custom tabs fall back to Taxable.
+- `positionsTabs(state)` supplies three base categories, account-backed custom tags alphabetically, then Quotes. `TopBar.positionsTabOptions` accepts these `{key, label}` options. `positionsTabAccounts` includes primary-category members and accounts tagged with that base label, or exact custom-tag members.
+- `AccountsPage.tsx` renders one always-expanded category card; account rows select/toggle through `SELECT_ACCOUNT`. Card header is category label only; rows include value/number/import-date badges and custom-tag chips. Quotes renders `QuotesPage` full width without hero/sidebar.
 - Held positions use active-category account ids when nothing is selected, then apply `acctAssetClassFilter` and `acctPosSearch`; aggregate rows group by tracking symbol (when set) plus effective asset class.
-- The right panel begins with `PositionsKpiRow`: market value, unrealized G/L, realized G/L, and an embedded allocation grid. It then renders the asset-class filter, search, Import action, aggregate table, and row overlay. The table's Close action opens `ClosePositionPage` for that aggregate group.
-- The `Closed positions` action switches the same tax-category view into a local closed mode; Back returns to held positions. The category card stays visible. Closed mode shows KPIs without allocations, filters/searches closed records in the active category or selected account, and renders `ClosedPositionsTable`.
+- `AccountsPage` stores opened overlay membership as local `selectedLotIds`, resolves live lots from `state.positions` independently of table filters/tab membership, and derives the title from their current grouping. Shared edits and account reassignment preserve the opened lots; deletion/full sale removes affected lots, the last removal closes the overlay, and tab changes clear it.
+- `PositionsHero` (`PositionsHeroProps: {kpis: ReturnType<typeof positionsHero>; closed?: boolean}`) spans above sidebar/table. `positionsHero(state, tab, closed?)` scopes to tab/account independently of search/asset filters: open value/count, account count, unrealized G/L/percent, allocation bars, known realized G/L and `closedCount` (transaction basis, non-null; includes zero). Held hero shows a stacked allocation bar/legend; closed hero emphasizes realized G/L/count plus unrealized G/L on open positions, without market value/allocation.
+- Right panel: asset filter, search, Closed positions/Import actions, aggregate table, row overlay. Close exists per lot inside `PositionGroupOverlay`; `ClosePanel({position, dispatch, onCancel, onClosed})` previews net proceeds/cost/G/L/remaining shares and dispatches `CLOSE_POSITION_WITH_SALE` for a valid sale.
+- `Closed positions` switches local `mode: 'list' | 'closed'` within the active tab; Back/tab change returns to held. `closedPositionsTabAccounts` limits sidebar to accounts with closed records, ignoring table filters; ineligible selection is cleared. Table filters/search remain scoped to the tab or eligible selected account. Empty text: `No closed positions in this category.`
 - `ClosedPositionsTable.tsx` receives its filtered `positions` list. Undo restores a fresh-id open position; an existing exact lot requires confirmation before replacement. Restoring also removes the linked sale transaction when one was recorded for the close.
+- Import Setup uses `CategoryMultiSelect` (`CategorySelection: {primary: TaxCategory; tags?: string[]}`; props `value`, `onChange`, `existingCustomTags`). Account add/update and `setAccountTags`/`SET_ACCOUNT_TAGS` trim/dedupe tags, omit empty/primary-label tags, and atomically enforce four memberships per account and three distinct custom labels per portfolio. Base-label tags grant base membership without consuming custom-label slots; optional `Account.tags` needs no migration and passes through encrypted local/Drive JSON.
 
 ## Balance Register
 

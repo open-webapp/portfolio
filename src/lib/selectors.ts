@@ -1,6 +1,6 @@
 import type { AppState } from './state'
 import { resolveExpenseAmountsForAnalyticsYear } from './state'
-import type { Position, ClosedPosition, Transaction, TaxCategory, ExpenseDefinition, BudgetTransaction, Category } from './types'
+import type { Account, PositionsTab, Position, ClosedPosition, Transaction, TaxCategory, ExpenseDefinition, BudgetTransaction, Category } from './types'
 import { sortBy } from './sort'
 import { allocationByAssetClass, fmtUSD, fmtPct, computePosition, toPeriod, toYearly } from './computations'
 import { latestBalance } from './register'
@@ -12,6 +12,39 @@ export const CATEGORY_LABEL: Record<TaxCategory, string> = {
   taxable: 'Taxable',
   nonTaxable: 'Non-Taxable',
   taxDeferred: 'Tax-Deferred'
+}
+
+/** Base categories, distinct account-backed custom tags alphabetically, then Quotes. */
+export function positionsTabs(state: AppState): Array<{ key: PositionsTab; label: string }> {
+  const baseTabs = (Object.keys(CATEGORY_LABEL) as TaxCategory[])
+    .map((key) => ({ key, label: CATEGORY_LABEL[key] }))
+  const baseLabels = new Set(Object.values(CATEGORY_LABEL))
+  const customTags = [...new Set(state.accounts.flatMap((account) => account.tags ?? []))]
+    .filter((tag) => !baseLabels.has(tag))
+    .sort((a, b) => a.localeCompare(b))
+
+  return [
+    ...baseTabs,
+    ...customTags.map((tag): { key: PositionsTab; label: string } => ({ key: `tag:${tag}`, label: tag })),
+    { key: 'quotes', label: 'Quotes' },
+  ]
+}
+
+/** Accounts can belong to their tax category and any additional category/tag tabs. */
+export function positionsTabAccounts(state: AppState, tab: PositionsTab): Account[] {
+  if (tab === 'quotes') return []
+  if (tab.startsWith('tag:')) {
+    const tag = tab.slice(4)
+    return state.accounts.filter((account) => account.tags?.includes(tag))
+  }
+  const label = CATEGORY_LABEL[tab as TaxCategory]
+  return state.accounts.filter((account) => account.taxCategory === tab || account.tags?.includes(label))
+}
+
+/** Category accounts with at least one closed position; ignores table filters and selection. */
+export function closedPositionsTabAccounts(state: AppState, tab: PositionsTab): Account[] {
+  const closedAccountIds = new Set(state.closedPositions.map((position) => position.accountId))
+  return positionsTabAccounts(state, tab).filter((account) => closedAccountIds.has(account.id))
 }
 
 /**
@@ -373,18 +406,21 @@ export function closePositionSalePreview(
 }
 
 /**
- * Closed positions scoped to the currently-selected account on the Accounts page,
- * or all closed positions when no account is selected.
+ * Closed positions scoped to supplied category account IDs, then an eligible
+ * selected account. A selection outside that scope (or without closed positions)
+ * is treated as cleared, without mutating state; T12 owns UI-state clearing.
+ * Omitted IDs retain all-account scope; an empty list always returns no rows.
  */
 export function acctScopedClosedPositions(state: AppState, tabAccountIds?: string[]): ClosedPosition[] {
-  if (state.selectedAccountId) {
-    return state.closedPositions.filter((cp) => cp.accountId === state.selectedAccountId)
-  }
+  let results = state.closedPositions
   if (tabAccountIds) {
     const idSet = new Set(tabAccountIds)
-    return state.closedPositions.filter((cp) => idSet.has(cp.accountId))
+    results = results.filter((cp) => idSet.has(cp.accountId))
   }
-  return state.closedPositions
+  if (state.selectedAccountId && results.some((cp) => cp.accountId === state.selectedAccountId)) {
+    return results.filter((cp) => cp.accountId === state.selectedAccountId)
+  }
+  return results
 }
 
 /**
@@ -424,6 +460,33 @@ export function positionsKpis(state: AppState, tabAccountIds: string[], closed =
     positionCount: closed ? closedPositions.length : positions.length,
     accountCount: state.accounts.filter((account) => accountIds.has(account.id)).length,
     allocationBars: allocationBars(positions)
+  }
+}
+
+/**
+ * Category hero, independent of table search/asset-class filters. The tab is
+ * supplied by the page (not stored in AppState); selected accounts must belong
+ * to it. Both modes retain open-position totals/allocation, while closedCount
+ * counts only closed positions with known realized G/L, including known zero.
+ */
+export function positionsHero(
+  state: AppState,
+  tab: PositionsTab = 'taxable',
+  _closed = false
+): ReturnType<typeof positionsKpis> & { closedCount: number } {
+  const accounts = positionsTabAccounts(state, tab)
+    .filter((account) => !state.selectedAccountId || account.id === state.selectedAccountId)
+  const accountIds = accounts.map((account) => account.id)
+  // Scope explicitly so the legacy selected-account shortcut cannot bypass
+  // tab membership (e.g. a stale selection after switching categories).
+  const scopedState = { ...state, selectedAccountId: null }
+  const knownClosed = acctScopedClosedPositions(scopedState, accountIds)
+    .filter((position) => position.realizedGLBasis === 'transactions' && position.realizedGL !== null)
+
+  return {
+    ...positionsKpis(scopedState, accountIds),
+    realizedGL: knownClosed.reduce((sum, position) => sum + position.realizedGL!, 0),
+    closedCount: knownClosed.length,
   }
 }
 

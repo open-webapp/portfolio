@@ -3,8 +3,11 @@ import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/re
 import { ImportDialog } from './ImportDialog'
 import type { AppState, Account, TaxCategory } from '../../lib/types'
 import { initialState } from '../../lib/state'
+import { useReducer } from 'react'
+import { appReducer } from '../../lib/reducer'
 
-vi.mock('../../lib/csv', () => ({
+vi.mock('../../lib/csv', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../lib/csv')>(),
   parseCsvFile: vi.fn(),
 }))
 
@@ -168,18 +171,116 @@ async function advanceToStep2NewAccount(
     fireEvent.change(allSelects[1], { target: { value: institutionValue } })
   }
 
-  // Select category and retirement (3rd and 4th selects)
-  if (fields.category && allSelects.length >= 3) {
-    fireEvent.change(allSelects[2], { target: { value: fields.category } })
+  if (fields.category && fields.category !== 'taxable') {
+    fireEvent.click(screen.getByText('Categories'))
+    fireEvent.click(screen.getByRole('checkbox', { name: fields.category === 'nonTaxable' ? 'Non-Taxable' : 'Tax-Deferred' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Taxable' }))
   }
-  if (fields.retirement && allSelects.length >= 4) {
-    fireEvent.change(allSelects[3], { target: { value: 'retirement' } })
+  if (fields.retirement) {
+    fireEvent.change(document.querySelectorAll('select')[2], { target: { value: 'retirement' } })
   }
   uploadCsvFile()
   await continueEnabled()
   clickContinue()
   await waitFor(() => expect(screen.getByText('Review')).toBeTruthy())
 }
+
+describe('ImportDialog category integration', () => {
+  function setup(accounts = [createAccount()]) {
+    let current = createState({ accounts })
+    function Harness() {
+      const [state, dispatch] = useReducer(appReducer, current)
+      current = state
+      return <ImportDialog state={state} dispatch={dispatch} onClose={() => {}} />
+    }
+    render(<Harness />)
+    openDialog()
+    return () => current
+  }
+
+  function selectAccount(id: string) {
+    fireEvent.change(document.querySelector('select')!, { target: { value: id } })
+    fireEvent.click(screen.getByText('Categories'))
+  }
+
+  function addTag(tag: string) {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add category' }), { target: { value: tag } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Add category' }), { key: 'Enter' })
+  }
+
+  async function importNew(name: string, retirement: boolean, multi = false) {
+    const state = setup([])
+    selectAccount('__new__')
+    fireEvent.change(screen.getByPlaceholderText('e.g. Fidelity Rollover IRA'), { target: { value: name } })
+    fireEvent.change(screen.getByPlaceholderText('e.g. 8842-1190'), { target: { value: '999' } })
+    if (multi) {
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Tax-Deferred' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Taxable' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Taxable' }))
+      addTag('kids')
+    }
+    if (retirement) fireEvent.change(document.querySelectorAll('select')[2], { target: { value: 'retirement' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Enter manually' }))
+    clickContinue()
+    setAssetClassHeaderValue('Equity')
+    const inputs = document.querySelectorAll('tbody tr:first-child input')
+    for (const [index, value] of [[0, 'AAPL'], [2, '1'], [3, '100'], [5, '120']] as const) {
+      fireEvent.change(inputs[index], { target: { value } })
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+    return state().accounts[0]
+  }
+
+  it('creates an account with Tax-Deferred first and literal non-primary tags', async () => {
+    const account = await importNew('Family', false, true)
+    expect(account.taxCategory).toBe('taxDeferred')
+    expect(account.tags).toEqual(['Taxable', 'kids'])
+  })
+
+  it('prefills existing categories and tags; enables Save for tag-only changes', () => {
+    const state = setup([createAccount({ taxCategory: 'taxDeferred', tags: ['Taxable', 'kids'] })])
+    selectAccount('acc-1')
+    for (const name of ['Tax-Deferred', 'Taxable', 'kids']) {
+      expect((screen.getByRole('checkbox', { name }) as HTMLInputElement).checked).toBe(true)
+    }
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'kids' }))
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(state().accounts[0].tags).toEqual(['Taxable'])
+    expect((screen.getByRole('button', { name: 'Saved' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Taxable' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(state().accounts[0].tags).toBeUndefined()
+  })
+
+  it('persists the retirement toggle for a neutral account name', async () => {
+    expect((await importNew('Family', true)).retirement).toBe(true)
+  })
+
+  it('does not infer retirement from a name containing 401k', async () => {
+    expect((await importNew('My 401k', false)).retirement).toBe(false)
+  })
+
+  it('cannot remove the last base category or save a zero-category account', () => {
+    const state = setup()
+    selectAccount('acc-1')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Taxable' }))
+    expect((screen.getByRole('checkbox', { name: 'Taxable' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(state().accounts[0].taxCategory).toBe('taxable')
+  })
+
+  it('legacy accounts without tags prefill only their base', () => {
+    setup([createAccount({ taxCategory: 'nonTaxable' })])
+    selectAccount('acc-1')
+    const checked = screen.getAllByRole('checkbox').filter((input) => (input as HTMLInputElement).checked)
+    expect(checked).toHaveLength(1)
+    expect(checked[0]).toBe(screen.getByRole('checkbox', { name: 'Non-Taxable' }))
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
 
 describe('ImportDialog (2-step wizard)', () => {
   let dispatch: ReturnType<typeof vi.fn>

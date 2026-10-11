@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import type { AppState, PositionsTab } from '../lib/state'
+import { initialState } from '../lib/state'
+import { positionsTabs } from '../lib/selectors'
 
 export interface NavProps {
   state: AppState
@@ -26,15 +28,11 @@ export interface TopBarProps {
   periodControl?: ReactNode
   portfolioName: string
   positionsTab?: PositionsTab
+  positionsTabOptions?: ReturnType<typeof positionsTabs>
   onPositionsTabChange?: (tab: PositionsTab) => void
 }
 
-const positionsTabOptions: { value: PositionsTab; label: string }[] = [
-  { value: 'taxable', label: 'Taxable' },
-  { value: 'nonTaxable', label: 'Non-Taxable' },
-  { value: 'taxDeferred', label: 'Tax-Deferred' },
-  { value: 'quotes', label: 'Quotes' },
-]
+const defaultPositionsTabOptions = positionsTabs(initialState())
 
 const mainNavTabs = [
   {
@@ -105,7 +103,7 @@ export function RailNav({ state, dispatch, connected, syncing, handleSync, onOpe
   )
 }
 
-export function TopBar({ periodControl, portfolioName, positionsTab, onPositionsTabChange }: TopBarProps) {
+export function TopBar({ periodControl, portfolioName, positionsTab, positionsTabOptions = defaultPositionsTabOptions, onPositionsTabChange }: TopBarProps) {
   return (
     <header className="top-bar" style={{ display: 'grid', gridTemplateColumns: '1fr' }}>
       <span
@@ -122,12 +120,12 @@ export function TopBar({ periodControl, portfolioName, positionsTab, onPositions
           <div className="budget-tabs">
             <div className="seg">
               {positionsTabOptions.map((option) => (
-                <label key={option.value} className="seg-opt">
+                <label key={option.key} className="seg-opt">
                   <input
                     type="radio"
                     name="positionsTab"
-                    checked={positionsTab === option.value}
-                    onChange={() => onPositionsTabChange(option.value)}
+                    checked={positionsTab === option.key}
+                    onChange={() => onPositionsTabChange(option.key)}
                   />
                   <span>{option.label}</span>
                 </label>
