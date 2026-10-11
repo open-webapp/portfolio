@@ -103,6 +103,29 @@ function SaleHarness({ positions = [saleLot()], transactions = [] }: { positions
 const saleState = () => JSON.parse(screen.getByTestId('sale-state').textContent!) as AppState
 const openSale = (index = 0) => fireEvent.click(screen.getAllByRole('button', { name: 'Close', exact: true }).filter(b => b.classList.contains('btn-ghost'))[index])
 describe('inline lot close', () => {
+  it('lays out sale fields beside a separate Result card with horizontal actions', () => {
+    render(<SaleHarness />); openSale()
+    const panel = screen.getByRole('region', { name: 'Close lot lot-1' })
+    const cards = panel.querySelectorAll<HTMLElement>('.card')
+    expect(cards).toHaveLength(2)
+    const columns = cards[0].parentElement!
+    expect(columns.style.display).toBe('grid')
+    expect(columns.style.gridTemplateColumns).toBe('minmax(0, 1fr) minmax(280px, 360px)')
+    expect(columns.style.gap).toBe('24px')
+    expect(within(cards[0]).getByText('Alpha — Brokerage')).toBeTruthy()
+    const fields = within(cards[0]).getByLabelText('Shares').closest('.field')!.parentElement!
+    expect(fields.style.display).toBe('grid')
+    expect(fields.style.gridTemplateColumns).toBe('repeat(auto-fit, minmax(180px, 1fr))')
+    expect(fields.style.gap).toBe('16px')
+    expect(fields.querySelectorAll('.field')).toHaveLength(4)
+    expect(within(cards[1]).getByText('Result')).toBeTruthy()
+    expect(within(cards[1]).getByText('$200.00')).toBeTruthy()
+    expect(cards[1].contains(screen.getByLabelText('Shares'))).toBe(false)
+    const actions = within(panel).getByRole('button', { name: 'Cancel' }).parentElement!
+    expect(actions.style.display).toBe('flex')
+    expect(actions.style.justifyContent).toBe('flex-end')
+    expect(actions.contains(within(panel).getByRole('button', { name: 'Close position' }))).toBe(true)
+  })
   it('opens only on lot Close, defaults all shares/current price/today/zero fees, without a lot selector', () => {
     render(<SaleHarness />)
     expect(screen.queryByLabelText('Sale price')).toBeNull()

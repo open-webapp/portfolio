@@ -111,7 +111,7 @@ export function PositionGroupOverlay({ group, positions: positionsParam, title: 
             </tr>
           })}</tbody>
         </table>
-        {closingLot && <ClosePanel key={closingLot.id} position={closingLot} dispatch={dispatch}
+        {closingLot && <ClosePanel key={closingLot.id} position={closingLot} account={accounts.find(a => a.id === closingLot.accountId)} dispatch={dispatch}
           onCancel={() => setClosingLotId(null)} onClosed={() => {
             setClosingLotId(null)
           }} />}

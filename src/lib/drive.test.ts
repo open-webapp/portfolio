@@ -869,8 +869,7 @@ describe('driveAuth.ensureFresh gate (T3 — drive-connect integration)', () => 
 // over a hand-built fake `driveSync`. Opting in: set `mockT13.active = true`,
 // `vi.resetModules()`, then `await import('./drive')` so drive.ts is
 // re-evaluated with `createDriveSync()` -> `mockT13.driveSync` and
-// `createDriveAuth()` -> the genuine implementation (one `connectInFlight`
-// promise shared by `connect()` and `ensureFresh()`).
+// `createDriveAuth()` -> the genuine implementation.
 //
 // Fake `driveSync` shape (what the real `createDriveAuth` touches):
 //   driveSync.activate()                       -> vi.fn(() => () => {})
@@ -940,24 +939,22 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
     vi.restoreAllMocks()
   })
 
-  it('headline: connect() + syncBackup() in one tick share ONE interactive connect; both resolve off it', async () => {
+  it('a sync racing an interactive connect rejects rather than opening a second popup', async () => {
     t13.connection = null // no cached/valid token
 
     const pConnect = t13.mod.getDriveAuthFor(testPortfolio).connect()
-    const pEnsure = t13.mod.getDriveAuthFor(testPortfolio).ensureFresh()
     const pSync = t13.mod.syncBackup(testPortfolio, initialState(), t13.key, t13.salt)
+    const pSyncError = pSync.catch((error: unknown) => error)
 
-    // Let ensureFresh()/syncBackup() get past getConnection() into the shared connect().
+    // Let syncBackup reach ensureFresh(). It does not initiate a second auth flow.
     await flush()
     expect(t13.connectPrimitive).toHaveBeenCalledTimes(1)
 
     t13.resolveConnect(t13.connected)
 
-    const [c1, c2, fileId] = await Promise.all([pConnect, pEnsure, pSync])
+    const c1 = await pConnect
     expect(c1).toBe(t13.connected)
-    expect(c2).toBe(t13.connected) // same connection object, not a second flow
-    expect(c1).toBe(c2)
-    expect(fileId).toBe('backup-file-id')
+    await expect(pSyncError).resolves.toMatchObject({ message: 'Google Drive connection requires reauthentication' })
     expect(t13.connectPrimitive).toHaveBeenCalledTimes(1)
   })
 
@@ -973,11 +970,12 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
     expect(fileId).toBe('backup-file-id')
   })
 
-  it('error: the shared connect rejects -> both callers reject; a later connect() starts a fresh interactive call', async () => {
+  it('a failed connect leaves the sync reauth error intact; a later connect starts a fresh interactive call', async () => {
     t13.connection = null
 
     const pConnect = t13.mod.getDriveAuthFor(testPortfolio).connect()
     const pSync = t13.mod.syncBackup(testPortfolio, initialState(), t13.key, t13.salt)
+    const pSyncError = pSync.catch((error: unknown) => error)
     await flush()
     expect(t13.connectPrimitive).toHaveBeenCalledTimes(1)
 
@@ -985,7 +983,7 @@ describe('T13 — single auth-popup race (real createDriveAuth)', () => {
     t13.rejectConnect(boom)
 
     await expect(pConnect).rejects.toBe(boom)
-    await expect(pSync).rejects.toThrow('user denied consent')
+    await expect(pSyncError).resolves.toMatchObject({ message: 'Google Drive connection requires reauthentication' })
 
     // in-flight guard cleared in `finally` -> the next connect() is a NEW interactive call
     t13.connectDeferred = new Promise((resolve) => {
